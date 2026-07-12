@@ -51,6 +51,8 @@ apps/
         deliveries/
           route-page.ts
         gate/
+          companion-api.ts
+          companion-gate.ts
           dead-link-page.ts
         app.config.ts
         app.routes.ts
@@ -145,10 +147,9 @@ apps/
             services/
               canvassing-service.ts
             ui/
+              assign-turf-dialog.ts
               canvassing-page.html
               canvassing-page.ts
-              companion-page.html
-              companion-page.ts
               cut-turfs-dialog.html
               cut-turfs-dialog.ts
           companies/
@@ -2663,10 +2664,6 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.assign.mutate(input);
   }
 
-  public getCompanionLink(turfId: string): Promise<{ token: string }> {
-    return this.api.canvassing.getCompanionLink.mutate(turfId);
-  }
-
   public retire(turfId: string): Promise<void> {
     return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
   }
@@ -2685,240 +2682,169 @@ export class CanvassingService extends TRPCService<unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.ts
+## File: apps/frontend/src/app/experiences/canvassing/ui/assign-turf-dialog.ts
 
 ```typescript
-import { Component, type OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 
-import { Icon } from '@icons/icon';
-import type { KnockOutcome, KnockResponse } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
-interface CompanionDoor {
-  household_id: string;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  last_outcome: string | null;
+import { debounce } from '../../../../../../../libs/common/src';
+import { PersonsService } from '../../persons/services/persons-service';
+import { CanvassingService } from '../services/canvassing-service';
+
+interface PersonOption {
+  id: string;
+  name: string;
+  contact: string;
 }
-
-interface CompanionTurf {
-  turf_id: string;
-  turf_name: string;
-  door_count: number;
-  attempted: number;
-  doors: CompanionDoor[];
-}
-
-interface QueuedKnock {
-  token: string;
-  client_knock_id: string;
-  household_id: string;
-  outcome: KnockOutcome;
-  response: KnockResponse | null;
-  canvasser_name: string | null;
-  knocked_at: string;
-}
-
-const QUEUE_KEY = 'canvass-companion-queue';
-const NAME_KEY = 'canvass-companion-name';
-
-const OUTCOMES: { key: KnockOutcome; label: string }[] = [
-  { key: 'conversation', label: 'Talked' },
-  { key: 'no_answer', label: 'No answer' },
-  { key: 'not_home', label: 'Not home' },
-  { key: 'refused', label: 'Refused' },
-  { key: 'inaccessible', label: "Can't access" },
-];
-
-const RESPONSES: { key: KnockResponse; label: string }[] = [
-  { key: 'strong_support', label: 'Strong' },
-  { key: 'lean_support', label: 'Lean' },
-  { key: 'undecided', label: 'Undecided' },
-  { key: 'opposed', label: 'Opposed' },
-];
 
 /**
- * Canvass Companion (§13.4) — the tokenised, account-less volunteer app.
- * Offline-tolerant: knocks queue in localStorage and flush when back online.
+ * Assign a turf to a volunteer (COMPANION-APPS-PLAN.md §5 B1). Companion links
+ * are personal — the access layer verifies the holder against this person's
+ * email/mobile on file — so assignment starts with picking who it's for.
  */
 @Component({
-  selector: 'pc-companion-page',
-  imports: [Icon],
-  templateUrl: './companion-page.html',
+  selector: 'pc-assign-turf-dialog',
+  imports: [FormsModule],
+  template: `
+    <dialog class="modal" [open]="true">
+      <div class="modal-box flex max-w-md flex-col gap-4">
+        <h3 class="text-sm font-semibold">Assign "{{ turfName() }}"</h3>
+        <p class="text-xs text-base-content/60">
+          The link is personal: the volunteer verifies a code sent to their email or mobile on file, and new volunteers
+          need a one-time approval from an admin.
+        </p>
+
+        @if (!selected()) {
+          <label class="input input-bordered flex w-full items-center gap-2">
+            <input
+              type="text"
+              class="grow"
+              placeholder="Search people by name…"
+              aria-label="Search people"
+              [ngModel]="query()"
+              (ngModelChange)="onQuery($event)"
+            />
+          </label>
+          @if (searching()) {
+            <progress class="progress w-full"></progress>
+          } @else if (options().length > 0) {
+            <ul class="menu w-full rounded-box border border-base-300 bg-base-100 p-1">
+              @for (opt of options(); track opt.id) {
+                <li>
+                  <button type="button" (click)="choose(opt)">
+                    <span class="font-medium">{{ opt.name }}</span>
+                    <span class="text-xs text-base-content/50">{{ opt.contact }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          } @else if (query().trim().length > 1) {
+            <p class="text-xs text-base-content/60">No people match — check the spelling or add them first.</p>
+          }
+        } @else {
+          <div class="flex items-center justify-between rounded-box border border-base-300 p-3">
+            <div>
+              <p class="font-medium">{{ selected()?.name }}</p>
+              <p class="text-xs text-base-content/50">{{ selected()?.contact }}</p>
+            </div>
+            <button type="button" class="btn btn-ghost btn-xs" (click)="selected.set(null)">Change</button>
+          </div>
+          @if (!selected()?.contact) {
+            <p class="text-xs text-warning-content">
+              No email or mobile on file — add one to their person record or the verification step can't reach them.
+            </p>
+          }
+        }
+
+        <div class="modal-action">
+          <button type="button" class="btn btn-ghost btn-sm" (click)="cancelled.emit()">Cancel</button>
+          <span [class.tooltip]="!selected()" [attr.data-tip]="!selected() ? 'Pick a volunteer to assign' : null">
+            <button type="button" class="btn btn-primary btn-sm" [disabled]="!selected() || saving()" (click)="save()">
+              @if (saving()) {
+                Assigning…
+              } @else {
+                Assign & copy link
+              }
+            </button>
+          </span>
+        </div>
+      </div>
+      <div class="modal-backdrop" (click)="cancelled.emit()"></div>
+    </dialog>
+  `,
 })
-export class CompanionPage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+export class AssignTurfDialog {
+  public readonly turfId = input.required<string>();
+  public readonly turfName = input.required<string>();
+  public readonly cancelled = output<void>();
+  /** Emits the minted token once assigned (page copies the /t/ link). */
+  public readonly assigned = output<string>();
 
-  protected readonly outcomes = OUTCOMES;
-  protected readonly responses = RESPONSES;
+  protected readonly options = signal<PersonOption[]>([]);
+  protected readonly query = signal('');
+  protected readonly saving = signal(false);
+  protected readonly selected = signal<PersonOption | null>(null);
 
-  protected readonly token = signal<string>('');
-  protected readonly turf = signal<CompanionTurf | null>(null);
-  protected readonly loadError = signal<string>('');
-  protected readonly loading = signal<boolean>(true);
-  protected readonly online = signal<boolean>(typeof navigator === 'undefined' ? true : navigator.onLine);
-  protected readonly queued = signal<number>(0);
-  protected readonly canvasserName = signal<string>('');
-  protected readonly expandedId = signal<string>('');
-  protected readonly localOutcomes = signal<Record<string, string>>({});
+  protected readonly searching = computed(() => this.searchGate.visible());
 
-  protected readonly progress = computed<string>(() => {
-    const t = this.turf();
-    if (!t) return '';
-    const attempted = t.attempted + Object.keys(this.localOutcomes()).length;
-    return `${Math.min(attempted, t.door_count)} of ${t.door_count} doors`;
-  });
+  private readonly alerts = inject(AlertService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly searchGate = createLoadingGate();
+  private readonly svc = inject(CanvassingService);
 
-  ngOnInit(): void {
-    const stored = typeof localStorage !== 'undefined' ? (localStorage.getItem(NAME_KEY) ?? '') : '';
-    this.canvasserName.set(stored);
-    this.token.set(this.route.snapshot.queryParamMap.get('token') ?? '');
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => {
-        this.online.set(true);
-        void this.flushQueue();
-      });
-      window.addEventListener('offline', () => this.online.set(false));
-    }
-    this.queued.set(this.readQueue().length);
-    void this.load();
-  }
-
-  protected outcomeLabel(key: string): string {
-    return OUTCOMES.find((o) => o.key === key)?.label ?? key;
-  }
-
-  protected setName(value: string): void {
-    this.canvasserName.set(value);
-    if (typeof localStorage !== 'undefined') localStorage.setItem(NAME_KEY, value);
-  }
-
-  protected toggle(id: string): void {
-    this.expandedId.set(this.expandedId() === id ? '' : id);
-  }
-
-  protected async load(): Promise<void> {
-    this.loading.set(true);
-    this.loadError.set('');
-    const token = this.token();
-    if (!token) {
-      this.loadError.set('This canvassing link is missing its token.');
-      this.loading.set(false);
+  private readonly debouncedSearch = debounce(async (term: string) => {
+    if (term.trim().length < 2) {
+      this.options.set([]);
       return;
     }
+    const end = this.searchGate.begin();
     try {
-      const res = await fetch(`/api/canvass/turf?token=${encodeURIComponent(token)}`);
-      if (!res.ok) {
-        const body: unknown = await res.json().catch(() => ({}));
-        const msg =
-          body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : '';
-        throw new Error(msg || 'Unable to load this turf.');
-      }
-      const data: unknown = await res.json();
-      this.turf.set(this.narrowTurf(data));
-      await this.flushQueue();
-    } catch (err) {
-      this.loadError.set(err instanceof Error ? err.message : 'Unable to load this turf.');
+      const res = await this.personsSvc.getAllWithAddress({ searchStr: term.trim(), startRow: 0, endRow: 8 });
+      const rows = (res?.rows ?? []) as Record<string, unknown>[];
+      this.options.set(
+        rows.map((r) => ({
+          id: String(r['id']),
+          name: [r['first_name'], r['last_name']].filter(Boolean).join(' ') || String(r['name'] ?? 'Unnamed person'),
+          contact: [r['email'], r['mobile']].filter(Boolean).join(' · '),
+        })),
+      );
+    } catch {
+      this.options.set([]);
     } finally {
-      this.loading.set(false);
+      end();
     }
+  }, 250);
+
+  protected choose(opt: PersonOption): void {
+    this.selected.set(opt);
+    this.options.set([]);
   }
 
-  protected async logKnock(door: CompanionDoor, outcome: KnockOutcome, response: KnockResponse | null): Promise<void> {
-    const knock: QueuedKnock = {
-      token: this.token(),
-      client_knock_id: this.newId(),
-      household_id: door.household_id,
-      outcome,
-      response,
-      canvasser_name: this.canvasserName() || null,
-      knocked_at: new Date().toISOString(),
-    };
-    // Optimistic local mark so the door shows progress immediately.
-    this.localOutcomes.update((m) => ({ ...m, [door.household_id]: outcome }));
-    this.expandedId.set('');
-
-    const sent = await this.send(knock);
-    if (!sent) {
-      this.enqueue(knock);
-    }
+  protected onQuery(value: string): void {
+    this.query.set(value);
+    this.debouncedSearch(value);
   }
 
-  private async flushQueue(): Promise<void> {
-    if (!this.online()) return;
-    const queue = this.readQueue();
-    if (queue.length === 0) return;
-    const remaining: QueuedKnock[] = [];
-    for (const k of queue) {
-      const ok = await this.send(k);
-      if (!ok) remaining.push(k);
-    }
-    this.writeQueue(remaining);
-  }
-
-  private async send(knock: QueuedKnock): Promise<boolean> {
-    if (!this.online()) return false;
+  protected async save(): Promise<void> {
+    const person = this.selected();
+    if (!person || this.saving()) return;
+    this.saving.set(true);
     try {
-      const res = await fetch('/api/canvass/knock', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(knock),
+      const { token } = await this.svc.assign({
+        turf_id: this.turfId(),
+        team_id: null,
+        volunteer_person_id: person.id,
       });
-      return res.ok;
-    } catch {
-      return false;
+      this.assigned.emit(token);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
+    } finally {
+      this.saving.set(false);
     }
-  }
-
-  private enqueue(knock: QueuedKnock): void {
-    const queue = this.readQueue();
-    queue.push(knock);
-    this.writeQueue(queue);
-  }
-
-  private readQueue(): QueuedKnock[] {
-    if (typeof localStorage === 'undefined') return [];
-    try {
-      const raw = localStorage.getItem(QUEUE_KEY);
-      const parsed: unknown = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? (parsed as QueuedKnock[]) : [];
-    } catch {
-      return [];
-    }
-  }
-
-  private writeQueue(queue: QueuedKnock[]): void {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-    this.queued.set(queue.length);
-  }
-
-  private newId(): string {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-
-  private narrowTurf(data: unknown): CompanionTurf {
-    if (!data || typeof data !== 'object') throw new Error('Unexpected response.');
-    const d = data as Record<string, unknown>;
-    const doorsRaw = Array.isArray(d['doors']) ? d['doors'] : [];
-    const doors: CompanionDoor[] = doorsRaw.map((x) => {
-      const o = (x ?? {}) as Record<string, unknown>;
-      return {
-        household_id: String(o['household_id'] ?? ''),
-        address: String(o['address'] ?? ''),
-        lat: o['lat'] == null ? null : Number(o['lat']),
-        lng: o['lng'] == null ? null : Number(o['lng']),
-        last_outcome: o['last_outcome'] == null ? null : String(o['last_outcome']),
-      };
-    });
-    return {
-      turf_id: String(d['turf_id'] ?? ''),
-      turf_name: String(d['turf_name'] ?? 'Turf'),
-      door_count: Number(d['door_count'] ?? doors.length),
-      attempted: Number(d['attempted'] ?? 0),
-      doors,
-    };
   }
 }
 ```
@@ -12122,6 +12048,369 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings.config.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export type SettingsFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'tel'
+  | 'number'
+  | 'select'
+  | 'toggle'
+  | 'password'
+  | 'url'
+  | 'date'
+  | 'day-toggles';
+
+export interface SettingsOptionConfig {
+  label: string;
+  value: string;
+}
+
+export interface SettingsFieldConfig {
+  key: string;
+  label: string;
+  type: SettingsFieldType;
+  placeholder?: string;
+  helper?: string;
+  options?: SettingsOptionConfig[];
+  defaultValue?: unknown;
+}
+
+export interface SettingsSectionConfig {
+  id: string;
+  title: string;
+  description: string;
+  icon: PcIconNameType;
+  fields: SettingsFieldConfig[];
+}
+
+export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
+  {
+    id: 'organization',
+    title: 'Organization',
+    description: 'Tenant branding, contact details, and campaign defaults.',
+    icon: 'cog-6-tooth',
+    fields: [
+      {
+        key: 'organization.name',
+        label: 'Organization name',
+        type: 'text',
+        placeholder: 'PeopleCRM',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.contact_email',
+        label: 'Primary contact email',
+        type: 'email',
+        placeholder: 'hello@example.com',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.phone',
+        label: 'Contact phone',
+        type: 'tel',
+        placeholder: '(555) 555-1234',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.address',
+        label: 'Mailing address',
+        type: 'textarea',
+        placeholder: '123 Main St, Springfield, USA',
+        defaultValue: '',
+      },
+    ],
+  },
+  {
+    id: 'communications',
+    title: 'Communications',
+    description: 'Email delivery, inbox routing, and compliance copy.',
+    icon: 'envelope',
+    fields: [
+      {
+        key: 'communications.default_from_name',
+        label: 'Default from name',
+        type: 'text',
+        placeholder: 'PeopleCRM Team',
+        defaultValue: '',
+      },
+      {
+        key: 'communications.default_from_email',
+        label: 'Default from email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.reply_to',
+        label: 'Reply-to email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.footer_disclaimer',
+        label: 'Email footer disclaimer',
+        type: 'textarea',
+        placeholder: 'Paid for by PeopleCRM Campaign…',
+        defaultValue: '',
+        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
+      },
+      {
+        key: 'communications.double_opt_in',
+        label: 'Require double opt-in',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
+      },
+    ],
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    description: 'Tenant-wide notification defaults and escalation.',
+    icon: 'bell',
+    fields: [
+      {
+        key: 'notifications.mention_in_comment',
+        label: 'Mentioned in comment',
+        type: 'toggle',
+        helper: 'Alerts when someone mentions you in a thread',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.mention_in_comment_in_app',
+        label: 'Mentioned in comment (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned',
+        label: 'Task assigned',
+        type: 'toggle',
+        helper: 'Alerts when a task is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned_in_app',
+        label: 'Task assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due',
+        label: 'Task due today / overdue',
+        type: 'toggle',
+        helper: 'Daily reminder check of active tasks due',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due_in_app',
+        label: 'Task due today / overdue (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned',
+        label: 'Person assigned',
+        type: 'toggle',
+        helper: 'Alerts when a contact ownership is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned_in_app',
+        label: 'Person assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready',
+        label: 'Export ready',
+        type: 'toggle',
+        helper: 'Receive download link when CSV export finishes',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready_in_app',
+        label: 'Export ready (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary',
+        label: 'Import summary',
+        type: 'toggle',
+        helper: 'Spreadsheet import completion stats report',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary_in_app',
+        label: 'Import summary (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+    ],
+  },
+  {
+    id: 'access',
+    title: 'Teams & access',
+    description: 'Default role for new invites and tenant-wide MFA enforcement.',
+    icon: 'user-group',
+    fields: [
+      {
+        key: 'access.default_role',
+        label: 'Default invite role',
+        type: 'select',
+        defaultValue: 'editor',
+        options: [
+          { label: 'Viewer', value: 'viewer' },
+          { label: 'Editor', value: 'editor' },
+          { label: 'Admin', value: 'admin' },
+        ],
+      },
+      {
+        key: 'access.mfa_required',
+        label: 'Require MFA for all users',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Force email verification codes for every user signing in from a new device or location.',
+      },
+    ],
+  },
+
+  {
+    id: 'sla',
+    title: 'Service levels',
+    description:
+      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
+    icon: 'clock',
+    fields: [
+      {
+        key: 'sla.tasks_hours',
+        label: 'Task SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.emails_hours',
+        label: 'Email SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper:
+          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.email_warning_threshold',
+        label: 'Email SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.email_critical_threshold',
+        label: 'Email SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_warning_threshold',
+        label: 'Task SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_critical_threshold',
+        label: 'Task SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.working_days',
+        label: 'Working days',
+        type: 'day-toggles',
+        defaultValue: '1,2,3,4,5',
+        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
+      },
+      {
+        key: 'sla.working_hours_start',
+        label: 'Working hours start (HH:MM)',
+        type: 'text',
+        defaultValue: '09:00',
+        helper: 'Beginning of the business day for working time tracking.',
+      },
+      {
+        key: 'sla.working_hours_end',
+        label: 'Working hours end (HH:MM)',
+        type: 'text',
+        defaultValue: '17:00',
+        helper: 'End of the business day for working time tracking.',
+      },
+    ],
+  },
+  {
+    id: 'appearance',
+    title: 'Appearance',
+    description: 'Global UI defaults that users can override locally.',
+    icon: 'sun',
+    fields: [
+      {
+        key: 'appearance.theme',
+        label: 'Default theme',
+        type: 'select',
+        defaultValue: 'system',
+        options: [
+          { label: 'System', value: 'system' },
+          { label: 'Light', value: 'light' },
+          { label: 'Dark', value: 'dark' },
+        ],
+      },
+      {
+        key: 'appearance.date_format',
+        label: 'Date format',
+        type: 'select',
+        defaultValue: 'MMMM d, yyyy',
+        options: [
+          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
+          { label: '01/10/2025', value: 'MM/dd/yyyy' },
+          { label: '10/01/2025', value: 'dd/MM/yyyy' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'integrations',
+    title: 'Integrations & API',
+    description: 'Storage, webhooks, analytics, and external vendor keys.',
+    icon: 'cloud-arrow-up',
+    fields: [
+      {
+        key: 'integrations.webhook_api_key',
+        label: 'Webhook API key',
+        type: 'text',
+        placeholder: 'Not generated yet',
+        defaultValue: '',
+      },
+      {
+        key: 'integrations.webhook_api_secret',
+        label: 'Webhook API secret',
+        type: 'password',
+        placeholder: 'Not generated yet',
+        defaultValue: '',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
 
 ```typescript
@@ -14803,255 +15092,6 @@ export class TeamFormComponent implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/volunteer-access/services/volunteer-access-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-
-import type { CompanionVolunteerRow } from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-
-/**
- * Staff calls for the companion access layer (Volunteer access page + sidebar
- * badge). The volunteer-facing half is REST in apps/companion — this service
- * is only the admin approve/revoke surface.
- */
-@Service()
-export class VolunteerAccessService extends TRPCService<'companion_volunteers'> {
-  public approve(id: string): Promise<void> {
-    return this.api.companionAccess.approve.mutate({ id }) as Promise<void>;
-  }
-
-  public getAll(): Promise<CompanionVolunteerRow[]> {
-    return this.api.companionAccess.getAll.query() as Promise<CompanionVolunteerRow[]>;
-  }
-
-  public pendingCount(): Promise<number> {
-    return this.api.companionAccess.pendingCount.query() as Promise<number>;
-  }
-
-  public revoke(id: string): Promise<void> {
-    return this.api.companionAccess.revoke.mutate({ id }) as Promise<void>;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/volunteer-access/ui/volunteer-access-page.html
-
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Volunteer access" [totalSentence]="loaded() ? pendingSentence() : null"></pc-grid-header>
-
-  <p class="max-w-prose text-xs text-base-content/60">
-    Companion links are personal. A volunteer opening their turf or route link first verifies a code sent to their email
-    or phone on file, then needs your approval — once, for all their assignments. Revoke anytime.
-  </p>
-
-  <pc-table [loading]="loading.visible()" [columns]="6">
-    <ng-container pcTableHead>
-      <th>Volunteer</th>
-      <th>Contact</th>
-      <th>Status</th>
-      <th>Verified</th>
-      <th>Approved</th>
-      <th class="w-32"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="6" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="identification" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">
-            No volunteers yet — assign a canvassing turf or a delivery route and send the link.
-          </p>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="row.status === 'revoked'">
-      <td class="font-medium">{{ displayName(row) }}</td>
-      <td class="max-w-[240px] truncate text-base-content/70">{{ contactLine(row) }}</td>
-      <td>
-        <pc-status-badge [type]="statusType(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
-      </td>
-      <td class="text-base-content/70">{{ verifiedLine(row) }}</td>
-      <td class="text-base-content/70">
-        @if (row.approved_by_name && row.approved_at) { {{ row.approved_by_name }} } @else { — }
-      </td>
-      <td class="text-right">
-        @switch (row.status) { @case ('verified') {
-        <button type="button" class="btn btn-primary btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
-          Approve
-        </button>
-        } @case ('approved') {
-        <button
-          type="button"
-          class="btn btn-outline btn-error btn-sm"
-          [disabled]="busyId() === row.id"
-          (click)="revoke(row)"
-        >
-          Revoke
-        </button>
-        } @case ('revoked') {
-        <button type="button" class="btn btn-outline btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
-          Approve again
-        </button>
-        } @case ('invited') {
-        <span class="text-xs text-base-content/40">Hasn't verified yet</span>
-        } }
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/volunteer-access/ui/volunteer-access-page.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
-
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import type { CompanionVolunteerRow, CompanionVolunteerStatus } from '../../../../../../../libs/common/src';
-import { VolunteerAccessService } from '../services/volunteer-access-service';
-
-const STATUS_LABELS: Record<CompanionVolunteerStatus, string> = {
-  invited: 'Invited',
-  verified: 'Awaiting approval',
-  approved: 'Approved',
-  revoked: 'Revoked',
-};
-
-const STATUS_TYPES: Record<CompanionVolunteerStatus, PcStatusType> = {
-  invited: 'ghost',
-  verified: 'warning',
-  approved: 'success',
-  revoked: 'error',
-};
-
-/**
- * Volunteer access admin page (COMPANION-APPS-PLAN.md §4 A3). Companion links
- * are personal: the volunteer verifies a code sent to their contact on file,
- * then an admin approves them here — once per volunteer, revocable anytime.
- * A bespoke `pc-table` (not the datagrid): four statuses, two actions.
- */
-@Component({
-  selector: 'pc-volunteer-access-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, StatusBadge, Table, GridHeaderComponent],
-  templateUrl: './volunteer-access-page.html',
-})
-export class VolunteerAccessPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly svc = inject(VolunteerAccessService);
-
-  protected readonly busyId = signal<string | null>(null);
-  protected readonly flashedId = signal<string | null>(null);
-  protected readonly loaded = signal(false);
-  protected readonly loading = createLoadingGate();
-  protected readonly rows = signal<CompanionVolunteerRow[]>([]);
-
-  public ngOnInit(): void {
-    void this.refresh();
-  }
-
-  protected async approve(row: CompanionVolunteerRow): Promise<void> {
-    this.busyId.set(row.id);
-    try {
-      await this.svc.approve(row.id);
-      this.alerts.showSuccess(`Approved ${this.displayName(row)} — their link works now`);
-      this.flash(row.id);
-      await this.refresh();
-    } catch {
-      this.alerts.showError('Could not approve — try again');
-    } finally {
-      this.busyId.set(null);
-    }
-  }
-
-  protected contactLine(row: CompanionVolunteerRow): string {
-    return [row.email, row.mobile].filter(Boolean).join(' · ') || '—';
-  }
-
-  protected displayName(row: CompanionVolunteerRow): string {
-    return [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unnamed volunteer';
-  }
-
-  protected pendingSentence(): string | null {
-    const pending = this.rows().filter((r) => r.status === 'verified').length;
-    const total = this.rows().length;
-    if (total === 0) return null;
-    return pending > 0
-      ? `${total} volunteer${total === 1 ? '' : 's'} · ${pending} awaiting approval`
-      : `${total} volunteer${total === 1 ? '' : 's'}`;
-  }
-
-  protected async revoke(row: CompanionVolunteerRow): Promise<void> {
-    const confirmed = await this.confirmDlg.confirm({
-      title: `Revoke ${this.displayName(row)}'s access?`,
-      message: 'Every device they verified stops working on their next request. You can approve them again later.',
-      variant: 'danger',
-      confirmText: 'Revoke access',
-    });
-    if (!confirmed) return;
-    this.busyId.set(row.id);
-    try {
-      await this.svc.revoke(row.id);
-      this.alerts.showSuccess(`Revoked ${this.displayName(row)} — their devices are signed out`);
-      await this.refresh();
-    } catch {
-      this.alerts.showError('Could not revoke — try again');
-    } finally {
-      this.busyId.set(null);
-    }
-  }
-
-  protected statusLabel(status: CompanionVolunteerStatus): string {
-    return STATUS_LABELS[status];
-  }
-
-  protected statusType(status: CompanionVolunteerStatus): PcStatusType {
-    return STATUS_TYPES[status];
-  }
-
-  protected verifiedLine(row: CompanionVolunteerRow): string {
-    if (!row.verified_at) return '—';
-    const channel = row.verify_channel === 'sms' ? 'text' : row.verify_channel === 'email' ? 'email' : '';
-    const date = new Date(row.verified_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    return channel ? `via ${channel} · ${date}` : date;
-  }
-
-  private flash(id: string): void {
-    this.flashedId.set(id);
-    setTimeout(() => this.flashedId.set(null), 1500);
-  }
-
-  private async refresh(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      this.rows.set(await this.svc.getAll());
-      this.loaded.set(true);
-    } catch {
-      this.alerts.showError('Could not load volunteers — refresh to try again');
-    } finally {
-      end();
-    }
-  }
 }
 ```
 
@@ -20644,6 +20684,75 @@ export class SingleselectFilterComponent {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
+
+```typescript
+import type { GridRow } from './types';
+
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
+  /** Native DOM event, present on click callbacks so a renderer's inner links can be resolved. */
+  event?: Event;
+}
+
+// Lightweight column definition used by DataGrid
+export interface ColumnDef {
+  cellClass?: string | ((p: CellParams) => string | undefined);
+  cellDataType?: string;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
+  /** Optional muted second line under a door cell (e.g. "3 people" under a household address). */
+  doorSubtitle?: (p: CellParams) => string | null;
+  editable?: boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
+  field?: string;
+  headerName?: string;
+  hide?: boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
+  tagColumn?: boolean;
+  valueFormatter?: (p: CellParams) => unknown;
+
+  // Compatibility props (ignored by current table but kept for typing)
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
+  minWidth?: number;
+  /**
+   * Preferred fixed width (px) when the user hasn't manually resized the column. Short columns
+   * (a date, a count) should set this so they don't stretch to fill leftover space. Ignored for
+   * `flex` columns. Only honored on grids that declare at least one `flex` column.
+   */
+  width?: number;
+  /**
+   * Marks a column as elastic: it absorbs leftover horizontal space instead of the browser
+   * spreading slack across every column. Use it for the primary text columns (the door, a long
+   * description) so short columns stay content-sized. Multiple flex columns share the slack.
+   */
+  flex?: boolean;
+}
+
+type CellRendererResult = string | HTMLElement;
+
+export const SELECTION_COLUMN: ColumnDef = {};
+
+/**
+ * Muted text color for a grid's secondary columns, so the bold door column reads as the
+ * primary way into the record and everything else recedes. Apply as a column `cellClass`.
+ */
+export const SECONDARY_CELL_CLASS = 'text-base-content/70';
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
 
 ```typescript
@@ -21437,13 +21546,11 @@ export const appRoutes = [
     loadComponent: () =>
       import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
   },
+  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
+  // the separate apps/companion build — served path-routed on the same domain.
   {
-    // Canvass Companion — tokenised, account-less volunteer app (§13.4).
-    path: 'companion',
-    loadComponent: () => import('./experiences/canvassing/ui/companion-page').then((m) => m.CompanionPage),
-  },
-  {
-    // Deliveries volunteer route — tokenised, account-less (§14).
+    // Deliveries volunteer route — tokenised, account-less (§14). Moves to
+    // apps/companion in Phase D of COMPANION-APPS-PLAN.md.
     path: 'r/:token',
     loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
   },
@@ -22111,40 +22218,431 @@ export default defineConfig({
 }
 ```
 
-## File: apps/companion/src/app/canvass/canvass-page.ts
+## File: apps/companion/src/app/gate/companion-api.ts
 
 ```typescript
-import { Component } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
-/** Canvass companion (spec §3) — full implementation lands in Phase C. */
-@Component({
-  selector: 'pc-canvass-page',
-  template: `
-    <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 class="text-lg font-semibold">Canvass companion</h1>
-      <p class="text-base-content/70">Coming soon.</p>
-    </div>
-  `,
-})
-export class CanvassPage {}
+import type {
+  CompanionAccessPayload,
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVerifyConfirmResult,
+} from '@common';
+
+/**
+ * The companion device session + access-gate API client. All calls are
+ * relative `/api` REST (dev proxy / same-domain prod) — this app never uses
+ * tRPC. The session token lives in localStorage so the volunteer stays
+ * verified across visits on the same phone; it is sent on every companion
+ * data request via the X-Companion-Session header.
+ */
+
+const SESSION_KEY = 'pc-companion-session';
+
+export class CompanionApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+interface StoredSession {
+  token: string;
+  expiresAt: string;
+}
+
+function readStoredSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'string') return null;
+    if (new Date(parsed.expiresAt) <= new Date()) return null;
+    return { token: parsed.token, expiresAt: parsed.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const payload: unknown = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message =
+      payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : 'Something went wrong — try again.';
+    throw new CompanionApiError(message, res.status);
+  }
+  return payload as T;
+}
+
+@Injectable({ providedIn: 'root' })
+export class CompanionSessionService {
+  /** Current device-session token (null until verified on this device). */
+  public readonly sessionToken = signal<string | null>(readStoredSession()?.token ?? null);
+
+  public clearSession(): void {
+    localStorage.removeItem(SESSION_KEY);
+    this.sessionToken.set(null);
+  }
+
+  public async getAccess(kind: CompanionLinkKind, token: string): Promise<CompanionAccessPayload> {
+    const params = new URLSearchParams({ kind, token });
+    const res = await fetch(`/api/companion/access?${params}`, { headers: this.headers() });
+    if (!res.ok) return { state: 'dead' };
+    return (await res.json()) as CompanionAccessPayload;
+  }
+
+  /** Headers to attach to every companion data request. */
+  public headers(): Record<string, string> {
+    const token = this.sessionToken();
+    return token ? { 'X-Companion-Session': token } : {};
+  }
+
+  public saveSession(token: string, expiresAt: string): void {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt } satisfies StoredSession));
+    this.sessionToken.set(token);
+  }
+
+  public async verifyConfirm(
+    kind: CompanionLinkKind,
+    token: string,
+    code: string,
+  ): Promise<CompanionVerifyConfirmResult> {
+    const result = await post<CompanionVerifyConfirmResult>('/api/companion/verify/confirm', { kind, token, code });
+    this.saveSession(result.sessionToken, result.expiresAt);
+    return result;
+  }
+
+  public async verifyStart(
+    kind: CompanionLinkKind,
+    token: string,
+    channel: CompanionVerifyChannel,
+  ): Promise<{ masked: string }> {
+    return post<{ masked: string }>('/api/companion/verify/start', { kind, token, channel });
+  }
+}
 ```
 
-## File: apps/companion/src/app/deliveries/route-page.ts
+## File: apps/companion/src/app/gate/companion-gate.ts
 
 ```typescript
-import { Component } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
 
-/** Deliveries companion (spec §4) — the CRM page moves here in Phase D. */
+import type { CompanionAccessPayload, CompanionLinkKind, CompanionVerifyChannel } from '@common';
+
+import { CompanionApiError, CompanionSessionService } from './companion-api';
+
+const POLL_MS = 20_000;
+const RESEND_COOLDOWN_S = 30;
+
+type GateView = 'loading' | 'dead' | 'unassigned' | 'verify' | 'pending' | 'ready';
+
+/**
+ * The verify + approve gate both companions sit behind (COMPANION-APPS-PLAN.md
+ * §4 A4). Wrap an app in it; the app renders only once the device session is
+ * verified AND the volunteer is admin-approved:
+ *
+ *   <pc-companion-gate kind="turf" [token]="token()" (ready)="load()">
+ *     …the actual companion…
+ *   </pc-companion-gate>
+ */
 @Component({
-  selector: 'pc-route-page',
+  selector: 'pc-companion-gate',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule],
   template: `
-    <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 class="text-lg font-semibold">Delivery route</h1>
-      <p class="text-base-content/70">Coming soon.</p>
-    </div>
+    @switch (view()) {
+      @case ('ready') {
+        <ng-content></ng-content>
+      }
+      @case ('loading') {
+        <div class="flex min-h-screen items-center justify-center">
+          <span class="loading loading-spinner loading-md opacity-40" aria-label="Loading"></span>
+        </div>
+      }
+      @case ('dead') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <h1 class="text-lg font-semibold">This link isn't active</h1>
+          @if (access()?.organizerName) {
+            <p class="text-base-content/70">
+              It may have expired or been replaced. Contact {{ access()?.organizerName }} to get a new link.
+            </p>
+          } @else {
+            <p class="text-base-content/70">
+              It may have expired or been replaced. Ask your organizer to send a new one.
+            </p>
+          }
+        </div>
+      }
+      @case ('unassigned') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <h1 class="text-lg font-semibold">This link isn't ready yet</h1>
+          <p class="text-base-content/70">
+            It hasn't been connected to you.
+            @if (access()?.organizerName) {
+              Ask {{ access()?.organizerName }} to re-send your personal link.
+            } @else {
+              Ask your organizer to re-send your personal link.
+            }
+          </p>
+        </div>
+      }
+      @case ('pending') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+          <span class="loading loading-ring loading-lg text-primary" aria-hidden="true"></span>
+          <h1 class="text-lg font-semibold">You're verified — waiting for approval</h1>
+          <p class="text-base-content/70">
+            {{ access()?.organizerName || 'Your organizer' }} has been notified. This page checks automatically; keep it
+            open or come back later.
+          </p>
+          <button type="button" class="btn btn-outline btn-sm" [disabled]="checking()" (click)="checkNow()">
+            @if (checking()) {
+              Checking…
+            } @else {
+              Check again
+            }
+          </button>
+        </div>
+      }
+      @case ('verify') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-5 p-6">
+          <header class="flex flex-col gap-1 text-center">
+            @if (access()?.organizationName) {
+              <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+                {{ access()?.organizationName }}
+              </p>
+            }
+            <h1 class="text-lg font-semibold">
+              @if (access()?.volunteerName) {
+                Hi {{ access()?.volunteerName }} — let's confirm it's you
+              } @else {
+                Let's confirm it's you
+              }
+            </h1>
+            <p class="text-base-content/70">This personal link only works for you, so we verify each new phone once.</p>
+          </header>
+
+          @if (!sentTo()) {
+            <div class="flex flex-col gap-2">
+              @for (contact of access()?.contacts ?? []; track contact.channel) {
+                <button
+                  type="button"
+                  class="btn btn-primary w-full"
+                  [class.btn-outline]="contact.channel === 'sms'"
+                  [disabled]="sending()"
+                  (click)="send(contact.channel)"
+                >
+                  @if (contact.channel === 'email') {
+                    Email a code to {{ contact.masked }}
+                  } @else {
+                    Text a code to {{ contact.masked }}
+                  }
+                </button>
+              }
+              @if ((access()?.contacts ?? []).length === 0) {
+                <p class="text-center text-base-content/70">
+                  There's no email or mobile number on file for you — ask your organizer to add one, then reopen this
+                  link.
+                </p>
+              }
+            </div>
+          } @else {
+            <form class="flex flex-col gap-3" (submit)="confirm($event)">
+              <p class="text-center text-base-content/70">Enter the 6-digit code sent to {{ sentTo() }}.</p>
+              <input
+                class="input input-bordered w-full text-center text-2xl tracking-[0.4em]"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                placeholder="••••••"
+                aria-label="6-digit verification code"
+                [(ngModel)]="codeValue"
+                name="code"
+              />
+              @if (error()) {
+                <p class="text-center text-sm text-error" role="alert">{{ error() }}</p>
+              }
+              <button type="submit" class="btn btn-primary w-full" [disabled]="confirming() || codeValue.length !== 6">
+                @if (confirming()) {
+                  Verifying…
+                } @else if (codeValue.length !== 6) {
+                  Enter the 6-digit code
+                } @else {
+                  Verify code
+                }
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" [disabled]="cooldown() > 0" (click)="resend()">
+                @if (cooldown() > 0) {
+                  Resend code ({{ cooldown() }}s)
+                } @else {
+                  Resend code
+                }
+              </button>
+            </form>
+          }
+          @if (!sentTo() && error()) {
+            <p class="text-center text-sm text-error" role="alert">{{ error() }}</p>
+          }
+        </div>
+      }
+    }
   `,
 })
-export class RoutePage {}
+export class CompanionGate implements OnInit {
+  public readonly kind = input.required<CompanionLinkKind>();
+  public readonly token = input.required<string>();
+  /** Fires when the gate opens — the app behind it can start loading data. */
+  public readonly ready = output<void>();
+
+  protected readonly access = signal<CompanionAccessPayload | null>(null);
+  protected readonly checking = signal(false);
+  protected readonly confirming = signal(false);
+  protected readonly cooldown = signal(0);
+  protected readonly error = signal<string | null>(null);
+  protected readonly sending = signal(false);
+  protected readonly sentTo = signal<string | null>(null);
+  protected readonly state = signal<'loading' | CompanionAccessPayload['state']>('loading');
+
+  protected readonly view = computed<GateView>(() => {
+    const state = this.state();
+    if (state === 'loading') return 'loading';
+    if (state === 'ready') return 'ready';
+    if (state === 'pending_approval') return 'pending';
+    if (state === 'need_verification') return 'verify';
+    if (state === 'unassigned') return 'unassigned';
+    return 'dead';
+  });
+
+  protected codeValue = '';
+
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly session = inject(CompanionSessionService);
+  private cooldownTimer: ReturnType<typeof setInterval> | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  public ngOnInit(): void {
+    this.destroyRef.onDestroy(() => {
+      this.stopPolling();
+      if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    });
+    void this.refresh();
+  }
+
+  protected async checkNow(): Promise<void> {
+    this.checking.set(true);
+    try {
+      await this.refresh();
+    } finally {
+      this.checking.set(false);
+    }
+  }
+
+  protected async confirm(event: Event): Promise<void> {
+    event.preventDefault();
+    if (this.codeValue.length !== 6 || this.confirming()) return;
+    this.confirming.set(true);
+    this.error.set(null);
+    try {
+      const result = await this.session.verifyConfirm(this.kind(), this.token(), this.codeValue);
+      this.codeValue = '';
+      if (result.status === 'ready') {
+        this.state.set('ready');
+        this.ready.emit();
+      } else {
+        this.state.set('pending_approval');
+        this.startPolling();
+      }
+    } catch (err: unknown) {
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Something went wrong — try again.');
+    } finally {
+      this.confirming.set(false);
+    }
+  }
+
+  protected resend(): void {
+    const sent = this.sentTo();
+    this.sentTo.set(null);
+    this.error.set(null);
+    // Re-open the channel picker; if there was exactly one channel, resend directly.
+    const contacts = this.access()?.contacts ?? [];
+    const only = contacts.length === 1 ? contacts[0] : undefined;
+    if (only && sent) void this.send(only.channel);
+  }
+
+  protected async send(channel: CompanionVerifyChannel): Promise<void> {
+    if (this.sending()) return;
+    this.sending.set(true);
+    this.error.set(null);
+    try {
+      const { masked } = await this.session.verifyStart(this.kind(), this.token(), channel);
+      this.sentTo.set(masked);
+      this.startCooldown();
+    } catch (err: unknown) {
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Could not send a code — try again.');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
+  private async refresh(): Promise<void> {
+    const access = await this.session.getAccess(this.kind(), this.token());
+    this.access.set(access);
+    const wasReady = this.state() === 'ready';
+    this.state.set(access.state);
+    if (access.state === 'ready') {
+      this.stopPolling();
+      if (!wasReady) this.ready.emit();
+    } else if (access.state === 'pending_approval') {
+      this.startPolling();
+    }
+  }
+
+  private startCooldown(): void {
+    this.cooldown.set(RESEND_COOLDOWN_S);
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    this.cooldownTimer = setInterval(() => {
+      const next = this.cooldown() - 1;
+      this.cooldown.set(Math.max(0, next));
+      if (next <= 0 && this.cooldownTimer) {
+        clearInterval(this.cooldownTimer);
+        this.cooldownTimer = null;
+      }
+    }, 1000);
+  }
+
+  private startPolling(): void {
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(() => void this.refresh(), POLL_MS);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+}
 ```
 
 ## File: apps/companion/src/app/gate/dead-link-page.ts
@@ -22175,33 +22673,6 @@ import { Component, input } from '@angular/core';
 export class DeadLinkPage {
   public readonly organizerName = input<string | null>(null);
 }
-```
-
-## File: apps/companion/src/app/app.config.ts
-
-```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
-
-import { environment } from '../environments/environment';
-import { appRoutes } from './app.routes';
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    {
-      provide: Loader,
-      useFactory: () =>
-        new Loader({
-          apiKey: environment.googleMapsApiKey,
-          libraries: ['marker'],
-        }),
-    },
-    provideRouter(appRoutes),
-    provideZonelessChangeDetection(),
-  ],
-};
 ```
 
 ## File: apps/companion/src/app/app.routes.ts
@@ -24067,6 +24538,7 @@ import {
   type InFieldToday,
   type TurfListItem,
 } from '../services/canvassing-service';
+import { AssignTurfDialog } from './assign-turf-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
 
 type TurfStatus = TurfListItem['status'];
@@ -24122,7 +24594,7 @@ const RANGES: { key: ReportRange; label: string }[] = [
 
 @Component({
   selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog],
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog],
   templateUrl: './canvassing-page.html',
 })
 export class CanvassingPage implements OnInit {
@@ -24149,6 +24621,8 @@ export class CanvassingPage implements OnInit {
   protected readonly coverageView = signal<CoverageView>('map');
 
   protected readonly cutOpen = signal(false);
+  /** Turf currently being assigned in the pick-a-volunteer dialog (null = closed). */
+  protected readonly assignTarget = signal<TurfListItem | null>(null);
 
   protected readonly ranges = RANGES;
   protected readonly statusLabel = STATUS_LABEL;
@@ -24178,10 +24652,11 @@ export class CanvassingPage implements OnInit {
     if (!t) return [];
     const m = t.responseMix;
     return [
-      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
-      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
+      { key: 'supporter', label: 'Supporters', value: m.supporter, cls: 'bg-success' },
       { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
-      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
+      { key: 'non_supporter', label: 'Non-supporters', value: m.non_supporter, cls: 'bg-error' },
+      { key: 'not_voting', label: 'Not voting', value: m.not_voting, cls: 'bg-base-content/30' },
+      { key: 'already_voted', label: 'Already voted', value: m.already_voted, cls: 'bg-info' },
       { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
     ].filter((s) => s.value > 0);
   });
@@ -24294,33 +24769,31 @@ export class CanvassingPage implements OnInit {
     }
   }
 
-  /** Assign a turf as a shareable Companion link and copy it. */
-  protected async assign(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
-      await this.copyCompanionLink(token);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
-    } finally {
-      end();
-    }
+  /** Assignment is personal now — open the pick-a-volunteer dialog (plan §5 B1). */
+  protected assign(t: TurfListItem): void {
+    this.assignTarget.set(t);
   }
 
+  /** An existing link can be re-copied; a missing one needs an assignment first. */
   protected async copyLink(t: TurfListItem): Promise<void> {
     if (t.token) {
       await this.copyCompanionLink(t.token);
       return;
     }
-    await this.assign(t);
+    this.assign(t);
+  }
+
+  protected async onAssigned(token: string): Promise<void> {
+    this.assignTarget.set(null);
+    await this.copyCompanionLink(token);
+    await this.loadTurfs();
   }
 
   private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
+    const url = `${location.origin}/t/${encodeURIComponent(token)}`;
     try {
       await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
+      this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');
     } catch {
       this.alerts.showSuccess(`Companion link: ${url}`);
     }
@@ -33708,369 +34181,6 @@ export class StorageSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings.config.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export type SettingsFieldType =
-  | 'text'
-  | 'textarea'
-  | 'email'
-  | 'tel'
-  | 'number'
-  | 'select'
-  | 'toggle'
-  | 'password'
-  | 'url'
-  | 'date'
-  | 'day-toggles';
-
-export interface SettingsOptionConfig {
-  label: string;
-  value: string;
-}
-
-export interface SettingsFieldConfig {
-  key: string;
-  label: string;
-  type: SettingsFieldType;
-  placeholder?: string;
-  helper?: string;
-  options?: SettingsOptionConfig[];
-  defaultValue?: unknown;
-}
-
-export interface SettingsSectionConfig {
-  id: string;
-  title: string;
-  description: string;
-  icon: PcIconNameType;
-  fields: SettingsFieldConfig[];
-}
-
-export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
-  {
-    id: 'organization',
-    title: 'Organization',
-    description: 'Tenant branding, contact details, and campaign defaults.',
-    icon: 'cog-6-tooth',
-    fields: [
-      {
-        key: 'organization.name',
-        label: 'Organization name',
-        type: 'text',
-        placeholder: 'PeopleCRM',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.contact_email',
-        label: 'Primary contact email',
-        type: 'email',
-        placeholder: 'hello@example.com',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.phone',
-        label: 'Contact phone',
-        type: 'tel',
-        placeholder: '(555) 555-1234',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.address',
-        label: 'Mailing address',
-        type: 'textarea',
-        placeholder: '123 Main St, Springfield, USA',
-        defaultValue: '',
-      },
-    ],
-  },
-  {
-    id: 'communications',
-    title: 'Communications',
-    description: 'Email delivery, inbox routing, and compliance copy.',
-    icon: 'envelope',
-    fields: [
-      {
-        key: 'communications.default_from_name',
-        label: 'Default from name',
-        type: 'text',
-        placeholder: 'PeopleCRM Team',
-        defaultValue: '',
-      },
-      {
-        key: 'communications.default_from_email',
-        label: 'Default from email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.reply_to',
-        label: 'Reply-to email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.footer_disclaimer',
-        label: 'Email footer disclaimer',
-        type: 'textarea',
-        placeholder: 'Paid for by PeopleCRM Campaign…',
-        defaultValue: '',
-        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
-      },
-      {
-        key: 'communications.double_opt_in',
-        label: 'Require double opt-in',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
-      },
-    ],
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    description: 'Tenant-wide notification defaults and escalation.',
-    icon: 'bell',
-    fields: [
-      {
-        key: 'notifications.mention_in_comment',
-        label: 'Mentioned in comment',
-        type: 'toggle',
-        helper: 'Alerts when someone mentions you in a thread',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.mention_in_comment_in_app',
-        label: 'Mentioned in comment (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned',
-        label: 'Task assigned',
-        type: 'toggle',
-        helper: 'Alerts when a task is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned_in_app',
-        label: 'Task assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due',
-        label: 'Task due today / overdue',
-        type: 'toggle',
-        helper: 'Daily reminder check of active tasks due',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due_in_app',
-        label: 'Task due today / overdue (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned',
-        label: 'Person assigned',
-        type: 'toggle',
-        helper: 'Alerts when a contact ownership is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned_in_app',
-        label: 'Person assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready',
-        label: 'Export ready',
-        type: 'toggle',
-        helper: 'Receive download link when CSV export finishes',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready_in_app',
-        label: 'Export ready (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary',
-        label: 'Import summary',
-        type: 'toggle',
-        helper: 'Spreadsheet import completion stats report',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary_in_app',
-        label: 'Import summary (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-    ],
-  },
-  {
-    id: 'access',
-    title: 'Teams & access',
-    description: 'Default role for new invites and tenant-wide MFA enforcement.',
-    icon: 'user-group',
-    fields: [
-      {
-        key: 'access.default_role',
-        label: 'Default invite role',
-        type: 'select',
-        defaultValue: 'editor',
-        options: [
-          { label: 'Viewer', value: 'viewer' },
-          { label: 'Editor', value: 'editor' },
-          { label: 'Admin', value: 'admin' },
-        ],
-      },
-      {
-        key: 'access.mfa_required',
-        label: 'Require MFA for all users',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Force email verification codes for every user signing in from a new device or location.',
-      },
-    ],
-  },
-
-  {
-    id: 'sla',
-    title: 'Service levels',
-    description:
-      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
-    icon: 'clock',
-    fields: [
-      {
-        key: 'sla.tasks_hours',
-        label: 'Task SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.emails_hours',
-        label: 'Email SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper:
-          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.email_warning_threshold',
-        label: 'Email SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.email_critical_threshold',
-        label: 'Email SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_warning_threshold',
-        label: 'Task SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_critical_threshold',
-        label: 'Task SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.working_days',
-        label: 'Working days',
-        type: 'day-toggles',
-        defaultValue: '1,2,3,4,5',
-        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
-      },
-      {
-        key: 'sla.working_hours_start',
-        label: 'Working hours start (HH:MM)',
-        type: 'text',
-        defaultValue: '09:00',
-        helper: 'Beginning of the business day for working time tracking.',
-      },
-      {
-        key: 'sla.working_hours_end',
-        label: 'Working hours end (HH:MM)',
-        type: 'text',
-        defaultValue: '17:00',
-        helper: 'End of the business day for working time tracking.',
-      },
-    ],
-  },
-  {
-    id: 'appearance',
-    title: 'Appearance',
-    description: 'Global UI defaults that users can override locally.',
-    icon: 'sun',
-    fields: [
-      {
-        key: 'appearance.theme',
-        label: 'Default theme',
-        type: 'select',
-        defaultValue: 'system',
-        options: [
-          { label: 'System', value: 'system' },
-          { label: 'Light', value: 'light' },
-          { label: 'Dark', value: 'dark' },
-        ],
-      },
-      {
-        key: 'appearance.date_format',
-        label: 'Date format',
-        type: 'select',
-        defaultValue: 'MMMM d, yyyy',
-        options: [
-          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
-          { label: '01/10/2025', value: 'MM/dd/yyyy' },
-          { label: '10/01/2025', value: 'dd/MM/yyyy' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'integrations',
-    title: 'Integrations & API',
-    description: 'Storage, webhooks, analytics, and external vendor keys.',
-    icon: 'cloud-arrow-up',
-    fields: [
-      {
-        key: 'integrations.webhook_api_key',
-        label: 'Webhook API key',
-        type: 'text',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-      {
-        key: 'integrations.webhook_api_secret',
-        label: 'Webhook API secret',
-        type: 'password',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
 
 ```typescript
@@ -36772,6 +36882,255 @@ export function userLastActiveLabel(
 }
 ```
 
+## File: apps/frontend/src/app/experiences/volunteer-access/services/volunteer-access-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import type { CompanionVolunteerRow } from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+
+/**
+ * Staff calls for the companion access layer (Volunteer access page + sidebar
+ * badge). The volunteer-facing half is REST in apps/companion — this service
+ * is only the admin approve/revoke surface.
+ */
+@Service()
+export class VolunteerAccessService extends TRPCService<'companion_volunteers'> {
+  public approve(id: string): Promise<void> {
+    return this.api.companionAccess.approve.mutate({ id }) as Promise<void>;
+  }
+
+  public getAll(): Promise<CompanionVolunteerRow[]> {
+    return this.api.companionAccess.getAll.query() as Promise<CompanionVolunteerRow[]>;
+  }
+
+  public pendingCount(): Promise<number> {
+    return this.api.companionAccess.pendingCount.query() as Promise<number>;
+  }
+
+  public revoke(id: string): Promise<void> {
+    return this.api.companionAccess.revoke.mutate({ id }) as Promise<void>;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/volunteer-access/ui/volunteer-access-page.html
+
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Volunteer access" [totalSentence]="loaded() ? pendingSentence() : null"></pc-grid-header>
+
+  <p class="max-w-prose text-xs text-base-content/60">
+    Companion links are personal. A volunteer opening their turf or route link first verifies a code sent to their email
+    or phone on file, then needs your approval — once, for all their assignments. Revoke anytime.
+  </p>
+
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>Volunteer</th>
+      <th>Contact</th>
+      <th>Status</th>
+      <th>Verified</th>
+      <th>Approved</th>
+      <th class="w-32"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6 py-14 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <pc-icon name="identification" [size]="8" class="text-base-content/30"></pc-icon>
+          <p class="text-sm text-base-content/60">
+            No volunteers yet — assign a canvassing turf or a delivery route and send the link.
+          </p>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="row.status === 'revoked'">
+      <td class="font-medium">{{ displayName(row) }}</td>
+      <td class="max-w-[240px] truncate text-base-content/70">{{ contactLine(row) }}</td>
+      <td>
+        <pc-status-badge [type]="statusType(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
+      </td>
+      <td class="text-base-content/70">{{ verifiedLine(row) }}</td>
+      <td class="text-base-content/70">
+        @if (row.approved_by_name && row.approved_at) { {{ row.approved_by_name }} } @else { — }
+      </td>
+      <td class="text-right">
+        @switch (row.status) { @case ('verified') {
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
+          Approve
+        </button>
+        } @case ('approved') {
+        <button
+          type="button"
+          class="btn btn-outline btn-error btn-sm"
+          [disabled]="busyId() === row.id"
+          (click)="revoke(row)"
+        >
+          Revoke
+        </button>
+        } @case ('revoked') {
+        <button type="button" class="btn btn-outline btn-sm" [disabled]="busyId() === row.id" (click)="approve(row)">
+          Approve again
+        </button>
+        } @case ('invited') {
+        <span class="text-xs text-base-content/40">Hasn't verified yet</span>
+        } }
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/volunteer-access/ui/volunteer-access-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import type { CompanionVolunteerRow, CompanionVolunteerStatus } from '../../../../../../../libs/common/src';
+import { VolunteerAccessService } from '../services/volunteer-access-service';
+
+const STATUS_LABELS: Record<CompanionVolunteerStatus, string> = {
+  invited: 'Invited',
+  verified: 'Awaiting approval',
+  approved: 'Approved',
+  revoked: 'Revoked',
+};
+
+const STATUS_TYPES: Record<CompanionVolunteerStatus, PcStatusType> = {
+  invited: 'ghost',
+  verified: 'warning',
+  approved: 'success',
+  revoked: 'error',
+};
+
+/**
+ * Volunteer access admin page (COMPANION-APPS-PLAN.md §4 A3). Companion links
+ * are personal: the volunteer verifies a code sent to their contact on file,
+ * then an admin approves them here — once per volunteer, revocable anytime.
+ * A bespoke `pc-table` (not the datagrid): four statuses, two actions.
+ */
+@Component({
+  selector: 'pc-volunteer-access-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, StatusBadge, Table, GridHeaderComponent],
+  templateUrl: './volunteer-access-page.html',
+})
+export class VolunteerAccessPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly svc = inject(VolunteerAccessService);
+
+  protected readonly busyId = signal<string | null>(null);
+  protected readonly flashedId = signal<string | null>(null);
+  protected readonly loaded = signal(false);
+  protected readonly loading = createLoadingGate();
+  protected readonly rows = signal<CompanionVolunteerRow[]>([]);
+
+  public ngOnInit(): void {
+    void this.refresh();
+  }
+
+  protected async approve(row: CompanionVolunteerRow): Promise<void> {
+    this.busyId.set(row.id);
+    try {
+      await this.svc.approve(row.id);
+      this.alerts.showSuccess(`Approved ${this.displayName(row)} — their link works now`);
+      this.flash(row.id);
+      await this.refresh();
+    } catch {
+      this.alerts.showError('Could not approve — try again');
+    } finally {
+      this.busyId.set(null);
+    }
+  }
+
+  protected contactLine(row: CompanionVolunteerRow): string {
+    return [row.email, row.mobile].filter(Boolean).join(' · ') || '—';
+  }
+
+  protected displayName(row: CompanionVolunteerRow): string {
+    return [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unnamed volunteer';
+  }
+
+  protected pendingSentence(): string | null {
+    const pending = this.rows().filter((r) => r.status === 'verified').length;
+    const total = this.rows().length;
+    if (total === 0) return null;
+    return pending > 0
+      ? `${total} volunteer${total === 1 ? '' : 's'} · ${pending} awaiting approval`
+      : `${total} volunteer${total === 1 ? '' : 's'}`;
+  }
+
+  protected async revoke(row: CompanionVolunteerRow): Promise<void> {
+    const confirmed = await this.confirmDlg.confirm({
+      title: `Revoke ${this.displayName(row)}'s access?`,
+      message: 'Every device they verified stops working on their next request. You can approve them again later.',
+      variant: 'danger',
+      confirmText: 'Revoke access',
+    });
+    if (!confirmed) return;
+    this.busyId.set(row.id);
+    try {
+      await this.svc.revoke(row.id);
+      this.alerts.showSuccess(`Revoked ${this.displayName(row)} — their devices are signed out`);
+      await this.refresh();
+    } catch {
+      this.alerts.showError('Could not revoke — try again');
+    } finally {
+      this.busyId.set(null);
+    }
+  }
+
+  protected statusLabel(status: CompanionVolunteerStatus): string {
+    return STATUS_LABELS[status];
+  }
+
+  protected statusType(status: CompanionVolunteerStatus): PcStatusType {
+    return STATUS_TYPES[status];
+  }
+
+  protected verifiedLine(row: CompanionVolunteerRow): string {
+    if (!row.verified_at) return '—';
+    const channel = row.verify_channel === 'sms' ? 'text' : row.verify_channel === 'email' ? 'email' : '';
+    const date = new Date(row.verified_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return channel ? `via ${channel} · ${date}` : date;
+  }
+
+  private flash(id: string): void {
+    this.flashedId.set(id);
+    setTimeout(() => this.flashedId.set(null), 1500);
+  }
+
+  private async refresh(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      this.rows.set(await this.svc.getAll());
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Could not load volunteers — refresh to try again');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
 
 ```typescript
@@ -39137,75 +39496,6 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
 };
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
-
-```typescript
-import type { GridRow } from './types';
-
-/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
-export interface CellParams {
-  data?: GridRow;
-  value?: unknown;
-  newValue?: unknown;
-  colDef?: ColumnDef;
-  /** Native DOM event, present on click callbacks so a renderer's inner links can be resolved. */
-  event?: Event;
-}
-
-// Lightweight column definition used by DataGrid
-export interface ColumnDef {
-  cellClass?: string | ((p: CellParams) => string | undefined);
-  cellDataType?: string;
-  cellEditorParams?: unknown;
-  cellRenderer?: (p: CellParams) => CellRendererResult;
-  cellRendererParams?: unknown;
-  comparator?: (a: unknown, b: unknown) => number;
-  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
-  doorColumn?: boolean;
-  /** Optional muted second line under a door cell (e.g. "3 people" under a household address). */
-  doorSubtitle?: (p: CellParams) => string | null;
-  editable?: boolean;
-  equals?: (a: unknown, b: unknown) => boolean;
-  field?: string;
-  headerName?: string;
-  hide?: boolean;
-  /** Column cannot be hidden by the user (identity columns like the Name door). */
-  noHide?: boolean;
-  onCellClicked?: (event: CellParams) => void;
-  onCellDoubleClicked?: (event: CellParams) => void;
-  isCellInteractive?: (row: GridRow) => boolean;
-  tagColumn?: boolean;
-  valueFormatter?: (p: CellParams) => unknown;
-
-  // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: CellParams) => unknown;
-  valueSetter?: (p: CellParams) => boolean;
-  minWidth?: number;
-  /**
-   * Preferred fixed width (px) when the user hasn't manually resized the column. Short columns
-   * (a date, a count) should set this so they don't stretch to fill leftover space. Ignored for
-   * `flex` columns. Only honored on grids that declare at least one `flex` column.
-   */
-  width?: number;
-  /**
-   * Marks a column as elastic: it absorbs leftover horizontal space instead of the browser
-   * spreading slack across every column. Use it for the primary text columns (the door, a long
-   * description) so short columns stay content-sized. Multiple flex columns share the slack.
-   */
-  flex?: boolean;
-}
-
-type CellRendererResult = string | HTMLElement;
-
-export const SELECTION_COLUMN: ColumnDef = {};
-
-/**
- * Muted text color for a grid's secondary columns, so the bold door column reads as the
- * primary way into the record and everything else recedes. Apply as a column `cellClass`.
- */
-export const SECONDARY_CELL_CLASS = 'text-base-content/70';
-```
-
 ## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
 
 ```typescript
@@ -39313,6 +39603,87 @@ import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
 export class AppComponent {
   protected themeSvc = inject(ThemeService);
 }
+```
+
+## File: apps/companion/src/app/canvass/canvass-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+
+import { CompanionGate } from '../gate/companion-gate';
+
+/** Canvass companion (spec §3) — the full walk-list app lands in Phase C. */
+@Component({
+  selector: 'pc-canvass-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CompanionGate],
+  template: `
+    <pc-companion-gate kind="turf" [token]="token()">
+      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+        <h1 class="text-lg font-semibold">Canvass companion</h1>
+        <p class="text-base-content/70">Coming soon.</p>
+      </div>
+    </pc-companion-gate>
+  `,
+})
+export class CanvassPage {
+  /** Route param — the capability token from /t/:token. */
+  public readonly token = input.required<string>();
+}
+```
+
+## File: apps/companion/src/app/deliveries/route-page.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+
+import { CompanionGate } from '../gate/companion-gate';
+
+/** Deliveries companion (spec §4) — the CRM's public route page moves here in Phase D. */
+@Component({
+  selector: 'pc-route-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CompanionGate],
+  template: `
+    <pc-companion-gate kind="route" [token]="token()">
+      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+        <h1 class="text-lg font-semibold">Delivery route</h1>
+        <p class="text-base-content/70">Coming soon.</p>
+      </div>
+    </pc-companion-gate>
+  `,
+})
+export class RoutePage {
+  /** Route param — the capability token from /r/:token. */
+  public readonly token = input.required<string>();
+}
+```
+
+## File: apps/companion/src/app/app.config.ts
+
+```typescript
+import type { ApplicationConfig } from '@angular/core';
+import { provideZonelessChangeDetection } from '@angular/core';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
+
+import { environment } from '../environments/environment';
+import { appRoutes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    {
+      provide: Loader,
+      useFactory: () =>
+        new Loader({
+          apiKey: environment.googleMapsApiKey,
+          libraries: ['marker'],
+        }),
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
+    provideZonelessChangeDetection(),
+  ],
+};
 ```
 
 ## File: apps/frontend/src/app/experiences/campaigns/ui/campaigns-page.html
@@ -39499,117 +39870,6 @@ export class CampaignsPageComponent implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/canvassing/ui/companion-page.html
-
-```html
-<div class="mx-auto min-h-screen w-full max-w-md bg-base-100 p-4">
-  @if (loading()) {
-  <div class="flex h-40 items-center justify-center">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-  </div>
-  } @else if (loadError()) {
-  <div class="mt-10 text-center">
-    <pc-icon name="map-pin" [size]="8" />
-    <h1 class="mt-3 text-lg font-semibold">Can't open this turf</h1>
-    <p class="mt-1 text-sm text-base-content/60">{{ loadError() }}</p>
-  </div>
-  } @else if (turf(); as t) {
-  <!-- Header -->
-  <header class="sticky top-0 z-10 -mx-4 mb-3 border-b border-base-300 bg-base-100 px-4 py-3">
-    <div class="flex items-center justify-between">
-      <div>
-        <h1 class="text-lg font-semibold">{{ t.turf_name }}</h1>
-        <p class="text-xs text-base-content/60">{{ progress() }}</p>
-      </div>
-      @if (!online()) {
-      <span class="badge badge-warning badge-sm gap-1"> Offline · {{ queued() }} queued </span>
-      } @else if (queued() > 0) {
-      <span class="badge badge-info badge-sm">Syncing {{ queued() }}…</span>
-      } @else {
-      <span class="badge badge-success badge-sm">Synced</span>
-      }
-    </div>
-
-    <label class="mt-2 block">
-      <span class="sr-only">Your name</span>
-      <input
-        type="text"
-        class="input input-sm input-bordered w-full"
-        placeholder="Your name (shown on the record as the canvasser)"
-        [value]="canvasserName()"
-        (input)="setName($any($event.target).value)"
-      />
-    </label>
-  </header>
-
-  <!-- Door list -->
-  <ul class="space-y-2">
-    @for (door of t.doors; track door.household_id) {
-    <li class="rounded-lg border border-base-300">
-      <button
-        type="button"
-        class="flex w-full items-center justify-between p-3 text-left"
-        (click)="toggle(door.household_id)"
-      >
-        <span class="text-sm font-medium">{{ door.address }}</span>
-        @if (localOutcomes()[door.household_id]; as lo) {
-        <span class="badge badge-success badge-sm">{{ outcomeLabel(lo) }}</span>
-        } @else if (door.last_outcome) {
-        <span class="badge badge-ghost badge-sm">{{ outcomeLabel(door.last_outcome) }}</span>
-        } @else {
-        <span class="badge badge-ghost badge-sm opacity-60">Not yet knocked</span>
-        }
-      </button>
-
-      @if (expandedId() === door.household_id) {
-      <div class="border-t border-base-300 p-3">
-        <div class="flex flex-wrap gap-2">
-          @for (o of outcomes; track o.key) { @if (o.key === 'conversation') {
-          <div class="w-full">
-            <div class="mb-1 text-xs font-medium text-base-content/60">Talked — how did they lean?</div>
-            <div class="flex flex-wrap gap-2">
-              @for (r of responses; track r.key) {
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary"
-                (click)="logKnock(door, 'conversation', r.key)"
-              >
-                {{ r.label }}
-              </button>
-              }
-            </div>
-          </div>
-          } @else {
-          <button type="button" class="btn btn-sm btn-ghost" (click)="logKnock(door, o.key, null)">
-            {{ o.label }}
-          </button>
-          } }
-        </div>
-        @if (door.lat != null && door.lng != null) {
-        <a
-          class="btn btn-sm btn-link mt-2 px-0"
-          [href]="'https://www.google.com/maps/search/?api=1&query=' + door.lat + ',' + door.lng"
-          target="_blank"
-          rel="noopener"
-        >
-          Open in Maps →
-        </a>
-        }
-      </div>
-      }
-    </li>
-    } @empty {
-    <li class="py-10 text-center text-sm text-base-content/60">No doors in this turf yet.</li>
-    }
-  </ul>
-
-  <p class="mt-4 text-center text-xs text-base-content/40">
-    Knocks sync live to the campaign. You can keep working with no signal — they'll upload when you're back online.
-  </p>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/cut-turfs-dialog.html
@@ -46555,6 +46815,668 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+
+```typescript
+import { DatePipe, NgClass } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+import { StorageSettingsComponent } from './storage/storage-settings';
+
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
+
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
+
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    PasskeySettingsComponent,
+    StorageSettingsComponent,
+    DatePipe,
+    NgClass,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+
+  protected readonly currentMode: 'settings' | 'workspace';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
+  protected readonly senderEmailInput = signal('');
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
+
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
+    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'workspace') {
+          this.selectedSectionId.set('organization');
+        }
+      }
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'workspace') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+  }
+
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
+  }
+
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update((p) => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret,
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
+  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 1, label: 'Mon' },
+    { value: 2, label: 'Tue' },
+    { value: 3, label: 'Wed' },
+    { value: 4, label: 'Thu' },
+    { value: 5, label: 'Fri' },
+    { value: 6, label: 'Sat' },
+    { value: 0, label: 'Sun' },
+  ];
+
+  private parseDays(raw: unknown): Set<number> {
+    return new Set(
+      String(raw ?? '')
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n)),
+    );
+  }
+
+  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
+    return this.parseDays(section.payload()[controlName]).has(day);
+  }
+
+  protected toggleDay(section: SectionState, controlName: string, day: number): void {
+    const days = this.parseDays(section.payload()[controlName]);
+    if (days.has(day)) days.delete(day);
+    else days.add(day);
+    const ordered = this.dayChips
+      .map((c) => c.value)
+      .filter((d) => days.has(d))
+      .join(',');
+    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
+    section.form[controlName]().markAsDirty();
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    void this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'day-toggles':
+        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'day-toggles':
+        return value === null || value === undefined ? '' : String(value);
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private randomHex(len: number): string {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
 
 ```html
@@ -48455,240 +49377,6 @@ export class Dashboard {
 
 <!-- Personal Settings popup (§5a) — instant apply -->
 <pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
-import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly duplicatesSvc = inject(DuplicatesService);
-  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
-  private readonly volunteerAccessSvc = inject(VolunteerAccessService);
-
-  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
-   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
-  protected readonly taskSlaBreaches = signal<number | null>(null);
-
-  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
-   *  session loading shape as `taskSlaBreaches` above. */
-  protected readonly duplicatesQueueCount = signal<number | null>(null);
-
-  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
-   *  Same one-shot-per-session loading shape as the badges above. */
-  protected readonly deliveriesReadyCount = signal<number | null>(null);
-
-  /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
-   *  Same one-shot-per-session loading shape as the badges above. */
-  protected readonly volunteerAccessPending = signal<number | null>(null);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    const withBadges = this.applyBadges(allItems);
-    if (role === 'user') {
-      return withBadges.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return withBadges;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-
-    void this.loadTaskSlaBreaches();
-    void this.loadDuplicatesQueueCount();
-    void this.loadDeliveriesReadyCount();
-    void this.loadVolunteerAccessPending();
-  }
-
-  /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
-  private async loadVolunteerAccessPending(): Promise<void> {
-    try {
-      this.volunteerAccessPending.set(await this.volunteerAccessSvc.pendingCount());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
-  private async loadDeliveriesReadyCount(): Promise<void> {
-    try {
-      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  private async loadTaskSlaBreaches(): Promise<void> {
-    try {
-      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
-   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
-  private async loadDuplicatesQueueCount(): Promise<void> {
-    try {
-      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
-    } catch {
-      // Badge just stays unset — never show a stale or fabricated count.
-    }
-  }
-
-  /** Stamps the live `badgeCount` onto the Tasks and Duplicates entries — every other item is
-   *  untouched. */
-  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
-    const breaches = this.taskSlaBreaches();
-    const duplicatesQueue = this.duplicatesQueueCount();
-    const deliveriesReady = this.deliveriesReadyCount();
-    const volunteerPending = this.volunteerAccessPending();
-    return items.map((item) => {
-      const children = item.children ? this.applyBadges(item.children) : undefined;
-      if (item.route === '/tasks') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
-      }
-      if (item.route === '/duplicates') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
-      }
-      if (item.route === '/deliveries') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
-      }
-      if (item.route === '/volunteer-access') {
-        return { ...item, ...(children ? { children } : {}), badgeCount: volunteerPending };
-      }
-      return children ? { ...item, children } : item;
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
@@ -53843,666 +54531,719 @@ export class NewsletterDetailComponent {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
 
-```typescript
-import { DatePipe, NgClass } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+```html
+<!-- Template for persons grid -->
+<div class="flex h-full min-h-0 flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    (rowsDeleted)="onRowsDeleted()"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
 
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-import { StorageSettingsComponent } from './storage/storage-settings';
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
 
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn btn-outline btn-accent">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+```
 
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
-}
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
 
-@Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    PasskeySettingsComponent,
-    StorageSettingsComponent,
-    DatePipe,
-    NgClass,
-  ],
-  templateUrl: './settings-page.html',
-})
-export class SettingsPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
 
-  protected readonly currentMode: 'settings' | 'workspace';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
-  });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
-  });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  // The config-driven section currently shown, so the header Save/Cancel act on it.
-  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
-  protected readonly headerSection = computed<SectionState | null>(() => {
-    const id = this.selectedSectionId();
-    return this.visibleSections.find((s) => s.config.id === id) ?? null;
-  });
-  protected readonly senderEmailInput = signal('');
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
+  </header>
 
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        } @if (currentMode === 'settings') {
+        <!-- Passkeys custom section -->
+        <button
+          id="settings-nav-passkeys"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('passkeys')"
+        >
+          <pc-icon
+            name="lock-closed"
+            [class.text-primary]="isSelected('passkeys')"
+            [class.opacity-70]="!isSelected('passkeys')"
+            [size]="5"
+          />
+          Passkeys
+        </button>
+        } @if (currentMode === 'workspace') {
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon
+            name="envelope"
+            [class.text-primary]="isSelected('email-sync')"
+            [class.opacity-70]="!isSelected('email-sync')"
+            [size]="5"
+          />
+          Email sync
+        </button>
 
-  public readonly section = input<string>();
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon
+            name="globe-americas"
+            [class.text-primary]="isSelected('domains')"
+            [class.opacity-70]="!isSelected('domains')"
+            [size]="5"
+          />
+          Domain verification
+        </button>
 
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+        <!-- Donations custom section -->
+        <button
+          id="settings-nav-donations"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('donations')"
+        >
+          <pc-icon
+            name="currency-dollar"
+            [class.text-primary]="isSelected('donations')"
+            [class.opacity-70]="!isSelected('donations')"
+            [size]="5"
+          />
+          Donations
+        </button>
 
-    // Navbar crumb ("Settings"/"Workspace") comes from the route's `data.breadcrumb`
-    // via BreadcrumbDefaultsService — no manual publish needed here anymore.
+        <!-- Storage custom section -->
+        <button
+          id="settings-nav-storage"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('storage')"
+        >
+          <pc-icon
+            name="archive-box"
+            [class.text-primary]="isSelected('storage')"
+            [class.opacity-70]="!isSelected('storage')"
+            [size]="5"
+          />
+          Storage
+        </button>
 
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'workspace') {
-          this.selectedSectionId.set('organization');
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon
+            name="credit-card"
+            [class.text-primary]="isSelected('billing')"
+            [class.opacity-70]="!isSelected('billing')"
+            [size]="5"
+          />
+          Billing
+        </button>
+
+        <!-- Account custom section -->
+        <button
+          id="settings-nav-account"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
+          (click)="selectSection('account')"
+        >
+          <pc-icon
+            name="user-circle"
+            [class.text-primary]="isSelected('account')"
+            [class.opacity-70]="!isSelected('account')"
+            [size]="5"
+          />
+          Account
+        </button>
         }
-      }
-    });
+      </nav>
+    </aside>
 
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
-  }
-
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'workspace') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-  }
-
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
-  // Working-days chips, rendered Mon→Sun; stored canonically in this order as a comma-joined string.
-  protected readonly dayChips: ReadonlyArray<{ value: number; label: string }> = [
-    { value: 1, label: 'Mon' },
-    { value: 2, label: 'Tue' },
-    { value: 3, label: 'Wed' },
-    { value: 4, label: 'Thu' },
-    { value: 5, label: 'Fri' },
-    { value: 6, label: 'Sat' },
-    { value: 0, label: 'Sun' },
-  ];
-
-  private parseDays(raw: unknown): Set<number> {
-    return new Set(
-      String(raw ?? '')
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !Number.isNaN(n)),
-    );
-  }
-
-  protected isDaySelected(section: SectionState, controlName: string, day: number): boolean {
-    return this.parseDays(section.payload()[controlName]).has(day);
-  }
-
-  protected toggleDay(section: SectionState, controlName: string, day: number): void {
-    const days = this.parseDays(section.payload()[controlName]);
-    if (days.has(day)) days.delete(day);
-    else days.add(day);
-    const ordered = this.dayChips
-      .map((c) => c.value)
-      .filter((d) => days.has(d))
-      .join(',');
-    section.payload.update((p) => ({ ...p, [controlName]: ordered }));
-    section.form[controlName]().markAsDirty();
-  }
-
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
-  }
-
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
-    try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
-      );
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
-  }
-
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
-  }
-
-  protected selectSection(sectionId: string) {
-    void this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
         }
 
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets —
+              some may immediately count as breached (or clear) on the dashboard.
+            </p>
+          </div>
+          } @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
 
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
 
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-xs font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline btn-secondary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
 
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
 
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request Verification }
+              </button>
+            </div>
 
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
             }
-            return null;
-          });
-        }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <p class="text-xs text-base-content/50 italic">
+                No verified sender emails yet. Add one above to request verification.
+              </p>
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute Fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
+              <table class="table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th class="text-xs font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-xs text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Email Sync custom section -->
+      @if (currentMode === 'workspace' && isSelected('email-sync')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Email sync</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
+          </p>
+        </header>
+
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+      </section>
       }
-    });
 
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
-    }
-  }
-
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      <!-- Domains custom section -->
+      @if (currentMode === 'workspace' && isSelected('domains')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Domain verification</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
+          </p>
+        </header>
+        <pc-domains-settings></pc-domains-settings>
+      </section>
       }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'day-toggles':
-        // Stored/consumed by the backend as a comma-separated day-number string (e.g. "1,2,3,4,5").
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
-  }
 
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
+      <!-- Donations custom section -->
+      @if (currentMode === 'workspace' && isSelected('donations')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Donations</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
+            account.
+          </p>
+        </header>
+        <pc-donations-settings></pc-donations-settings>
+      </section>
       }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
+
+      <!-- Storage custom section -->
+      @if (currentMode === 'workspace' && isSelected('storage')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Storage</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
+        </header>
+        <pc-storage-settings></pc-storage-settings>
+      </section>
       }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'day-toggles':
-        return value === null || value === undefined ? '' : String(value);
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
-  }
 
-  private randomHex(len: number): string {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-  }
-
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      <!-- Billing custom section -->
+      @if (currentMode === 'workspace' && isSelected('billing')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Billing</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your subscription plans, view invoice details, and update payment methods.
+          </p>
+        </header>
+        <pc-billing-settings></pc-billing-settings>
+      </section>
       }
-    }, 1000);
-  }
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+      <!-- Passkeys custom section -->
+      @if (currentMode === 'settings' && isSelected('passkeys')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
+          </p>
+        </header>
+        <pc-passkey-settings></pc-passkey-settings>
+      </section>
+      }
+
+      <!-- Account custom section -->
+      @if (currentMode === 'workspace' && isSelected('account')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">Account</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
+            Manage your organization account — pause billing or permanently delete all data.
+          </p>
+        </header>
+        <pc-account-settings></pc-account-settings>
+      </section>
+      }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.ts
@@ -56754,6 +57495,240 @@ export class UsersPageComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
+import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly duplicatesSvc = inject(DuplicatesService);
+  private readonly deliveriesSvc = inject(DeliveriesRequestsService);
+  private readonly volunteerAccessSvc = inject(VolunteerAccessService);
+
+  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
+   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
+  protected readonly taskSlaBreaches = signal<number | null>(null);
+
+  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
+   *  session loading shape as `taskSlaBreaches` above. */
+  protected readonly duplicatesQueueCount = signal<number | null>(null);
+
+  /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly deliveriesReadyCount = signal<number | null>(null);
+
+  /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly volunteerAccessPending = signal<number | null>(null);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    const withBadges = this.applyBadges(allItems);
+    if (role === 'user') {
+      return withBadges.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
+        }
+        return item;
+      });
+    }
+    return withBadges;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+
+    void this.loadTaskSlaBreaches();
+    void this.loadDuplicatesQueueCount();
+    void this.loadDeliveriesReadyCount();
+    void this.loadVolunteerAccessPending();
+  }
+
+  /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
+  private async loadVolunteerAccessPending(): Promise<void> {
+    try {
+      this.volunteerAccessPending.set(await this.volunteerAccessSvc.pendingCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
+  private async loadDeliveriesReadyCount(): Promise<void> {
+    try {
+      this.deliveriesReadyCount.set(await this.deliveriesSvc.getReadyCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  private async loadTaskSlaBreaches(): Promise<void> {
+    try {
+      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
+   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
+  private async loadDuplicatesQueueCount(): Promise<void> {
+    try {
+      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the Tasks and Duplicates entries — every other item is
+   *  untouched. */
+  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
+    const breaches = this.taskSlaBreaches();
+    const duplicatesQueue = this.duplicatesQueueCount();
+    const deliveriesReady = this.deliveriesReadyCount();
+    const volunteerPending = this.volunteerAccessPending();
+    return items.map((item) => {
+      const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/tasks') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      if (item.route === '/duplicates') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
+      }
+      if (item.route === '/deliveries') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
+      }
+      if (item.route === '/volunteer-access') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: volunteerPending };
+      }
+      return children ? { ...item, children } : item;
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
 
 ```css
@@ -56832,3535 +57807,6 @@ export class UsersPageComponent implements OnInit {
       1 13,
     default !important;
 }
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
-
-```typescript
-import { Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    LogInteraction,
-    DetailLayout,
-    PcCard,
-    PcTabs,
-    TabPanel,
-    DetailItem,
-    SystemMetadata,
-    Icon,
-    StatusBadge,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('company', this.id);
-  protected readonly activityFeed = viewChild(RecordActivities);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
-
-  // Tabbed right column (matches person view): People is the default tab.
-  protected readonly activeTab = signal<string>('people');
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'people', label: 'People', badge: this.employeeCount() || undefined },
-    { id: 'about', label: 'About' },
-    // Activity is the record's history — last tab in every view.
-    { id: 'activity', label: 'Activity' },
-  ]);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Companies', route: '/companies' },
-    { label: this.company()?.name || 'Company' },
-  ]);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  /** Up-to-two-letter initials for the header avatar (e.g. "HC" for Harborview Clinic). */
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly enriching = signal(false);
-
-  protected readonly isEnriched = computed(() => {
-    const rawEnrichment = this.company()?.enrichment;
-    if (!rawEnrichment) return false;
-
-    let enrichment = null;
-
-    try {
-      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
-    } catch {
-      return false;
-    }
-    return !!enrichment.google_enriched;
-  });
-
-  /** Header subtitle — industry · people count (§7). Parts drop out honestly when absent. */
-  protected readonly subtitle = computed(() => {
-    const parts: string[] = [];
-    const industry = this.company()?.industry;
-    if (industry) parts.push(industry);
-    const n = this.employeeCount();
-    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    return parts.join(' · ');
-  });
-
-  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
-  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof data?.slug === 'string' && data.slug.length > 0) {
-        this.location.replaceState(`/companies/${data.slug}`);
-      }
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  /** Refresh the activity feed after a logged interaction. */
-  protected onInteractionLogged(): void {
-    this.activityFeed()?.loadActivities();
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
-  protected async enrichCompany() {
-    const id = this.id();
-    if (!id || this.enriching()) return;
-    this.enriching.set(true);
-    try {
-      await this.companiesSvc.enrich(id, this.isEnriched());
-      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
-    } finally {
-      this.enriching.set(false);
-    }
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete company',
-      message: 'Employees keep their person records — only the employer grouping clears.',
-      variant: 'danger',
-      confirmText: 'Delete company',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
-
-```typescript
-import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { CurrencyPipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { Table } from '@uxcommon/components/table/table';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
-import { DonationsService } from '../../../services/api/donations-service';
-import { RecordDonationDialog } from './record-donation-dialog';
-
-/** Row shapes inferred from the actual tRPC return types (superjson preserves `Date`, so
- * `created_at` arrives as a real `Date`, not a string) — avoids a hand-rolled interface drifting
- * out of sync with the repo's select list. */
-type DonationRow = Awaited<ReturnType<DonationsService['listDonations']>>[number];
-type PledgeRow = Awaited<ReturnType<DonationsService['listPledges']>>[number];
-
-/** How many rows of the recent-gifts table show before the "Showing latest N of M" sentence
- * points the rest of the way. Spec Fig. 15: "Showing the latest 8 of 62". */
-const RECENT_GIFTS_LIMIT = 8;
-
-@Component({
-  selector: 'pc-donations-grid',
-  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
-  templateUrl: './donations-grid.html',
-})
-export class DonationsGridComponent implements OnInit {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly alertSvc = inject(AlertService);
-
-  private readonly recordDialog = viewChild.required(RecordDonationDialog);
-
-  /** One-time / Monthly pledges are sibling pages — route-linked pills, same bar on both. */
-  protected readonly donationTabs: PcTabOption[] = [
-    { id: 'one-time', label: 'One-time', route: '/donations', exact: true },
-    { id: 'pledges', label: 'Monthly pledges', route: '/donations/pledges' },
-  ];
-
-  protected readonly donations = signal<DonationRow[]>([]);
-  protected readonly pledges = signal<PledgeRow[]>([]);
-  protected readonly _loading = createLoadingGate();
-  /** Id of the most-recently recorded donation — flashes its row once, per the house
-   * "new rows flash in" pattern (row-saved-flash, datagrid.css). */
-  protected readonly highlightId = signal<string | null>(null);
-
-  private readonly succeeded = computed(() => this.donations().filter((d) => d.status === 'succeeded'));
-
-  private readonly thisMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, 0)));
-  private readonly lastMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, -1)));
-
-  protected readonly thisMonthTotal = computed(
-    () => this.thisMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
-  );
-  private readonly lastMonthTotal = computed(
-    () => this.lastMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
-  );
-  protected readonly thisMonthCount = computed(() => this.thisMonthGifts().length);
-
-  /** "+18% vs April"-style delta. Null when there's no prior-month baseline to compare against. */
-  protected readonly monthOverMonthDelta = computed(() => {
-    const last = this.lastMonthTotal();
-    if (last <= 0) return null;
-    return Math.round(((this.thisMonthTotal() - last) / last) * 100);
-  });
-
-  protected readonly averageGift = computed(() => {
-    const count = this.thisMonthCount();
-    return count > 0 ? this.thisMonthTotal() / count : 0;
-  });
-
-  protected readonly monthlyDonorCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
-
-  protected readonly receiptsSentThisMonth = computed(() => this.thisMonthGifts().filter((d) => d.receipt_sent).length);
-
-  protected readonly headerSentence = computed(() => {
-    const total = this.thisMonthTotal();
-    const count = this.thisMonthCount();
-    const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
-    return count > 0
-      ? `${formattedTotal} raised this month across ${count} ${count === 1 ? 'gift' : 'gifts'}`
-      : 'No gifts recorded yet this month';
-  });
-
-  protected readonly recentGifts = computed(() => this.succeeded().slice(0, RECENT_GIFTS_LIMIT));
-  protected readonly totalGiftCount = computed(() => this.succeeded().length);
-
-  ngOnInit(): void {
-    void this.load();
-  }
-
-  protected refresh(): void {
-    void this.load();
-  }
-
-  protected openRecordDonation(): void {
-    this.recordDialog().open();
-  }
-
-  protected async onDonationRecorded(): Promise<void> {
-    await this.load();
-    const newest = this.donations()[0];
-    if (newest) {
-      this.highlightId.set(newest.id);
-      setTimeout(() => this.highlightId.set(null), 1200);
-    }
-  }
-
-  protected formatCurrency(amountCents: number | null | undefined): string {
-    if (amountCents === null || amountCents === undefined) return '$0.00';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
-  }
-
-  protected formatDate(date: Date | string): string {
-    try {
-      return new Date(date).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  }
-
-  /** Safe lookup into the fixed method → label map — `method` is a checked DB text column, not a
-   * TS-narrowed union, so this guards with `in` rather than asserting the type. */
-  protected methodLabel(method: string): string {
-    return method in DONATION_METHOD_LABELS ? DONATION_METHOD_LABELS[method as DonationMethod] : method;
-  }
-
-  private isInMonth(date: Date | string, monthOffset: number): boolean {
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return false;
-    const now = new Date();
-    const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-    return d.getFullYear() === target.getFullYear() && d.getMonth() === target.getMonth();
-  }
-
-  private async load(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [donations, pledges] = await Promise.all([
-        this.donationsSvc.listDonations(),
-        this.donationsSvc.listPledges(),
-      ]);
-      this.donations.set(donations ?? []);
-      this.pledges.set(pledges ?? []);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load donations. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const DATA_ARTICLES: HelpArticle[] = [
-  {
-    id: 'import',
-    category: 'data',
-    title: 'Import from CSV',
-    summary:
-      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps — matched, tagged, and deduplicated.',
-    keywords: [
-      'import',
-      'csv',
-      'spreadsheet',
-      'upload data',
-      'migrate',
-      'bulk add',
-      'excel',
-      'wizard',
-      'companies',
-      'households',
-      'tasks',
-    ],
-    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
-    blocks: [
-      {
-        kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
-      },
-      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
-      {
-        kind: 'list',
-        items: [
-          'Use a CSV with a header row — column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
-          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
-          'For companies and tasks the wizard needs a mapped **name** column — rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
-          'Both UTF-8 and Excel-exported CSVs work as-is.',
-        ],
-      },
-      { kind: 'h2', id: 'steps', text: 'The four steps' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Upload',
-            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
-          },
-          {
-            title: 'Map columns',
-            detail:
-              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
-          },
-          {
-            title: 'Review',
-            detail:
-              'For people, duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
-          },
-          {
-            title: 'Import',
-            detail:
-              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'after', text: 'After the import' },
-      {
-        kind: 'list',
-        items: [
-          'Spot-check a few records against the source file.',
-          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
-          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test with a small file first',
-        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
-      },
-    ],
-  },
-  {
-    id: 'export',
-    category: 'data',
-    title: 'Export your data',
-    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
-    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
-    related: ['import', 'bulk-actions', 'filters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
-      },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
-      {
-        kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Exports leave the safety of the app',
-        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
-      },
-    ],
-  },
-  {
-    id: 'duplicates',
-    category: 'data',
-    title: 'Find and merge duplicates',
-    summary:
-      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
-    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
-    related: ['import', 'bulk-actions', 'households', 'companies'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
-      },
-      { kind: 'h2', id: 'review', text: 'Review and merge' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
-          {
-            title: 'Read the confidence and the why-flagged reason',
-            detail:
-              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
-          },
-          {
-            title: 'Merge into one — or Not duplicates',
-            detail:
-              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
-      },
-      {
-        kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically — configure the sender and template in Workspace settings → Donations.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page — your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms) — click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) — click **New form**, then **Create a volunteer shift** — with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance — how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe — any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft — unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve — nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions — nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot — green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet — with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut — even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state — **Located**, **Locating…**, or **Address problem** — and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically — the request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation — it doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop — there’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
-          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Your workspace starts in demo mode',
-        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
-      },
-    ],
-  },
-  {
-    id: 'demo-mode',
-    category: 'getting-started',
-    title: 'Demo mode and sample data',
-    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
-    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
-    related: ['welcome', 'add-people', 'import'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of PeopleCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
-      },
-      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
-      {
-        kind: 'list',
-        items: [
-          '**60 people in 24 households** with real Ottawa street addresses — so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
-          '**10 companies**, with several people linked to them.',
-          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
-          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in — their accounts exist so assignment and triage look real.',
-          '**Tasks** in every state — overdue, due this week, waiting, and done.',
-          '**A working inbox** — a handful of emails from demo contacts, some open, some closed, some assigned.',
-          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
-          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why draft forms show responses',
-        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link — see [Forms](/help/forms).',
-      },
-      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
-      {
-        kind: 'p',
-        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
-      },
-      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Choose a plan',
-            detail:
-              'Exiting the demo requires an active subscription — pick one on the [Billing](/workspace/billing) page.',
-          },
-          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
-          {
-            title: 'Choose Exit demo mode',
-            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
-          },
-          {
-            title: 'Start fresh',
-            detail:
-              'Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
-      {
-        kind: 'list',
-        items: [
-          '**Your six draft forms** — volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The built-in tags** (volunteer, staff).',
-          '**Anything you created yourself** while exploring — your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every page shows a breadcrumb trail in the top bar — the bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
-          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail — `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report — it appears once a send is underway, since an unsent campaign has nothing to report — and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe — the trigger and its steps — with how many times it ran in the last 30 days and how the last run went.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** — the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps** — what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** — optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused** — Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards — that’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact — someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list — a failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
-
-```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
-
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
-
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
-        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
-          <!-- Tags & issues — standalone card, first section -->
-          <pc-card>
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-          </pc-card>
-
-          <pc-card>
-            @if (!person()?.id) {
-            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
-            }
-
-            <!-- Name -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
-              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
-            </div>
-
-            <!-- Emails -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input
-                label="Primary email"
-                type="email"
-                placeholder="name@example.com"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                label="Secondary email"
-                type="email"
-                placeholder="Optional"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
-              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
-            </div>
-
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Address & Household Assignment -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
-              @if (householdId() && !isPlaceholderHousehold()) {
-              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
-                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
-                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
-                  Edit on household
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
-                  data-tip="Change household"
-                  (click)="openAssignDrawer()"
-                >
-                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
-                  data-tip="Remove address"
-                  (click)="removeAddress()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div
-                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                  <span class="italic text-base-content/50">No address assigned</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Assign household
-                </button>
-              </div>
-              }
-              <p class="pl-1 text-xs text-base-content/50">
-                Addresses belong to households, so everyone at the same address stays in sync.
-              </p>
-            </div>
-
-            <!-- Internal notes -->
-            <pc-textarea
-              label="Internal notes"
-              placeholder="Anything the team should know about this person…"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-
-            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
-            <details class="group border-t border-base-200 pt-3">
-              <summary
-                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-              >
-                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                More details
-              </summary>
-              <div class="mt-4 flex flex-col gap-4">
-                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
-
-                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
-                  @for (u of users(); track u.id) {
-                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </pc-select>
-
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
-                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
-                </div>
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
-                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
-                </div>
-              </div>
-            </details>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
-      <div class="flex flex-col gap-6">
-        @if (person()?.id && person(); as p) {
-        <pc-card>
-          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
-
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">First seen</dt>
-              <dd class="text-right font-medium text-base-content">
-                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">People in home</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">
-                {{ householdMembersResource.value() ?? '—' }}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Company</dt>
-              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
-            </div>
-          </dl>
-
-          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Contact owner</dt>
-              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Preferred contact</dt>
-              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
-            </div>
-          </dl>
-
-          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            People in home counts everyone sharing this person's address — edit it from the household record.
-          </p>
-        </pc-card>
-
-        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
-        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
-        }
-      </div>
-    </div>
-  </pc-side-drawer>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
-
-```html
-<!-- Template for persons grid -->
-<div class="flex h-full min-h-0 flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    (rowsDeleted)="onRowsDeleted()"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
-      }
-    </div>
-  </pc-datagrid>
-</div>
-
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn btn-outline btn-accent">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
-  </div>
-</dialog>
-```
-
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
-
-```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
-import {
-  IAuthUserDetail,
-  IUserStatsSnapshot,
-  UpdateAuthUserType,
-  authRoleLabel,
-} from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
-
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-  });
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
-  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
-
-  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
-  protected readonly roleWithAccess = computed(() => {
-    const role = this.detail()?.role;
-    const descriptions: Record<string, string> = {
-      owner: 'Owner — full access',
-      admin: 'Admin — users & workspace settings',
-      user: 'Editor — day-to-day work',
-      viewer: 'Viewer — read-only',
-    };
-    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
-  });
-
-  // Narrate unsaved identity edits (§2 disclosure).
-  protected readonly dirtyFieldCount = computed(() => {
-    const f = this.form;
-    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
-  protected readonly activityRows = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-    const emails = s.emails_assigned;
-    const emailRest =
-      emails.total === 0
-        ? 'assigned to you'
-        : emails.open === emails.total
-          ? 'assigned to you — all open'
-          : emails.open === 0
-            ? 'assigned to you — all closed'
-            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
-    return [
-      {
-        key: 'emails',
-        icon: 'inbox-stack' as const,
-        link: '/inbox',
-        count: plural(emails.total, 'conversation'),
-        rest: emailRest,
-      },
-      {
-        key: 'contacts',
-        icon: 'user-group' as const,
-        link: '/people',
-        count: plural(s.contacts_added.total, 'contact'),
-        rest: 'added by you',
-      },
-      {
-        key: 'files',
-        icon: 'arrows-up-down-tray' as const,
-        link: null,
-        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
-        rest: 'all time',
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const user = this.detail();
-    if (!user) return;
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    // Identity only — notification preferences live in Settings (avatar menu), not here.
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
-
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
-
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        } @if (currentMode === 'settings') {
-        <!-- Passkeys custom section -->
-        <button
-          id="settings-nav-passkeys"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('passkeys')"
-        >
-          <pc-icon
-            name="lock-closed"
-            [class.text-primary]="isSelected('passkeys')"
-            [class.opacity-70]="!isSelected('passkeys')"
-            [size]="5"
-          />
-          Passkeys
-        </button>
-        } @if (currentMode === 'workspace') {
-        <!-- Email Sync custom section -->
-        <button
-          id="settings-nav-email-sync"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('email-sync')"
-        >
-          <pc-icon
-            name="envelope"
-            [class.text-primary]="isSelected('email-sync')"
-            [class.opacity-70]="!isSelected('email-sync')"
-            [size]="5"
-          />
-          Email sync
-        </button>
-
-        <!-- Domains custom section -->
-        <button
-          id="settings-nav-domains"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('domains')"
-        >
-          <pc-icon
-            name="globe-americas"
-            [class.text-primary]="isSelected('domains')"
-            [class.opacity-70]="!isSelected('domains')"
-            [size]="5"
-          />
-          Domain verification
-        </button>
-
-        <!-- Donations custom section -->
-        <button
-          id="settings-nav-donations"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('donations')"
-        >
-          <pc-icon
-            name="currency-dollar"
-            [class.text-primary]="isSelected('donations')"
-            [class.opacity-70]="!isSelected('donations')"
-            [size]="5"
-          />
-          Donations
-        </button>
-
-        <!-- Storage custom section -->
-        <button
-          id="settings-nav-storage"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('storage') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('storage')"
-        >
-          <pc-icon
-            name="archive-box"
-            [class.text-primary]="isSelected('storage')"
-            [class.opacity-70]="!isSelected('storage')"
-            [size]="5"
-          />
-          Storage
-        </button>
-
-        <!-- Billing custom section -->
-        <button
-          id="settings-nav-billing"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('billing')"
-        >
-          <pc-icon
-            name="credit-card"
-            [class.text-primary]="isSelected('billing')"
-            [class.opacity-70]="!isSelected('billing')"
-            [size]="5"
-          />
-          Billing
-        </button>
-
-        <!-- Account custom section -->
-        <button
-          id="settings-nav-account"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
-          (click)="selectSection('account')"
-        >
-          <pc-icon
-            name="user-circle"
-            [class.text-primary]="isSelected('account')"
-            [class.opacity-70]="!isSelected('account')"
-            [size]="5"
-          />
-          Account
-        </button>
-        }
-      </nav>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets —
-              some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate Credentials
-              </button>
-            </div>
-          </div>
-          }
-
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-xs font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline btn-secondary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } } @if (field.config.helper) {
-              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request Verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <p class="text-xs text-base-content/50 italic">
-                No verified sender emails yet. Add one above to request verification.
-              </p>
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                  <pc-icon name="check-circle" [size]="14"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute Fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-xs text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
-              <table class="table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th class="text-xs font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-xs font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-xs text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Email Sync custom section -->
-      @if (currentMode === 'workspace' && isSelected('email-sync')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Email sync</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
-          </p>
-        </header>
-
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-      </section>
-      }
-
-      <!-- Domains custom section -->
-      @if (currentMode === 'workspace' && isSelected('domains')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Domain verification</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
-          </p>
-        </header>
-        <pc-domains-settings></pc-domains-settings>
-      </section>
-      }
-
-      <!-- Donations custom section -->
-      @if (currentMode === 'workspace' && isSelected('donations')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Donations</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
-            account.
-          </p>
-        </header>
-        <pc-donations-settings></pc-donations-settings>
-      </section>
-      }
-
-      <!-- Storage custom section -->
-      @if (currentMode === 'workspace' && isSelected('storage')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Storage</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Plan quota, usage, and the files taking up the most space.</p>
-        </header>
-        <pc-storage-settings></pc-storage-settings>
-      </section>
-      }
-
-      <!-- Billing custom section -->
-      @if (currentMode === 'workspace' && isSelected('billing')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Billing</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your subscription plans, view invoice details, and update payment methods.
-          </p>
-        </header>
-        <pc-billing-settings></pc-billing-settings>
-      </section>
-      }
-
-      <!-- Passkeys custom section -->
-      @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
-          </p>
-        </header>
-        <pc-passkey-settings></pc-passkey-settings>
-      </section>
-      }
-
-      <!-- Account custom section -->
-      @if (currentMode === 'workspace' && isSelected('account')) {
-      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">Account</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">
-            Manage your organization account — pause billing or permanently delete all data.
-          </p>
-        </header>
-        <pc-account-settings></pc-account-settings>
-      </section>
-      }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.html
-
-```html
-<div class="mx-auto max-w-7xl space-y-6 p-6">
-  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
-      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
-      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
-        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ unassignedOpenCount() }} unassigned conversations</a
-        >
-        need an owner and
-        <button
-          type="button"
-          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          (click)="toggleSlaDetails('tasks')"
-        >
-          {{ totalTaskSlaBreaches() }} tasks
-        </button>
-        have breached SLA. Email response is {{ emailHealthWord() }},
-        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ activeContactsCount() }} new contacts</a
-        >
-        arrived this month@if (draftNewsletter(); as draft) {, and
-        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
-        >}.
-      </p>
-    </div>
-
-    <button
-      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
-      pcSpinOnClick
-      (click)="loadStats(true)"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload stats
-    </button>
-  </div>
-
-  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
-  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
-
-  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
-
-  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <!-- Task SLA -->
-    @if (totalTaskSlaBreaches() > 0) {
-    <button
-      type="button"
-      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
-      (click)="toggleSlaDetails('tasks')"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
-        <span class="text-sm font-semibold">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs opacity-70">
-        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
-        View the {{ totalTaskSlaBreaches() }} tasks
-      </div>
-    </button>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
-    </div>
-    }
-
-    <!-- Unassigned conversations -->
-    @if (unassignedOpenCount() > 0) {
-    <a
-      routerLink="/inbox"
-      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
-        <span class="text-sm font-semibold">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/60">
-        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
-        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
-    </a>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
-    </div>
-    }
-
-    <!-- Draft newsletter -->
-    @if (draftNewsletter(); as draft) {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
-        <span class="text-sm font-semibold">Draft newsletter</span>
-      </div>
-      <div class="mt-1 truncate text-xs text-base-content/60">
-        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
-    </a>
-    } @else {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
-        <span class="text-sm font-semibold">Draft newsletters</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
-    </a>
-    }
-  </div>
-
-  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
-  @if (showSlaDetails()) {
-  <pc-sla-details
-    [breachedEmails]="breachedEmails()"
-    [breachedTasks]="breachedTasks()"
-    [emailSlaHours]="emailSlaHours()"
-    [taskSlaHours]="taskSlaHours()"
-    [totalEmailBreaches]="totalEmailSlaBreaches()"
-    [totalTaskBreaches]="totalTaskSlaBreaches()"
-    [hasMoreEmails]="hasMoreEmails()"
-    [hasMoreTasks]="hasMoreTasks()"
-    [isLoadingEmails]="isLoadingEmails()"
-    [isLoadingTasks]="isLoadingTasks()"
-    (loadMoreEmails)="loadMoreEmails()"
-    (loadMoreTasks)="loadMoreTasks()"
-    [(activeTab)]="defaultSlaTab"
-  />
-  }
-
-  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
-        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
-        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
-        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
-        {{ avgFirstResponse() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
-        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
-        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
-        +{{ activeContactsCount() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
-    </div>
-  </div>
-
-  <!-- Growth chart (2fr) + Coming up (1fr) -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- New contacts line chart -->
-    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
-        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
-      </div>
-
-      @if (isInitialLoading()) {
-      <div class="skeleton h-[200px] w-full rounded-lg"></div>
-      } @else if (linePoints().length > 0) {
-      <div class="relative h-[200px] w-full">
-        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
-              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
-            </linearGradient>
-          </defs>
-
-          @for (label of yAxisLabels(); track label.y) {
-          <line
-            x1="20"
-            [attr.y1]="label.y"
-            x2="580"
-            [attr.y2]="label.y"
-            stroke="currentColor"
-            class="text-base-content/10"
-            stroke-dasharray="4"
-          ></line>
-          <text
-            [attr.x]="12"
-            [attr.y]="label.y + 3"
-            text-anchor="end"
-            class="fill-current text-[9px] tabular-nums text-base-content/40"
-          >
-            {{ label.value }}
-          </text>
-          }
-
-          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
-          <path
-            [attr.d]="linePath()"
-            fill="none"
-            stroke="var(--color-primary)"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-
-          @for (p of linePoints(); track p.date) {
-          <circle
-            [attr.cx]="p.x"
-            [attr.cy]="p.y"
-            r="4"
-            fill="var(--color-base-100)"
-            stroke="var(--color-primary)"
-            stroke-width="2"
-            class="cursor-pointer"
-            (mouseenter)="hoveredPoint.set(p)"
-            (mouseleave)="hoveredPoint.set(null)"
-          ></circle>
-          } @for (label of xAxisLabels(); track label.x) {
-          <text
-            [attr.x]="label.x"
-            [attr.y]="195"
-            text-anchor="middle"
-            class="fill-current text-[9px] text-base-content/40"
-          >
-            {{ label.label }}
-          </text>
-          }
-        </svg>
-
-        @if (hoveredPoint(); as p) {
-        <div
-          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
-          [style.left.%]="(p.x / 600) * 100"
-          [style.top.%]="(p.y / 200) * 100"
-        >
-          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
-            {{ formatDate(p.date) }}
-          </div>
-          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
-            <span class="h-2 w-2 rounded-full bg-primary"></span>
-            +{{ p.count }} contacts
-          </div>
-        </div>
-        }
-      </div>
-      } @else {
-      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
-        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
-        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Import your people</a
-        >
-      </div>
-      }
-    </div>
-
-    <!-- Coming up -->
-    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
-      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
-
-      @if (upcomingEvents().length > 0) {
-      <ul class="flex flex-col gap-1">
-        @for (ev of upcomingEvents(); track ev.id) {
-        <li>
-          <a
-            [routerLink]="['/events/shifts', ev.id]"
-            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
-          >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
-              <span class="block text-xs text-base-content/55">
-                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
-              </span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-      } @else {
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Plan an event</a
-        >
-      </div>
-      }
-
-      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
-        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
-        below
-      </div>
-    </div>
-  </div>
-
-  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
-  <div class="rounded-xl border border-line bg-base-100 p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
-      <span class="text-xs text-base-content/50">Real-time</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr
-            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
-          >
-            <th class="py-2 pr-4 font-medium">Representative</th>
-            <th class="py-2 pr-4 text-right font-medium">Open</th>
-            <th class="py-2 pr-4 text-right font-medium">Closed</th>
-            <th class="py-2 pr-4 font-medium">Resolution</th>
-            <th class="py-2 pr-4 font-medium">Avg first response</th>
-            <th class="py-2 font-medium">SLA breaches</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of userStats(); track user.user_id) {
-          <tr class="border-b border-line last:border-0">
-            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
-            <td class="py-2.5 pr-4">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.resolutionRate >= 75"
-                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                [class.badge-error]="user.resolutionRate < 40"
-                >{{ user.resolutionRate }}%</span
-              >
-            </td>
-            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
-            <td class="py-2.5">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
-                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
-                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
-              >
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
-
-```html
-<div class="flex flex-col gap-4 p-4 sm:p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Issues" [totalSentence]="loaded() ? sentence() : null">
-    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
-      <pc-icon name="add-issue" [size]="4"></pc-icon>
-      New issue
-    </button>
-  </pc-grid-header>
-
-  <pc-table [loading]="loading()" [columns]="6">
-    <ng-container pcTableHead>
-      <th class="w-10">#</th>
-      <th>Issue</th>
-      <th class="min-w-48">People interested</th>
-      <th>Trend</th>
-      <th>Top ward</th>
-      <th class="w-10"></th>
-    </ng-container>
-
-    @if (ranked().length === 0) {
-    <tr>
-      <td colspan="6" class="py-12 text-center">
-        <div class="flex flex-col items-center gap-2">
-          <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
-          <p class="text-xs text-base-content/60">No issues yet.</p>
-          <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
-        </div>
-      </td>
-    </tr>
-    } @else { @for (entry of ranked(); track entry.row.id) {
-    <tr>
-      <td class="tabular-nums text-base-content/50 text-xs">{{ entry.rank }}</td>
-      <td>
-        <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
-      </td>
-      <td>
-        <div class="flex items-center gap-2 text-xs">
-          <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
-            <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
-          </div>
-          <a
-            [routerLink]="'/people'"
-            [queryParams]="{ issue: entry.row.name }"
-            class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
-          >
-            {{ entry.row.use_count_people.toLocaleString() }}
-          </a>
-        </div>
-      </td>
-      <td
-        class="text-xs tabular-nums"
-        [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
-      >
-        {{ trendLabel(entry.row) }}
-      </td>
-      <td class="text-xs text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
-      <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
-          >
-            <li>
-              <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
-            </li>
-            <li>
-              <a (click)="merge(entry.row)"> <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue </a>
-            </li>
-            <li><hr class="my-1 border-base-300" /></li>
-            <li>
-              <a (click)="delete(entry.row)" class="text-error">
-                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
-              </a>
-            </li>
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-  </pc-table>
-
-  <p class="text-xs text-base-content/50 px-1">
-    Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
-    field from tags everywhere because issues power issue-based filtering and targeting.
-  </p>
-</div>
-
-<pc-add-issue-dialog (saved)="onIssueSaved()" />
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
-
-```html
-<div class="flex flex-col gap-6 p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Automations" [totalSentence]="summarySentence()">
-    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
-      <pc-icon name="add-schedule" [size]="4"></pc-icon>
-      New automation
-    </button>
-  </pc-grid-header>
-
-  @if (isLoading() && !loaded()) {
-  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
-  } @else if (rows().length === 0) {
-  <!-- Empty state ------------------------------------------------------------->
-  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
-    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
-      <pc-icon name="add-schedule" [size]="6"></pc-icon>
-    </div>
-    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
-    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
-      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
-      your first one to start.
-    </p>
-    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
-  </div>
-  } @else {
-  <!-- List -------------------------------------------------------------------->
-  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
-    <!-- Column header -->
-    <div
-      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
-    >
-      <span class="w-24">Status</span>
-      <span>Automation</span>
-      <span class="text-right">Runs 30d</span>
-      <span>Last run</span>
-    </div>
-
-    @for (row of rows(); track row.id) {
-    <div
-      class="grid cursor-pointer text-xs grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
-      [class.opacity-60]="row.status === 'paused'"
-      (click)="openAutomation(row)"
-    >
-      <!-- STATUS toggle -->
-      <div class="flex items-center text-xs gap-2 w-24" (click)="$event.stopPropagation()">
-        <input
-          type="checkbox"
-          class="toggle toggle-primary toggle-sm"
-          [checked]="row.status === 'active'"
-          [title]="statusTooltip(row)"
-          [attr.aria-label]="statusTooltip(row)"
-          (change)="toggleStatus(row, $event)"
-        />
-        <span>{{ row.status === 'active' ? 'Active' : 'Paused' }}</span>
-      </div>
-
-      <!-- AUTOMATION: name door + recipe sentence -->
-      <div class="min-w-0">
-        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
-        <div class="truncate text-xs text-base-content/60">{{ recipe(row) }}</div>
-      </div>
-
-      <!-- RUNS 30D -->
-      <div class="text-xs tabular-nums text-base-content/80 md:text-right">
-        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
-      </div>
-
-      <!-- LAST RUN (+ inline failure narration) -->
-      <div class="text-xs">
-        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
-        @if (row.last_run_error) {
-        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
-          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
-          <span>Last run failed — {{ row.last_run_error }}</span>
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-
-  <!-- Footer (verbatim spec copy) --------------------------------------------->
-  <p class="text-xs text-base-content/50">
-    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
-  </p>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
@@ -63361,6 +60807,3701 @@ export class CompaniesGrid {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+
+```typescript
+import { Location } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked, viewChild } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    LogInteraction,
+    DetailLayout,
+    PcCard,
+    PcTabs,
+    TabPanel,
+    DetailItem,
+    SystemMetadata,
+    Icon,
+    StatusBadge,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  // Tabbed right column (matches person view): People is the default tab.
+  protected readonly activeTab = signal<string>('people');
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'people', label: 'People', badge: this.employeeCount() || undefined },
+    { id: 'about', label: 'About' },
+    // Activity is the record's history — last tab in every view.
+    { id: 'activity', label: 'Activity' },
+  ]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  /** Up-to-two-letter initials for the header avatar (e.g. "HC" for Harborview Clinic). */
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly enriching = signal(false);
+
+  protected readonly isEnriched = computed(() => {
+    const rawEnrichment = this.company()?.enrichment;
+    if (!rawEnrichment) return false;
+
+    let enrichment = null;
+
+    try {
+      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
+    } catch {
+      return false;
+    }
+    return !!enrichment.google_enriched;
+  });
+
+  /** Header subtitle — industry · people count (§7). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const parts: string[] = [];
+    const industry = this.company()?.industry;
+    if (industry) parts.push(industry);
+    const n = this.employeeCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    return parts.join(' · ');
+  });
+
+  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
+  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof data?.slug === 'string' && data.slug.length > 0) {
+        this.location.replaceState(`/companies/${data.slug}`);
+      }
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  /** Refresh the activity feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
+  }
+
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
+  protected async enrichCompany() {
+    const id = this.id();
+    if (!id || this.enriching()) return;
+    this.enriching.set(true);
+    try {
+      await this.companiesSvc.enrich(id, this.isEnriched());
+      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
+    } finally {
+      this.enriching.set(false);
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete company',
+      message: 'Employees keep their person records — only the employer grouping clears.',
+      variant: 'danger',
+      confirmText: 'Delete company',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
+
+```typescript
+import { Component, inject, signal, computed, OnInit, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { CurrencyPipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
+import { DonationsService } from '../../../services/api/donations-service';
+import { RecordDonationDialog } from './record-donation-dialog';
+
+/** Row shapes inferred from the actual tRPC return types (superjson preserves `Date`, so
+ * `created_at` arrives as a real `Date`, not a string) — avoids a hand-rolled interface drifting
+ * out of sync with the repo's select list. */
+type DonationRow = Awaited<ReturnType<DonationsService['listDonations']>>[number];
+type PledgeRow = Awaited<ReturnType<DonationsService['listPledges']>>[number];
+
+/** How many rows of the recent-gifts table show before the "Showing latest N of M" sentence
+ * points the rest of the way. Spec Fig. 15: "Showing the latest 8 of 62". */
+const RECENT_GIFTS_LIMIT = 8;
+
+@Component({
+  selector: 'pc-donations-grid',
+  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
+  templateUrl: './donations-grid.html',
+})
+export class DonationsGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly recordDialog = viewChild.required(RecordDonationDialog);
+
+  /** One-time / Monthly pledges are sibling pages — route-linked pills, same bar on both. */
+  protected readonly donationTabs: PcTabOption[] = [
+    { id: 'one-time', label: 'One-time', route: '/donations', exact: true },
+    { id: 'pledges', label: 'Monthly pledges', route: '/donations/pledges' },
+  ];
+
+  protected readonly donations = signal<DonationRow[]>([]);
+  protected readonly pledges = signal<PledgeRow[]>([]);
+  protected readonly _loading = createLoadingGate();
+  /** Id of the most-recently recorded donation — flashes its row once, per the house
+   * "new rows flash in" pattern (row-saved-flash, datagrid.css). */
+  protected readonly highlightId = signal<string | null>(null);
+
+  private readonly succeeded = computed(() => this.donations().filter((d) => d.status === 'succeeded'));
+
+  private readonly thisMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, 0)));
+  private readonly lastMonthGifts = computed(() => this.succeeded().filter((d) => this.isInMonth(d.created_at, -1)));
+
+  protected readonly thisMonthTotal = computed(
+    () => this.thisMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
+  );
+  private readonly lastMonthTotal = computed(
+    () => this.lastMonthGifts().reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100,
+  );
+  protected readonly thisMonthCount = computed(() => this.thisMonthGifts().length);
+
+  /** "+18% vs April"-style delta. Null when there's no prior-month baseline to compare against. */
+  protected readonly monthOverMonthDelta = computed(() => {
+    const last = this.lastMonthTotal();
+    if (last <= 0) return null;
+    return Math.round(((this.thisMonthTotal() - last) / last) * 100);
+  });
+
+  protected readonly averageGift = computed(() => {
+    const count = this.thisMonthCount();
+    return count > 0 ? this.thisMonthTotal() / count : 0;
+  });
+
+  protected readonly monthlyDonorCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
+
+  protected readonly receiptsSentThisMonth = computed(() => this.thisMonthGifts().filter((d) => d.receipt_sent).length);
+
+  protected readonly headerSentence = computed(() => {
+    const total = this.thisMonthTotal();
+    const count = this.thisMonthCount();
+    const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total);
+    return count > 0
+      ? `${formattedTotal} raised this month across ${count} ${count === 1 ? 'gift' : 'gifts'}`
+      : 'No gifts recorded yet this month';
+  });
+
+  protected readonly recentGifts = computed(() => this.succeeded().slice(0, RECENT_GIFTS_LIMIT));
+  protected readonly totalGiftCount = computed(() => this.succeeded().length);
+
+  ngOnInit(): void {
+    void this.load();
+  }
+
+  protected refresh(): void {
+    void this.load();
+  }
+
+  protected openRecordDonation(): void {
+    this.recordDialog().open();
+  }
+
+  protected async onDonationRecorded(): Promise<void> {
+    await this.load();
+    const newest = this.donations()[0];
+    if (newest) {
+      this.highlightId.set(newest.id);
+      setTimeout(() => this.highlightId.set(null), 1200);
+    }
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents === null || amountCents === undefined) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(date: Date | string): string {
+    try {
+      return new Date(date).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  /** Safe lookup into the fixed method → label map — `method` is a checked DB text column, not a
+   * TS-narrowed union, so this guards with `in` rather than asserting the type. */
+  protected methodLabel(method: string): string {
+    return method in DONATION_METHOD_LABELS ? DONATION_METHOD_LABELS[method as DonationMethod] : method;
+  }
+
+  private isInMonth(date: Date | string, monthOffset: number): boolean {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return false;
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    return d.getFullYear() === target.getFullYear() && d.getMonth() === target.getMonth();
+  }
+
+  private async load(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [donations, pledges] = await Promise.all([
+        this.donationsSvc.listDonations(),
+        this.donationsSvc.listPledges(),
+      ]);
+      this.donations.set(donations ?? []);
+      this.pledges.set(pledges ?? []);
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load donations. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const DATA_ARTICLES: HelpArticle[] = [
+  {
+    id: 'import',
+    category: 'data',
+    title: 'Import from CSV',
+    summary:
+      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps — matched, tagged, and deduplicated.',
+    keywords: [
+      'import',
+      'csv',
+      'spreadsheet',
+      'upload data',
+      'migrate',
+      'bulk add',
+      'excel',
+      'wizard',
+      'companies',
+      'households',
+      'tasks',
+    ],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+    blocks: [
+      {
+        kind: 'p',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
+      },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'list',
+        items: [
+          'Use a CSV with a header row — column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
+          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
+          'For companies and tasks the wizard needs a mapped **name** column — rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
+        ],
+      },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
+          },
+          {
+            title: 'Map columns',
+            detail:
+              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
+          },
+          {
+            title: 'Review',
+            detail:
+              'For people, duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
+          },
+          {
+            title: 'Merge into one — or Not duplicates',
+            detail:
+              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically — configure the sender and template in Workspace settings → Donations.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page — your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms) — click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) — click **New form**, then **Create a volunteer shift** — with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form — it opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance — how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe — any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft — unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve — nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions — nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot — green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet — with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut — even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link — no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar — the badge shows how many requests are approved and ready to route. The **Plan routes** button stays disabled until at least one request is approved and located — there is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state — **Located**, **Locating…**, or **Address problem** — and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically — the request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from — start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation — it doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop — there’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to PeopleCRM',
+    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
+      },
+    ],
+  },
+  {
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of PeopleCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+      },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
+      {
+        kind: 'list',
+        items: [
+          '**60 people in 24 households** with real Ottawa street addresses — so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in — their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state — overdue, due this week, waiting, and done.',
+          '**A working inbox** — a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link — see [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+      },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription — pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms** — volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The built-in tags** (volunteer, staff).',
+          '**Anything you created yourself** while exploring — your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every page shows a breadcrumb trail in the top bar — the bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
+          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track** — no open items have exceeded their target.',
+          '**Warning** — the number of breached items has reached the warning threshold.',
+          '**Critical** — breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail — `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list — its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals — sent campaigns, deliveries, average engagement and bounces — summarized at the top. **View report** opens the full engagement report — it appears once a send is underway, since an unsent campaign has nothing to report — and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one — connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe — the trigger and its steps — with how many times it ran in the last 30 days and how the last run went.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** — the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps** — what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** — optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused** — Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards — that’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact — someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list — a failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
+        [fitColumns]="true"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        (rowsDeleted)="onRowsDeleted()"
+        [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+        @if (!inline() && unhoused().count > 0) {
+          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+            <button
+              type="button"
+              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
+              (click)="openUnhoused()"
+            >
+              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+            </button>
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
+            matched to a door.
+          </p>
+        }
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly router = inject(Router);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the household record: a generated address string, just like
+      // the People grid's combined Name column. People count rides along as a muted subtitle.
+      field: 'household',
+      headerName: 'Household',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 260,
+      minWidth: 180,
+      valueGetter: (params: CellParams) => this.addressString(params.data),
+      doorSubtitle: (params: CellParams) => {
+        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+        return `${n} ${n === 1 ? 'person' : 'people'}`;
+      },
+    },
+    {
+      field: 'members',
+      headerName: 'Members',
+      editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
+      minWidth: 200,
+      // Each member name is a link to their person card. The renderer output is
+      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
+      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
+      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
+    },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    {
+      field: 'updated_at',
+      headerName: 'Last touch',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      hide: true,
+      width: 280,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** People with no matchable address (the placeholder household) — footer note + link target. */
+  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
+    count: 0,
+    household_id: null,
+  });
+
+  public ngOnInit(): void {
+    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
+    // keep full contrast — they're a second focal point (the People-grain of the household).
+    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+  }
+
+  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  private async loadUnhoused(): Promise<void> {
+    try {
+      this.unhoused.set(await this.householdsService.getUnhoused());
+    } catch (err) {
+      console.error('Failed to load unhoused people count', err);
+    }
+  }
+
+  /** Opens the placeholder household, whose detail view lists everyone with no address. */
+  protected openUnhoused(): void {
+    const id = this.unhoused().household_id;
+    if (id) void this.router.navigate(['/households', id]);
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  /** Renders member names as person-card links; a comma separator keeps them on one line. */
+  private renderMembers(value: unknown): string {
+    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
+    const links = members
+      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
+      .map((m) => {
+        const id = this.escapeHtml(String(m.id));
+        const name = this.escapeHtml(String(m.name));
+        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
+      });
+    if (!links.length) return '';
+    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
+    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
+  }
+
+  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
+  private onMemberClicked(event: Event | undefined): void {
+    const target = event?.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('[data-person-id]');
+    const id = anchor?.getAttribute('data-person-id');
+    if (id) void this.router.navigate(['/people', id]);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** Street number + name for the Household door column (city has its own column). */
+  private addressString(data: unknown): string {
+    const d = data as Record<string, unknown> | undefined;
+    if (!d) return '';
+    if (d['is_placeholder']) return 'People with no addresses';
+    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
+  }
+
+  /** Compact relative "last touch" — matches the household view's low-chrome style. */
+  private formatLastTouch(value: unknown): string {
+    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+          <!-- Tags & issues — standalone card, first section -->
+          <pc-card>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+          </pc-card>
+
+          <pc-card>
+            @if (!person()?.id) {
+            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+            }
+
+            <!-- Name -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Primary email"
+                type="email"
+                placeholder="name@example.com"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                label="Secondary email"
+                type="email"
+                placeholder="Optional"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+            </div>
+
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
+              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
+
+            <!-- Address & Household Assignment -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+              @if (householdId() && !isPlaceholderHousehold()) {
+              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                  Edit on household
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                  data-tip="Change household"
+                  (click)="openAssignDrawer()"
+                >
+                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                  data-tip="Remove address"
+                  (click)="removeAddress()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div
+                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                  <span class="italic text-base-content/50">No address assigned</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Assign household
+                </button>
+              </div>
+              }
+              <p class="pl-1 text-xs text-base-content/50">
+                Addresses belong to households, so everyone at the same address stays in sync.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Anything the team should know about this person…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+
+            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+            <details class="group border-t border-base-200 pt-3">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                More details
+              </summary>
+              <div class="mt-4 flex flex-col gap-4">
+                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                  @for (u of users(); track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </pc-select>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+                </div>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+                </div>
+              </div>
+            </details>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (person()?.id && person(); as p) {
+        <pc-card>
+          <h3 class="block text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People in home</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">
+                {{ householdMembersResource.value() ?? '—' }}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Company</dt>
+              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Contact owner</dt>
+              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Preferred contact</dt>
+              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            People in home counts everyone sharing this person's address — edit it from the household record.
+          </p>
+        </pc-card>
+
+        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
+        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon],
+  templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
+
+```typescript
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
+import { FormsModule } from '@angular/forms';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+
+@Component({
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  templateUrl: './profile-page.html',
+})
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
+
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
+
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
+
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+  });
+
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner — full access',
+      admin: 'Admin — users & workspace settings',
+      user: 'Editor — day-to-day work',
+      viewer: 'Viewer — read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
+
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly initials = computed(() => {
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
+    }
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
+  });
+
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you — all open'
+          : emails.open === 0
+            ? 'assigned to you — all closed'
+            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
+    return [
+      {
+        key: 'emails',
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
+      },
+      {
+        key: 'contacts',
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
+      },
+      {
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
+      },
+    ];
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const user = this.detail();
+    if (!user) return;
+
+    const payload = this.buildPayload();
+
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
+      }
+
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.html
+
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
+
+    <button
+      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats(true)"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
+
+  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
+  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
+
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
+
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
+
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
+          }
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
+          }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {{ formatDate(p.date) }}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
+        }
+      </div>
+      } @else {
+      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
+        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
+        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Import your people</a
+        >
+      </div>
+      }
+    </div>
+
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
+
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            [routerLink]="['/events/shifts', ev.id]"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
+        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Plan an event</a
+        >
+      </div>
+      }
+
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
+
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
+
+```html
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Issues" [totalSentence]="loaded() ? sentence() : null">
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="openAddDialog()">
+      <pc-icon name="add-issue" [size]="4"></pc-icon>
+      New issue
+    </button>
+  </pc-grid-header>
+
+  <pc-table [loading]="loading()" [columns]="6">
+    <ng-container pcTableHead>
+      <th class="w-10">#</th>
+      <th>Issue</th>
+      <th class="min-w-48">People interested</th>
+      <th>Trend</th>
+      <th>Top ward</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (ranked().length === 0) {
+    <tr>
+      <td colspan="6" class="py-12 text-center">
+        <div class="flex flex-col items-center gap-2">
+          <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
+          <p class="text-xs text-base-content/60">No issues yet.</p>
+          <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
+        </div>
+      </td>
+    </tr>
+    } @else { @for (entry of ranked(); track entry.row.id) {
+    <tr>
+      <td class="tabular-nums text-base-content/50 text-xs">{{ entry.rank }}</td>
+      <td>
+        <pc-tagitem [name]="entry.row.name" [color]="entry.row.color" [canDelete]="false" [compact]="true" />
+      </td>
+      <td>
+        <div class="flex items-center gap-2 text-xs">
+          <div class="h-2 flex-1 rounded-full bg-base-200 overflow-hidden max-w-32">
+            <div class="h-full bg-info rounded-full" [style.width.%]="interestedPercent(entry.row)"></div>
+          </div>
+          <a
+            [routerLink]="'/people'"
+            [queryParams]="{ issue: entry.row.name }"
+            class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary tabular-nums"
+          >
+            {{ entry.row.use_count_people.toLocaleString() }}
+          </a>
+        </div>
+      </td>
+      <td
+        class="text-xs tabular-nums"
+        [class]="entry.row.recent_applications_30d > 0 ? 'text-success' : 'text-base-content/50'"
+      >
+        {{ trendLabel(entry.row) }}
+      </td>
+      <td class="text-xs text-base-content/70">{{ entry.row.top_ward ?? '—' }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Issue actions">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-52 z-30 border border-base-300"
+          >
+            <li>
+              <a (click)="rename(entry.row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename issue</a>
+            </li>
+            <li>
+              <a (click)="merge(entry.row)"> <pc-icon name="merge" [size]="4"></pc-icon> Merge into another issue </a>
+            </li>
+            <li><hr class="my-1 border-base-300" /></li>
+            <li>
+              <a (click)="delete(entry.row)" class="text-error">
+                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete issue
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+  </pc-table>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Issues flow in from survey forms and profile edits; the ranking exists for the policy team. Issues stay a separate
+    field from tags everywhere because issues power issue-based filtering and targeting.
+  </p>
+</div>
+
+<pc-add-issue-dialog (saved)="onIssueSaved()" />
+```
+
+## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
+
+```html
+<div class="flex flex-col gap-6 p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Automations" [totalSentence]="summarySentence()">
+    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
+      <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      New automation
+    </button>
+  </pc-grid-header>
+
+  @if (isLoading() && !loaded()) {
+  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
+  } @else if (rows().length === 0) {
+  <!-- Empty state ------------------------------------------------------------->
+  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
+      <pc-icon name="add-schedule" [size]="6"></pc-icon>
+    </div>
+    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
+    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
+      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
+      your first one to start.
+    </p>
+    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
+  </div>
+  } @else {
+  <!-- List -------------------------------------------------------------------->
+  <div class="overflow-hidden rounded-2xl border border-base-300 bg-base-100">
+    <!-- Column header -->
+    <div
+      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 text-xs font-medium uppercase tracking-wide text-base-content/50 md:grid"
+    >
+      <span class="w-24">Status</span>
+      <span>Automation</span>
+      <span class="text-right">Runs 30d</span>
+      <span>Last run</span>
+    </div>
+
+    @for (row of rows(); track row.id) {
+    <div
+      class="grid cursor-pointer text-xs grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+      [class.opacity-60]="row.status === 'paused'"
+      (click)="openAutomation(row)"
+    >
+      <!-- STATUS toggle -->
+      <div class="flex items-center text-xs gap-2 w-24" (click)="$event.stopPropagation()">
+        <input
+          type="checkbox"
+          class="toggle toggle-primary toggle-sm"
+          [checked]="row.status === 'active'"
+          [title]="statusTooltip(row)"
+          [attr.aria-label]="statusTooltip(row)"
+          (change)="toggleStatus(row, $event)"
+        />
+        <span>{{ row.status === 'active' ? 'Active' : 'Paused' }}</span>
+      </div>
+
+      <!-- AUTOMATION: name door + recipe sentence -->
+      <div class="min-w-0">
+        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
+        <div class="truncate text-xs text-base-content/60">{{ recipe(row) }}</div>
+      </div>
+
+      <!-- RUNS 30D -->
+      <div class="text-xs tabular-nums text-base-content/80 md:text-right">
+        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
+      </div>
+
+      <!-- LAST RUN (+ inline failure narration) -->
+      <div class="text-xs">
+        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
+        @if (row.last_run_error) {
+        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
+          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
+          <span>Last run failed — {{ row.last_run_error }}</span>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+
+  <!-- Footer (verbatim spec copy) --------------------------------------------->
+  <p class="text-xs text-base-content/50">
+    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
+  </p>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
 
 ```html
@@ -64245,433 +65386,6 @@ export class FormsPageComponent implements OnInit {
 
   protected templateSubmitLabel(type: FormType): string {
     return FORM_TEMPLATES[type].submitLabel;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
-
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        [grainLayout]="!inline()"
-        [fitColumns]="true"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        (rowsDeleted)="onRowsDeleted()"
-        [rowCanSelect]="rowCanSelectFn"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          @if (!inline()) {
-            <pc-grain-tabs />
-          }
-        </div>
-        @if (!inline() && unhoused().count > 0) {
-          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
-            <button
-              type="button"
-              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
-              (click)="openUnhoused()"
-            >
-              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
-            </button>
-            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
-            matched to a door.
-          </p>
-        }
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'household',
-        entityNounPlural: 'households',
-        exportEntity: 'households',
-        exportFileName: 'households-export.csv',
-      },
-    }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly router = inject(Router);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the household record: a generated address string, just like
-      // the People grid's combined Name column. People count rides along as a muted subtitle.
-      field: 'household',
-      headerName: 'Household',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 260,
-      minWidth: 180,
-      valueGetter: (params: CellParams) => this.addressString(params.data),
-      doorSubtitle: (params: CellParams) => {
-        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-        return `${n} ${n === 1 ? 'person' : 'people'}`;
-      },
-    },
-    {
-      field: 'members',
-      headerName: 'Members',
-      editable: false,
-      // Grows to fill leftover width when no notes/description column is visible.
-      flex: true,
-      width: 320,
-      minWidth: 200,
-      // Each member name is a link to their person card. The renderer output is
-      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
-      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
-      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
-    },
-    { field: 'city', headerName: 'City', editable: true, width: 150 },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    {
-      field: 'updated_at',
-      headerName: 'Last touch',
-      editable: false,
-      minWidth: 120,
-      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      hide: true,
-      width: 280,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** People with no matchable address (the placeholder household) — footer note + link target. */
-  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
-    count: 0,
-    household_id: null,
-  });
-
-  public ngOnInit(): void {
-    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
-    // keep full contrast — they're a second focal point (the People-grain of the household).
-    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-  }
-
-  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  private async loadUnhoused(): Promise<void> {
-    try {
-      this.unhoused.set(await this.householdsService.getUnhoused());
-    } catch (err) {
-      console.error('Failed to load unhoused people count', err);
-    }
-  }
-
-  /** Opens the placeholder household, whose detail view lists everyone with no address. */
-  protected openUnhoused(): void {
-    const id = this.unhoused().household_id;
-    if (id) void this.router.navigate(['/households', id]);
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [total, wards] = await Promise.all([
-        this.householdsService.count(),
-        this.householdsService.countDistinctWards(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
-      // Ward data comes from geocoding; until any exists, fall back to a plain total.
-      this.totalSentence.set(
-        wards > 0
-          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
-          : `${households} total`,
-      );
-    } catch (err) {
-      console.error('Failed to load household grain counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  /** Renders member names as person-card links; a comma separator keeps them on one line. */
-  private renderMembers(value: unknown): string {
-    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
-    const links = members
-      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
-      .map((m) => {
-        const id = this.escapeHtml(String(m.id));
-        const name = this.escapeHtml(String(m.name));
-        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
-      });
-    if (!links.length) return '';
-    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
-    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
-  }
-
-  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
-  private onMemberClicked(event: Event | undefined): void {
-    const target = event?.target;
-    if (!(target instanceof HTMLElement)) return;
-    const anchor = target.closest('[data-person-id]');
-    const id = anchor?.getAttribute('data-person-id');
-    if (id) void this.router.navigate(['/people', id]);
-  }
-
-  private escapeHtml(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  /** Street number + name for the Household door column (city has its own column). */
-  private addressString(data: unknown): string {
-    const d = data as Record<string, unknown> | undefined;
-    if (!d) return '';
-    if (d['is_placeholder']) return 'People with no addresses';
-    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
-  }
-
-  /** Compact relative "last touch" — matches the household view's low-chrome style. */
-  private formatLastTouch(value: unknown): string {
-    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
   }
 }
 ```
@@ -65800,460 +66514,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  SUPPORT_LEVEL_LABELS,
-  UpdatePersonsObj,
-  UpdatePersonsType,
-  VOTING_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  deleteConfirmMessageFor,
-  deleteSuccessMessageFor,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon],
-  templateUrl: './persons-grid.html',
-  host: { class: 'block h-full' },
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadTotalCount();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    {
-      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
-      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
-      field: 'support_level',
-      headerName: 'Support (context)',
-      editable: false,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
-    },
-    {
-      field: 'voting_status',
-      headerName: 'Voting (context)',
-      editable: false,
-      hide: true,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
-    },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor/volunteer are just tag filters now — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: deleteConfirmMessageFor(this.config.messages, selected.length),
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
 
 ```html
@@ -66976,17 +67236,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <div class="card mb-4 border border-base-300 bg-base-100 p-4">
       <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
       <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
-        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
         <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
+        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
+        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
         <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
       </div>
       <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Strong {{ r.responseMix.strong_support }}</span>
-        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Supporters {{ r.responseMix.supporter }}</span>
         <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
+        <span>Not voting {{ r.responseMix.not_voting }}</span>
+        <span>Already voted {{ r.responseMix.already_voted }}</span>
         <span>No answer {{ r.responseMix.no_answer }}</span>
       </div>
     </div>
@@ -67087,6 +67349,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </section>
   } @if (cutOpen()) {
   <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  } @if (assignTarget(); as target) {
+  <pc-assign-turf-dialog
+    [turfId]="target.id"
+    [turfName]="target.name"
+    (cancelled)="assignTarget.set(null)"
+    (assigned)="onAssigned($event)"
+  />
   }
 </div>
 ```
@@ -68448,240 +68717,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
-   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
-  badgeCount?: number | null;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  /**
-   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
-   * A single lowercase letter, unique across all items. Rendered as a hint in the
-   * sidebar and consumed by KeyboardShortcutsService to route there.
-   */
-  shortcut?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-// Sidebar IA follows the North Star module map (spec §0). Section order and
-// membership are load-bearing; do not reshuffle without checking the spec.
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/dashboard',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-    shortcut: 'h',
-  },
-  {
-    name: `PINS`,
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `WORK`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-        shortcut: 'i',
-        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
-        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
-      },
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
-        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
-      },
-      // Hidden: the board is reachable from the Tasks page via the header swap button
-      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
-      // `g b` chord, the pin button and the help overlay working.
-      {
-        name: `Task board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-        hidden: true,
-      },
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      // Hidden: Households and Companies are grains of the People grid (spec §5)
-      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
-      // pin button and the help overlay keep working.
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-        hidden: true,
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-        hidden: true,
-      },
-    ],
-  },
-  {
-    name: `OUTREACH`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'mailbox',
-        shortcut: 'n',
-      },
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-        shortcut: 'l',
-      },
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-        shortcut: 'o',
-      },
-    ],
-  },
-  {
-    name: `FIELD`,
-    type: 'subheading',
-    children: [
-      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
-      {
-        name: 'Canvassing',
-        route: '/canvassing',
-        icon: 'route',
-        shortcut: 'v',
-      },
-      {
-        name: 'Deliveries',
-        route: '/deliveries',
-        icon: 'house-modern',
-        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
-        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
-      },
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
-      },
-    ],
-  },
-  {
-    name: `DATA`,
-    type: 'subheading',
-    children: [
-      {
-        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
-        // CSV import wizard at /imports/new. Exports' standalone entry folded
-        // in here — see the redirect in dashboard.routes.ts.
-        name: 'Import / export',
-        route: '/imports',
-        icon: 'arrows-up-down-tray',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
-        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'chat-bubble-bottom-center-text',
-      },
-      {
-        name: `Automations`,
-        route: '/automations',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `ADMIN`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Volunteer access',
-        route: '/volunteer-access',
-        icon: 'identification',
-        // badgeCount = volunteers awaiting approval, populated at runtime by
-        // Sidebar from `companionAccess.pendingCount`.
-      },
-      {
-        name: 'Activity',
-        route: '/activity',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Workspace',
-        route: '/workspace',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/log-interaction/log-interaction.html
@@ -70233,6 +70268,240 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
     <button type="submit">close</button>
   </form>
 </dialog>
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
+   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
+  badgeCount?: number | null;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+// Sidebar IA follows the North Star module map (spec §0). Section order and
+// membership are load-bearing; do not reshuffle without checking the spec.
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/dashboard',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+    shortcut: 'h',
+  },
+  {
+    name: `PINS`,
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `WORK`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+        shortcut: 'i',
+        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
+        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
+      },
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
+        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
+      },
+      // Hidden: the board is reachable from the Tasks page via the header swap button
+      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
+      // `g b` chord, the pin button and the help overlay working.
+      {
+        name: `Task board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+        hidden: true,
+      },
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      // Hidden: Households and Companies are grains of the People grid (spec §5)
+      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
+      // pin button and the help overlay keep working.
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+        hidden: true,
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+        hidden: true,
+      },
+    ],
+  },
+  {
+    name: `OUTREACH`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'mailbox',
+        shortcut: 'n',
+      },
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+        shortcut: 'l',
+      },
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+        shortcut: 'o',
+      },
+    ],
+  },
+  {
+    name: `FIELD`,
+    type: 'subheading',
+    children: [
+      // Wave 2 FIELD surfaces: Canvassing (§13) and Deliveries (§14).
+      {
+        name: 'Canvassing',
+        route: '/canvassing',
+        icon: 'route',
+        shortcut: 'v',
+      },
+      {
+        name: 'Deliveries',
+        route: '/deliveries',
+        icon: 'house-modern',
+        // badgeCount = live approved-and-ready request count (spec §14), populated at runtime by
+        // Sidebar from `deliveries.getReadyCount` — see sidebar.ts. Static data left unset.
+      },
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+    ],
+  },
+  {
+    name: `DATA`,
+    type: 'subheading',
+    children: [
+      {
+        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
+        // CSV import wizard at /imports/new. Exports' standalone entry folded
+        // in here — see the redirect in dashboard.routes.ts.
+        name: 'Import / export',
+        route: '/imports',
+        icon: 'arrows-up-down-tray',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
+        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'chat-bubble-bottom-center-text',
+      },
+      {
+        name: `Automations`,
+        route: '/automations',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+    ],
+  },
+  {
+    name: `ADMIN`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Volunteer access',
+        route: '/volunteer-access',
+        icon: 'identification',
+        // badgeCount = volunteers awaiting approval, populated at runtime by
+        // Sidebar from `companionAccess.pendingCount`.
+      },
+      {
+        name: 'Activity',
+        route: '/activity',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Workspace',
+        route: '/workspace',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts

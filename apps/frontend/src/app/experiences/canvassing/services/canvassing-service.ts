@@ -56,10 +56,6 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.assign.mutate(input);
   }
 
-  public getCompanionLink(turfId: string): Promise<{ token: string }> {
-    return this.api.canvassing.getCompanionLink.mutate(turfId);
-  }
-
   public retire(turfId: string): Promise<void> {
     return this.api.canvassing.retire.mutate(turfId).then(() => undefined);
   }

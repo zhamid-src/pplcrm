@@ -1,21 +1,33 @@
 import type {
   AddTurfType,
   AssignTurfType,
+  CompanionHousehold,
+  CompanionOpAck,
+  CompanionOpType,
+  CompanionPerson,
+  CompanionSurveyPrefill,
+  CompanionSurveyType,
+  CompanionTurfPayload,
   CutTurfsType,
   FieldReportRangeType,
   IAuthKeyPayload,
   KnockResponse,
   LogKnockType,
   SupportLevel,
+  UpdateCompanionSettingsType,
   UpdateTurfType,
+  VotingStatus,
 } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
+import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
 import { ListsController } from '../lists/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
 import {
   cutTurfs as clusterTurfs,
   previewCut as previewCutPlan,
@@ -28,11 +40,20 @@ import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositori
 import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
 
 /** What a voter said at the door → the campaign support scale (§15). */
-const KNOCK_RESPONSE_TO_SUPPORT: Record<KnockResponse, SupportLevel> = {
-  strong_support: 'strong',
-  lean_support: 'leaning',
+const KNOCK_RESPONSE_TO_SUPPORT: Partial<Record<KnockResponse, SupportLevel>> = {
+  supporter: 'strong',
   undecided: 'undecided',
-  opposed: 'against',
+  non_supporter: 'against',
+};
+
+/**
+ * "Not voting" / "Already voted" are turnout facts, not stances — they feed
+ * voting_status. Door canvassing overwhelmingly happens during the advance-poll
+ * window, so "already voted" is recorded as voted_advance.
+ */
+const KNOCK_RESPONSE_TO_VOTING: Partial<Record<KnockResponse, VotingStatus>> = {
+  not_voting: 'not_voting',
+  already_voted: 'voted_advance',
 };
 
 /** Derived display status — computed from stored lifecycle + knock activity. */
@@ -68,22 +89,6 @@ export interface InFieldToday {
   doorsKnocked: number;
   conversations: number;
   responseMix: ResponseMix;
-}
-
-export interface CompanionDoor {
-  household_id: string;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  last_outcome: string | null;
-}
-
-export interface CompanionTurf {
-  turf_id: string;
-  turf_name: string;
-  door_count: number;
-  attempted: number;
-  doors: CompanionDoor[];
 }
 
 /** How a door reads on the §13.3 Coverage map, derived from its window knocks. */
@@ -135,6 +140,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
   private readonly lists = new ListsController();
   private readonly campaignsRepo = new CampaignsRepo();
   private readonly factsRepo = new CampaignPersonFactsRepo();
+  private readonly subscriptionsRepo = new CampaignSubscriptionsRepo();
+  private readonly companionAccess = new CompanionAccessController();
 
   constructor() {
     super(new TurfsRepo());
@@ -370,7 +377,21 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
     const teamId = input.team_id != null ? String(input.team_id) : null;
+    const volunteerPersonId = String(input.volunteer_person_id);
+
+    // The link is personal: the companion access layer verifies the holder
+    // against this person's contacts, so they must exist (and ideally have an
+    // email or mobile on file — the gate explains it if they don't).
+    const person = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', volunteerPersonId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this link belongs to.');
+
     const token = generateTurfToken();
+    const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
 
     await this.turfsRepo()
       .transaction()
@@ -380,7 +401,15 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
           trx,
         );
         await this.assignments.create(
-          { tenant_id: auth.tenant_id, turf_id: input.turf_id, team_id: teamId, token, user_id: auth.user_id },
+          {
+            tenant_id: auth.tenant_id,
+            turf_id: input.turf_id,
+            team_id: teamId,
+            token,
+            user_id: auth.user_id,
+            volunteer_person_id: volunteerPersonId,
+            expires_at: expiresAt,
+          },
           trx,
         );
         await this.turfsRepo().update(
@@ -399,17 +428,27 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
       activity: 'assign',
       entity: 'turf',
       entity_id: input.turf_id,
-      metadata: teamId ? { team_id: teamId } : { link: 'tokenised' },
+      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
     });
 
     return { token };
   }
 
-  /** Ensure a shareable Companion link exists ("Copy a link instead"). */
-  public async getCompanionLink(auth: IAuthKeyPayload, turfId: string): Promise<{ token: string }> {
-    const existing = await this.assignments.getActiveByTurf({ tenant_id: auth.tenant_id, turf_id: turfId });
-    if (existing) return { token: '' }; // token not re-exposed on read; issue via assign
-    return this.assignTurf(auth, { turf_id: turfId, team_id: null });
+  /**
+   * Link expiry = the campaign's end date when one exists (spec §2: "end of the
+   * canvass window"), otherwise no hard expiry (revocation still applies).
+   */
+  private async assignmentExpiry(tenant_id: string, campaign_id: string): Promise<Date | null> {
+    if (!campaign_id) return null;
+    const campaign = await this.knocks.db
+      .selectFrom('campaigns')
+      .select(['enddate'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', campaign_id)
+      .executeTakeFirst();
+    if (!campaign?.enddate) return null;
+    const end = new Date(`${campaign.enddate}T23:59:59`);
+    return Number.isNaN(end.getTime()) || end <= new Date() ? null : end;
   }
 
   public async retireTurf(auth: IAuthKeyPayload, turfId: string): Promise<void> {
@@ -473,37 +512,613 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
   // -------------------------------------------------- Companion (public) ----
 
-  /** Resolve a Companion token to its turf + door list. No account required. */
-  public async getCompanionTurf(token: string): Promise<CompanionTurf> {
-    const assignment = await this.assignments.resolveByToken(token);
-    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+  /**
+   * Resolve a Companion token + verified device session to the full spec-§3
+   * turf payload. Payload minimization is deliberate: names, walk data, and
+   * prior door RESULTS only — never emails, phones, donation history, or notes.
+   */
+  public async getCompanionTurf(token: string, sessionToken: string | null): Promise<CompanionTurfPayload> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
     const tenant_id = assignment.tenant_id;
     const turf_id = assignment.turf_id;
 
     const turf = await this.turfsRepo().getTurfCore({ tenant_id, id: turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
 
-    const [doorRows, lastOutcomes] = await Promise.all([
+    const [doorRows, state, campaign, canvasserName] = await Promise.all([
       this.turfHouseholds.getDoors({ tenant_id, turf_id }),
-      this.knocks.getLastOutcomeByHousehold({ tenant_id, turf_id }),
+      this.knocks.getCompanionState({ tenant_id, turf_id }),
+      this.companionCampaign(tenant_id, String(turf.campaign_id ?? '')),
+      this.personFirstLast(tenant_id, String(assignment.volunteer_person_id)),
     ]);
 
-    const doors: CompanionDoor[] = doorRows.map((d) => ({
-      household_id: d.household_id,
-      address: this.formatAddress(d),
-      lat: d.lat,
-      lng: d.lng,
-      last_outcome: lastOutcomes.get(d.household_id) ?? null,
-    }));
+    const householdIds = doorRows.map((d) => d.household_id);
+    const people = await this.peopleByHousehold(tenant_id, householdIds);
 
-    const attempted = doors.filter((d) => d.last_outcome != null).length;
+    // Index the latest knock per (household, person).
+    const doorState = new Map<string, (typeof state)[number]>();
+    const personState = new Map<string, (typeof state)[number]>();
+    for (const s of state) {
+      if (s.person_id == null) doorState.set(s.household_id, s);
+      else personState.set(`${s.household_id}:${s.person_id}`, s);
+    }
+
+    const households: CompanionHousehold[] = doorRows.map((d, i) => {
+      const residents = people.get(d.household_id) ?? [];
+      const ds = doorState.get(d.household_id);
+      const doorOutcome =
+        ds && (ds.outcome === 'no_answer' || ds.outcome === 'inaccessible' || ds.outcome === 'refused')
+          ? ds.outcome
+          : null;
+      const hhSurvey = ds && ds.outcome === 'conversation' ? this.toPrefill(ds) : null;
+      return {
+        id: d.household_id,
+        walk_order: d.walk_order ?? i + 1,
+        address: this.formatAddress(d),
+        lat: d.lat,
+        lng: d.lng,
+        dnc: residents.length > 0 && residents.every((p) => p.dnc),
+        door_outcome: doorOutcome,
+        hh_survey: hhSurvey,
+        people: residents.map((p): CompanionPerson => {
+          const ps = personState.get(`${d.household_id}:${p.id}`);
+          const result =
+            ps == null
+              ? null
+              : ps.outcome === 'conversation'
+                ? 'canvassed'
+                : ps.outcome === 'not_home' || ps.outcome === 'moved' || ps.outcome === 'refused'
+                  ? ps.outcome
+                  : null;
+          return {
+            id: p.id,
+            name: p.name,
+            dnc: p.dnc,
+            result,
+            survey: ps && ps.outcome === 'conversation' ? this.toPrefill(ps) : null,
+          };
+        }),
+      };
+    });
+
     return {
-      turf_id,
+      campaign_name: campaign.name,
       turf_name: String(turf.name),
-      door_count: doors.length,
-      attempted,
-      doors,
+      canvasser_name: canvasserName,
+      script: campaign.script,
+      issues: campaign.issues,
+      expires_at: assignment.expires_at ? assignment.expires_at.toISOString() : null,
+      households,
     };
+  }
+
+  /**
+   * Apply a batch of Companion ops (spec §5). Each op is idempotent via the
+   * companion_ops ledger — a retried op acks `duplicate` and re-applies
+   * nothing — and each op commits in its own transaction so one bad op never
+   * blocks the rest of an offline queue from draining.
+   */
+  public async postCompanionResults(
+    token: string,
+    sessionToken: string | null,
+    ops: CompanionOpType[],
+  ): Promise<{ acks: CompanionOpAck[] }> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
+    const tenant_id = assignment.tenant_id;
+    const turf_id = assignment.turf_id;
+
+    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
+    const canvasserName = await this.personFirstLast(tenant_id, String(assignment.volunteer_person_id));
+
+    const acks: CompanionOpAck[] = [];
+    for (const op of ops) {
+      try {
+        const ack = await this.knocks.transaction().execute(async (trx) => {
+          // Idempotency ledger: a conflict means this op already applied.
+          const claimed = await trx
+            .insertInto('companion_ops')
+            .values({ tenant_id, op_id: op.op_id, scope: 'canvass' })
+            .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+            .returning('op_id')
+            .executeTakeFirst();
+          if (!claimed) return { op_id: op.op_id, status: 'duplicate' } as CompanionOpAck;
+
+          if (!doorIds.has(String(op.payload.household_id))) {
+            throw new BadRequestError('That household is not part of this turf.');
+          }
+          return this.applyCompanionOp(trx, {
+            op,
+            tenant_id,
+            turf_id,
+            actor: assignment.created_by,
+            canvasser_name: canvasserName,
+          });
+        });
+        acks.push(ack);
+      } catch (err: unknown) {
+        acks.push({
+          op_id: op.op_id,
+          status: 'rejected',
+          error: err instanceof Error ? err.message : 'Could not record this result.',
+        });
+      }
+    }
+    return { acks };
+  }
+
+  /** Apply one Companion op inside its transaction; returns the ack. */
+  private async applyCompanionOp(
+    trx: Transaction<Models>,
+    input: {
+      op: CompanionOpType;
+      tenant_id: string;
+      turf_id: string;
+      actor: string;
+      canvasser_name: string;
+    },
+  ): Promise<CompanionOpAck> {
+    const { op, tenant_id, turf_id, actor, canvasser_name } = input;
+    const householdId = String(op.payload.household_id);
+    const knockedAt = this.clampRecordedAt(op.recorded_at);
+    const via = `via Canvass Companion (${canvasser_name})`;
+
+    const insertKnock = async (fields: {
+      person_id: string | null;
+      outcome: string;
+      response?: string | null;
+      notes?: string | null;
+      issues?: string[];
+      wants_volunteer?: boolean;
+      wants_yard_sign?: boolean;
+      set_dnc?: boolean;
+      contact_phone?: string | null;
+      contact_email?: string | null;
+      subscribe?: boolean;
+    }): Promise<void> => {
+      const row = {
+        tenant_id,
+        turf_id,
+        household_id: householdId,
+        person_id: fields.person_id,
+        outcome: fields.outcome,
+        response: fields.response ?? null,
+        notes: fields.notes ?? null,
+        source: COMPANION_SOURCE,
+        canvasser_name,
+        client_knock_id: op.op_id,
+        knocked_at: knockedAt,
+        issues: fields.issues ?? [],
+        wants_volunteer: fields.wants_volunteer ?? false,
+        wants_yard_sign: fields.wants_yard_sign ?? false,
+        set_dnc: fields.set_dnc ?? false,
+        contact_phone: fields.contact_phone ?? null,
+        contact_email: fields.contact_email ?? null,
+        subscribe: fields.subscribe ?? false,
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'turf_knocks', 'insert'>;
+      await this.knocks.insertIdempotent(row, trx);
+    };
+
+    const logActivity = async (entity: 'household' | 'person', entity_id: string, extra: Record<string, unknown>) => {
+      await this.userActivity.log(
+        {
+          tenant_id,
+          user_id: actor,
+          activity: 'update',
+          entity,
+          entity_id,
+          metadata: { source: COMPANION_SOURCE, via, turf_id, ...extra },
+          performed_by: actor,
+        },
+        trx,
+      );
+    };
+
+    switch (op.type) {
+      case 'survey': {
+        const p = op.payload;
+        const personId = p.person_id != null ? String(p.person_id) : null;
+        if (personId) await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({
+          person_id: personId,
+          outcome: 'conversation',
+          response: p.support ?? null,
+          notes: p.notes ?? null,
+          issues: p.issues,
+          wants_volunteer: p.wants_volunteer,
+          wants_yard_sign: p.wants_yard_sign,
+          set_dnc: p.set_dnc,
+          contact_phone: p.contact_phone ?? null,
+          contact_email: p.contact_email ?? null,
+          subscribe: p.subscribe,
+        });
+        await this.applySurveySideEffects(trx, { tenant_id, turf_id, household_id: householdId, actor, survey: p });
+        await logActivity('household', householdId, { outcome: 'conversation', response: p.support ?? null });
+        if (personId) await logActivity('person', personId, { outcome: 'conversation', response: p.support ?? null });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_result': {
+        const personId = String(op.payload.person_id);
+        await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({ person_id: personId, outcome: op.payload.result });
+        await logActivity('person', personId, { outcome: op.payload.result });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'door_outcome': {
+        await insertKnock({ person_id: null, outcome: op.payload.outcome });
+        await logActivity('household', householdId, { outcome: op.payload.outcome });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'clear_outcome': {
+        await insertKnock({ person_id: null, outcome: 'cleared' });
+        await logActivity('household', householdId, { outcome: 'cleared' });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_create': {
+        const name = op.payload.name.trim();
+        const lastSpace = name.lastIndexOf(' ');
+        const first = lastSpace > 0 ? name.slice(0, lastSpace) : name;
+        const last = lastSpace > 0 ? name.slice(lastSpace + 1) : null;
+        const created = await trx
+          .insertInto('persons')
+          .values({
+            tenant_id,
+            household_id: householdId,
+            first_name: first,
+            last_name: last,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'persons', 'insert'>)
+          .returning('id')
+          .executeTakeFirst();
+        const personId = String(created?.id ?? '');
+        if (!personId) throw new BadRequestError('Could not add this person.');
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Added at door', actor);
+        await logActivity('person', personId, { created_at_door: true });
+        return { op_id: op.op_id, status: 'applied', person_id: personId };
+      }
+      default: {
+        const _exhaustive: never = op;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /** The follow-up writes a survey triggers (spec §3.5) — all in the op's transaction. */
+  private async applySurveySideEffects(
+    trx: Transaction<Models>,
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      household_id: string;
+      actor: string;
+      survey: CompanionSurveyType;
+    },
+  ): Promise<void> {
+    const { tenant_id, turf_id, household_id, actor, survey } = input;
+    const personId = survey.person_id != null ? String(survey.person_id) : null;
+    const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
+
+    // Support / turnout facts (person-level only, and only with a stance).
+    if (personId && survey.support && campaignId) {
+      const support = KNOCK_RESPONSE_TO_SUPPORT[survey.support];
+      const voting = KNOCK_RESPONSE_TO_VOTING[survey.support];
+      await this.factsRepo.upsertFact(
+        {
+          tenant_id,
+          campaign_id: campaignId,
+          person_id: personId,
+          user_id: actor,
+          ...(support ? { support_level: support } : {}),
+          ...(voting ? { voting_status: voting } : {}),
+          source: 'canvass',
+        },
+        trx,
+      );
+    }
+
+    // "Wants a yard sign" → a Deliveries intake request (spec §3.6/§4), unless
+    // the household already has an open one (same guard as staff addRequest).
+    if (survey.wants_yard_sign && campaignId) {
+      const open = await trx
+        .selectFrom('delivery_requests')
+        .select(['id'])
+        .where('tenant_id', '=', tenant_id)
+        .where('household_id', '=', household_id)
+        .where('status', 'in', ['new', 'approved'])
+        .executeTakeFirst();
+      if (!open) {
+        await trx
+          .insertInto('delivery_requests')
+          .values({
+            tenant_id,
+            campaign_id: campaignId,
+            household_id,
+            person_id: personId,
+            web_form_id: null,
+            source: 'canvass',
+            status: 'new',
+            notes: null,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'delivery_requests', 'insert'>)
+          .execute();
+      }
+    }
+
+    if (personId) {
+      // "Do not contact" — the global compliance flag (§15).
+      if (survey.set_dnc) {
+        await trx
+          .updateTable('persons')
+          .set({ do_not_contact: true, updatedby_id: actor, updated_at: new Date() })
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .execute();
+      }
+
+      // Contact capture: fill blanks only — a doorstep answer never overwrites
+      // what the CRM already knows (the knock row keeps the captured value).
+      if (survey.contact_phone || survey.contact_email) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['mobile', 'email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const updates: Record<string, unknown> = {};
+        if (survey.contact_phone && !person?.mobile) updates['mobile'] = survey.contact_phone;
+        if (survey.contact_email && !person?.email) updates['email'] = survey.contact_email;
+        if (Object.keys(updates).length > 0) {
+          await trx
+            .updateTable('persons')
+            .set({ ...updates, updatedby_id: actor, updated_at: new Date() })
+            .where('tenant_id', '=', tenant_id)
+            .where('id', '=', personId)
+            .execute();
+        }
+      }
+
+      // "Subscribe to updates" — consent captured at the door.
+      if (survey.subscribe && campaignId) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const email = survey.contact_email ?? person?.email ?? null;
+        if (email) {
+          await this.subscriptionsRepo.setStatus(
+            {
+              tenant_id,
+              campaign_id: campaignId,
+              person_id: personId,
+              email,
+              status: 'subscribed',
+              consent_source: 'canvass',
+              user_id: actor,
+            },
+            trx,
+          );
+        }
+      }
+
+      // "Wants to volunteer" → flag for the field organizer.
+      if (survey.wants_volunteer) {
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Volunteer prospect', actor);
+      }
+    }
+  }
+
+  /** Resolve + expiry-check an assignment token (uniform dead-link semantics). */
+  private async resolveActiveAssignment(token: string) {
+    const assignment = await this.assignments.resolveByToken(token);
+    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    if (assignment.expires_at && assignment.expires_at < new Date()) {
+      throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    }
+    return assignment;
+  }
+
+  /** A person op must target a resident of that door — a token can't reach further. */
+  private async assertPersonInHousehold(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    household_id: string,
+  ): Promise<void> {
+    const person = await trx
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .where('household_id', '=', household_id)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('That person is not at this door.');
+  }
+
+  /**
+   * Attach a tag by name inside the op's transaction (find-or-create + map).
+   * PersonsService.attachTag exists but manages its own connections/workflow
+   * triggers outside a transaction — this is the minimal transactional core.
+   */
+  private async attachTagInTrx(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    name: string,
+    actor: string,
+  ): Promise<void> {
+    await trx
+      .insertInto('tags')
+      .values({
+        tenant_id,
+        name,
+        color: '#818789',
+        type: 'tag',
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    const tag = await trx
+      .selectFrom('tags')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('name', '=', name)
+      .executeTakeFirst();
+    if (!tag) return;
+    await trx
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id,
+        person_id,
+        tag_id: String(tag.id),
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'map_peoples_tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** On-device timestamps keep their true door time, but never land in the future. */
+  private clampRecordedAt(recordedAt: string | null | undefined): Date {
+    const now = new Date();
+    if (!recordedAt) return now;
+    const parsed = new Date(recordedAt);
+    if (Number.isNaN(parsed.getTime()) || parsed > now) return now;
+    return parsed;
+  }
+
+  /** Campaign display name + companion survey vocabulary for a turf's campaign. */
+  private async companionCampaign(
+    tenant_id: string,
+    campaign_id: string,
+  ): Promise<{ name: string; issues: string[]; script: string }> {
+    if (campaign_id) {
+      const row = await this.knocks.db
+        .selectFrom('campaigns')
+        .select(['name', 'canvass_issues', 'canvass_script'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', '=', campaign_id)
+        .executeTakeFirst();
+      if (row) {
+        return {
+          name: String(row.name),
+          issues: Array.isArray(row.canvass_issues) ? row.canvass_issues.map(String) : [],
+          script: row.canvass_script ?? '',
+        };
+      }
+    }
+    return { name: '', issues: [], script: '' };
+  }
+
+  private async personFirstLast(tenant_id: string, person_id: string): Promise<string> {
+    const row = await this.knocks.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    return [row?.first_name, row?.last_name].filter(Boolean).join(' ') || 'Volunteer';
+  }
+
+  /** Residents per household — names + DNC only (payload minimization, spec §2). */
+  private async peopleByHousehold(
+    tenant_id: string,
+    household_ids: string[],
+  ): Promise<Map<string, { id: string; name: string; dnc: boolean }[]>> {
+    const map = new Map<string, { id: string; name: string; dnc: boolean }[]>();
+    if (household_ids.length === 0) return map;
+    const rows = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id', 'household_id', 'first_name', 'last_name', 'do_not_contact'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', household_ids)
+      .orderBy('id')
+      .execute();
+    for (const r of rows) {
+      const hid = String(r.household_id);
+      const list = map.get(hid) ?? [];
+      list.push({
+        id: String(r.id),
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unnamed resident',
+        dnc: Boolean(r.do_not_contact),
+      });
+      map.set(hid, list);
+    }
+    return map;
+  }
+
+  private toPrefill(s: {
+    response: string | null;
+    issues: string[];
+    wants_volunteer: boolean;
+    wants_yard_sign: boolean;
+    set_dnc: boolean;
+    subscribe: boolean;
+  }): CompanionSurveyPrefill {
+    return {
+      support: (s.response ?? null) as CompanionSurveyPrefill['support'],
+      issues: s.issues,
+      wants_volunteer: s.wants_volunteer,
+      wants_yard_sign: s.wants_yard_sign,
+      set_dnc: s.set_dnc,
+      subscribe: s.subscribe,
+    };
+  }
+
+  // ------------------------------------------- Companion settings (staff) ----
+
+  /** The survey vocabulary the Companion shows, from the write campaign. */
+  public async getCompanionSettings(
+    auth: IAuthKeyPayload,
+    campaign_id?: string,
+  ): Promise<{ campaign_id: string; campaign_name: string; issues: string[]; script: string }> {
+    const resolved = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id, campaign_id });
+    const campaign = await this.companionCampaign(auth.tenant_id, String(resolved));
+    return {
+      campaign_id: String(resolved),
+      campaign_name: campaign.name,
+      issues: campaign.issues,
+      script: campaign.script,
+    };
+  }
+
+  public async updateCompanionSettings(auth: IAuthKeyPayload, input: UpdateCompanionSettingsType): Promise<void> {
+    const resolved = await this.campaignsRepo.resolveForWrite({
+      tenant_id: auth.tenant_id,
+      campaign_id: input.campaign_id,
+    });
+    await this.knocks.db
+      .updateTable('campaigns')
+      .set({
+        canvass_issues: input.issues,
+        canvass_script: input.script ?? null,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(resolved))
+      .execute();
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'campaign',
+      entity_id: String(resolved),
+      metadata: { action: 'companion_settings', issues: input.issues.length },
+    });
   }
 
   /**
@@ -576,18 +1191,21 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
         performed_by: actor,
       });
 
-      // A conversation with a stance feeds the support level of the campaign
-      // the TURF was cut for (§15) — a writ-period knock updates the election
-      // campaign's read on the voter, never the office's.
+      // A conversation with a stance feeds the support level (or turnout fact)
+      // of the campaign the TURF was cut for (§15) — a writ-period knock updates
+      // the election campaign's read on the voter, never the office's.
       if (input.response) {
         const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
-        if (campaignId) {
+        const support = KNOCK_RESPONSE_TO_SUPPORT[input.response];
+        const voting = KNOCK_RESPONSE_TO_VOTING[input.response];
+        if (campaignId && (support || voting)) {
           await this.factsRepo.upsertFact({
             tenant_id,
             campaign_id: campaignId,
             person_id: String(input.person_id),
             user_id: actor,
-            support_level: KNOCK_RESPONSE_TO_SUPPORT[input.response],
+            ...(support ? { support_level: support } : {}),
+            ...(voting ? { voting_status: voting } : {}),
             source: 'canvass',
           });
         }

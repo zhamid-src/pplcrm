@@ -403,6 +403,8 @@ apps/
         deliveries/
           route-page.ts
         gate/
+          companion-api.ts
+          companion-gate.ts
           dead-link-page.ts
         app.config.ts
         app.routes.ts
@@ -5642,127 +5644,6 @@ export function previewCut(doors: readonly DoorPoint[], targetDoors: number): Cu
 }
 ```
 
-## File: apps/backend/src/app/modules/canvassing/repositories/turf-assignments.repo.ts
-
-```typescript
-import { randomBytes } from 'node:crypto';
-
-import type { Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export interface ResolvedAssignment {
-  id: string;
-  tenant_id: string;
-  turf_id: string;
-  team_id: string | null;
-  status: string;
-  /** Real CRM account that deployed this Companion — the responsible actor for
-   *  synced knocks (§22.7: honest attribution, never a fabricated user). */
-  created_by: string;
-  /** The person this link belongs to — the companion access layer verifies against them. */
-  volunteer_person_id: string | null;
-  /** Optional hard expiry for the capability link. */
-  expires_at: Date | null;
-}
-
-/** A high-entropy, URL-safe Companion token (the bearer credential). */
-export function generateTurfToken(): string {
-  return randomBytes(24).toString('base64url');
-}
-
-export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
-  constructor() {
-    super('turf_assignments');
-  }
-
-  public async getActiveByTurf(
-    input: { tenant_id: string; turf_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<ResolvedAssignment | null> {
-    const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .where('status', '=', 'active')
-      .orderBy('id', 'desc')
-      .executeTakeFirst();
-    return row ? this.toResolved(row) : null;
-  }
-
-  public async create(
-    input: { tenant_id: string; turf_id: string; team_id: string | null; token: string; user_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string> {
-    const row = {
-      tenant_id: input.tenant_id,
-      turf_id: input.turf_id,
-      team_id: input.team_id,
-      token: input.token,
-      status: 'active',
-      createdby_id: input.user_id,
-      updatedby_id: input.user_id,
-    } as OperationDataType<'turf_assignments', 'insert'>;
-    const created = await this.getInsert(trx).values(row).returning('id').executeTakeFirst();
-    return String(created?.id ?? '');
-  }
-
-  public async revokeForTurf(
-    input: { tenant_id: string; turf_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({ status: 'revoked', updatedby_id: input.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('turf_id', '=', input.turf_id)
-      .where('status', '=', 'active')
-      .execute();
-  }
-
-  /**
-   * Resolve a Companion token to its assignment. This is the ONLY intentionally
-   * un-tenant-scoped query in the module: the token itself is the bearer
-   * credential and is what identifies the tenant (exactly like a session token —
-   * cf. the `sessions` entry in the no-unscoped-db-query ignoreTables). Every
-   * downstream read/write is then scoped by the resolved `tenant_id`.
-   */
-  public async resolveByToken(token: string, trx?: Transaction<Models>): Promise<ResolvedAssignment | null> {
-    // NOTE: intentionally NOT tenant-scoped — the token IS the credential and is
-    // what resolves the tenant (see the method doc above). Every downstream query
-    // is scoped by the resolved tenant_id.
-    const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
-      .where('token', '=', token)
-      .where('status', '=', 'active')
-      .executeTakeFirst();
-    return row ? this.toResolved(row) : null;
-  }
-
-  private toResolved(row: {
-    id: unknown;
-    tenant_id: unknown;
-    turf_id: unknown;
-    team_id: unknown;
-    status: unknown;
-    createdby_id: unknown;
-    volunteer_person_id?: unknown;
-    expires_at?: unknown;
-  }): ResolvedAssignment {
-    return {
-      id: String(row.id),
-      tenant_id: String(row.tenant_id),
-      turf_id: String(row.turf_id),
-      team_id: row.team_id == null ? null : String(row.team_id),
-      status: String(row.status),
-      created_by: String(row.createdby_id),
-      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
-      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
-    };
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/canvassing/repositories/turf-households.repo.ts
 
 ```typescript
@@ -5781,6 +5662,7 @@ export interface DoorRow {
   zip: string | null;
   lat: number | null;
   lng: number | null;
+  walk_order: number | null;
 }
 
 /**
@@ -5820,17 +5702,29 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
     return rows.map((r) => String(r.household_id));
   }
 
+  /**
+   * `household_ids` arrive in the cutting engine's snake-sweep order, which IS
+   * the suggested walk order — each door's position is stored as `walk_order`
+   * (appended after any existing doors on refresh).
+   */
   public async addDoors(
     input: { tenant_id: string; turf_id: string; household_ids: string[]; user_id: string },
     trx?: Transaction<Models>,
   ): Promise<void> {
     if (input.household_ids.length === 0) return;
+    const maxRow = await this.getSelect(trx)
+      .select((eb) => eb.fn.max('walk_order').as('max_order'))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .executeTakeFirst();
+    const offset = Number(maxRow?.max_order ?? 0);
     const rows = input.household_ids.map(
-      (hid) =>
+      (hid, i) =>
         ({
           tenant_id: input.tenant_id,
           turf_id: input.turf_id,
           household_id: hid,
+          walk_order: offset + i + 1,
           createdby_id: input.user_id,
           updatedby_id: input.user_id,
         }) as OperationDataType<'turf_households', 'insert'>,
@@ -5868,7 +5762,10 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
         'households.zip',
         'households.lat',
         'households.lng',
+        'turf_households.walk_order',
       ])
+      .orderBy(sql`turf_households.walk_order NULLS LAST`)
+      .orderBy('households.id')
       .execute();
     return rows.map((r) => ({
       household_id: String(r.household_id),
@@ -5879,6 +5776,7 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
       zip: r.zip ?? null,
       lat: r.lat ?? null,
       lng: r.lng ?? null,
+      walk_order: r.walk_order == null ? null : Number(r.walk_order),
     }));
   }
 
@@ -5950,10 +5848,11 @@ export interface TurfProgress {
 }
 
 export interface ResponseMix {
-  strong_support: number;
-  lean_support: number;
+  supporter: number;
   undecided: number;
-  opposed: number;
+  non_supporter: number;
+  not_voting: number;
+  already_voted: number;
   no_answer: number;
 }
 
@@ -6031,10 +5930,11 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       .select(() => [
         sql<number>`COUNT(DISTINCT household_id)`.as('doors'),
         sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'strong_support')`.as('strong_support'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'lean_support')`.as('lean_support'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
         sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'opposed')`.as('opposed'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
         sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
       ])
       .executeTakeFirst();
@@ -6043,13 +5943,69 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       doors: Number(row?.doors ?? 0),
       conversations: Number(row?.conversations ?? 0),
       responseMix: {
-        strong_support: Number(row?.strong_support ?? 0),
-        lean_support: Number(row?.lean_support ?? 0),
+        supporter: Number(row?.supporter ?? 0),
         undecided: Number(row?.undecided ?? 0),
-        opposed: Number(row?.opposed ?? 0),
+        non_supporter: Number(row?.non_supporter ?? 0),
+        not_voting: Number(row?.not_voting ?? 0),
+        already_voted: Number(row?.already_voted ?? 0),
         no_answer: Number(row?.no_answer ?? 0),
       },
     };
+  }
+
+  /**
+   * The latest knock per (household, person) in a turf — the raw material the
+   * Companion payload derives door/person state from. `person_id` null rows are
+   * door-level (outcomes + the anonymous household survey). Only survey fields
+   * that are safe to echo back are selected — never notes or contact info
+   * (payload minimization, spec §2).
+   */
+  public async getCompanionState(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<
+    {
+      household_id: string;
+      person_id: string | null;
+      outcome: string;
+      response: string | null;
+      issues: string[];
+      wants_volunteer: boolean;
+      wants_yard_sign: boolean;
+      set_dnc: boolean;
+      subscribe: boolean;
+    }[]
+  > {
+    const rows = await this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .distinctOn(['household_id', 'person_id'])
+      .orderBy('household_id')
+      .orderBy('person_id')
+      .orderBy('knocked_at', 'desc')
+      .select([
+        'household_id',
+        'person_id',
+        'outcome',
+        'response',
+        'issues',
+        'wants_volunteer',
+        'wants_yard_sign',
+        'set_dnc',
+        'subscribe',
+      ])
+      .execute();
+    return rows.map((r) => ({
+      household_id: String(r.household_id),
+      person_id: r.person_id == null ? null : String(r.person_id),
+      outcome: String(r.outcome),
+      response: r.response == null ? null : String(r.response),
+      issues: Array.isArray(r.issues) ? r.issues.map(String) : [],
+      wants_volunteer: Boolean(r.wants_volunteer),
+      wants_yard_sign: Boolean(r.wants_yard_sign),
+      set_dnc: Boolean(r.set_dnc),
+      subscribe: Boolean(r.subscribe),
+    }));
   }
 
   /** Last outcome per household in a turf, for door-list / map colouring. */
@@ -6083,10 +6039,11 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       .select(() => [
         sql<number>`COUNT(*)`.as('attempts'),
         sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'strong_support')`.as('strong_support'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'lean_support')`.as('lean_support'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
         sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'opposed')`.as('opposed'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
       ])
       .executeTakeFirst();
 
@@ -6124,9 +6081,7 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
         'teams.name as team_name',
         sql<number>`COUNT(*)`.as('doors'),
         sql<number>`COUNT(*) FILTER (WHERE turf_knocks.outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response IN ('strong_support','lean_support'))`.as(
-          'support_ids',
-        ),
+        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response = 'supporter')`.as('support_ids'),
       ])
       .execute();
 
@@ -6140,19 +6095,19 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
 
     const attempts = Number(totals?.attempts ?? 0);
     const conversations = Number(totals?.conversations ?? 0);
-    const strong = Number(totals?.strong_support ?? 0);
-    const lean = Number(totals?.lean_support ?? 0);
+    const supporters = Number(totals?.supporter ?? 0);
 
     return {
       doors: attempts,
       conversations,
       contactRatePct: attempts > 0 ? Math.round((conversations / attempts) * 100) : 0,
-      supportIds: strong + lean,
+      supportIds: supporters,
       responseMix: {
-        strong_support: strong,
-        lean_support: lean,
+        supporter: supporters,
         undecided: Number(totals?.undecided ?? 0),
-        opposed: Number(totals?.opposed ?? 0),
+        non_supporter: Number(totals?.non_supporter ?? 0),
+        not_voting: Number(totals?.not_voting ?? 0),
+        already_voted: Number(totals?.already_voted ?? 0),
         no_answer: attempts - conversations,
       },
       perDay: perDayRows.map((r) => ({
@@ -6263,9 +6218,16 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
   public async getTurfCore(
     input: { tenant_id: string; id: string },
     trx?: Transaction<Models>,
-  ): Promise<{ id: string; name: string; status: string; list_id: string | null; ward: string | null } | null> {
+  ): Promise<{
+    id: string;
+    name: string;
+    status: string;
+    list_id: string | null;
+    ward: string | null;
+    campaign_id: string | null;
+  } | null> {
     const row = await this.getSelect(trx)
-      .select(['id', 'name', 'status', 'list_id', 'ward'])
+      .select(['id', 'name', 'status', 'list_id', 'ward', 'campaign_id'])
       .where('tenant_id', '=', input.tenant_id)
       .where('id', '=', input.id)
       .executeTakeFirst();
@@ -6276,6 +6238,7 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
       status: String(row.status),
       list_id: row.list_id == null ? null : String(row.list_id),
       ward: row.ward == null ? null : String(row.ward),
+      campaign_id: row.campaign_id == null ? null : String(row.campaign_id),
     };
   }
 
@@ -6339,21 +6302,39 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
 ```typescript
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 
-import { LogKnockObj } from '../../../../../../../libs/common/src';
+import { CompanionResultsObj, LogKnockObj } from '../../../../../../../libs/common/src';
 import { CanvassingController } from '../controller';
 
 /**
- * Public Canvass Companion API (§13.4) — the volunteer-facing surface.
+ * Public Canvass Companion API (§13.4 / COMPANION-APPS-PLAN.md §5 B3) — the
+ * volunteer-facing surface behind the companion access layer.
  *
- * Access is by TOKEN, not by account: the token issued when a turf is assigned
- * (or a link is copied) is the bearer credential and resolves the tenant, so a
- * walk-up volunteer needs no login. This mirrors the tokenised-access model of
- * the public web-form/donation pages, but with a proper high-entropy token per
- * turf rather than a subdomain+slug. Every read/write is scoped to the resolved
- * tenant + turf inside the controller.
+ * Two credentials on every data request: the assignment TOKEN (in the path)
+ * scopes WHAT may be touched — one turf, its doors, nothing else — and the
+ * X-Companion-Session header proves WHO is touching it (a verified, admin-
+ * approved device; see modules/companion-access). The token resolves the
+ * tenant, exactly like the tokenised-access model of the public form pages;
+ * every read/write is then scoped to the resolved tenant + turf inside the
+ * controller.
  */
 
 const controller = new CanvassingController();
+
+// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 120;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_MAX;
+}
 
 /** Narrow an unknown thrown value to an HTTP status without leaking internals. */
 function statusOf(err: unknown): number {
@@ -6369,16 +6350,19 @@ function messageOf(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
 const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  // Door list for a tokenised turf.
-  fastify.get('/turf', async (req: FastifyRequest, reply: FastifyReply) => {
-    const token =
-      typeof (req.query as { token?: unknown })?.token === 'string' ? (req.query as { token: string }).token : '';
-    if (!token) {
-      return reply.status(400).send({ error: 'Missing canvassing token.' });
-    }
+  // The full spec-§3 turf payload for a verified companion device.
+  fastify.get('/t/:token', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
     try {
-      const turf = await controller.getCompanionTurf(token);
+      const turf = await controller.getCompanionTurf(String(token), sessionTokenOf(req));
       return reply.status(200).send(turf);
     } catch (err: unknown) {
       fastify.log.error(err);
@@ -6386,8 +6370,25 @@ const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     }
   });
 
-  // Log a knock. Idempotent on client_knock_id so offline re-sends are safe.
+  // Batched, idempotent results sync — the offline queue drains through here.
+  fastify.post('/t/:token/results', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionResultsObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid results payload.' });
+    try {
+      const result = await controller.postCompanionResults(String(token), sessionTokenOf(req), parsed.data.ops);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record these results.') });
+    }
+  });
+
+  // Legacy single-knock endpoint (pre-companion-app). Still validated and
+  // idempotent; the new app syncs through /t/:token/results.
   fastify.post('/knock', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
     const parsed = LogKnockObj.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'Invalid knock payload.' });
@@ -6417,11 +6418,12 @@ import {
   AssignTurfObj,
   CutTurfsObj,
   FieldReportRangeObj,
+  UpdateCompanionSettingsObj,
   UpdateTurfObj,
   idSchema,
 } from '../../../../../../libs/common/src';
 
-import { authProcedure, router } from '../../../trpc';
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
 import { CanvassingController } from './controller';
 
 const controller = new CanvassingController();
@@ -6445,10 +6447,15 @@ export const CanvassingRouter = router({
     .input(z.object({ id: idSchema, data: UpdateTurfObj }))
     .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
   assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
-  getCompanionLink: authProcedure
-    .input(idSchema)
-    .mutation(({ ctx, input }) => controller.getCompanionLink(ctx.auth, input)),
   retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
+
+  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
+  getCompanionSettings: authProcedure
+    .input(z.object({ campaign_id: idSchema.optional() }).optional())
+    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
+  updateCompanionSettings: adminOrOwnerProcedure
+    .input(UpdateCompanionSettingsObj)
+    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
 
   // Field report.
   getFieldReport: authProcedure
@@ -6460,892 +6467,6 @@ export const CanvassingRouter = router({
   getCoverage: authProcedure
     .input(FieldReportRangeObj)
     .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
-});
-```
-
-## File: apps/backend/src/app/modules/companion-access/repositories/companion-sessions.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export interface CompanionSession {
-  id: string;
-  tenant_id: string;
-  volunteer_id: string;
-  expires_at: Date;
-  revoked_at: Date | null;
-}
-
-export class CompanionSessionsRepo extends BaseRepository<'companion_sessions'> {
-  constructor() {
-    super('companion_sessions');
-  }
-
-  public async create(
-    input: { tenant_id: string; volunteer_id: string; token_hash: string; expires_at: Date; user_agent: string | null },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    const row = {
-      tenant_id: input.tenant_id,
-      volunteer_id: input.volunteer_id,
-      token_hash: input.token_hash,
-      expires_at: input.expires_at,
-      user_agent: input.user_agent,
-    } as OperationDataType<'companion_sessions', 'insert'>;
-    await this.getInsert(trx).values(row).execute();
-  }
-
-  /**
-   * Resolve a device-session token to its session. Like the assignment/route
-   * token lookups, this is intentionally NOT tenant-scoped: the (hashed) token
-   * IS the credential and is what identifies the tenant. Every downstream check
-   * then re-verifies tenant + volunteer match.
-   */
-  public async findByTokenHash(token_hash: string): Promise<CompanionSession | null> {
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const row = await BaseRepository.dbInstance
-      .selectFrom('companion_sessions')
-      .select(['id', 'tenant_id', 'volunteer_id', 'expires_at', 'revoked_at'])
-      .where('token_hash', '=', token_hash)
-      .executeTakeFirst();
-    if (!row) return null;
-    return {
-      id: String(row.id),
-      tenant_id: String(row.tenant_id),
-      volunteer_id: String(row.volunteer_id),
-      expires_at: new Date(String(row.expires_at)),
-      revoked_at: row.revoked_at ? new Date(String(row.revoked_at)) : null,
-    };
-  }
-
-  public async touchLastUsed(input: { tenant_id: string; id: string }): Promise<void> {
-    await this.getUpdate()
-      .set({ last_used_at: new Date() })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  /** Revoking a volunteer dead-ends every device they ever verified. */
-  public async revokeForVolunteer(
-    input: { tenant_id: string; volunteer_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({ revoked_at: new Date(), updated_at: new Date() })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('volunteer_id', '=', input.volunteer_id)
-      .where('revoked_at', 'is', null)
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/companion-access/repositories/companion-volunteers.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { CompanionVolunteerRow } from '../../../../../../../libs/common/src';
-
-export interface CompanionVolunteer {
-  id: string;
-  tenant_id: string;
-  person_id: string;
-  status: string;
-  verify_code_hash: string | null;
-  verify_code_expires_at: Date | null;
-  verify_attempts: number;
-  verify_channel: string | null;
-  verified_at: Date | null;
-}
-
-export class CompanionVolunteersRepo extends BaseRepository<'companion_volunteers'> {
-  constructor() {
-    super('companion_volunteers');
-  }
-
-  public async findByPerson(
-    input: { tenant_id: string; person_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<CompanionVolunteer | null> {
-    const row = await this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('person_id', '=', input.person_id)
-      .executeTakeFirst();
-    return row ? this.toVolunteer(row) : null;
-  }
-
-  public async findById(
-    input: { tenant_id: string; id: string },
-    trx?: Transaction<Models>,
-  ): Promise<CompanionVolunteer | null> {
-    const row = await this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .executeTakeFirst();
-    return row ? this.toVolunteer(row) : null;
-  }
-
-  /** Get-or-create the volunteer row for a person (idempotent on the unique key). */
-  public async ensureForPerson(
-    input: { tenant_id: string; person_id: string; created_by: string },
-    trx?: Transaction<Models>,
-  ): Promise<CompanionVolunteer> {
-    const row = {
-      tenant_id: input.tenant_id,
-      person_id: input.person_id,
-      createdby_id: input.created_by,
-      updatedby_id: input.created_by,
-    } as OperationDataType<'companion_volunteers', 'insert'>;
-    await this.getInsert(trx)
-      .values(row)
-      .onConflict((oc) => oc.columns(['tenant_id', 'person_id']).doNothing())
-      .execute();
-    const found = await this.findByPerson(input, trx);
-    if (!found) throw new Error('companion volunteer row missing after ensure');
-    return found;
-  }
-
-  public async setVerifyCode(
-    input: { tenant_id: string; id: string; code_hash: string; expires_at: Date; channel: 'email' | 'sms' },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({
-        verify_code_hash: input.code_hash,
-        verify_code_expires_at: input.expires_at,
-        verify_attempts: 0,
-        verify_channel: input.channel,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  public async bumpVerifyAttempts(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
-    await this.getUpdate(trx)
-      .set((eb) => ({ verify_attempts: eb('verify_attempts', '+', 1), updated_at: new Date() }))
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  /** Invalidate a code (attempt lockout / after use). */
-  public async clearVerifyCode(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
-    await this.getUpdate(trx)
-      .set({ verify_code_hash: null, verify_code_expires_at: null, updated_at: new Date() })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  /**
-   * Record a successful code confirmation: clear the code and move
-   * invited → verified. An already-approved volunteer stays approved.
-   */
-  public async markVerified(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
-    await this.getUpdate(trx)
-      .set((eb) => ({
-        verify_code_hash: null,
-        verify_code_expires_at: null,
-        verified_at: new Date(),
-        status: eb
-          .case()
-          .when('status', '=', 'invited')
-          .then('verified')
-          .else(eb.ref('status'))
-          .end()
-          .$castTo<string>(),
-        updated_at: new Date(),
-      }))
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  public async approve(
-    input: { tenant_id: string; id: string; admin_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({
-        status: 'approved',
-        approved_by: input.admin_id,
-        approved_at: new Date(),
-        revoked_at: null,
-        updatedby_id: input.admin_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  public async revoke(
-    input: { tenant_id: string; id: string; admin_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    await this.getUpdate(trx)
-      .set({
-        status: 'revoked',
-        revoked_at: new Date(),
-        updatedby_id: input.admin_id,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('id', '=', input.id)
-      .execute();
-  }
-
-  /** Admin page rows: volunteers joined with their person + approver. */
-  public async getAllWithPerson(tenant_id: string): Promise<CompanionVolunteerRow[]> {
-    const rows = await this.getSelect()
-      .innerJoin('persons', (join) =>
-        join
-          .onRef('persons.id', '=', 'companion_volunteers.person_id')
-          .onRef('persons.tenant_id', '=', 'companion_volunteers.tenant_id'),
-      )
-      .leftJoin('authusers', (join) =>
-        join
-          .onRef('authusers.id', '=', 'companion_volunteers.approved_by')
-          .onRef('authusers.tenant_id', '=', 'companion_volunteers.tenant_id'),
-      )
-      .select([
-        'companion_volunteers.id',
-        'companion_volunteers.person_id',
-        'companion_volunteers.status',
-        'companion_volunteers.verify_channel',
-        'companion_volunteers.verified_at',
-        'companion_volunteers.approved_at',
-        'companion_volunteers.created_at',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'authusers.first_name as approver_first_name',
-        'authusers.last_name as approver_last_name',
-      ])
-      .where('companion_volunteers.tenant_id', '=', tenant_id)
-      .orderBy('companion_volunteers.created_at', 'desc')
-      .execute();
-
-    return rows.map((r) => ({
-      id: String(r.id),
-      person_id: String(r.person_id),
-      first_name: r.first_name,
-      last_name: r.last_name,
-      email: r.email,
-      mobile: r.mobile,
-      status: String(r.status) as CompanionVolunteerRow['status'],
-      verify_channel: (r.verify_channel ?? null) as CompanionVolunteerRow['verify_channel'],
-      verified_at: r.verified_at ? new Date(String(r.verified_at)).toISOString() : null,
-      approved_at: r.approved_at ? new Date(String(r.approved_at)).toISOString() : null,
-      approved_by_name: r.approver_first_name ? `${r.approver_first_name} ${r.approver_last_name ?? ''}`.trim() : null,
-      created_at: new Date(String(r.created_at)).toISOString(),
-    }));
-  }
-
-  /** Volunteers awaiting admin approval (the sidebar badge count). */
-  public async pendingCount(tenant_id: string): Promise<number> {
-    const row = await this.getSelect()
-      .select((eb) => eb.fn.countAll<string>().as('count'))
-      .where('tenant_id', '=', tenant_id)
-      .where('status', '=', 'verified')
-      .executeTakeFirst();
-    return Number(row?.count ?? 0);
-  }
-
-  private toVolunteer(row: Record<string, unknown>): CompanionVolunteer {
-    return {
-      id: String(row['id']),
-      tenant_id: String(row['tenant_id']),
-      person_id: String(row['person_id']),
-      status: String(row['status']),
-      verify_code_hash: row['verify_code_hash'] == null ? null : String(row['verify_code_hash']),
-      verify_code_expires_at: row['verify_code_expires_at'] ? new Date(String(row['verify_code_expires_at'])) : null,
-      verify_attempts: Number(row['verify_attempts'] ?? 0),
-      verify_channel: row['verify_channel'] == null ? null : String(row['verify_channel']),
-      verified_at: row['verified_at'] ? new Date(String(row['verified_at'])) : null,
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/companion-access/routes/companion-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
-
-import {
-  CompanionAccessQueryObj,
-  CompanionVerifyConfirmObj,
-  CompanionVerifyStartObj,
-} from '../../../../../../../libs/common/src';
-import { CompanionAccessController } from '../controller';
-
-/**
- * Public companion access API (COMPANION-APPS-PLAN.md §4 A2) — the verify +
- * approve gate in front of both volunteer companions. No account: the
- * capability token names the assignment, and these endpoints establish WHO is
- * holding it. The device session they mint is carried on data requests via the
- * X-Companion-Session header.
- */
-
-const controller = new CompanionAccessController();
-
-// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
-const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 60;
-const hits = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = hits.get(ip);
-  if (!entry || entry.resetAt < now) {
-    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > RATE_MAX;
-}
-
-function statusOf(err: unknown): number {
-  if (err && typeof err === 'object' && 'statusCode' in err) {
-    const code = (err as { statusCode?: unknown }).statusCode;
-    if (typeof code === 'number') return code;
-  }
-  return 500;
-}
-
-function messageOf(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message;
-  return fallback;
-}
-
-function sessionTokenOf(req: FastifyRequest): string | null {
-  const header = req.headers['x-companion-session'];
-  if (typeof header === 'string' && header.trim()) return header.trim();
-  return null;
-}
-
-const companionPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  // What should the gate render for this link (+ optional device session)?
-  fastify.get('/access', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    const parsed = CompanionAccessQueryObj.safeParse(req.query);
-    if (!parsed.success) return reply.status(200).send({ state: 'dead' });
-    try {
-      const payload = await controller.getAccess(parsed.data.kind, parsed.data.token, sessionTokenOf(req));
-      return reply.status(200).send(payload);
-    } catch (err: unknown) {
-      fastify.log.error(err, 'Failed to resolve companion access');
-      // Uniform dead state — never leak why a link failed.
-      return reply.status(200).send({ state: 'dead' });
-    }
-  });
-
-  // Send a one-time code to the volunteer's email or SMS on file.
-  fastify.post('/verify/start', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    const parsed = CompanionVerifyStartObj.safeParse(req.body);
-    if (!parsed.success) return reply.status(400).send({ error: 'Invalid request.' });
-    try {
-      const result = await controller.verifyStart(parsed.data.kind, parsed.data.token, parsed.data.channel);
-      return reply.status(200).send(result);
-    } catch (err: unknown) {
-      fastify.log.error(err, 'Failed to start companion verification');
-      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to send a code right now.') });
-    }
-  });
-
-  // Confirm the code; mint the device session.
-  fastify.post('/verify/confirm', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
-    const parsed = CompanionVerifyConfirmObj.safeParse(req.body);
-    if (!parsed.success) return reply.status(400).send({ error: 'Enter the 6-digit code.' });
-    try {
-      const result = await controller.verifyConfirm(
-        parsed.data.kind,
-        parsed.data.token,
-        parsed.data.code,
-        typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
-      );
-      return reply.status(200).send(result);
-    } catch (err: unknown) {
-      fastify.log.error(err, 'Failed to confirm companion verification');
-      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to verify that code.') });
-    }
-  });
-
-  done();
-};
-
-export default companionPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/companion-access/controller.ts
-
-```typescript
-import { randomInt } from 'node:crypto';
-
-import type { Transaction } from 'kysely';
-
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type {
-  CompanionAccessPayload,
-  CompanionContact,
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-  IAuthKeyPayload,
-} from '../../../../../../libs/common/src';
-import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { SmsService } from '../../lib/sms/sms.service';
-import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
-import { generateToken, hashToken } from '../../lib/token-hash';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { env } from '../../../env';
-import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
-import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
-import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
-import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
-
-const CODE_TTL_MS = 10 * 60 * 1000;
-const CODE_MAX_ATTEMPTS = 5;
-const SESSION_TTL_DAYS = 30;
-const VERIFY_START_LIMIT = 3; // sends per token per window
-const VERIFY_START_WINDOW_MS = 15 * 60 * 1000;
-const VERIFY_CONFIRM_LIMIT = 15; // confirms per token per window (attempt lockout is per code)
-const VERIFY_CONFIRM_WINDOW_MS = 15 * 60 * 1000;
-
-/** What a capability link resolves to, whichever app it belongs to. */
-interface ResolvedLink {
-  tenant_id: string;
-  /** Person the link was assigned to; null = staff never attached one. */
-  volunteer_person_id: string | null;
-  /** The staff account behind the link — actor for activity attribution. */
-  organizer_id: string;
-}
-
-interface PersonContacts {
-  first_name: string | null;
-  email: string | null;
-  /** E.164, already normalized — null when the mobile on file can't be normalized. */
-  sms: string | null;
-}
-
-/**
- * The companion access layer (COMPANION-APPS-PLAN.md §2). The capability token
- * says WHAT may be touched (one turf / one route); the companion session says
- * WHO is touching it. Both are required on every companion data request —
- * `requireSession()` is the guard the canvass/deliveries public controllers
- * call. Nothing here ever reveals whether a contact exists beyond masked
- * values for the link's own volunteer.
- */
-export class CompanionAccessController {
-  private activityRepo = new UserActivityRepo();
-  private mailService = new TransactionalEmailService();
-  private routesRepo = new DeliveryRoutesRepo();
-  private sessionsRepo = new CompanionSessionsRepo();
-  private smsService = new SmsService();
-  private turfAssignmentsRepo = new TurfAssignmentsRepo();
-  private volunteersRepo = new CompanionVolunteersRepo();
-
-  /** GET /api/companion/access — tell the gate UI what to render. */
-  public async getAccess(
-    kind: CompanionLinkKind,
-    token: string,
-    sessionToken: string | null,
-  ): Promise<CompanionAccessPayload> {
-    const link = await this.resolveLink(kind, token);
-    if (!link) return { state: 'dead' };
-
-    const organizationName = await this.organizationName(link.tenant_id);
-    const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
-    if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
-
-    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
-    if (!person) return { state: 'unassigned', organizerName, organizationName };
-
-    const volunteer = await this.volunteersRepo.findByPerson({
-      tenant_id: link.tenant_id,
-      person_id: link.volunteer_person_id,
-    });
-    if (volunteer?.status === 'revoked') return { state: 'dead' };
-
-    const base = {
-      volunteerName: person.first_name ?? undefined,
-      organizerName,
-      organizationName,
-    };
-
-    const session = await this.findUsableSession(sessionToken, link.tenant_id, volunteer);
-    if (session) {
-      return volunteer?.status === 'approved' ? { state: 'ready', ...base } : { state: 'pending_approval', ...base };
-    }
-
-    return { state: 'need_verification', ...base, contacts: this.contactsOf(person) };
-  }
-
-  /** POST /api/companion/verify/start — send a one-time code to a contact on file. */
-  public async verifyStart(
-    kind: CompanionLinkKind,
-    token: string,
-    channel: CompanionVerifyChannel,
-  ): Promise<{ masked: string }> {
-    checkRateLimit(`companion-verify-start:${token}`, VERIFY_START_LIMIT, VERIFY_START_WINDOW_MS);
-
-    const link = await this.resolveLink(kind, token);
-    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
-    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
-    if (!person) throw new NotFoundError('This link is not active.');
-
-    const destination = channel === 'email' ? person.email : person.sms;
-    if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
-
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
-    const orgName = await this.organizationName(link.tenant_id);
-
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      const volunteer = await this.volunteersRepo.ensureForPerson(
-        { tenant_id: link.tenant_id, person_id: String(link.volunteer_person_id), created_by: link.organizer_id },
-        trx,
-      );
-      if (volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
-      await this.volunteersRepo.setVerifyCode(
-        {
-          tenant_id: link.tenant_id,
-          id: volunteer.id,
-          code_hash: hashToken(code),
-          expires_at: new Date(Date.now() + CODE_TTL_MS),
-          channel,
-        },
-        trx,
-      );
-      if (channel === 'email') {
-        await this.mailService.enqueueMail(
-          {
-            to: destination,
-            subject: `Your ${orgName} verification code`,
-            text: `Your verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
-            html: `<h2>Verify it's you</h2><p>Enter this code on the volunteer page to continue. It expires in 10 minutes.</p><div class="otp-container"><span class="otp-code">${code}</span></div><p class="warning">If you didn't request this code, you can ignore this message.</p>`,
-            tenant_id: link.tenant_id,
-          },
-          trx,
-        );
-      } else {
-        await this.smsService.enqueueSms(
-          {
-            to: destination,
-            body: `${orgName} code: ${code} — expires in 10 minutes.`,
-            tenant_id: link.tenant_id,
-          },
-          trx,
-        );
-      }
-    });
-
-    return { masked: channel === 'email' ? maskEmail(destination) : maskPhone(destination) };
-  }
-
-  /** POST /api/companion/verify/confirm — check the code, mint a device session. */
-  public async verifyConfirm(
-    kind: CompanionLinkKind,
-    token: string,
-    code: string,
-    userAgent: string | null,
-  ): Promise<CompanionVerifyConfirmResult> {
-    checkRateLimit(`companion-verify-confirm:${token}`, VERIFY_CONFIRM_LIMIT, VERIFY_CONFIRM_WINDOW_MS);
-
-    const link = await this.resolveLink(kind, token);
-    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
-
-    const volunteer = await this.volunteersRepo.findByPerson({
-      tenant_id: link.tenant_id,
-      person_id: link.volunteer_person_id,
-    });
-    if (!volunteer || volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
-    if (!volunteer.verify_code_hash || !volunteer.verify_code_expires_at) {
-      throw new BadRequestError('Request a new code first.');
-    }
-    if (volunteer.verify_code_expires_at < new Date()) {
-      throw new BadRequestError('That code has expired — request a new one.');
-    }
-    if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
-      await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
-      throw new BadRequestError('Too many attempts — request a new code.');
-    }
-    if (hashToken(code) !== volunteer.verify_code_hash) {
-      await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
-      throw new BadRequestError("That code didn't match. Check it and try again.");
-    }
-
-    const wasApproved = volunteer.status === 'approved';
-    const sessionToken = generateToken();
-    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
-
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.markVerified({ tenant_id: link.tenant_id, id: volunteer.id }, trx);
-      await this.sessionsRepo.create(
-        {
-          tenant_id: link.tenant_id,
-          volunteer_id: volunteer.id,
-          token_hash: hashToken(sessionToken),
-          expires_at: expiresAt,
-          user_agent: userAgent,
-        },
-        trx,
-      );
-      if (!wasApproved) {
-        await this.notifyAdminsOfPendingVolunteer(link, trx);
-      }
-      await this.activityRepo.log(
-        {
-          tenant_id: link.tenant_id,
-          user_id: link.organizer_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: volunteer.id,
-          metadata: {
-            action: 'volunteer_verified',
-            message: wasApproved
-              ? 'Volunteer verified a new device via companion link'
-              : 'Volunteer verified their contact and is waiting for approval',
-            via: 'companion link',
-          },
-        },
-        trx,
-      );
-    });
-
-    return {
-      status: wasApproved ? 'ready' : 'pending_approval',
-      sessionToken,
-      expiresAt: expiresAt.toISOString(),
-    };
-  }
-
-  /**
-   * The guard every companion data endpoint calls: validates the device
-   * session, that it belongs to the link's volunteer, and that the volunteer
-   * is approved. Throws UnauthorizedError (no/invalid session — the gate
-   * re-verifies) or ForbiddenError (valid session, not approved).
-   */
-  public async requireSession(
-    sessionToken: string | null | undefined,
-    link: { tenant_id: string; volunteer_person_id: string | null },
-  ): Promise<void> {
-    if (!link.volunteer_person_id) throw new UnauthorizedError('This link needs to be re-sent by your organizer.');
-    if (!sessionToken) throw new UnauthorizedError('Verification required.');
-
-    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
-    if (!session || session.tenant_id !== link.tenant_id) throw new UnauthorizedError('Verification required.');
-    if (session.revoked_at || session.expires_at < new Date()) throw new UnauthorizedError('Verification required.');
-
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: link.tenant_id, id: session.volunteer_id });
-    if (!volunteer || volunteer.person_id !== link.volunteer_person_id) {
-      throw new UnauthorizedError('Verification required.');
-    }
-    if (volunteer.status !== 'approved') throw new ForbiddenError('Waiting for organizer approval.');
-
-    await this.sessionsRepo.touchLastUsed({ tenant_id: link.tenant_id, id: session.id });
-  }
-
-  // ---------------------------------------------------------------- admin API
-
-  public async getAllVolunteers(tenant_id: string): Promise<CompanionVolunteerRow[]> {
-    return this.volunteersRepo.getAllWithPerson(tenant_id);
-  }
-
-  public async pendingCount(tenant_id: string): Promise<number> {
-    return this.volunteersRepo.pendingCount(tenant_id);
-  }
-
-  public async approveVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
-    if (!volunteer) throw new NotFoundError('Volunteer not found.');
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.approve({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
-      await this.activityRepo.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: id,
-          metadata: { action: 'volunteer_approved', message: 'Approved companion app access' },
-        },
-        trx,
-      );
-    });
-  }
-
-  public async revokeVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
-    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
-    if (!volunteer) throw new NotFoundError('Volunteer not found.');
-    await this.volunteersRepo.transaction().execute(async (trx) => {
-      await this.volunteersRepo.revoke({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
-      await this.sessionsRepo.revokeForVolunteer({ tenant_id: auth.tenant_id, volunteer_id: id }, trx);
-      await this.activityRepo.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'update',
-          entity: 'companion_volunteers',
-          entity_id: id,
-          metadata: { action: 'volunteer_revoked', message: 'Revoked companion app access' },
-        },
-        trx,
-      );
-    });
-  }
-
-  // ------------------------------------------------------------------ helpers
-
-  /** Resolve either kind of capability token to its tenant + volunteer. */
-  public async resolveLink(kind: CompanionLinkKind, token: string): Promise<ResolvedLink | null> {
-    if (kind === 'turf') {
-      const assignment = await this.turfAssignmentsRepo.resolveByToken(token);
-      if (!assignment) return null;
-      if (assignment.expires_at && assignment.expires_at < new Date()) return null;
-      return {
-        tenant_id: assignment.tenant_id,
-        volunteer_person_id: assignment.volunteer_person_id,
-        organizer_id: assignment.created_by,
-      };
-    }
-
-    // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
-    // dead-link semantics: canceled, missing expiry, or past expiry all fail).
-    const route = await this.routesRepo.findByTokenHash(hashToken(token));
-    if (!route) return null;
-    if (String(route.status) === 'canceled') return null;
-    const exp = route.share_token_expires_at;
-    if (!exp || new Date(String(exp)) <= new Date()) return null;
-    return {
-      tenant_id: String(route.tenant_id),
-      volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),
-      organizer_id: String(route.createdby_id),
-    };
-  }
-
-  private contactsOf(person: PersonContacts): CompanionContact[] {
-    const contacts: CompanionContact[] = [];
-    if (person.email) contacts.push({ channel: 'email', masked: maskEmail(person.email) });
-    if (person.sms) contacts.push({ channel: 'sms', masked: maskPhone(person.sms) });
-    return contacts;
-  }
-
-  private async findUsableSession(
-    sessionToken: string | null,
-    tenant_id: string,
-    volunteer: CompanionVolunteer | null,
-  ): Promise<boolean> {
-    if (!sessionToken || !volunteer) return false;
-    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
-    if (!session || session.tenant_id !== tenant_id) return false;
-    if (session.volunteer_id !== volunteer.id) return false;
-    if (session.revoked_at || session.expires_at < new Date()) return false;
-    return true;
-  }
-
-  private async notifyAdminsOfPendingVolunteer(link: ResolvedLink, trx: Transaction<Models>): Promise<void> {
-    const person = await this.personContacts(link.tenant_id, String(link.volunteer_person_id));
-    const volunteerName = person?.first_name ?? 'A volunteer';
-    const admins = await this.volunteersRepo.db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', link.tenant_id)
-      .where('role', 'in', ['admin', 'owner'])
-      .where('deactivated_at', 'is', null)
-      .execute();
-    const approveUrl = `${env.appUrl}/console/volunteer-access`;
-    for (const admin of admins) {
-      await this.mailService.enqueueMail(
-        {
-          to: admin.email,
-          subject: `${volunteerName} is waiting for companion app approval`,
-          text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
-          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
-          tenant_id: link.tenant_id,
-        },
-        trx,
-      );
-    }
-  }
-
-  private async organizationName(tenant_id: string): Promise<string> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant_id)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
-    return 'PeopleCRM';
-  }
-
-  private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('authusers')
-      .select('first_name')
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', user_id)
-      .executeTakeFirst();
-    return row?.first_name ?? undefined;
-  }
-
-  private async personContacts(tenant_id: string, person_id: string): Promise<PersonContacts | null> {
-    const row = await this.volunteersRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'email', 'mobile'])
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', person_id)
-      .executeTakeFirst();
-    if (!row) return null;
-    return {
-      first_name: row.first_name,
-      email: row.email,
-      sms: normalizeE164(row.mobile),
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/companion-access/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema } from '../../../../../../libs/common/src';
-import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
-import { CompanionAccessController } from './controller';
-
-const controller = new CompanionAccessController();
-
-/** Staff surface for the companion access layer: the Volunteer access page. */
-export const CompanionAccessRouter = router({
-  getAll: authProcedure.query(({ ctx }) => controller.getAllVolunteers(ctx.auth.tenant_id)),
-  pendingCount: authProcedure.query(({ ctx }) => controller.pendingCount(ctx.auth.tenant_id)),
-  approve: adminOrOwnerProcedure
-    .input(z.object({ id: idSchema }))
-    .mutation(({ ctx, input }) => controller.approveVolunteer(ctx.auth, input.id)),
-  revoke: adminOrOwnerProcedure
-    .input(z.object({ id: idSchema }))
-    .mutation(({ ctx, input }) => controller.revokeVolunteer(ctx.auth, input.id)),
 });
 ```
 
@@ -17548,86 +16669,6 @@ export const logger = pino.pino({
     target: 'pino-pretty',
   },
 });
-```
-
-## File: apps/backend/src/app/routes.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import importsDownloadRoute from './modules/imports/routes/imports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
-import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
-import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
-  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register public volunteer delivery-route pages (token is the credential, §14)
-  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
-
-  // Companion access layer: verify + approve gate for both volunteer companions
-  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
-  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check endpoint
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  done();
-};
 ```
 
 ## File: apps/backend/src/test-setup/global-setup.ts
@@ -33539,7 +32580,7 @@ export class CampaignSubscriptionsRepo extends BaseRepository<'campaign_subscrip
       person_id: string;
       email: string;
       status: 'subscribed' | 'pending' | 'unsubscribed';
-      consent_source: 'form' | 'import' | 'manual' | 'copied';
+      consent_source: 'form' | 'import' | 'manual' | 'copied' | 'canvass';
       user_id: string;
     },
     trx?: Transaction<Models>,
@@ -34113,27 +33154,170 @@ export const CampaignsRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/modules/canvassing/repositories/turf-assignments.repo.ts
+
+```typescript
+import { randomBytes } from 'node:crypto';
+
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export interface ResolvedAssignment {
+  id: string;
+  tenant_id: string;
+  turf_id: string;
+  team_id: string | null;
+  status: string;
+  /** Real CRM account that deployed this Companion — the responsible actor for
+   *  synced knocks (§22.7: honest attribution, never a fabricated user). */
+  created_by: string;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link. */
+  expires_at: Date | null;
+}
+
+/** A high-entropy, URL-safe Companion token (the bearer credential). */
+export function generateTurfToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
+export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
+  constructor() {
+    super('turf_assignments');
+  }
+
+  public async getActiveByTurf(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<ResolvedAssignment | null> {
+    const row = await this.getSelect(trx)
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .where('status', '=', 'active')
+      .orderBy('id', 'desc')
+      .executeTakeFirst();
+    return row ? this.toResolved(row) : null;
+  }
+
+  public async create(
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      team_id: string | null;
+      token: string;
+      user_id: string;
+      volunteer_person_id: string;
+      expires_at: Date | null;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<string> {
+    const row = {
+      tenant_id: input.tenant_id,
+      turf_id: input.turf_id,
+      team_id: input.team_id,
+      token: input.token,
+      status: 'active',
+      volunteer_person_id: input.volunteer_person_id,
+      expires_at: input.expires_at,
+      createdby_id: input.user_id,
+      updatedby_id: input.user_id,
+    } as OperationDataType<'turf_assignments', 'insert'>;
+    const created = await this.getInsert(trx).values(row).returning('id').executeTakeFirst();
+    return String(created?.id ?? '');
+  }
+
+  public async revokeForTurf(
+    input: { tenant_id: string; turf_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ status: 'revoked', updatedby_id: input.user_id, updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .where('status', '=', 'active')
+      .execute();
+  }
+
+  /**
+   * Resolve a Companion token to its assignment. This is the ONLY intentionally
+   * un-tenant-scoped query in the module: the token itself is the bearer
+   * credential and is what identifies the tenant (exactly like a session token —
+   * cf. the `sessions` entry in the no-unscoped-db-query ignoreTables). Every
+   * downstream read/write is then scoped by the resolved `tenant_id`.
+   */
+  public async resolveByToken(token: string, trx?: Transaction<Models>): Promise<ResolvedAssignment | null> {
+    // NOTE: intentionally NOT tenant-scoped — the token IS the credential and is
+    // what resolves the tenant (see the method doc above). Every downstream query
+    // is scoped by the resolved tenant_id.
+    const row = await this.getSelect(trx)
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
+      .where('token', '=', token)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    return row ? this.toResolved(row) : null;
+  }
+
+  private toResolved(row: {
+    id: unknown;
+    tenant_id: unknown;
+    turf_id: unknown;
+    team_id: unknown;
+    status: unknown;
+    createdby_id: unknown;
+    volunteer_person_id?: unknown;
+    expires_at?: unknown;
+  }): ResolvedAssignment {
+    return {
+      id: String(row.id),
+      tenant_id: String(row.tenant_id),
+      turf_id: String(row.turf_id),
+      team_id: row.team_id == null ? null : String(row.team_id),
+      status: String(row.status),
+      created_by: String(row.createdby_id),
+      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
+      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
+    };
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/canvassing/controller.ts
 
 ```typescript
 import type {
   AddTurfType,
   AssignTurfType,
+  CompanionHousehold,
+  CompanionOpAck,
+  CompanionOpType,
+  CompanionPerson,
+  CompanionSurveyPrefill,
+  CompanionSurveyType,
+  CompanionTurfPayload,
   CutTurfsType,
   FieldReportRangeType,
   IAuthKeyPayload,
   KnockResponse,
   LogKnockType,
   SupportLevel,
+  UpdateCompanionSettingsType,
   UpdateTurfType,
+  VotingStatus,
 } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { CampaignPersonFactsRepo } from '../campaigns/repositories/campaign-person-facts.repo';
+import { CampaignSubscriptionsRepo } from '../campaigns/repositories/campaign-subscriptions.repo';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { CompanionAccessController } from '../companion-access/controller';
 import { ListsController } from '../lists/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
 import {
   cutTurfs as clusterTurfs,
   previewCut as previewCutPlan,
@@ -34146,11 +33330,20 @@ import { TurfKnocksRepo, type FieldReport, type ResponseMix } from './repositori
 import { TurfsRepo, type TurfRow } from './repositories/turfs.repo';
 
 /** What a voter said at the door → the campaign support scale (§15). */
-const KNOCK_RESPONSE_TO_SUPPORT: Record<KnockResponse, SupportLevel> = {
-  strong_support: 'strong',
-  lean_support: 'leaning',
+const KNOCK_RESPONSE_TO_SUPPORT: Partial<Record<KnockResponse, SupportLevel>> = {
+  supporter: 'strong',
   undecided: 'undecided',
-  opposed: 'against',
+  non_supporter: 'against',
+};
+
+/**
+ * "Not voting" / "Already voted" are turnout facts, not stances — they feed
+ * voting_status. Door canvassing overwhelmingly happens during the advance-poll
+ * window, so "already voted" is recorded as voted_advance.
+ */
+const KNOCK_RESPONSE_TO_VOTING: Partial<Record<KnockResponse, VotingStatus>> = {
+  not_voting: 'not_voting',
+  already_voted: 'voted_advance',
 };
 
 /** Derived display status — computed from stored lifecycle + knock activity. */
@@ -34186,22 +33379,6 @@ export interface InFieldToday {
   doorsKnocked: number;
   conversations: number;
   responseMix: ResponseMix;
-}
-
-export interface CompanionDoor {
-  household_id: string;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  last_outcome: string | null;
-}
-
-export interface CompanionTurf {
-  turf_id: string;
-  turf_name: string;
-  door_count: number;
-  attempted: number;
-  doors: CompanionDoor[];
 }
 
 /** How a door reads on the §13.3 Coverage map, derived from its window knocks. */
@@ -34253,6 +33430,8 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
   private readonly lists = new ListsController();
   private readonly campaignsRepo = new CampaignsRepo();
   private readonly factsRepo = new CampaignPersonFactsRepo();
+  private readonly subscriptionsRepo = new CampaignSubscriptionsRepo();
+  private readonly companionAccess = new CompanionAccessController();
 
   constructor() {
     super(new TurfsRepo());
@@ -34488,7 +33667,21 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     const turf = await this.turfsRepo().getTurfCore({ tenant_id: auth.tenant_id, id: input.turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
     const teamId = input.team_id != null ? String(input.team_id) : null;
+    const volunteerPersonId = String(input.volunteer_person_id);
+
+    // The link is personal: the companion access layer verifies the holder
+    // against this person's contacts, so they must exist (and ideally have an
+    // email or mobile on file — the gate explains it if they don't).
+    const person = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', volunteerPersonId)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('Pick the volunteer this link belongs to.');
+
     const token = generateTurfToken();
+    const expiresAt = await this.assignmentExpiry(auth.tenant_id, String(turf.campaign_id ?? ''));
 
     await this.turfsRepo()
       .transaction()
@@ -34498,7 +33691,15 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
           trx,
         );
         await this.assignments.create(
-          { tenant_id: auth.tenant_id, turf_id: input.turf_id, team_id: teamId, token, user_id: auth.user_id },
+          {
+            tenant_id: auth.tenant_id,
+            turf_id: input.turf_id,
+            team_id: teamId,
+            token,
+            user_id: auth.user_id,
+            volunteer_person_id: volunteerPersonId,
+            expires_at: expiresAt,
+          },
           trx,
         );
         await this.turfsRepo().update(
@@ -34517,17 +33718,27 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
       activity: 'assign',
       entity: 'turf',
       entity_id: input.turf_id,
-      metadata: teamId ? { team_id: teamId } : { link: 'tokenised' },
+      metadata: { volunteer_person_id: volunteerPersonId, ...(teamId ? { team_id: teamId } : { link: 'tokenised' }) },
     });
 
     return { token };
   }
 
-  /** Ensure a shareable Companion link exists ("Copy a link instead"). */
-  public async getCompanionLink(auth: IAuthKeyPayload, turfId: string): Promise<{ token: string }> {
-    const existing = await this.assignments.getActiveByTurf({ tenant_id: auth.tenant_id, turf_id: turfId });
-    if (existing) return { token: '' }; // token not re-exposed on read; issue via assign
-    return this.assignTurf(auth, { turf_id: turfId, team_id: null });
+  /**
+   * Link expiry = the campaign's end date when one exists (spec §2: "end of the
+   * canvass window"), otherwise no hard expiry (revocation still applies).
+   */
+  private async assignmentExpiry(tenant_id: string, campaign_id: string): Promise<Date | null> {
+    if (!campaign_id) return null;
+    const campaign = await this.knocks.db
+      .selectFrom('campaigns')
+      .select(['enddate'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', campaign_id)
+      .executeTakeFirst();
+    if (!campaign?.enddate) return null;
+    const end = new Date(`${campaign.enddate}T23:59:59`);
+    return Number.isNaN(end.getTime()) || end <= new Date() ? null : end;
   }
 
   public async retireTurf(auth: IAuthKeyPayload, turfId: string): Promise<void> {
@@ -34591,37 +33802,613 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
 
   // -------------------------------------------------- Companion (public) ----
 
-  /** Resolve a Companion token to its turf + door list. No account required. */
-  public async getCompanionTurf(token: string): Promise<CompanionTurf> {
-    const assignment = await this.assignments.resolveByToken(token);
-    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+  /**
+   * Resolve a Companion token + verified device session to the full spec-§3
+   * turf payload. Payload minimization is deliberate: names, walk data, and
+   * prior door RESULTS only — never emails, phones, donation history, or notes.
+   */
+  public async getCompanionTurf(token: string, sessionToken: string | null): Promise<CompanionTurfPayload> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
     const tenant_id = assignment.tenant_id;
     const turf_id = assignment.turf_id;
 
     const turf = await this.turfsRepo().getTurfCore({ tenant_id, id: turf_id });
     if (!turf) throw new NotFoundError('Turf not found');
 
-    const [doorRows, lastOutcomes] = await Promise.all([
+    const [doorRows, state, campaign, canvasserName] = await Promise.all([
       this.turfHouseholds.getDoors({ tenant_id, turf_id }),
-      this.knocks.getLastOutcomeByHousehold({ tenant_id, turf_id }),
+      this.knocks.getCompanionState({ tenant_id, turf_id }),
+      this.companionCampaign(tenant_id, String(turf.campaign_id ?? '')),
+      this.personFirstLast(tenant_id, String(assignment.volunteer_person_id)),
     ]);
 
-    const doors: CompanionDoor[] = doorRows.map((d) => ({
-      household_id: d.household_id,
-      address: this.formatAddress(d),
-      lat: d.lat,
-      lng: d.lng,
-      last_outcome: lastOutcomes.get(d.household_id) ?? null,
-    }));
+    const householdIds = doorRows.map((d) => d.household_id);
+    const people = await this.peopleByHousehold(tenant_id, householdIds);
 
-    const attempted = doors.filter((d) => d.last_outcome != null).length;
+    // Index the latest knock per (household, person).
+    const doorState = new Map<string, (typeof state)[number]>();
+    const personState = new Map<string, (typeof state)[number]>();
+    for (const s of state) {
+      if (s.person_id == null) doorState.set(s.household_id, s);
+      else personState.set(`${s.household_id}:${s.person_id}`, s);
+    }
+
+    const households: CompanionHousehold[] = doorRows.map((d, i) => {
+      const residents = people.get(d.household_id) ?? [];
+      const ds = doorState.get(d.household_id);
+      const doorOutcome =
+        ds && (ds.outcome === 'no_answer' || ds.outcome === 'inaccessible' || ds.outcome === 'refused')
+          ? ds.outcome
+          : null;
+      const hhSurvey = ds && ds.outcome === 'conversation' ? this.toPrefill(ds) : null;
+      return {
+        id: d.household_id,
+        walk_order: d.walk_order ?? i + 1,
+        address: this.formatAddress(d),
+        lat: d.lat,
+        lng: d.lng,
+        dnc: residents.length > 0 && residents.every((p) => p.dnc),
+        door_outcome: doorOutcome,
+        hh_survey: hhSurvey,
+        people: residents.map((p): CompanionPerson => {
+          const ps = personState.get(`${d.household_id}:${p.id}`);
+          const result =
+            ps == null
+              ? null
+              : ps.outcome === 'conversation'
+                ? 'canvassed'
+                : ps.outcome === 'not_home' || ps.outcome === 'moved' || ps.outcome === 'refused'
+                  ? ps.outcome
+                  : null;
+          return {
+            id: p.id,
+            name: p.name,
+            dnc: p.dnc,
+            result,
+            survey: ps && ps.outcome === 'conversation' ? this.toPrefill(ps) : null,
+          };
+        }),
+      };
+    });
+
     return {
-      turf_id,
+      campaign_name: campaign.name,
       turf_name: String(turf.name),
-      door_count: doors.length,
-      attempted,
-      doors,
+      canvasser_name: canvasserName,
+      script: campaign.script,
+      issues: campaign.issues,
+      expires_at: assignment.expires_at ? assignment.expires_at.toISOString() : null,
+      households,
     };
+  }
+
+  /**
+   * Apply a batch of Companion ops (spec §5). Each op is idempotent via the
+   * companion_ops ledger — a retried op acks `duplicate` and re-applies
+   * nothing — and each op commits in its own transaction so one bad op never
+   * blocks the rest of an offline queue from draining.
+   */
+  public async postCompanionResults(
+    token: string,
+    sessionToken: string | null,
+    ops: CompanionOpType[],
+  ): Promise<{ acks: CompanionOpAck[] }> {
+    const assignment = await this.resolveActiveAssignment(token);
+    await this.companionAccess.requireSession(sessionToken, {
+      tenant_id: assignment.tenant_id,
+      volunteer_person_id: assignment.volunteer_person_id,
+    });
+    const tenant_id = assignment.tenant_id;
+    const turf_id = assignment.turf_id;
+
+    const doorIds = new Set(await this.turfHouseholds.getHouseholdIds({ tenant_id, turf_id }));
+    const canvasserName = await this.personFirstLast(tenant_id, String(assignment.volunteer_person_id));
+
+    const acks: CompanionOpAck[] = [];
+    for (const op of ops) {
+      try {
+        const ack = await this.knocks.transaction().execute(async (trx) => {
+          // Idempotency ledger: a conflict means this op already applied.
+          const claimed = await trx
+            .insertInto('companion_ops')
+            .values({ tenant_id, op_id: op.op_id, scope: 'canvass' })
+            .onConflict((oc) => oc.columns(['tenant_id', 'op_id']).doNothing())
+            .returning('op_id')
+            .executeTakeFirst();
+          if (!claimed) return { op_id: op.op_id, status: 'duplicate' } as CompanionOpAck;
+
+          if (!doorIds.has(String(op.payload.household_id))) {
+            throw new BadRequestError('That household is not part of this turf.');
+          }
+          return this.applyCompanionOp(trx, {
+            op,
+            tenant_id,
+            turf_id,
+            actor: assignment.created_by,
+            canvasser_name: canvasserName,
+          });
+        });
+        acks.push(ack);
+      } catch (err: unknown) {
+        acks.push({
+          op_id: op.op_id,
+          status: 'rejected',
+          error: err instanceof Error ? err.message : 'Could not record this result.',
+        });
+      }
+    }
+    return { acks };
+  }
+
+  /** Apply one Companion op inside its transaction; returns the ack. */
+  private async applyCompanionOp(
+    trx: Transaction<Models>,
+    input: {
+      op: CompanionOpType;
+      tenant_id: string;
+      turf_id: string;
+      actor: string;
+      canvasser_name: string;
+    },
+  ): Promise<CompanionOpAck> {
+    const { op, tenant_id, turf_id, actor, canvasser_name } = input;
+    const householdId = String(op.payload.household_id);
+    const knockedAt = this.clampRecordedAt(op.recorded_at);
+    const via = `via Canvass Companion (${canvasser_name})`;
+
+    const insertKnock = async (fields: {
+      person_id: string | null;
+      outcome: string;
+      response?: string | null;
+      notes?: string | null;
+      issues?: string[];
+      wants_volunteer?: boolean;
+      wants_yard_sign?: boolean;
+      set_dnc?: boolean;
+      contact_phone?: string | null;
+      contact_email?: string | null;
+      subscribe?: boolean;
+    }): Promise<void> => {
+      const row = {
+        tenant_id,
+        turf_id,
+        household_id: householdId,
+        person_id: fields.person_id,
+        outcome: fields.outcome,
+        response: fields.response ?? null,
+        notes: fields.notes ?? null,
+        source: COMPANION_SOURCE,
+        canvasser_name,
+        client_knock_id: op.op_id,
+        knocked_at: knockedAt,
+        issues: fields.issues ?? [],
+        wants_volunteer: fields.wants_volunteer ?? false,
+        wants_yard_sign: fields.wants_yard_sign ?? false,
+        set_dnc: fields.set_dnc ?? false,
+        contact_phone: fields.contact_phone ?? null,
+        contact_email: fields.contact_email ?? null,
+        subscribe: fields.subscribe ?? false,
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'turf_knocks', 'insert'>;
+      await this.knocks.insertIdempotent(row, trx);
+    };
+
+    const logActivity = async (entity: 'household' | 'person', entity_id: string, extra: Record<string, unknown>) => {
+      await this.userActivity.log(
+        {
+          tenant_id,
+          user_id: actor,
+          activity: 'update',
+          entity,
+          entity_id,
+          metadata: { source: COMPANION_SOURCE, via, turf_id, ...extra },
+          performed_by: actor,
+        },
+        trx,
+      );
+    };
+
+    switch (op.type) {
+      case 'survey': {
+        const p = op.payload;
+        const personId = p.person_id != null ? String(p.person_id) : null;
+        if (personId) await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({
+          person_id: personId,
+          outcome: 'conversation',
+          response: p.support ?? null,
+          notes: p.notes ?? null,
+          issues: p.issues,
+          wants_volunteer: p.wants_volunteer,
+          wants_yard_sign: p.wants_yard_sign,
+          set_dnc: p.set_dnc,
+          contact_phone: p.contact_phone ?? null,
+          contact_email: p.contact_email ?? null,
+          subscribe: p.subscribe,
+        });
+        await this.applySurveySideEffects(trx, { tenant_id, turf_id, household_id: householdId, actor, survey: p });
+        await logActivity('household', householdId, { outcome: 'conversation', response: p.support ?? null });
+        if (personId) await logActivity('person', personId, { outcome: 'conversation', response: p.support ?? null });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_result': {
+        const personId = String(op.payload.person_id);
+        await this.assertPersonInHousehold(trx, tenant_id, personId, householdId);
+        await insertKnock({ person_id: personId, outcome: op.payload.result });
+        await logActivity('person', personId, { outcome: op.payload.result });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'door_outcome': {
+        await insertKnock({ person_id: null, outcome: op.payload.outcome });
+        await logActivity('household', householdId, { outcome: op.payload.outcome });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'clear_outcome': {
+        await insertKnock({ person_id: null, outcome: 'cleared' });
+        await logActivity('household', householdId, { outcome: 'cleared' });
+        return { op_id: op.op_id, status: 'applied' };
+      }
+      case 'person_create': {
+        const name = op.payload.name.trim();
+        const lastSpace = name.lastIndexOf(' ');
+        const first = lastSpace > 0 ? name.slice(0, lastSpace) : name;
+        const last = lastSpace > 0 ? name.slice(lastSpace + 1) : null;
+        const created = await trx
+          .insertInto('persons')
+          .values({
+            tenant_id,
+            household_id: householdId,
+            first_name: first,
+            last_name: last,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'persons', 'insert'>)
+          .returning('id')
+          .executeTakeFirst();
+        const personId = String(created?.id ?? '');
+        if (!personId) throw new BadRequestError('Could not add this person.');
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Added at door', actor);
+        await logActivity('person', personId, { created_at_door: true });
+        return { op_id: op.op_id, status: 'applied', person_id: personId };
+      }
+      default: {
+        const _exhaustive: never = op;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /** The follow-up writes a survey triggers (spec §3.5) — all in the op's transaction. */
+  private async applySurveySideEffects(
+    trx: Transaction<Models>,
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      household_id: string;
+      actor: string;
+      survey: CompanionSurveyType;
+    },
+  ): Promise<void> {
+    const { tenant_id, turf_id, household_id, actor, survey } = input;
+    const personId = survey.person_id != null ? String(survey.person_id) : null;
+    const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
+
+    // Support / turnout facts (person-level only, and only with a stance).
+    if (personId && survey.support && campaignId) {
+      const support = KNOCK_RESPONSE_TO_SUPPORT[survey.support];
+      const voting = KNOCK_RESPONSE_TO_VOTING[survey.support];
+      await this.factsRepo.upsertFact(
+        {
+          tenant_id,
+          campaign_id: campaignId,
+          person_id: personId,
+          user_id: actor,
+          ...(support ? { support_level: support } : {}),
+          ...(voting ? { voting_status: voting } : {}),
+          source: 'canvass',
+        },
+        trx,
+      );
+    }
+
+    // "Wants a yard sign" → a Deliveries intake request (spec §3.6/§4), unless
+    // the household already has an open one (same guard as staff addRequest).
+    if (survey.wants_yard_sign && campaignId) {
+      const open = await trx
+        .selectFrom('delivery_requests')
+        .select(['id'])
+        .where('tenant_id', '=', tenant_id)
+        .where('household_id', '=', household_id)
+        .where('status', 'in', ['new', 'approved'])
+        .executeTakeFirst();
+      if (!open) {
+        await trx
+          .insertInto('delivery_requests')
+          .values({
+            tenant_id,
+            campaign_id: campaignId,
+            household_id,
+            person_id: personId,
+            web_form_id: null,
+            source: 'canvass',
+            status: 'new',
+            notes: null,
+            createdby_id: actor,
+            updatedby_id: actor,
+          } as OperationDataType<'delivery_requests', 'insert'>)
+          .execute();
+      }
+    }
+
+    if (personId) {
+      // "Do not contact" — the global compliance flag (§15).
+      if (survey.set_dnc) {
+        await trx
+          .updateTable('persons')
+          .set({ do_not_contact: true, updatedby_id: actor, updated_at: new Date() })
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .execute();
+      }
+
+      // Contact capture: fill blanks only — a doorstep answer never overwrites
+      // what the CRM already knows (the knock row keeps the captured value).
+      if (survey.contact_phone || survey.contact_email) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['mobile', 'email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const updates: Record<string, unknown> = {};
+        if (survey.contact_phone && !person?.mobile) updates['mobile'] = survey.contact_phone;
+        if (survey.contact_email && !person?.email) updates['email'] = survey.contact_email;
+        if (Object.keys(updates).length > 0) {
+          await trx
+            .updateTable('persons')
+            .set({ ...updates, updatedby_id: actor, updated_at: new Date() })
+            .where('tenant_id', '=', tenant_id)
+            .where('id', '=', personId)
+            .execute();
+        }
+      }
+
+      // "Subscribe to updates" — consent captured at the door.
+      if (survey.subscribe && campaignId) {
+        const person = await trx
+          .selectFrom('persons')
+          .select(['email'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .executeTakeFirst();
+        const email = survey.contact_email ?? person?.email ?? null;
+        if (email) {
+          await this.subscriptionsRepo.setStatus(
+            {
+              tenant_id,
+              campaign_id: campaignId,
+              person_id: personId,
+              email,
+              status: 'subscribed',
+              consent_source: 'canvass',
+              user_id: actor,
+            },
+            trx,
+          );
+        }
+      }
+
+      // "Wants to volunteer" → flag for the field organizer.
+      if (survey.wants_volunteer) {
+        await this.attachTagInTrx(trx, tenant_id, personId, 'Volunteer prospect', actor);
+      }
+    }
+  }
+
+  /** Resolve + expiry-check an assignment token (uniform dead-link semantics). */
+  private async resolveActiveAssignment(token: string) {
+    const assignment = await this.assignments.resolveByToken(token);
+    if (!assignment) throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    if (assignment.expires_at && assignment.expires_at < new Date()) {
+      throw new NotFoundError('This canvassing link is invalid or has been retired.');
+    }
+    return assignment;
+  }
+
+  /** A person op must target a resident of that door — a token can't reach further. */
+  private async assertPersonInHousehold(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    household_id: string,
+  ): Promise<void> {
+    const person = await trx
+      .selectFrom('persons')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .where('household_id', '=', household_id)
+      .executeTakeFirst();
+    if (!person) throw new BadRequestError('That person is not at this door.');
+  }
+
+  /**
+   * Attach a tag by name inside the op's transaction (find-or-create + map).
+   * PersonsService.attachTag exists but manages its own connections/workflow
+   * triggers outside a transaction — this is the minimal transactional core.
+   */
+  private async attachTagInTrx(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    person_id: string,
+    name: string,
+    actor: string,
+  ): Promise<void> {
+    await trx
+      .insertInto('tags')
+      .values({
+        tenant_id,
+        name,
+        color: '#818789',
+        type: 'tag',
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    const tag = await trx
+      .selectFrom('tags')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('name', '=', name)
+      .executeTakeFirst();
+    if (!tag) return;
+    await trx
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id,
+        person_id,
+        tag_id: String(tag.id),
+        createdby_id: actor,
+        updatedby_id: actor,
+      } as OperationDataType<'map_peoples_tags', 'insert'>)
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** On-device timestamps keep their true door time, but never land in the future. */
+  private clampRecordedAt(recordedAt: string | null | undefined): Date {
+    const now = new Date();
+    if (!recordedAt) return now;
+    const parsed = new Date(recordedAt);
+    if (Number.isNaN(parsed.getTime()) || parsed > now) return now;
+    return parsed;
+  }
+
+  /** Campaign display name + companion survey vocabulary for a turf's campaign. */
+  private async companionCampaign(
+    tenant_id: string,
+    campaign_id: string,
+  ): Promise<{ name: string; issues: string[]; script: string }> {
+    if (campaign_id) {
+      const row = await this.knocks.db
+        .selectFrom('campaigns')
+        .select(['name', 'canvass_issues', 'canvass_script'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', '=', campaign_id)
+        .executeTakeFirst();
+      if (row) {
+        return {
+          name: String(row.name),
+          issues: Array.isArray(row.canvass_issues) ? row.canvass_issues.map(String) : [],
+          script: row.canvass_script ?? '',
+        };
+      }
+    }
+    return { name: '', issues: [], script: '' };
+  }
+
+  private async personFirstLast(tenant_id: string, person_id: string): Promise<string> {
+    const row = await this.knocks.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    return [row?.first_name, row?.last_name].filter(Boolean).join(' ') || 'Volunteer';
+  }
+
+  /** Residents per household — names + DNC only (payload minimization, spec §2). */
+  private async peopleByHousehold(
+    tenant_id: string,
+    household_ids: string[],
+  ): Promise<Map<string, { id: string; name: string; dnc: boolean }[]>> {
+    const map = new Map<string, { id: string; name: string; dnc: boolean }[]>();
+    if (household_ids.length === 0) return map;
+    const rows = await this.knocks.db
+      .selectFrom('persons')
+      .select(['id', 'household_id', 'first_name', 'last_name', 'do_not_contact'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', household_ids)
+      .orderBy('id')
+      .execute();
+    for (const r of rows) {
+      const hid = String(r.household_id);
+      const list = map.get(hid) ?? [];
+      list.push({
+        id: String(r.id),
+        name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Unnamed resident',
+        dnc: Boolean(r.do_not_contact),
+      });
+      map.set(hid, list);
+    }
+    return map;
+  }
+
+  private toPrefill(s: {
+    response: string | null;
+    issues: string[];
+    wants_volunteer: boolean;
+    wants_yard_sign: boolean;
+    set_dnc: boolean;
+    subscribe: boolean;
+  }): CompanionSurveyPrefill {
+    return {
+      support: (s.response ?? null) as CompanionSurveyPrefill['support'],
+      issues: s.issues,
+      wants_volunteer: s.wants_volunteer,
+      wants_yard_sign: s.wants_yard_sign,
+      set_dnc: s.set_dnc,
+      subscribe: s.subscribe,
+    };
+  }
+
+  // ------------------------------------------- Companion settings (staff) ----
+
+  /** The survey vocabulary the Companion shows, from the write campaign. */
+  public async getCompanionSettings(
+    auth: IAuthKeyPayload,
+    campaign_id?: string,
+  ): Promise<{ campaign_id: string; campaign_name: string; issues: string[]; script: string }> {
+    const resolved = await this.campaignsRepo.resolveForWrite({ tenant_id: auth.tenant_id, campaign_id });
+    const campaign = await this.companionCampaign(auth.tenant_id, String(resolved));
+    return {
+      campaign_id: String(resolved),
+      campaign_name: campaign.name,
+      issues: campaign.issues,
+      script: campaign.script,
+    };
+  }
+
+  public async updateCompanionSettings(auth: IAuthKeyPayload, input: UpdateCompanionSettingsType): Promise<void> {
+    const resolved = await this.campaignsRepo.resolveForWrite({
+      tenant_id: auth.tenant_id,
+      campaign_id: input.campaign_id,
+    });
+    await this.knocks.db
+      .updateTable('campaigns')
+      .set({
+        canvass_issues: input.issues,
+        canvass_script: input.script ?? null,
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', String(resolved))
+      .execute();
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'campaign',
+      entity_id: String(resolved),
+      metadata: { action: 'companion_settings', issues: input.issues.length },
+    });
   }
 
   /**
@@ -34694,18 +34481,21 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
         performed_by: actor,
       });
 
-      // A conversation with a stance feeds the support level of the campaign
-      // the TURF was cut for (§15) — a writ-period knock updates the election
-      // campaign's read on the voter, never the office's.
+      // A conversation with a stance feeds the support level (or turnout fact)
+      // of the campaign the TURF was cut for (§15) — a writ-period knock updates
+      // the election campaign's read on the voter, never the office's.
       if (input.response) {
         const campaignId = await this.resolveKnockCampaignId(tenant_id, turf_id);
-        if (campaignId) {
+        const support = KNOCK_RESPONSE_TO_SUPPORT[input.response];
+        const voting = KNOCK_RESPONSE_TO_VOTING[input.response];
+        if (campaignId && (support || voting)) {
           await this.factsRepo.upsertFact({
             tenant_id,
             campaign_id: campaignId,
             person_id: String(input.person_id),
             user_id: actor,
-            support_level: KNOCK_RESPONSE_TO_SUPPORT[input.response],
+            ...(support ? { support_level: support } : {}),
+            ...(voting ? { voting_status: voting } : {}),
             source: 'canvass',
           });
         }
@@ -35351,6 +35141,459 @@ export class CompaniesEnrichmentService {
     return unenriched.length;
   }
 }
+```
+
+## File: apps/backend/src/app/modules/companion-access/repositories/companion-sessions.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export interface CompanionSession {
+  id: string;
+  tenant_id: string;
+  volunteer_id: string;
+  expires_at: Date;
+  revoked_at: Date | null;
+}
+
+export class CompanionSessionsRepo extends BaseRepository<'companion_sessions'> {
+  constructor() {
+    super('companion_sessions');
+  }
+
+  public async create(
+    input: { tenant_id: string; volunteer_id: string; token_hash: string; expires_at: Date; user_agent: string | null },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const row = {
+      tenant_id: input.tenant_id,
+      volunteer_id: input.volunteer_id,
+      token_hash: input.token_hash,
+      expires_at: input.expires_at,
+      user_agent: input.user_agent,
+    } as OperationDataType<'companion_sessions', 'insert'>;
+    await this.getInsert(trx).values(row).execute();
+  }
+
+  /**
+   * Resolve a device-session token to its session. Like the assignment/route
+   * token lookups, this is intentionally NOT tenant-scoped: the (hashed) token
+   * IS the credential and is what identifies the tenant. Every downstream check
+   * then re-verifies tenant + volunteer match.
+   */
+  public async findByTokenHash(token_hash: string): Promise<CompanionSession | null> {
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const row = await BaseRepository.dbInstance
+      .selectFrom('companion_sessions')
+      .select(['id', 'tenant_id', 'volunteer_id', 'expires_at', 'revoked_at'])
+      .where('token_hash', '=', token_hash)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      tenant_id: String(row.tenant_id),
+      volunteer_id: String(row.volunteer_id),
+      expires_at: new Date(String(row.expires_at)),
+      revoked_at: row.revoked_at ? new Date(String(row.revoked_at)) : null,
+    };
+  }
+
+  public async touchLastUsed(input: { tenant_id: string; id: string }): Promise<void> {
+    await this.getUpdate()
+      .set({ last_used_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Revoking a volunteer dead-ends every device they ever verified. */
+  public async revokeForVolunteer(
+    input: { tenant_id: string; volunteer_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ revoked_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('volunteer_id', '=', input.volunteer_id)
+      .where('revoked_at', 'is', null)
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companion-access/repositories/companion-volunteers.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { CompanionVolunteerRow } from '../../../../../../../libs/common/src';
+
+export interface CompanionVolunteer {
+  id: string;
+  tenant_id: string;
+  person_id: string;
+  status: string;
+  verify_code_hash: string | null;
+  verify_code_expires_at: Date | null;
+  verify_attempts: number;
+  verify_channel: string | null;
+  verified_at: Date | null;
+}
+
+export class CompanionVolunteersRepo extends BaseRepository<'companion_volunteers'> {
+  constructor() {
+    super('companion_volunteers');
+  }
+
+  public async findByPerson(
+    input: { tenant_id: string; person_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer | null> {
+    const row = await this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .executeTakeFirst();
+    return row ? this.toVolunteer(row) : null;
+  }
+
+  public async findById(
+    input: { tenant_id: string; id: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer | null> {
+    const row = await this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return row ? this.toVolunteer(row) : null;
+  }
+
+  /** Get-or-create the volunteer row for a person (idempotent on the unique key). */
+  public async ensureForPerson(
+    input: { tenant_id: string; person_id: string; created_by: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer> {
+    const row = {
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+      createdby_id: input.created_by,
+      updatedby_id: input.created_by,
+    } as OperationDataType<'companion_volunteers', 'insert'>;
+    await this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) => oc.columns(['tenant_id', 'person_id']).doNothing())
+      .execute();
+    const found = await this.findByPerson(input, trx);
+    if (!found) throw new Error('companion volunteer row missing after ensure');
+    return found;
+  }
+
+  public async setVerifyCode(
+    input: { tenant_id: string; id: string; code_hash: string; expires_at: Date; channel: 'email' | 'sms' },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        verify_code_hash: input.code_hash,
+        verify_code_expires_at: input.expires_at,
+        verify_attempts: 0,
+        verify_channel: input.channel,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async bumpVerifyAttempts(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set((eb) => ({ verify_attempts: eb('verify_attempts', '+', 1), updated_at: new Date() }))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Invalidate a code (attempt lockout / after use). */
+  public async clearVerifyCode(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ verify_code_hash: null, verify_code_expires_at: null, updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /**
+   * Record a successful code confirmation: clear the code and move
+   * invited → verified. An already-approved volunteer stays approved.
+   */
+  public async markVerified(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set((eb) => ({
+        verify_code_hash: null,
+        verify_code_expires_at: null,
+        verified_at: new Date(),
+        status: eb
+          .case()
+          .when('status', '=', 'invited')
+          .then('verified')
+          .else(eb.ref('status'))
+          .end()
+          .$castTo<string>(),
+        updated_at: new Date(),
+      }))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async approve(
+    input: { tenant_id: string; id: string; admin_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        status: 'approved',
+        approved_by: input.admin_id,
+        approved_at: new Date(),
+        revoked_at: null,
+        updatedby_id: input.admin_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async revoke(
+    input: { tenant_id: string; id: string; admin_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        status: 'revoked',
+        revoked_at: new Date(),
+        updatedby_id: input.admin_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Admin page rows: volunteers joined with their person + approver. */
+  public async getAllWithPerson(tenant_id: string): Promise<CompanionVolunteerRow[]> {
+    const rows = await this.getSelect()
+      .innerJoin('persons', (join) =>
+        join
+          .onRef('persons.id', '=', 'companion_volunteers.person_id')
+          .onRef('persons.tenant_id', '=', 'companion_volunteers.tenant_id'),
+      )
+      .leftJoin('authusers', (join) =>
+        join
+          .onRef('authusers.id', '=', 'companion_volunteers.approved_by')
+          .onRef('authusers.tenant_id', '=', 'companion_volunteers.tenant_id'),
+      )
+      .select([
+        'companion_volunteers.id',
+        'companion_volunteers.person_id',
+        'companion_volunteers.status',
+        'companion_volunteers.verify_channel',
+        'companion_volunteers.verified_at',
+        'companion_volunteers.approved_at',
+        'companion_volunteers.created_at',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'authusers.first_name as approver_first_name',
+        'authusers.last_name as approver_last_name',
+      ])
+      .where('companion_volunteers.tenant_id', '=', tenant_id)
+      .orderBy('companion_volunteers.created_at', 'desc')
+      .execute();
+
+    return rows.map((r) => ({
+      id: String(r.id),
+      person_id: String(r.person_id),
+      first_name: r.first_name,
+      last_name: r.last_name,
+      email: r.email,
+      mobile: r.mobile,
+      status: String(r.status) as CompanionVolunteerRow['status'],
+      verify_channel: (r.verify_channel ?? null) as CompanionVolunteerRow['verify_channel'],
+      verified_at: r.verified_at ? new Date(String(r.verified_at)).toISOString() : null,
+      approved_at: r.approved_at ? new Date(String(r.approved_at)).toISOString() : null,
+      approved_by_name: r.approver_first_name ? `${r.approver_first_name} ${r.approver_last_name ?? ''}`.trim() : null,
+      created_at: new Date(String(r.created_at)).toISOString(),
+    }));
+  }
+
+  /** Volunteers awaiting admin approval (the sidebar badge count). */
+  public async pendingCount(tenant_id: string): Promise<number> {
+    const row = await this.getSelect()
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'verified')
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  private toVolunteer(row: Record<string, unknown>): CompanionVolunteer {
+    return {
+      id: String(row['id']),
+      tenant_id: String(row['tenant_id']),
+      person_id: String(row['person_id']),
+      status: String(row['status']),
+      verify_code_hash: row['verify_code_hash'] == null ? null : String(row['verify_code_hash']),
+      verify_code_expires_at: row['verify_code_expires_at'] ? new Date(String(row['verify_code_expires_at'])) : null,
+      verify_attempts: Number(row['verify_attempts'] ?? 0),
+      verify_channel: row['verify_channel'] == null ? null : String(row['verify_channel']),
+      verified_at: row['verified_at'] ? new Date(String(row['verified_at'])) : null,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companion-access/routes/companion-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
+
+import {
+  CompanionAccessQueryObj,
+  CompanionVerifyConfirmObj,
+  CompanionVerifyStartObj,
+} from '../../../../../../../libs/common/src';
+import { CompanionAccessController } from '../controller';
+
+/**
+ * Public companion access API (COMPANION-APPS-PLAN.md §4 A2) — the verify +
+ * approve gate in front of both volunteer companions. No account: the
+ * capability token names the assignment, and these endpoints establish WHO is
+ * holding it. The device session they mint is carried on data requests via the
+ * X-Companion-Session header.
+ */
+
+const controller = new CompanionAccessController();
+
+// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 60;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_MAX;
+}
+
+function statusOf(err: unknown): number {
+  if (err && typeof err === 'object' && 'statusCode' in err) {
+    const code = (err as { statusCode?: unknown }).statusCode;
+    if (typeof code === 'number') return code;
+  }
+  return 500;
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
+const companionPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // What should the gate render for this link (+ optional device session)?
+  fastify.get('/access', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionAccessQueryObj.safeParse(req.query);
+    if (!parsed.success) return reply.status(200).send({ state: 'dead' });
+    try {
+      const payload = await controller.getAccess(parsed.data.kind, parsed.data.token, sessionTokenOf(req));
+      return reply.status(200).send(payload);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to resolve companion access');
+      // Uniform dead state — never leak why a link failed.
+      return reply.status(200).send({ state: 'dead' });
+    }
+  });
+
+  // Send a one-time code to the volunteer's email or SMS on file.
+  fastify.post('/verify/start', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionVerifyStartObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid request.' });
+    try {
+      const result = await controller.verifyStart(parsed.data.kind, parsed.data.token, parsed.data.channel);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to start companion verification');
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to send a code right now.') });
+    }
+  });
+
+  // Confirm the code; mint the device session.
+  fastify.post('/verify/confirm', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionVerifyConfirmObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Enter the 6-digit code.' });
+    try {
+      const result = await controller.verifyConfirm(
+        parsed.data.kind,
+        parsed.data.token,
+        parsed.data.code,
+        typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+      );
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to confirm companion verification');
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to verify that code.') });
+    }
+  });
+
+  done();
+};
+
+export default companionPublicRoute;
+```
+
+## File: apps/backend/src/app/modules/companion-access/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema } from '../../../../../../libs/common/src';
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
+import { CompanionAccessController } from './controller';
+
+const controller = new CompanionAccessController();
+
+/** Staff surface for the companion access layer: the Volunteer access page. */
+export const CompanionAccessRouter = router({
+  getAll: authProcedure.query(({ ctx }) => controller.getAllVolunteers(ctx.auth.tenant_id)),
+  pendingCount: authProcedure.query(({ ctx }) => controller.pendingCount(ctx.auth.tenant_id)),
+  approve: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.approveVolunteer(ctx.auth, input.id)),
+  revoke: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.revokeVolunteer(ctx.auth, input.id)),
+});
 ```
 
 ## File: apps/backend/src/app/modules/demo/controller.ts
@@ -49743,6 +49986,86 @@ function evaluateRule(node: unknown, person: Record<string, unknown>): boolean {
 }
 ```
 
+## File: apps/backend/src/app/routes.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
+import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
+
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
+
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
+  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
+
+  // Register public volunteer delivery-route pages (token is the credential, §14)
+  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
+
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check endpoint
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  done();
+};
+```
+
 ## File: apps/backend/src/env.ts
 
 ```typescript
@@ -49907,40 +50230,431 @@ export const env = {
 };
 ```
 
-## File: apps/companion/src/app/canvass/canvass-page.ts
+## File: apps/companion/src/app/gate/companion-api.ts
 
 ```typescript
-import { Component } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
-/** Canvass companion (spec §3) — full implementation lands in Phase C. */
-@Component({
-  selector: 'pc-canvass-page',
-  template: `
-    <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 class="text-lg font-semibold">Canvass companion</h1>
-      <p class="text-base-content/70">Coming soon.</p>
-    </div>
-  `,
-})
-export class CanvassPage {}
+import type {
+  CompanionAccessPayload,
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVerifyConfirmResult,
+} from '@common';
+
+/**
+ * The companion device session + access-gate API client. All calls are
+ * relative `/api` REST (dev proxy / same-domain prod) — this app never uses
+ * tRPC. The session token lives in localStorage so the volunteer stays
+ * verified across visits on the same phone; it is sent on every companion
+ * data request via the X-Companion-Session header.
+ */
+
+const SESSION_KEY = 'pc-companion-session';
+
+export class CompanionApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+interface StoredSession {
+  token: string;
+  expiresAt: string;
+}
+
+function readStoredSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredSession>;
+    if (typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'string') return null;
+    if (new Date(parsed.expiresAt) <= new Date()) return null;
+    return { token: parsed.token, expiresAt: parsed.expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const payload: unknown = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message =
+      payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : 'Something went wrong — try again.';
+    throw new CompanionApiError(message, res.status);
+  }
+  return payload as T;
+}
+
+@Injectable({ providedIn: 'root' })
+export class CompanionSessionService {
+  /** Current device-session token (null until verified on this device). */
+  public readonly sessionToken = signal<string | null>(readStoredSession()?.token ?? null);
+
+  public clearSession(): void {
+    localStorage.removeItem(SESSION_KEY);
+    this.sessionToken.set(null);
+  }
+
+  public async getAccess(kind: CompanionLinkKind, token: string): Promise<CompanionAccessPayload> {
+    const params = new URLSearchParams({ kind, token });
+    const res = await fetch(`/api/companion/access?${params}`, { headers: this.headers() });
+    if (!res.ok) return { state: 'dead' };
+    return (await res.json()) as CompanionAccessPayload;
+  }
+
+  /** Headers to attach to every companion data request. */
+  public headers(): Record<string, string> {
+    const token = this.sessionToken();
+    return token ? { 'X-Companion-Session': token } : {};
+  }
+
+  public saveSession(token: string, expiresAt: string): void {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt } satisfies StoredSession));
+    this.sessionToken.set(token);
+  }
+
+  public async verifyConfirm(
+    kind: CompanionLinkKind,
+    token: string,
+    code: string,
+  ): Promise<CompanionVerifyConfirmResult> {
+    const result = await post<CompanionVerifyConfirmResult>('/api/companion/verify/confirm', { kind, token, code });
+    this.saveSession(result.sessionToken, result.expiresAt);
+    return result;
+  }
+
+  public async verifyStart(
+    kind: CompanionLinkKind,
+    token: string,
+    channel: CompanionVerifyChannel,
+  ): Promise<{ masked: string }> {
+    return post<{ masked: string }>('/api/companion/verify/start', { kind, token, channel });
+  }
+}
 ```
 
-## File: apps/companion/src/app/deliveries/route-page.ts
+## File: apps/companion/src/app/gate/companion-gate.ts
 
 ```typescript
-import { Component } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  OnInit,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
+import { FormsModule } from '@angular/forms';
 
-/** Deliveries companion (spec §4) — the CRM page moves here in Phase D. */
+import type { CompanionAccessPayload, CompanionLinkKind, CompanionVerifyChannel } from '@common';
+
+import { CompanionApiError, CompanionSessionService } from './companion-api';
+
+const POLL_MS = 20_000;
+const RESEND_COOLDOWN_S = 30;
+
+type GateView = 'loading' | 'dead' | 'unassigned' | 'verify' | 'pending' | 'ready';
+
+/**
+ * The verify + approve gate both companions sit behind (COMPANION-APPS-PLAN.md
+ * §4 A4). Wrap an app in it; the app renders only once the device session is
+ * verified AND the volunteer is admin-approved:
+ *
+ *   <pc-companion-gate kind="turf" [token]="token()" (ready)="load()">
+ *     …the actual companion…
+ *   </pc-companion-gate>
+ */
 @Component({
-  selector: 'pc-route-page',
+  selector: 'pc-companion-gate',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [FormsModule],
   template: `
-    <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
-      <h1 class="text-lg font-semibold">Delivery route</h1>
-      <p class="text-base-content/70">Coming soon.</p>
-    </div>
+    @switch (view()) {
+      @case ('ready') {
+        <ng-content></ng-content>
+      }
+      @case ('loading') {
+        <div class="flex min-h-screen items-center justify-center">
+          <span class="loading loading-spinner loading-md opacity-40" aria-label="Loading"></span>
+        </div>
+      }
+      @case ('dead') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <h1 class="text-lg font-semibold">This link isn't active</h1>
+          @if (access()?.organizerName) {
+            <p class="text-base-content/70">
+              It may have expired or been replaced. Contact {{ access()?.organizerName }} to get a new link.
+            </p>
+          } @else {
+            <p class="text-base-content/70">
+              It may have expired or been replaced. Ask your organizer to send a new one.
+            </p>
+          }
+        </div>
+      }
+      @case ('unassigned') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+          <h1 class="text-lg font-semibold">This link isn't ready yet</h1>
+          <p class="text-base-content/70">
+            It hasn't been connected to you.
+            @if (access()?.organizerName) {
+              Ask {{ access()?.organizerName }} to re-send your personal link.
+            } @else {
+              Ask your organizer to re-send your personal link.
+            }
+          </p>
+        </div>
+      }
+      @case ('pending') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+          <span class="loading loading-ring loading-lg text-primary" aria-hidden="true"></span>
+          <h1 class="text-lg font-semibold">You're verified — waiting for approval</h1>
+          <p class="text-base-content/70">
+            {{ access()?.organizerName || 'Your organizer' }} has been notified. This page checks automatically; keep it
+            open or come back later.
+          </p>
+          <button type="button" class="btn btn-outline btn-sm" [disabled]="checking()" (click)="checkNow()">
+            @if (checking()) {
+              Checking…
+            } @else {
+              Check again
+            }
+          </button>
+        </div>
+      }
+      @case ('verify') {
+        <div class="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-5 p-6">
+          <header class="flex flex-col gap-1 text-center">
+            @if (access()?.organizationName) {
+              <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+                {{ access()?.organizationName }}
+              </p>
+            }
+            <h1 class="text-lg font-semibold">
+              @if (access()?.volunteerName) {
+                Hi {{ access()?.volunteerName }} — let's confirm it's you
+              } @else {
+                Let's confirm it's you
+              }
+            </h1>
+            <p class="text-base-content/70">This personal link only works for you, so we verify each new phone once.</p>
+          </header>
+
+          @if (!sentTo()) {
+            <div class="flex flex-col gap-2">
+              @for (contact of access()?.contacts ?? []; track contact.channel) {
+                <button
+                  type="button"
+                  class="btn btn-primary w-full"
+                  [class.btn-outline]="contact.channel === 'sms'"
+                  [disabled]="sending()"
+                  (click)="send(contact.channel)"
+                >
+                  @if (contact.channel === 'email') {
+                    Email a code to {{ contact.masked }}
+                  } @else {
+                    Text a code to {{ contact.masked }}
+                  }
+                </button>
+              }
+              @if ((access()?.contacts ?? []).length === 0) {
+                <p class="text-center text-base-content/70">
+                  There's no email or mobile number on file for you — ask your organizer to add one, then reopen this
+                  link.
+                </p>
+              }
+            </div>
+          } @else {
+            <form class="flex flex-col gap-3" (submit)="confirm($event)">
+              <p class="text-center text-base-content/70">Enter the 6-digit code sent to {{ sentTo() }}.</p>
+              <input
+                class="input input-bordered w-full text-center text-2xl tracking-[0.4em]"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                maxlength="6"
+                placeholder="••••••"
+                aria-label="6-digit verification code"
+                [(ngModel)]="codeValue"
+                name="code"
+              />
+              @if (error()) {
+                <p class="text-center text-sm text-error" role="alert">{{ error() }}</p>
+              }
+              <button type="submit" class="btn btn-primary w-full" [disabled]="confirming() || codeValue.length !== 6">
+                @if (confirming()) {
+                  Verifying…
+                } @else if (codeValue.length !== 6) {
+                  Enter the 6-digit code
+                } @else {
+                  Verify code
+                }
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" [disabled]="cooldown() > 0" (click)="resend()">
+                @if (cooldown() > 0) {
+                  Resend code ({{ cooldown() }}s)
+                } @else {
+                  Resend code
+                }
+              </button>
+            </form>
+          }
+          @if (!sentTo() && error()) {
+            <p class="text-center text-sm text-error" role="alert">{{ error() }}</p>
+          }
+        </div>
+      }
+    }
   `,
 })
-export class RoutePage {}
+export class CompanionGate implements OnInit {
+  public readonly kind = input.required<CompanionLinkKind>();
+  public readonly token = input.required<string>();
+  /** Fires when the gate opens — the app behind it can start loading data. */
+  public readonly ready = output<void>();
+
+  protected readonly access = signal<CompanionAccessPayload | null>(null);
+  protected readonly checking = signal(false);
+  protected readonly confirming = signal(false);
+  protected readonly cooldown = signal(0);
+  protected readonly error = signal<string | null>(null);
+  protected readonly sending = signal(false);
+  protected readonly sentTo = signal<string | null>(null);
+  protected readonly state = signal<'loading' | CompanionAccessPayload['state']>('loading');
+
+  protected readonly view = computed<GateView>(() => {
+    const state = this.state();
+    if (state === 'loading') return 'loading';
+    if (state === 'ready') return 'ready';
+    if (state === 'pending_approval') return 'pending';
+    if (state === 'need_verification') return 'verify';
+    if (state === 'unassigned') return 'unassigned';
+    return 'dead';
+  });
+
+  protected codeValue = '';
+
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly session = inject(CompanionSessionService);
+  private cooldownTimer: ReturnType<typeof setInterval> | null = null;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  public ngOnInit(): void {
+    this.destroyRef.onDestroy(() => {
+      this.stopPolling();
+      if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    });
+    void this.refresh();
+  }
+
+  protected async checkNow(): Promise<void> {
+    this.checking.set(true);
+    try {
+      await this.refresh();
+    } finally {
+      this.checking.set(false);
+    }
+  }
+
+  protected async confirm(event: Event): Promise<void> {
+    event.preventDefault();
+    if (this.codeValue.length !== 6 || this.confirming()) return;
+    this.confirming.set(true);
+    this.error.set(null);
+    try {
+      const result = await this.session.verifyConfirm(this.kind(), this.token(), this.codeValue);
+      this.codeValue = '';
+      if (result.status === 'ready') {
+        this.state.set('ready');
+        this.ready.emit();
+      } else {
+        this.state.set('pending_approval');
+        this.startPolling();
+      }
+    } catch (err: unknown) {
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Something went wrong — try again.');
+    } finally {
+      this.confirming.set(false);
+    }
+  }
+
+  protected resend(): void {
+    const sent = this.sentTo();
+    this.sentTo.set(null);
+    this.error.set(null);
+    // Re-open the channel picker; if there was exactly one channel, resend directly.
+    const contacts = this.access()?.contacts ?? [];
+    const only = contacts.length === 1 ? contacts[0] : undefined;
+    if (only && sent) void this.send(only.channel);
+  }
+
+  protected async send(channel: CompanionVerifyChannel): Promise<void> {
+    if (this.sending()) return;
+    this.sending.set(true);
+    this.error.set(null);
+    try {
+      const { masked } = await this.session.verifyStart(this.kind(), this.token(), channel);
+      this.sentTo.set(masked);
+      this.startCooldown();
+    } catch (err: unknown) {
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Could not send a code — try again.');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
+  private async refresh(): Promise<void> {
+    const access = await this.session.getAccess(this.kind(), this.token());
+    this.access.set(access);
+    const wasReady = this.state() === 'ready';
+    this.state.set(access.state);
+    if (access.state === 'ready') {
+      this.stopPolling();
+      if (!wasReady) this.ready.emit();
+    } else if (access.state === 'pending_approval') {
+      this.startPolling();
+    }
+  }
+
+  private startCooldown(): void {
+    this.cooldown.set(RESEND_COOLDOWN_S);
+    if (this.cooldownTimer) clearInterval(this.cooldownTimer);
+    this.cooldownTimer = setInterval(() => {
+      const next = this.cooldown() - 1;
+      this.cooldown.set(Math.max(0, next));
+      if (next <= 0 && this.cooldownTimer) {
+        clearInterval(this.cooldownTimer);
+        this.cooldownTimer = null;
+      }
+    }, 1000);
+  }
+
+  private startPolling(): void {
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(() => void this.refresh(), POLL_MS);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  }
+}
 ```
 
 ## File: apps/companion/src/app/gate/dead-link-page.ts
@@ -49971,33 +50685,6 @@ import { Component, input } from '@angular/core';
 export class DeadLinkPage {
   public readonly organizerName = input<string | null>(null);
 }
-```
-
-## File: apps/companion/src/app/app.config.ts
-
-```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
-
-import { environment } from '../environments/environment';
-import { appRoutes } from './app.routes';
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    {
-      provide: Loader,
-      useFactory: () =>
-        new Loader({
-          apiKey: environment.googleMapsApiKey,
-          libraries: ['marker'],
-        }),
-    },
-    provideRouter(appRoutes),
-    provideZonelessChangeDetection(),
-  ],
-};
 ```
 
 ## File: apps/companion/src/app/app.routes.ts
@@ -51855,6 +52542,439 @@ export const CompaniesRouter = router({
     .input(z.object({ target_id: idSchema, source_id: idSchema }))
     .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
 });
+```
+
+## File: apps/backend/src/app/modules/companion-access/controller.ts
+
+```typescript
+import { randomInt } from 'node:crypto';
+
+import type { Transaction } from 'kysely';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type {
+  CompanionAccessPayload,
+  CompanionContact,
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+  IAuthKeyPayload,
+} from '../../../../../../libs/common/src';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { SmsService } from '../../lib/sms/sms.service';
+import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { env } from '../../../env';
+import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
+import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
+import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
+import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
+
+const CODE_TTL_MS = 10 * 60 * 1000;
+const CODE_MAX_ATTEMPTS = 5;
+const SESSION_TTL_DAYS = 30;
+const VERIFY_START_LIMIT = 3; // sends per token per window
+const VERIFY_START_WINDOW_MS = 15 * 60 * 1000;
+const VERIFY_CONFIRM_LIMIT = 15; // confirms per token per window (attempt lockout is per code)
+const VERIFY_CONFIRM_WINDOW_MS = 15 * 60 * 1000;
+
+/** What a capability link resolves to, whichever app it belongs to. */
+interface ResolvedLink {
+  tenant_id: string;
+  /** Person the link was assigned to; null = staff never attached one. */
+  volunteer_person_id: string | null;
+  /** The staff account behind the link — actor for activity attribution. */
+  organizer_id: string;
+}
+
+interface PersonContacts {
+  first_name: string | null;
+  email: string | null;
+  /** E.164, already normalized — null when the mobile on file can't be normalized. */
+  sms: string | null;
+}
+
+/**
+ * The companion access layer (COMPANION-APPS-PLAN.md §2). The capability token
+ * says WHAT may be touched (one turf / one route); the companion session says
+ * WHO is touching it. Both are required on every companion data request —
+ * `requireSession()` is the guard the canvass/deliveries public controllers
+ * call. Nothing here ever reveals whether a contact exists beyond masked
+ * values for the link's own volunteer.
+ */
+export class CompanionAccessController {
+  private activityRepo = new UserActivityRepo();
+  private mailService = new TransactionalEmailService();
+  private routesRepo = new DeliveryRoutesRepo();
+  private sessionsRepo = new CompanionSessionsRepo();
+  private smsService = new SmsService();
+  private turfAssignmentsRepo = new TurfAssignmentsRepo();
+  private volunteersRepo = new CompanionVolunteersRepo();
+
+  /** GET /api/companion/access — tell the gate UI what to render. */
+  public async getAccess(
+    kind: CompanionLinkKind,
+    token: string,
+    sessionToken: string | null,
+  ): Promise<CompanionAccessPayload> {
+    const link = await this.resolveLink(kind, token);
+    if (!link) return { state: 'dead' };
+
+    const organizationName = await this.organizationName(link.tenant_id);
+    const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
+    if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
+
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) return { state: 'unassigned', organizerName, organizationName };
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (volunteer?.status === 'revoked') return { state: 'dead' };
+
+    const base = {
+      volunteerName: person.first_name ?? undefined,
+      organizerName,
+      organizationName,
+    };
+
+    const session = await this.findUsableSession(sessionToken, link.tenant_id, volunteer);
+    if (session) {
+      return volunteer?.status === 'approved' ? { state: 'ready', ...base } : { state: 'pending_approval', ...base };
+    }
+
+    return { state: 'need_verification', ...base, contacts: this.contactsOf(person) };
+  }
+
+  /** POST /api/companion/verify/start — send a one-time code to a contact on file. */
+  public async verifyStart(
+    kind: CompanionLinkKind,
+    token: string,
+    channel: CompanionVerifyChannel,
+  ): Promise<{ masked: string }> {
+    checkRateLimit(`companion-verify-start:${token}`, VERIFY_START_LIMIT, VERIFY_START_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) throw new NotFoundError('This link is not active.');
+
+    const destination = channel === 'email' ? person.email : person.sms;
+    if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
+
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const orgName = await this.organizationName(link.tenant_id);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      const volunteer = await this.volunteersRepo.ensureForPerson(
+        { tenant_id: link.tenant_id, person_id: String(link.volunteer_person_id), created_by: link.organizer_id },
+        trx,
+      );
+      if (volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+      await this.volunteersRepo.setVerifyCode(
+        {
+          tenant_id: link.tenant_id,
+          id: volunteer.id,
+          code_hash: hashToken(code),
+          expires_at: new Date(Date.now() + CODE_TTL_MS),
+          channel,
+        },
+        trx,
+      );
+      if (channel === 'email') {
+        await this.mailService.enqueueMail(
+          {
+            to: destination,
+            subject: `Your ${orgName} verification code`,
+            text: `Your verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+            html: `<h2>Verify it's you</h2><p>Enter this code on the volunteer page to continue. It expires in 10 minutes.</p><div class="otp-container"><span class="otp-code">${code}</span></div><p class="warning">If you didn't request this code, you can ignore this message.</p>`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      } else {
+        await this.smsService.enqueueSms(
+          {
+            to: destination,
+            body: `${orgName} code: ${code} — expires in 10 minutes.`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      }
+    });
+
+    return { masked: channel === 'email' ? maskEmail(destination) : maskPhone(destination) };
+  }
+
+  /** POST /api/companion/verify/confirm — check the code, mint a device session. */
+  public async verifyConfirm(
+    kind: CompanionLinkKind,
+    token: string,
+    code: string,
+    userAgent: string | null,
+  ): Promise<CompanionVerifyConfirmResult> {
+    checkRateLimit(`companion-verify-confirm:${token}`, VERIFY_CONFIRM_LIMIT, VERIFY_CONFIRM_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (!volunteer || volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+    if (!volunteer.verify_code_hash || !volunteer.verify_code_expires_at) {
+      throw new BadRequestError('Request a new code first.');
+    }
+    if (volunteer.verify_code_expires_at < new Date()) {
+      throw new BadRequestError('That code has expired — request a new one.');
+    }
+    if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
+      await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError('Too many attempts — request a new code.');
+    }
+    if (hashToken(code) !== volunteer.verify_code_hash) {
+      await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError("That code didn't match. Check it and try again.");
+    }
+
+    const wasApproved = volunteer.status === 'approved';
+    const sessionToken = generateToken();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.markVerified({ tenant_id: link.tenant_id, id: volunteer.id }, trx);
+      await this.sessionsRepo.create(
+        {
+          tenant_id: link.tenant_id,
+          volunteer_id: volunteer.id,
+          token_hash: hashToken(sessionToken),
+          expires_at: expiresAt,
+          user_agent: userAgent,
+        },
+        trx,
+      );
+      if (!wasApproved) {
+        await this.notifyAdminsOfPendingVolunteer(link, trx);
+      }
+      await this.activityRepo.log(
+        {
+          tenant_id: link.tenant_id,
+          user_id: link.organizer_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: volunteer.id,
+          metadata: {
+            action: 'volunteer_verified',
+            message: wasApproved
+              ? 'Volunteer verified a new device via companion link'
+              : 'Volunteer verified their contact and is waiting for approval',
+            via: 'companion link',
+          },
+        },
+        trx,
+      );
+    });
+
+    return {
+      status: wasApproved ? 'ready' : 'pending_approval',
+      sessionToken,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * The guard every companion data endpoint calls: validates the device
+   * session, that it belongs to the link's volunteer, and that the volunteer
+   * is approved. Throws UnauthorizedError (no/invalid session — the gate
+   * re-verifies) or ForbiddenError (valid session, not approved).
+   */
+  public async requireSession(
+    sessionToken: string | null | undefined,
+    link: { tenant_id: string; volunteer_person_id: string | null },
+  ): Promise<void> {
+    if (!link.volunteer_person_id) throw new UnauthorizedError('This link needs to be re-sent by your organizer.');
+    if (!sessionToken) throw new UnauthorizedError('Verification required.');
+
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== link.tenant_id) throw new UnauthorizedError('Verification required.');
+    if (session.revoked_at || session.expires_at < new Date()) throw new UnauthorizedError('Verification required.');
+
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: link.tenant_id, id: session.volunteer_id });
+    if (!volunteer || volunteer.person_id !== link.volunteer_person_id) {
+      throw new UnauthorizedError('Verification required.');
+    }
+    if (volunteer.status !== 'approved') throw new ForbiddenError('Waiting for organizer approval.');
+
+    await this.sessionsRepo.touchLastUsed({ tenant_id: link.tenant_id, id: session.id });
+  }
+
+  // ---------------------------------------------------------------- admin API
+
+  public async getAllVolunteers(tenant_id: string): Promise<CompanionVolunteerRow[]> {
+    return this.volunteersRepo.getAllWithPerson(tenant_id);
+  }
+
+  public async pendingCount(tenant_id: string): Promise<number> {
+    return this.volunteersRepo.pendingCount(tenant_id);
+  }
+
+  public async approveVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.approve({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_approved', message: 'Approved companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  public async revokeVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.revoke({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.sessionsRepo.revokeForVolunteer({ tenant_id: auth.tenant_id, volunteer_id: id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_revoked', message: 'Revoked companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  // ------------------------------------------------------------------ helpers
+
+  /** Resolve either kind of capability token to its tenant + volunteer. */
+  public async resolveLink(kind: CompanionLinkKind, token: string): Promise<ResolvedLink | null> {
+    if (kind === 'turf') {
+      const assignment = await this.turfAssignmentsRepo.resolveByToken(token);
+      if (!assignment) return null;
+      if (assignment.expires_at && assignment.expires_at < new Date()) return null;
+      return {
+        tenant_id: assignment.tenant_id,
+        volunteer_person_id: assignment.volunteer_person_id,
+        organizer_id: assignment.created_by,
+      };
+    }
+
+    // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
+    // dead-link semantics: canceled, missing expiry, or past expiry all fail).
+    const route = await this.routesRepo.findByTokenHash(hashToken(token));
+    if (!route) return null;
+    if (String(route.status) === 'canceled') return null;
+    const exp = route.share_token_expires_at;
+    if (!exp || new Date(String(exp)) <= new Date()) return null;
+    return {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),
+      organizer_id: String(route.createdby_id),
+    };
+  }
+
+  private contactsOf(person: PersonContacts): CompanionContact[] {
+    const contacts: CompanionContact[] = [];
+    if (person.email) contacts.push({ channel: 'email', masked: maskEmail(person.email) });
+    if (person.sms) contacts.push({ channel: 'sms', masked: maskPhone(person.sms) });
+    return contacts;
+  }
+
+  private async findUsableSession(
+    sessionToken: string | null,
+    tenant_id: string,
+    volunteer: CompanionVolunteer | null,
+  ): Promise<boolean> {
+    if (!sessionToken || !volunteer) return false;
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== tenant_id) return false;
+    if (session.volunteer_id !== volunteer.id) return false;
+    if (session.revoked_at || session.expires_at < new Date()) return false;
+    return true;
+  }
+
+  private async notifyAdminsOfPendingVolunteer(link: ResolvedLink, trx: Transaction<Models>): Promise<void> {
+    const person = await this.personContacts(link.tenant_id, String(link.volunteer_person_id));
+    const volunteerName = person?.first_name ?? 'A volunteer';
+    const admins = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', link.tenant_id)
+      .where('role', 'in', ['admin', 'owner'])
+      .where('deactivated_at', 'is', null)
+      .execute();
+    const approveUrl = `${env.appUrl}/volunteer-access`;
+    for (const admin of admins) {
+      await this.mailService.enqueueMail(
+        {
+          to: admin.email,
+          subject: `${volunteerName} is waiting for companion app approval`,
+          text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
+          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
+          tenant_id: link.tenant_id,
+        },
+        trx,
+      );
+    }
+  }
+
+  private async organizationName(tenant_id: string): Promise<string> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant_id)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
+    return 'PeopleCRM';
+  }
+
+  private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select('first_name')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', user_id)
+      .executeTakeFirst();
+    return row?.first_name ?? undefined;
+  }
+
+  private async personContacts(tenant_id: string, person_id: string): Promise<PersonContacts | null> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      first_name: row.first_name,
+      email: row.email,
+      sms: normalizeE164(row.mobile),
+    };
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/deliveries/controller.ts
@@ -56196,137 +57316,85 @@ export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
 }));
 ```
 
-## File: apps/backend/src/app/modules/trpc.ts
+## File: apps/companion/src/app/canvass/canvass-page.ts
 
 ```typescript
-import { router } from '../../trpc';
-import { AuthRouter } from './auth/trpc.router';
-import { EmailsRouter } from './emails/trpc.router';
-import { HouseholdsRouter } from './households/trpc.router';
-import { ListsRouter } from './lists/trpc.router';
-import { NewslettersRouter } from './newsletters/trpc.router';
-import { PersonsRouter } from './persons/trpc.router';
-import { TagsRouter } from './tags/trpc.router';
-import { TasksRouter } from './tasks/trpc.router';
-import { UserProfilesRouter } from './userprofiles/trpc.router';
-import { TeamsRouter } from './teams/trpc.router';
-import { SettingsRouter } from './settings/trpc.router';
-import { ImportsRouter } from './imports/trpc.router';
-import { MsSyncRouter } from './ms-sync/trpc.router';
-import { GoogleSyncRouter } from './google-sync/trpc.router';
-import { CompaniesRouter } from './companies/trpc.router';
-import { ActivityRouter } from './activity/trpc.router';
-import { FilesRouter } from './files/trpc.router';
-import { DashboardRouter } from './dashboard/trpc.router';
-import { NotificationsRouter } from './notifications/trpc.router';
-import { VolunteerRouter } from './volunteer-events/trpc.router';
-import { WebFormsRouter } from './web-forms/trpc.router';
-import { BillingRouter } from './billing/trpc.router';
-import { WorkflowsRouter } from './workflows/trpc.router';
-import { DonationsRouter } from './donations/trpc.router';
-import { ExportsRouter } from './exports/trpc.router';
-import { UsersRouter } from './users/trpc.router';
-import { EventsRouter } from './events/trpc.router';
-import { PersonConnectionsRouter } from './person-connections/trpc.router';
-import { ZapierRouter } from './zapier/zapier.trpc.router';
-import { DuplicatesRouter } from './duplicates/trpc.router';
-import { CampaignsRouter } from './campaigns/trpc.router';
-import { CanvassingRouter } from './canvassing/trpc.router';
-import { DeliveriesRouter } from './deliveries/trpc.router';
-import { CompanionAccessRouter } from './companion-access/trpc.router';
-import { DemoRouter } from './demo/trpc.router';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-export type TRPCRouter = typeof trpcRouter;
+import { CompanionGate } from '../gate/companion-gate';
 
-export const trpcRouter = router({
-  auth: AuthRouter,
-  authusers: AuthRouter,
-  userProfiles: UserProfilesRouter,
-  households: HouseholdsRouter,
-  persons: PersonsRouter,
-  tags: TagsRouter,
-  lists: ListsRouter,
-  tasks: TasksRouter,
-  emails: EmailsRouter,
-  newsletters: NewslettersRouter,
-  teams: TeamsRouter,
-  settings: SettingsRouter,
-  imports: ImportsRouter,
-  msSync: MsSyncRouter,
-  googleSync: GoogleSyncRouter,
-  companies: CompaniesRouter,
-  activity: ActivityRouter,
-  files: FilesRouter,
-  dashboard: DashboardRouter,
-  notifications: NotificationsRouter,
-  volunteer: VolunteerRouter,
-  webForms: WebFormsRouter,
-  billing: BillingRouter,
-  donations: DonationsRouter,
-  workflows: WorkflowsRouter,
-  exports: ExportsRouter,
-  users: UsersRouter,
-  events: EventsRouter,
-  connections: PersonConnectionsRouter,
-  zapier: ZapierRouter,
-  duplicates: DuplicatesRouter,
-  campaigns: CampaignsRouter,
-  canvassing: CanvassingRouter,
-  deliveries: DeliveriesRouter,
-  companionAccess: CompanionAccessRouter,
-  demo: DemoRouter,
-});
+/** Canvass companion (spec §3) — the full walk-list app lands in Phase C. */
+@Component({
+  selector: 'pc-canvass-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CompanionGate],
+  template: `
+    <pc-companion-gate kind="turf" [token]="token()">
+      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+        <h1 class="text-lg font-semibold">Canvass companion</h1>
+        <p class="text-base-content/70">Coming soon.</p>
+      </div>
+    </pc-companion-gate>
+  `,
+})
+export class CanvassPage {
+  /** Route param — the capability token from /t/:token. */
+  public readonly token = input.required<string>();
+}
+```
 
-// Re-export individual routers for convenience.
-export { AuthRouter } from './auth/trpc.router';
+## File: apps/companion/src/app/deliveries/route-page.ts
 
-export { HouseholdsRouter } from './households/trpc.router';
+```typescript
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
-export { PersonsRouter } from './persons/trpc.router';
+import { CompanionGate } from '../gate/companion-gate';
 
-export { TagsRouter } from './tags/trpc.router';
+/** Deliveries companion (spec §4) — the CRM's public route page moves here in Phase D. */
+@Component({
+  selector: 'pc-route-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CompanionGate],
+  template: `
+    <pc-companion-gate kind="route" [token]="token()">
+      <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-3 p-6 text-center">
+        <h1 class="text-lg font-semibold">Delivery route</h1>
+        <p class="text-base-content/70">Coming soon.</p>
+      </div>
+    </pc-companion-gate>
+  `,
+})
+export class RoutePage {
+  /** Route param — the capability token from /r/:token. */
+  public readonly token = input.required<string>();
+}
+```
 
-export { UserProfilesRouter } from './userprofiles/trpc.router';
+## File: apps/companion/src/app/app.config.ts
 
-export { EmailsRouter } from './emails/trpc.router';
+```typescript
+import type { ApplicationConfig } from '@angular/core';
+import { provideZonelessChangeDetection } from '@angular/core';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
 
-export { ListsRouter } from './lists/trpc.router';
+import { environment } from '../environments/environment';
+import { appRoutes } from './app.routes';
 
-export { TasksRouter } from './tasks/trpc.router';
-
-export { NewslettersRouter } from './newsletters/trpc.router';
-
-export { TeamsRouter } from './teams/trpc.router';
-
-export { SettingsRouter } from './settings/trpc.router';
-
-export { ImportsRouter } from './imports/trpc.router';
-
-export { MsSyncRouter } from './ms-sync/trpc.router';
-export { GoogleSyncRouter } from './google-sync/trpc.router';
-
-export { CompaniesRouter } from './companies/trpc.router';
-
-export { ActivityRouter } from './activity/trpc.router';
-
-export { FilesRouter } from './files/trpc.router';
-
-export { DashboardRouter } from './dashboard/trpc.router';
-
-export { NotificationsRouter } from './notifications/trpc.router';
-
-export { VolunteerRouter } from './volunteer-events/trpc.router';
-
-export { WebFormsRouter } from './web-forms/trpc.router';
-
-export { BillingRouter } from './billing/trpc.router';
-export { DonationsRouter } from './donations/trpc.router';
-export { WorkflowsRouter } from './workflows/trpc.router';
-export { ExportsRouter } from './exports/trpc.router';
-export { UsersRouter } from './users/trpc.router';
-export { EventsRouter } from './events/trpc.router';
-export { PersonConnectionsRouter } from './person-connections/trpc.router';
-export { CampaignsRouter } from './campaigns/trpc.router';
+export const appConfig: ApplicationConfig = {
+  providers: [
+    {
+      provide: Loader,
+      useFactory: () =>
+        new Loader({
+          apiKey: environment.googleMapsApiKey,
+          libraries: ['marker'],
+        }),
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
+    provideZonelessChangeDetection(),
+  ],
+};
 ```
 
 ## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
@@ -58532,6 +59600,139 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     throw new BadRequestError('Could not find a free list name.');
   }
 }
+```
+
+## File: apps/backend/src/app/modules/trpc.ts
+
+```typescript
+import { router } from '../../trpc';
+import { AuthRouter } from './auth/trpc.router';
+import { EmailsRouter } from './emails/trpc.router';
+import { HouseholdsRouter } from './households/trpc.router';
+import { ListsRouter } from './lists/trpc.router';
+import { NewslettersRouter } from './newsletters/trpc.router';
+import { PersonsRouter } from './persons/trpc.router';
+import { TagsRouter } from './tags/trpc.router';
+import { TasksRouter } from './tasks/trpc.router';
+import { UserProfilesRouter } from './userprofiles/trpc.router';
+import { TeamsRouter } from './teams/trpc.router';
+import { SettingsRouter } from './settings/trpc.router';
+import { ImportsRouter } from './imports/trpc.router';
+import { MsSyncRouter } from './ms-sync/trpc.router';
+import { GoogleSyncRouter } from './google-sync/trpc.router';
+import { CompaniesRouter } from './companies/trpc.router';
+import { ActivityRouter } from './activity/trpc.router';
+import { FilesRouter } from './files/trpc.router';
+import { DashboardRouter } from './dashboard/trpc.router';
+import { NotificationsRouter } from './notifications/trpc.router';
+import { VolunteerRouter } from './volunteer-events/trpc.router';
+import { WebFormsRouter } from './web-forms/trpc.router';
+import { BillingRouter } from './billing/trpc.router';
+import { WorkflowsRouter } from './workflows/trpc.router';
+import { DonationsRouter } from './donations/trpc.router';
+import { ExportsRouter } from './exports/trpc.router';
+import { UsersRouter } from './users/trpc.router';
+import { EventsRouter } from './events/trpc.router';
+import { PersonConnectionsRouter } from './person-connections/trpc.router';
+import { ZapierRouter } from './zapier/zapier.trpc.router';
+import { DuplicatesRouter } from './duplicates/trpc.router';
+import { CampaignsRouter } from './campaigns/trpc.router';
+import { CanvassingRouter } from './canvassing/trpc.router';
+import { DeliveriesRouter } from './deliveries/trpc.router';
+import { CompanionAccessRouter } from './companion-access/trpc.router';
+import { DemoRouter } from './demo/trpc.router';
+
+export type TRPCRouter = typeof trpcRouter;
+
+export const trpcRouter = router({
+  auth: AuthRouter,
+  authusers: AuthRouter,
+  userProfiles: UserProfilesRouter,
+  households: HouseholdsRouter,
+  persons: PersonsRouter,
+  tags: TagsRouter,
+  lists: ListsRouter,
+  tasks: TasksRouter,
+  emails: EmailsRouter,
+  newsletters: NewslettersRouter,
+  teams: TeamsRouter,
+  settings: SettingsRouter,
+  imports: ImportsRouter,
+  msSync: MsSyncRouter,
+  googleSync: GoogleSyncRouter,
+  companies: CompaniesRouter,
+  activity: ActivityRouter,
+  files: FilesRouter,
+  dashboard: DashboardRouter,
+  notifications: NotificationsRouter,
+  volunteer: VolunteerRouter,
+  webForms: WebFormsRouter,
+  billing: BillingRouter,
+  donations: DonationsRouter,
+  workflows: WorkflowsRouter,
+  exports: ExportsRouter,
+  users: UsersRouter,
+  events: EventsRouter,
+  connections: PersonConnectionsRouter,
+  zapier: ZapierRouter,
+  duplicates: DuplicatesRouter,
+  campaigns: CampaignsRouter,
+  canvassing: CanvassingRouter,
+  deliveries: DeliveriesRouter,
+  companionAccess: CompanionAccessRouter,
+  demo: DemoRouter,
+});
+
+// Re-export individual routers for convenience.
+export { AuthRouter } from './auth/trpc.router';
+
+export { HouseholdsRouter } from './households/trpc.router';
+
+export { PersonsRouter } from './persons/trpc.router';
+
+export { TagsRouter } from './tags/trpc.router';
+
+export { UserProfilesRouter } from './userprofiles/trpc.router';
+
+export { EmailsRouter } from './emails/trpc.router';
+
+export { ListsRouter } from './lists/trpc.router';
+
+export { TasksRouter } from './tasks/trpc.router';
+
+export { NewslettersRouter } from './newsletters/trpc.router';
+
+export { TeamsRouter } from './teams/trpc.router';
+
+export { SettingsRouter } from './settings/trpc.router';
+
+export { ImportsRouter } from './imports/trpc.router';
+
+export { MsSyncRouter } from './ms-sync/trpc.router';
+export { GoogleSyncRouter } from './google-sync/trpc.router';
+
+export { CompaniesRouter } from './companies/trpc.router';
+
+export { ActivityRouter } from './activity/trpc.router';
+
+export { FilesRouter } from './files/trpc.router';
+
+export { DashboardRouter } from './dashboard/trpc.router';
+
+export { NotificationsRouter } from './notifications/trpc.router';
+
+export { VolunteerRouter } from './volunteer-events/trpc.router';
+
+export { WebFormsRouter } from './web-forms/trpc.router';
+
+export { BillingRouter } from './billing/trpc.router';
+export { DonationsRouter } from './donations/trpc.router';
+export { WorkflowsRouter } from './workflows/trpc.router';
+export { ExportsRouter } from './exports/trpc.router';
+export { UsersRouter } from './users/trpc.router';
+export { EventsRouter } from './events/trpc.router';
+export { PersonConnectionsRouter } from './person-connections/trpc.router';
+export { CampaignsRouter } from './campaigns/trpc.router';
 ```
 
 ## File: apps/backend/src/app/modules/auth/controller.ts

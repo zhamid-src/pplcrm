@@ -1,20 +1,38 @@
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 
-import { LogKnockObj } from '../../../../../../../libs/common/src';
+import { CompanionResultsObj, LogKnockObj } from '../../../../../../../libs/common/src';
 import { CanvassingController } from '../controller';
 
 /**
- * Public Canvass Companion API (§13.4) — the volunteer-facing surface.
+ * Public Canvass Companion API (§13.4 / COMPANION-APPS-PLAN.md §5 B3) — the
+ * volunteer-facing surface behind the companion access layer.
  *
- * Access is by TOKEN, not by account: the token issued when a turf is assigned
- * (or a link is copied) is the bearer credential and resolves the tenant, so a
- * walk-up volunteer needs no login. This mirrors the tokenised-access model of
- * the public web-form/donation pages, but with a proper high-entropy token per
- * turf rather than a subdomain+slug. Every read/write is scoped to the resolved
- * tenant + turf inside the controller.
+ * Two credentials on every data request: the assignment TOKEN (in the path)
+ * scopes WHAT may be touched — one turf, its doors, nothing else — and the
+ * X-Companion-Session header proves WHO is touching it (a verified, admin-
+ * approved device; see modules/companion-access). The token resolves the
+ * tenant, exactly like the tokenised-access model of the public form pages;
+ * every read/write is then scoped to the resolved tenant + turf inside the
+ * controller.
  */
 
 const controller = new CanvassingController();
+
+// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 120;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_MAX;
+}
 
 /** Narrow an unknown thrown value to an HTTP status without leaking internals. */
 function statusOf(err: unknown): number {
@@ -30,16 +48,19 @@ function messageOf(err: unknown, fallback: string): string {
   return fallback;
 }
 
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
 const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  // Door list for a tokenised turf.
-  fastify.get('/turf', async (req: FastifyRequest, reply: FastifyReply) => {
-    const token =
-      typeof (req.query as { token?: unknown })?.token === 'string' ? (req.query as { token: string }).token : '';
-    if (!token) {
-      return reply.status(400).send({ error: 'Missing canvassing token.' });
-    }
+  // The full spec-§3 turf payload for a verified companion device.
+  fastify.get('/t/:token', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
     try {
-      const turf = await controller.getCompanionTurf(token);
+      const turf = await controller.getCompanionTurf(String(token), sessionTokenOf(req));
       return reply.status(200).send(turf);
     } catch (err: unknown) {
       fastify.log.error(err);
@@ -47,8 +68,25 @@ const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     }
   });
 
-  // Log a knock. Idempotent on client_knock_id so offline re-sends are safe.
+  // Batched, idempotent results sync — the offline queue drains through here.
+  fastify.post('/t/:token/results', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { token } = req.params as { token: string };
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionResultsObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid results payload.' });
+    try {
+      const result = await controller.postCompanionResults(String(token), sessionTokenOf(req), parsed.data.ops);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err);
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to record these results.') });
+    }
+  });
+
+  // Legacy single-knock endpoint (pre-companion-app). Still validated and
+  // idempotent; the new app syncs through /t/:token/results.
   fastify.post('/knock', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
     const parsed = LogKnockObj.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'Invalid knock payload.' });
