@@ -12,12 +12,14 @@ export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' 
 })
 export class StatusBadge {
   public type = input<PcStatusType>('ghost');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
 
   protected badgeClass = computed(() => {
     const t = this.type();
     let cls = '';
-    if (this.size() === 'sm') cls += 'badge-sm ';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
     else if (this.size() === 'lg') cls += 'badge-lg ';
 
     switch (t) {
