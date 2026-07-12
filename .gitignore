@@ -11,6 +11,9 @@ package-lock.json
 # Environment files
 .env
 .env.*
+# ...but keep the committed templates that setup.sh copies from.
+!.env.development.example
+!.env.production.example
 azurite-data/
 
 vite.config.*.timestamp*
