@@ -90,6 +90,9 @@ apps/
             geo.ts
             plan-routes.ts
             route-constants.ts
+          sms/
+            phone.ts
+            sms.service.ts
           test-utils/
             db-test-isolation.ts
           address-normalize.ts
@@ -646,208 +649,6 @@ export async function down(_db: Kysely<any>): Promise<void> {
   // as dropping the entire public schema is highly destructive.
   // We throw an error here to prevent accidental database wiping.
   throw new Error('This is a baseline migration and cannot be safely rolled back.');
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-12-companion-apps.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Companion apps (COMPANION-APPS-PLAN.md) — the volunteer access layer plus
- * the canvass-companion survey model.
- *
- * Access layer: a capability link (/t/:token, /r/:token) is no longer enough
- * on its own. The volunteer behind an assignment must verify a one-time code
- * sent to their email/SMS on file (`companion_volunteers`), be approved once
- * by an admin, and then hold a device session (`companion_sessions`) whose
- * hashed token accompanies every companion request. `companion_ops` is the
- * write-once idempotency ledger both companions use so offline retries apply
- * exactly once.
- *
- * Canvass survey model: `turf_knocks` grows the spec §3 survey fields
- * (issues, follow-up toggles, contact capture), turfs get a suggested walk
- * order, assignments get the volunteer identity + expiry, campaigns carry the
- * door script + issue vocabulary, and the canvass→deliveries yard-sign bridge
- * is unlocked by extending `delivery_requests.source` and
- * `campaign_subscriptions.consent_source` with 'canvass'.
- */
-
-/** The standard tenant_isolation policy body (matches every baseline table). */
-const TENANT_POLICY = `((NULLIF(current_setting('app.tenant_id', true), '') IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint))`;
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // -- companion_volunteers: one row per (tenant, person) who has ever been
-  // -- sent a companion link. Approval is per volunteer, not per assignment.
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.companion_volunteers (
-      id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-      tenant_id bigint NOT NULL,
-      person_id bigint NOT NULL,
-      status text DEFAULT 'invited'::text NOT NULL,
-      verify_code_hash text,
-      verify_code_expires_at timestamp with time zone,
-      verify_attempts integer DEFAULT 0 NOT NULL,
-      verify_channel text,
-      verified_at timestamp with time zone,
-      approved_by bigint,
-      approved_at timestamp with time zone,
-      revoked_at timestamp with time zone,
-      createdby_id bigint,
-      updatedby_id bigint,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT companion_volunteers_pk PRIMARY KEY (id, tenant_id),
-      CONSTRAINT companion_volunteers_id_key UNIQUE (id),
-      CONSTRAINT uq_companion_volunteers_person UNIQUE (tenant_id, person_id),
-      CONSTRAINT chk_cvol_status CHECK ((status = ANY (ARRAY['invited'::text, 'verified'::text, 'approved'::text, 'revoked'::text]))),
-      CONSTRAINT chk_cvol_channel CHECK ((verify_channel IS NULL) OR (verify_channel = ANY (ARRAY['email'::text, 'sms'::text])))
-    )
-  `.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_companion_volunteers_tenant_status ON public.companion_volunteers (tenant_id, status)`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.companion_volunteers ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE ONLY public.companion_volunteers FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql
-    .raw(
-      `CREATE POLICY tenant_isolation ON public.companion_volunteers USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
-    )
-    .execute(db);
-  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_volunteers TO pplcrm_app`.execute(db);
-
-  // -- companion_sessions: a verified device. Only the sha256 of the session
-  // -- token is stored; the raw token is returned to the phone exactly once.
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.companion_sessions (
-      id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-      tenant_id bigint NOT NULL,
-      volunteer_id bigint NOT NULL,
-      token_hash text NOT NULL,
-      expires_at timestamp with time zone NOT NULL,
-      revoked_at timestamp with time zone,
-      last_used_at timestamp with time zone,
-      user_agent text,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT companion_sessions_pk PRIMARY KEY (id, tenant_id),
-      CONSTRAINT companion_sessions_id_key UNIQUE (id),
-      CONSTRAINT companion_sessions_token_hash_key UNIQUE (token_hash)
-    )
-  `.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_companion_sessions_tenant_volunteer ON public.companion_sessions (tenant_id, volunteer_id)`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.companion_sessions ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE ONLY public.companion_sessions FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql
-    .raw(
-      `CREATE POLICY tenant_isolation ON public.companion_sessions USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
-    )
-    .execute(db);
-  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_sessions TO pplcrm_app`.execute(db);
-
-  // -- companion_ops: write-once idempotency ledger for volunteer actions.
-  // -- Insert ON CONFLICT DO NOTHING; a conflict means "already applied".
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.companion_ops (
-      tenant_id bigint NOT NULL,
-      op_id text NOT NULL,
-      scope text NOT NULL,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      CONSTRAINT companion_ops_pk PRIMARY KEY (tenant_id, op_id),
-      CONSTRAINT chk_cops_scope CHECK ((scope = ANY (ARRAY['canvass'::text, 'deliveries'::text])))
-    )
-  `.execute(db);
-  await sql`ALTER TABLE public.companion_ops ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE ONLY public.companion_ops FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql
-    .raw(
-      `CREATE POLICY tenant_isolation ON public.companion_ops USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
-    )
-    .execute(db);
-  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_ops TO pplcrm_app`.execute(db);
-
-  // -- turf_assignments: who the link belongs to (the access layer needs a
-  // -- person to verify against) and an optional hard expiry.
-  await sql`ALTER TABLE public.turf_assignments ADD COLUMN IF NOT EXISTS volunteer_person_id bigint`.execute(db);
-  await sql`ALTER TABLE public.turf_assignments ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone`.execute(
-    db,
-  );
-
-  // -- turf_households: suggested walk order (computed at cut/assign time).
-  await sql`ALTER TABLE public.turf_households ADD COLUMN IF NOT EXISTS walk_order integer`.execute(db);
-
-  // -- turf_knocks: the spec §3 survey payload.
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS issues text[] DEFAULT '{}'::text[] NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS wants_volunteer boolean DEFAULT false NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS wants_yard_sign boolean DEFAULT false NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS set_dnc boolean DEFAULT false NOT NULL`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS contact_phone text`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS contact_email text`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS subscribe boolean DEFAULT false NOT NULL`.execute(
-    db,
-  );
-
-  // -- campaigns: door script + issue-chip vocabulary (campaign-configured).
-  await sql`ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS canvass_issues text[] DEFAULT '{}'::text[] NOT NULL`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS canvass_script text`.execute(db);
-
-  // -- Yard-sign bridge: a canvass survey may create a delivery request.
-  await sql`ALTER TABLE public.delivery_requests DROP CONSTRAINT IF EXISTS chk_delivery_requests_source`.execute(db);
-  await sql`
-    ALTER TABLE public.delivery_requests
-      ADD CONSTRAINT chk_delivery_requests_source
-      CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text, 'canvass'::text])))
-  `.execute(db);
-
-  // -- Door-step subscriptions: a new consent source.
-  await sql`ALTER TABLE public.campaign_subscriptions DROP CONSTRAINT IF EXISTS chk_csub_source`.execute(db);
-  await sql`
-    ALTER TABLE public.campaign_subscriptions
-      ADD CONSTRAINT chk_csub_source
-      CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text, 'canvass'::text])))
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE public.campaign_subscriptions DROP CONSTRAINT IF EXISTS chk_csub_source`.execute(db);
-  await sql`
-    ALTER TABLE public.campaign_subscriptions
-      ADD CONSTRAINT chk_csub_source
-      CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text])))
-  `.execute(db);
-  await sql`ALTER TABLE public.delivery_requests DROP CONSTRAINT IF EXISTS chk_delivery_requests_source`.execute(db);
-  await sql`
-    ALTER TABLE public.delivery_requests
-      ADD CONSTRAINT chk_delivery_requests_source
-      CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text])))
-  `.execute(db);
-  await sql`ALTER TABLE public.campaigns DROP COLUMN IF EXISTS canvass_script`.execute(db);
-  await sql`ALTER TABLE public.campaigns DROP COLUMN IF EXISTS canvass_issues`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS subscribe`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS contact_email`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS contact_phone`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS set_dnc`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS wants_yard_sign`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS wants_volunteer`.execute(db);
-  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS issues`.execute(db);
-  await sql`ALTER TABLE public.turf_households DROP COLUMN IF EXISTS walk_order`.execute(db);
-  await sql`ALTER TABLE public.turf_assignments DROP COLUMN IF EXISTS expires_at`.execute(db);
-  await sql`ALTER TABLE public.turf_assignments DROP COLUMN IF EXISTS volunteer_person_id`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.companion_ops`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.companion_sessions`.execute(db);
-  await sql`DROP TABLE IF EXISTS public.companion_volunteers`.execute(db);
 }
 ```
 
@@ -1835,10 +1636,12 @@ import type { Models } from '../../../../../../../libs/common/src/lib/kysely.mod
 import { logger } from '../../../logger';
 import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { SmsService } from '../../sms/sms.service';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
 
 const mailService = new TransactionalEmailService();
+const smsService = new SmsService();
 
 export async function handleSendFormNotifications(
   payload: JobPayloadOf<'send-form-notifications'>,
@@ -2168,6 +1971,10 @@ export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-t
     text: payload.text ?? '',
     html: payload.html ?? '',
   });
+}
+
+export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
+  await smsService.sendSms({ to: payload.to, body: payload.body });
 }
 
 export async function handleSendSubscriptionConfirmation(
@@ -2633,6 +2440,7 @@ import {
   handleSendEventReminder,
   handleSendFormNotifications,
   handleSendShiftReminder,
+  handleSendSms,
   handleSendSubscriptionConfirmation,
   handleSendTransactionalEmail,
   handleSendWebformNotifications,
@@ -2716,6 +2524,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'send-transactional-email':
       await handleSendTransactionalEmail(job);
+      break;
+    case 'send-sms':
+      await handleSendSms(job);
       break;
     case 'send-subscription-confirmation':
       await handleSendSubscriptionConfirmation(job);
@@ -4092,6 +3903,139 @@ export const MAX_STOPS_PER_PLAN = 500;
 export const SHARE_TOKEN_TTL_DAYS = 30;
 /** 2-opt improvement pass iteration cap. */
 export const TWO_OPT_MAX_ITERATIONS = 200;
+```
+
+## File: apps/backend/src/app/lib/sms/phone.ts
+
+```typescript
+/**
+ * Phone normalization for SMS sending. `persons.mobile` is free-text; Twilio
+ * needs E.164. This is deliberately conservative: it only accepts numbers it
+ * can normalize unambiguously and returns null for everything else — a null
+ * simply means "SMS isn't offered for this contact", never an error.
+ */
+
+const NANP_LENGTH = 10;
+const NANP_WITH_COUNTRY_LENGTH = 11;
+
+/** Normalize a free-text phone number to E.164, or null if it can't be done safely. */
+export function normalizeE164(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
+
+  if (hasPlus) {
+    // Already international — just validate the digit count (E.164 max 15).
+    if (digits.length < 8 || digits.length > 15) return null;
+    return `+${digits}`;
+  }
+  if (digits.length === NANP_LENGTH) return `+1${digits}`;
+  if (digits.length === NANP_WITH_COUNTRY_LENGTH && digits.startsWith('1')) return `+${digits}`;
+  return null;
+}
+
+/** Mask a phone number for display: keeps the last 4 digits ("(•••) •••-4821"). */
+export function maskPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  const last4 = digits.slice(-4);
+  return `(•••) •••-${last4}`;
+}
+
+/** Mask an email for display: first letter + domain ("j•••@gmail.com"). */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return '•••';
+  const first = local?.charAt(0) ?? '';
+  return `${first}•••@${domain}`;
+}
+```
+
+## File: apps/backend/src/app/lib/sms/sms.service.ts
+
+```typescript
+import type { Kysely, Transaction } from 'kysely';
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+import { BaseRepository } from '../base.repo';
+
+export interface SendSmsOptions {
+  /** E.164 destination — normalize with `normalizeE164()` before calling. */
+  to: string;
+  body: string;
+  tenant_id?: string | null;
+}
+
+/**
+ * Transactional SMS via the Twilio REST API. Mirrors TransactionalEmailService:
+ * plain HTTP (no SDK), and a dev mock that logs instead of sending when the
+ * Twilio credentials are unset — so local dev and tests never need an account.
+ *
+ * Send through `enqueueSms()` inside the business transaction (transactional
+ * outbox) — never call `sendSms()` directly from request handlers.
+ */
+export class SmsService {
+  private accountSid = env.twilioAccountSid;
+  private authToken = env.twilioAuthToken;
+  private fromNumber = env.twilioFromNumber;
+
+  public async sendSms(options: SendSmsOptions): Promise<void> {
+    if (!this.accountSid || !this.authToken || !this.fromNumber) {
+      logger.info({ from: this.fromNumber, to: options.to, body: options.body }, '[TWILIO DEV MOCK] SMS Outbound');
+      return;
+    }
+
+    try {
+      const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+      const form = new URLSearchParams({
+        To: options.to,
+        From: this.fromNumber,
+        Body: options.body,
+      });
+      const response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.accountSid)}/Messages.json`,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${auth}`,
+          },
+          body: form.toString(),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Twilio API responded with status ${response.status}: ${errorText}`);
+      }
+    } catch (error) {
+      throw new InternalError('Failed to send SMS', undefined, { cause: error });
+    }
+  }
+
+  public async enqueueSms(options: SendSmsOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
+    await dbClient
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-sms',
+          to: options.to,
+          body: options.body,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
+  }
+}
 ```
 
 ## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
@@ -17556,6 +17500,11 @@ const envSchema = z.object({
   POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
   SENDGRID_API_KEY: z.string().optional(),
   SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // Twilio SMS (companion verification codes). All optional — the SMS service
+  // logs a dev mock instead of sending when these are unset.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
   WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
@@ -17654,6 +17603,9 @@ export const env = {
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
   sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
+  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
   googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
@@ -18469,6 +18421,208 @@ export default defineConfig({
     "types": ["node", "@playwright/test"]
   },
   "include": ["src/**/*.ts", "playwright.config.ts"]
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-07-12-companion-apps.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Companion apps (COMPANION-APPS-PLAN.md) — the volunteer access layer plus
+ * the canvass-companion survey model.
+ *
+ * Access layer: a capability link (/t/:token, /r/:token) is no longer enough
+ * on its own. The volunteer behind an assignment must verify a one-time code
+ * sent to their email/SMS on file (`companion_volunteers`), be approved once
+ * by an admin, and then hold a device session (`companion_sessions`) whose
+ * hashed token accompanies every companion request. `companion_ops` is the
+ * write-once idempotency ledger both companions use so offline retries apply
+ * exactly once.
+ *
+ * Canvass survey model: `turf_knocks` grows the spec §3 survey fields
+ * (issues, follow-up toggles, contact capture), turfs get a suggested walk
+ * order, assignments get the volunteer identity + expiry, campaigns carry the
+ * door script + issue vocabulary, and the canvass→deliveries yard-sign bridge
+ * is unlocked by extending `delivery_requests.source` and
+ * `campaign_subscriptions.consent_source` with 'canvass'.
+ */
+
+/** The standard tenant_isolation policy body (matches every baseline table). */
+const TENANT_POLICY = `((NULLIF(current_setting('app.tenant_id', true), '') IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id', true), ''))::bigint))`;
+
+export async function up(db: Kysely<any>): Promise<void> {
+  // -- companion_volunteers: one row per (tenant, person) who has ever been
+  // -- sent a companion link. Approval is per volunteer, not per assignment.
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.companion_volunteers (
+      id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+      tenant_id bigint NOT NULL,
+      person_id bigint NOT NULL,
+      status text DEFAULT 'invited'::text NOT NULL,
+      verify_code_hash text,
+      verify_code_expires_at timestamp with time zone,
+      verify_attempts integer DEFAULT 0 NOT NULL,
+      verify_channel text,
+      verified_at timestamp with time zone,
+      approved_by bigint,
+      approved_at timestamp with time zone,
+      revoked_at timestamp with time zone,
+      createdby_id bigint,
+      updatedby_id bigint,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT companion_volunteers_pk PRIMARY KEY (id, tenant_id),
+      CONSTRAINT companion_volunteers_id_key UNIQUE (id),
+      CONSTRAINT uq_companion_volunteers_person UNIQUE (tenant_id, person_id),
+      CONSTRAINT chk_cvol_status CHECK ((status = ANY (ARRAY['invited'::text, 'verified'::text, 'approved'::text, 'revoked'::text]))),
+      CONSTRAINT chk_cvol_channel CHECK ((verify_channel IS NULL) OR (verify_channel = ANY (ARRAY['email'::text, 'sms'::text])))
+    )
+  `.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_companion_volunteers_tenant_status ON public.companion_volunteers (tenant_id, status)`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.companion_volunteers ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE ONLY public.companion_volunteers FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql
+    .raw(
+      `CREATE POLICY tenant_isolation ON public.companion_volunteers USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
+    )
+    .execute(db);
+  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_volunteers TO pplcrm_app`.execute(db);
+
+  // -- companion_sessions: a verified device. Only the sha256 of the session
+  // -- token is stored; the raw token is returned to the phone exactly once.
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.companion_sessions (
+      id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+      tenant_id bigint NOT NULL,
+      volunteer_id bigint NOT NULL,
+      token_hash text NOT NULL,
+      expires_at timestamp with time zone NOT NULL,
+      revoked_at timestamp with time zone,
+      last_used_at timestamp with time zone,
+      user_agent text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT companion_sessions_pk PRIMARY KEY (id, tenant_id),
+      CONSTRAINT companion_sessions_id_key UNIQUE (id),
+      CONSTRAINT companion_sessions_token_hash_key UNIQUE (token_hash)
+    )
+  `.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_companion_sessions_tenant_volunteer ON public.companion_sessions (tenant_id, volunteer_id)`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.companion_sessions ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE ONLY public.companion_sessions FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql
+    .raw(
+      `CREATE POLICY tenant_isolation ON public.companion_sessions USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
+    )
+    .execute(db);
+  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_sessions TO pplcrm_app`.execute(db);
+
+  // -- companion_ops: write-once idempotency ledger for volunteer actions.
+  // -- Insert ON CONFLICT DO NOTHING; a conflict means "already applied".
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.companion_ops (
+      tenant_id bigint NOT NULL,
+      op_id text NOT NULL,
+      scope text NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT companion_ops_pk PRIMARY KEY (tenant_id, op_id),
+      CONSTRAINT chk_cops_scope CHECK ((scope = ANY (ARRAY['canvass'::text, 'deliveries'::text])))
+    )
+  `.execute(db);
+  await sql`ALTER TABLE public.companion_ops ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE ONLY public.companion_ops FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql
+    .raw(
+      `CREATE POLICY tenant_isolation ON public.companion_ops USING (${TENANT_POLICY}) WITH CHECK (${TENANT_POLICY})`,
+    )
+    .execute(db);
+  await sql`GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.companion_ops TO pplcrm_app`.execute(db);
+
+  // -- turf_assignments: who the link belongs to (the access layer needs a
+  // -- person to verify against) and an optional hard expiry.
+  await sql`ALTER TABLE public.turf_assignments ADD COLUMN IF NOT EXISTS volunteer_person_id bigint`.execute(db);
+  await sql`ALTER TABLE public.turf_assignments ADD COLUMN IF NOT EXISTS expires_at timestamp with time zone`.execute(
+    db,
+  );
+
+  // -- turf_households: suggested walk order (computed at cut/assign time).
+  await sql`ALTER TABLE public.turf_households ADD COLUMN IF NOT EXISTS walk_order integer`.execute(db);
+
+  // -- turf_knocks: the spec §3 survey payload.
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS issues text[] DEFAULT '{}'::text[] NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS wants_volunteer boolean DEFAULT false NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS wants_yard_sign boolean DEFAULT false NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS set_dnc boolean DEFAULT false NOT NULL`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS contact_phone text`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS contact_email text`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks ADD COLUMN IF NOT EXISTS subscribe boolean DEFAULT false NOT NULL`.execute(
+    db,
+  );
+
+  // -- campaigns: door script + issue-chip vocabulary (campaign-configured).
+  await sql`ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS canvass_issues text[] DEFAULT '{}'::text[] NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS canvass_script text`.execute(db);
+
+  // -- Yard-sign bridge: a canvass survey may create a delivery request.
+  await sql`ALTER TABLE public.delivery_requests DROP CONSTRAINT IF EXISTS chk_delivery_requests_source`.execute(db);
+  await sql`
+    ALTER TABLE public.delivery_requests
+      ADD CONSTRAINT chk_delivery_requests_source
+      CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text, 'canvass'::text])))
+  `.execute(db);
+
+  // -- Door-step subscriptions: a new consent source.
+  await sql`ALTER TABLE public.campaign_subscriptions DROP CONSTRAINT IF EXISTS chk_csub_source`.execute(db);
+  await sql`
+    ALTER TABLE public.campaign_subscriptions
+      ADD CONSTRAINT chk_csub_source
+      CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text, 'canvass'::text])))
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE public.campaign_subscriptions DROP CONSTRAINT IF EXISTS chk_csub_source`.execute(db);
+  await sql`
+    ALTER TABLE public.campaign_subscriptions
+      ADD CONSTRAINT chk_csub_source
+      CHECK ((consent_source = ANY (ARRAY['form'::text, 'import'::text, 'manual'::text, 'copied'::text])))
+  `.execute(db);
+  await sql`ALTER TABLE public.delivery_requests DROP CONSTRAINT IF EXISTS chk_delivery_requests_source`.execute(db);
+  await sql`
+    ALTER TABLE public.delivery_requests
+      ADD CONSTRAINT chk_delivery_requests_source
+      CHECK ((source = ANY (ARRAY['web_form'::text, 'manual'::text])))
+  `.execute(db);
+  await sql`ALTER TABLE public.campaigns DROP COLUMN IF EXISTS canvass_script`.execute(db);
+  await sql`ALTER TABLE public.campaigns DROP COLUMN IF EXISTS canvass_issues`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS subscribe`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS contact_email`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS contact_phone`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS set_dnc`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS wants_yard_sign`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS wants_volunteer`.execute(db);
+  await sql`ALTER TABLE public.turf_knocks DROP COLUMN IF EXISTS issues`.execute(db);
+  await sql`ALTER TABLE public.turf_households DROP COLUMN IF EXISTS walk_order`.execute(db);
+  await sql`ALTER TABLE public.turf_assignments DROP COLUMN IF EXISTS expires_at`.execute(db);
+  await sql`ALTER TABLE public.turf_assignments DROP COLUMN IF EXISTS volunteer_person_id`.execute(db);
+  await sql`DROP TABLE IF EXISTS public.companion_ops`.execute(db);
+  await sql`DROP TABLE IF EXISTS public.companion_sessions`.execute(db);
+  await sql`DROP TABLE IF EXISTS public.companion_volunteers`.execute(db);
 }
 ```
 
@@ -29014,6 +29168,11 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     subject: z.string().nullish(),
     text: z.string().nullish(),
     html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-sms'),
+    to: z.string(),
+    body: z.string(),
   }),
   z.object({
     type: z.literal('send-subscription-confirmation'),

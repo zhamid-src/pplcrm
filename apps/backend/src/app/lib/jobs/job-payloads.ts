@@ -116,6 +116,11 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     html: z.string().nullish(),
   }),
   z.object({
+    type: z.literal('send-sms'),
+    to: z.string(),
+    body: z.string(),
+  }),
+  z.object({
     type: z.literal('send-subscription-confirmation'),
     email: z.string(),
     firstName: z.string().nullish(),
