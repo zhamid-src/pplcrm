@@ -10,10 +10,16 @@
       <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
       }
     </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
+        <pc-icon name="cog" [size]="4" />
+        Survey settings
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+        <pc-icon name="map-pin" [size]="4" />
+        Cut new turfs
+      </button>
+    </div>
   </div>
 
   <!-- Tabs (the standard pill tab bar) -->
@@ -417,5 +423,7 @@
     (cancelled)="assignTarget.set(null)"
     (assigned)="onAssigned($event)"
   />
+  } @if (settingsOpen()) {
+  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
   }
 </div>

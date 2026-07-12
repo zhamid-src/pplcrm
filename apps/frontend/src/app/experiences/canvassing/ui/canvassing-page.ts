@@ -19,6 +19,7 @@ import {
   type TurfListItem,
 } from '../services/canvassing-service';
 import { AssignTurfDialog } from './assign-turf-dialog';
+import { CompanionSettingsDialog } from './companion-settings-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
 
 type TurfStatus = TurfListItem['status'];
@@ -74,7 +75,7 @@ const RANGES: { key: ReportRange; label: string }[] = [
 
 @Component({
   selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog],
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog, CompanionSettingsDialog],
   templateUrl: './canvassing-page.html',
 })
 export class CanvassingPage implements OnInit {
@@ -103,6 +104,8 @@ export class CanvassingPage implements OnInit {
   protected readonly cutOpen = signal(false);
   /** Turf currently being assigned in the pick-a-volunteer dialog (null = closed). */
   protected readonly assignTarget = signal<TurfListItem | null>(null);
+  /** Companion survey settings dialog (issues vocabulary + door script). */
+  protected readonly settingsOpen = signal(false);
 
   protected readonly ranges = RANGES;
   protected readonly statusLabel = STATUS_LABEL;
