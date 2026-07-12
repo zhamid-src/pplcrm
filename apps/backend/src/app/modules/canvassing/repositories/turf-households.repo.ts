@@ -13,6 +13,7 @@ export interface DoorRow {
   zip: string | null;
   lat: number | null;
   lng: number | null;
+  walk_order: number | null;
 }
 
 /**
@@ -52,17 +53,29 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
     return rows.map((r) => String(r.household_id));
   }
 
+  /**
+   * `household_ids` arrive in the cutting engine's snake-sweep order, which IS
+   * the suggested walk order — each door's position is stored as `walk_order`
+   * (appended after any existing doors on refresh).
+   */
   public async addDoors(
     input: { tenant_id: string; turf_id: string; household_ids: string[]; user_id: string },
     trx?: Transaction<Models>,
   ): Promise<void> {
     if (input.household_ids.length === 0) return;
+    const maxRow = await this.getSelect(trx)
+      .select((eb) => eb.fn.max('walk_order').as('max_order'))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .executeTakeFirst();
+    const offset = Number(maxRow?.max_order ?? 0);
     const rows = input.household_ids.map(
-      (hid) =>
+      (hid, i) =>
         ({
           tenant_id: input.tenant_id,
           turf_id: input.turf_id,
           household_id: hid,
+          walk_order: offset + i + 1,
           createdby_id: input.user_id,
           updatedby_id: input.user_id,
         }) as OperationDataType<'turf_households', 'insert'>,
@@ -100,7 +113,10 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
         'households.zip',
         'households.lat',
         'households.lng',
+        'turf_households.walk_order',
       ])
+      .orderBy(sql`turf_households.walk_order NULLS LAST`)
+      .orderBy('households.id')
       .execute();
     return rows.map((r) => ({
       household_id: String(r.household_id),
@@ -111,6 +127,7 @@ export class TurfHouseholdsRepo extends BaseRepository<'turf_households'> {
       zip: r.zip ?? null,
       lat: r.lat ?? null,
       lng: r.lng ?? null,
+      walk_order: r.walk_order == null ? null : Number(r.walk_order),
     }));
   }
 

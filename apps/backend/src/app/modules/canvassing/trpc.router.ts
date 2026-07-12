@@ -5,11 +5,12 @@ import {
   AssignTurfObj,
   CutTurfsObj,
   FieldReportRangeObj,
+  UpdateCompanionSettingsObj,
   UpdateTurfObj,
   idSchema,
 } from '../../../../../../libs/common/src';
 
-import { authProcedure, router } from '../../../trpc';
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
 import { CanvassingController } from './controller';
 
 const controller = new CanvassingController();
@@ -33,10 +34,15 @@ export const CanvassingRouter = router({
     .input(z.object({ id: idSchema, data: UpdateTurfObj }))
     .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
   assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
-  getCompanionLink: authProcedure
-    .input(idSchema)
-    .mutation(({ ctx, input }) => controller.getCompanionLink(ctx.auth, input)),
   retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
+
+  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
+  getCompanionSettings: authProcedure
+    .input(z.object({ campaign_id: idSchema.optional() }).optional())
+    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
+  updateCompanionSettings: adminOrOwnerProcedure
+    .input(UpdateCompanionSettingsObj)
+    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
 
   // Field report.
   getFieldReport: authProcedure

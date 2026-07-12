@@ -11,10 +11,11 @@ export interface TurfProgress {
 }
 
 export interface ResponseMix {
-  strong_support: number;
-  lean_support: number;
+  supporter: number;
   undecided: number;
-  opposed: number;
+  non_supporter: number;
+  not_voting: number;
+  already_voted: number;
   no_answer: number;
 }
 
@@ -92,10 +93,11 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       .select(() => [
         sql<number>`COUNT(DISTINCT household_id)`.as('doors'),
         sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'strong_support')`.as('strong_support'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'lean_support')`.as('lean_support'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
         sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'opposed')`.as('opposed'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
         sql<number>`COUNT(*) FILTER (WHERE outcome <> ${CONVERSATION})`.as('no_answer'),
       ])
       .executeTakeFirst();
@@ -104,13 +106,69 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       doors: Number(row?.doors ?? 0),
       conversations: Number(row?.conversations ?? 0),
       responseMix: {
-        strong_support: Number(row?.strong_support ?? 0),
-        lean_support: Number(row?.lean_support ?? 0),
+        supporter: Number(row?.supporter ?? 0),
         undecided: Number(row?.undecided ?? 0),
-        opposed: Number(row?.opposed ?? 0),
+        non_supporter: Number(row?.non_supporter ?? 0),
+        not_voting: Number(row?.not_voting ?? 0),
+        already_voted: Number(row?.already_voted ?? 0),
         no_answer: Number(row?.no_answer ?? 0),
       },
     };
+  }
+
+  /**
+   * The latest knock per (household, person) in a turf — the raw material the
+   * Companion payload derives door/person state from. `person_id` null rows are
+   * door-level (outcomes + the anonymous household survey). Only survey fields
+   * that are safe to echo back are selected — never notes or contact info
+   * (payload minimization, spec §2).
+   */
+  public async getCompanionState(
+    input: { tenant_id: string; turf_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<
+    {
+      household_id: string;
+      person_id: string | null;
+      outcome: string;
+      response: string | null;
+      issues: string[];
+      wants_volunteer: boolean;
+      wants_yard_sign: boolean;
+      set_dnc: boolean;
+      subscribe: boolean;
+    }[]
+  > {
+    const rows = await this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('turf_id', '=', input.turf_id)
+      .distinctOn(['household_id', 'person_id'])
+      .orderBy('household_id')
+      .orderBy('person_id')
+      .orderBy('knocked_at', 'desc')
+      .select([
+        'household_id',
+        'person_id',
+        'outcome',
+        'response',
+        'issues',
+        'wants_volunteer',
+        'wants_yard_sign',
+        'set_dnc',
+        'subscribe',
+      ])
+      .execute();
+    return rows.map((r) => ({
+      household_id: String(r.household_id),
+      person_id: r.person_id == null ? null : String(r.person_id),
+      outcome: String(r.outcome),
+      response: r.response == null ? null : String(r.response),
+      issues: Array.isArray(r.issues) ? r.issues.map(String) : [],
+      wants_volunteer: Boolean(r.wants_volunteer),
+      wants_yard_sign: Boolean(r.wants_yard_sign),
+      set_dnc: Boolean(r.set_dnc),
+      subscribe: Boolean(r.subscribe),
+    }));
   }
 
   /** Last outcome per household in a turf, for door-list / map colouring. */
@@ -144,10 +202,11 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
       .select(() => [
         sql<number>`COUNT(*)`.as('attempts'),
         sql<number>`COUNT(*) FILTER (WHERE outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'strong_support')`.as('strong_support'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'lean_support')`.as('lean_support'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'supporter')`.as('supporter'),
         sql<number>`COUNT(*) FILTER (WHERE response = 'undecided')`.as('undecided'),
-        sql<number>`COUNT(*) FILTER (WHERE response = 'opposed')`.as('opposed'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'non_supporter')`.as('non_supporter'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'not_voting')`.as('not_voting'),
+        sql<number>`COUNT(*) FILTER (WHERE response = 'already_voted')`.as('already_voted'),
       ])
       .executeTakeFirst();
 
@@ -185,9 +244,7 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
         'teams.name as team_name',
         sql<number>`COUNT(*)`.as('doors'),
         sql<number>`COUNT(*) FILTER (WHERE turf_knocks.outcome = ${CONVERSATION})`.as('conversations'),
-        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response IN ('strong_support','lean_support'))`.as(
-          'support_ids',
-        ),
+        sql<number>`COUNT(*) FILTER (WHERE turf_knocks.response = 'supporter')`.as('support_ids'),
       ])
       .execute();
 
@@ -201,19 +258,19 @@ export class TurfKnocksRepo extends BaseRepository<'turf_knocks'> {
 
     const attempts = Number(totals?.attempts ?? 0);
     const conversations = Number(totals?.conversations ?? 0);
-    const strong = Number(totals?.strong_support ?? 0);
-    const lean = Number(totals?.lean_support ?? 0);
+    const supporters = Number(totals?.supporter ?? 0);
 
     return {
       doors: attempts,
       conversations,
       contactRatePct: attempts > 0 ? Math.round((conversations / attempts) * 100) : 0,
-      supportIds: strong + lean,
+      supportIds: supporters,
       responseMix: {
-        strong_support: strong,
-        lean_support: lean,
+        supporter: supporters,
         undecided: Number(totals?.undecided ?? 0),
-        opposed: Number(totals?.opposed ?? 0),
+        non_supporter: Number(totals?.non_supporter ?? 0),
+        not_voting: Number(totals?.not_voting ?? 0),
+        already_voted: Number(totals?.already_voted ?? 0),
         no_answer: attempts - conversations,
       },
       perDay: perDayRows.map((r) => ({

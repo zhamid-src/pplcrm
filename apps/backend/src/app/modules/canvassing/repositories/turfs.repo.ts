@@ -80,9 +80,16 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
   public async getTurfCore(
     input: { tenant_id: string; id: string },
     trx?: Transaction<Models>,
-  ): Promise<{ id: string; name: string; status: string; list_id: string | null; ward: string | null } | null> {
+  ): Promise<{
+    id: string;
+    name: string;
+    status: string;
+    list_id: string | null;
+    ward: string | null;
+    campaign_id: string | null;
+  } | null> {
     const row = await this.getSelect(trx)
-      .select(['id', 'name', 'status', 'list_id', 'ward'])
+      .select(['id', 'name', 'status', 'list_id', 'ward', 'campaign_id'])
       .where('tenant_id', '=', input.tenant_id)
       .where('id', '=', input.id)
       .executeTakeFirst();
@@ -93,6 +100,7 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
       status: String(row.status),
       list_id: row.list_id == null ? null : String(row.list_id),
       ward: row.ward == null ? null : String(row.ward),
+      campaign_id: row.campaign_id == null ? null : String(row.campaign_id),
     };
   }
 

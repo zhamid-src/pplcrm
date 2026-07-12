@@ -54,13 +54,11 @@ export const appRoutes = [
     loadComponent: () =>
       import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
   },
+  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
+  // the separate apps/companion build — served path-routed on the same domain.
   {
-    // Canvass Companion — tokenised, account-less volunteer app (§13.4).
-    path: 'companion',
-    loadComponent: () => import('./experiences/canvassing/ui/companion-page').then((m) => m.CompanionPage),
-  },
-  {
-    // Deliveries volunteer route — tokenised, account-less (§14).
+    // Deliveries volunteer route — tokenised, account-less (§14). Moves to
+    // apps/companion in Phase D of COMPANION-APPS-PLAN.md.
     path: 'r/:token',
     loadComponent: () => import('./experiences/deliveries/ui/public-route').then((m) => m.PublicRoute),
   },

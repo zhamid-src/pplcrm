@@ -45,7 +45,15 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
   }
 
   public async create(
-    input: { tenant_id: string; turf_id: string; team_id: string | null; token: string; user_id: string },
+    input: {
+      tenant_id: string;
+      turf_id: string;
+      team_id: string | null;
+      token: string;
+      user_id: string;
+      volunteer_person_id: string;
+      expires_at: Date | null;
+    },
     trx?: Transaction<Models>,
   ): Promise<string> {
     const row = {
@@ -54,6 +62,8 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
       team_id: input.team_id,
       token: input.token,
       status: 'active',
+      volunteer_person_id: input.volunteer_person_id,
+      expires_at: input.expires_at,
       createdby_id: input.user_id,
       updatedby_id: input.user_id,
     } as OperationDataType<'turf_assignments', 'insert'>;

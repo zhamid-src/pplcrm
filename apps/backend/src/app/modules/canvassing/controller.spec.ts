@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { IAuthKeyPayload } from '@common';
 
 import { BaseRepository } from '../../lib/base.repo';
+import { hashToken } from '../../lib/token-hash';
 import { CanvassingController } from './controller';
 
 type Db = typeof BaseRepository.dbInstance;
@@ -15,6 +16,10 @@ interface Seed {
   campaignId: string;
   listId: string;
   householdIds: string[];
+  /** The volunteer the Companion link is assigned to (not a list member). */
+  volunteerPersonId: string;
+  /** Residents of householdIds[0], for person-level survey tests. */
+  residentIds: string[];
 }
 
 /** Seed a tenant + a static household list of geocoded doors across two wards. */
@@ -106,10 +111,103 @@ async function seed(db: Db, opts: { geocoded: number; ungeocoded: number }): Pro
       .execute();
   }
 
-  return { tenantId, userId, campaignId, listId, householdIds };
+  // The volunteer holding the Companion link (own household, not in the list).
+  const volunteerHouseholdId = rand();
+  const volunteerPersonId = rand();
+  await db
+    .insertInto('households')
+    .values({
+      id: volunteerHouseholdId,
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
+  await db
+    .insertInto('persons')
+    .values({
+      id: volunteerPersonId,
+      tenant_id: tenantId,
+      household_id: volunteerHouseholdId,
+      first_name: 'Sam',
+      last_name: 'Volunteer',
+      email: 'sam@example.com',
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
+
+  // Two residents at the first door, for person-level survey tests.
+  const residentIds: string[] = [];
+  for (const [first, last] of [
+    ['Alice', 'Door'],
+    ['Bob', 'Door'],
+  ] as const) {
+    const pid = rand();
+    residentIds.push(pid);
+    await db
+      .insertInto('persons')
+      .values({
+        id: pid,
+        tenant_id: tenantId,
+        household_id: householdIds[0]!,
+        first_name: first,
+        last_name: last,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+  }
+
+  return { tenantId, userId, campaignId, listId, householdIds, volunteerPersonId, residentIds };
+}
+
+/**
+ * Fabricate an approved companion volunteer + device session directly — these
+ * tests exercise the canvassing surface; the verify/approve journey itself is
+ * covered by companion-access/controller.spec.ts.
+ */
+async function mintApprovedSession(db: Db, tenantId: string, personId: string, userId: string): Promise<string> {
+  await db
+    .insertInto('companion_volunteers')
+    .values({
+      tenant_id: tenantId,
+      person_id: personId,
+      status: 'approved',
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .onConflict((oc) => oc.columns(['tenant_id', 'person_id']).doNothing())
+    .execute();
+  const volunteer = await db
+    .selectFrom('companion_volunteers')
+    .select('id')
+    .where('tenant_id', '=', tenantId)
+    .where('person_id', '=', personId)
+    .executeTakeFirstOrThrow();
+  const raw = `test-session-${rand()}`;
+  await db
+    .insertInto('companion_sessions')
+    .values({
+      tenant_id: tenantId,
+      volunteer_id: String(volunteer.id),
+      token_hash: hashToken(raw),
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    })
+    .execute();
+  return raw;
 }
 
 async function cleanup(db: Db, tenantId: string): Promise<void> {
+  await db.deleteFrom('companion_ops').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('companion_sessions').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('companion_volunteers').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('delivery_requests').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaign_person_facts').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaign_subscriptions').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('turf_knocks').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('turf_assignments').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('turf_households').where('tenant_id', '=', tenantId).execute();
@@ -117,6 +215,7 @@ async function cleanup(db: Db, tenantId: string): Promise<void> {
   await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_lists_households').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
   await db.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tenantId).execute();
@@ -165,39 +264,77 @@ describe('CanvassingController', () => {
     expect(total).toBe(40);
   });
 
-  it('assigns a turf, exposes it over its token, and syncs a knock back to progress', async () => {
+  it('assigns a turf to a volunteer, exposes the spec-§3 payload to a verified session, and syncs results', async () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
 
-    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
+    });
     expect(token.length).toBeGreaterThan(10);
 
-    const companion = await controller.getCompanionTurf(token);
-    expect(companion.turf_id).toBe(turf.id);
-    expect(companion.doors.length).toBe(turf.door_count);
-    const door = companion.doors[0];
-    if (!door) throw new Error('expected a door');
+    // No session → the access layer blocks the payload.
+    await expect(controller.getCompanionTurf(token, null)).rejects.toThrow();
 
-    const knock = await controller.logKnock({
-      token,
-      client_knock_id: 'knock-1',
-      household_id: door.household_id,
-      outcome: 'conversation',
-      response: 'strong_support',
-      canvasser_name: 'Sam Volunteer',
-    });
-    expect(knock.recorded).toBe(true);
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    expect(companion.turf_name).toBe(turf.name);
+    expect(companion.canvasser_name).toBe('Sam Volunteer');
+    expect(companion.households.length).toBe(turf.door_count);
+    // Walk order is 1..N and the list arrives in that order.
+    expect(companion.households.map((h) => h.walk_order)).toEqual(companion.households.map((_, i) => i + 1));
+    // Payload minimization (spec §2): no emails/phones/notes anywhere.
+    const json = JSON.stringify(companion);
+    expect(json).not.toMatch(/@example\.com/);
+    expect(json).not.toContain('notes');
 
-    // Re-sending the SAME client_knock_id (offline re-sync) does not double-count.
-    const dup = await controller.logKnock({
-      token,
-      client_knock_id: 'knock-1',
-      household_id: door.household_id,
-      outcome: 'conversation',
-      response: 'strong_support',
-    });
-    expect(dup.recorded).toBe(false);
+    // Survey a resident through the batched ops endpoint.
+    const home = companion.households.find((h) => h.people.length > 0);
+    if (!home) throw new Error('expected a door with residents');
+    const resident = home.people[0]!;
+    const { acks } = await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'op-survey-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: home.id,
+          person_id: resident.id,
+          support: 'supporter',
+          issues: ['Housing'],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+    ]);
+    expect(acks[0]?.status).toBe('applied');
+
+    // Re-sending the SAME op (offline re-sync) acks duplicate and applies once.
+    const again = await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'op-survey-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: home.id,
+          person_id: resident.id,
+          support: 'supporter',
+          issues: ['Housing'],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+    ]);
+    expect(again.acks[0]?.status).toBe('duplicate');
+    const knockRows = await db.selectFrom('turf_knocks').select('id').where('tenant_id', '=', s.tenantId).execute();
+    expect(knockRows.length).toBe(1);
 
     const after = await controller.getTurfs(auth);
     const updated = after.find((t) => t.id === turf.id);
@@ -205,7 +342,17 @@ describe('CanvassingController', () => {
     expect(updated?.conversations).toBe(1);
     expect(updated?.status).toBe('in_field');
 
-    // Honest attribution written to the household activity log, real actor.
+    // Support fact written for the turf's campaign.
+    const fact = await db
+      .selectFrom('campaign_person_facts')
+      .selectAll()
+      .where('tenant_id', '=', s.tenantId)
+      .where('person_id', '=', resident.id)
+      .executeTakeFirst();
+    expect(fact?.support_level).toBe('strong');
+    expect(fact?.support_source).toBe('canvass');
+
+    // Honest attribution: activity under the real deployer, via the volunteer's name.
     const activity = await db
       .selectFrom('user_activity')
       .selectAll()
@@ -214,21 +361,218 @@ describe('CanvassingController', () => {
       .execute();
     expect(activity.length).toBe(1);
     expect(String(activity[0]?.createdby_id)).toBe(s.userId);
+    expect(JSON.stringify(activity[0]?.metadata)).toContain('Sam Volunteer');
+
+    // The re-loaded payload pre-fills the surveyed resident (result + survey, no notes).
+    const reload = await controller.getCompanionTurf(token, session);
+    const reloadedPerson = reload.households.find((h) => h.id === home.id)?.people.find((p) => p.id === resident.id);
+    expect(reloadedPerson?.result).toBe('canvassed');
+    expect(reloadedPerson?.survey?.support).toBe('supporter');
+    expect(reloadedPerson?.survey?.issues).toEqual(['Housing']);
   });
 
-  it('rejects a knock against a household that is not part of the turf', async () => {
+  it('applies survey side-effects: yard sign intake, DNC, contact fill-if-blank, subscribe, volunteer tag', async () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
-    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
+    });
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    const home = companion.households.find((h) => h.people.length > 0);
+    if (!home) throw new Error('expected a door with residents');
+    const [alice, bob] = home.people;
 
-    await expect(
-      controller.logKnock({ token, client_knock_id: 'x', household_id: '999999999', outcome: 'no_answer' }),
-    ).rejects.toThrow();
+    const { acks } = await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'op-fx-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: home.id,
+          person_id: alice!.id,
+          support: 'supporter',
+          issues: ['Housing', 'Transit'],
+          wants_volunteer: true,
+          wants_yard_sign: true,
+          set_dnc: false,
+          contact_phone: '(613) 555-0100',
+          contact_email: 'alice@newmail.test',
+          subscribe: true,
+        },
+      },
+      {
+        op_id: 'op-fx-2',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: home.id,
+          person_id: bob!.id,
+          support: null,
+          issues: [],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: true,
+          subscribe: false,
+        },
+      },
+    ]);
+    expect(acks.map((a) => a.status)).toEqual(['applied', 'applied']);
+
+    // Yard sign → a canvass-sourced delivery request in the intake pool.
+    const request = await db
+      .selectFrom('delivery_requests')
+      .selectAll()
+      .where('tenant_id', '=', s.tenantId)
+      .where('household_id', '=', home.id)
+      .executeTakeFirst();
+    expect(request?.source).toBe('canvass');
+    expect(request?.status).toBe('new');
+
+    // A second yard-sign survey at the same door doesn't duplicate the open request.
+    await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'op-fx-3',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: home.id,
+          person_id: alice!.id,
+          support: 'supporter',
+          issues: [],
+          wants_volunteer: false,
+          wants_yard_sign: true,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+    ]);
+    const requests = await db
+      .selectFrom('delivery_requests')
+      .select('id')
+      .where('tenant_id', '=', s.tenantId)
+      .where('household_id', '=', home.id)
+      .execute();
+    expect(requests.length).toBe(1);
+
+    // Contact capture fills blanks only; subscribe wrote canvass-sourced consent.
+    const alicePerson = await db
+      .selectFrom('persons')
+      .selectAll()
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', alice!.id)
+      .executeTakeFirstOrThrow();
+    expect(alicePerson.mobile).toBe('(613) 555-0100');
+    expect(alicePerson.email).toBe('alice@newmail.test');
+    const sub = await db
+      .selectFrom('campaign_subscriptions')
+      .selectAll()
+      .where('tenant_id', '=', s.tenantId)
+      .where('person_id', '=', alice!.id)
+      .executeTakeFirst();
+    expect(sub?.status).toBe('subscribed');
+    expect(sub?.consent_source).toBe('canvass');
+
+    // Volunteer prospect tag attached.
+    const tagged = await db
+      .selectFrom('map_peoples_tags')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .select('tags.name')
+      .where('map_peoples_tags.tenant_id', '=', s.tenantId)
+      .where('map_peoples_tags.person_id', '=', alice!.id)
+      .execute();
+    expect(tagged.map((t) => t.name)).toContain('Volunteer prospect');
+
+    // DNC-only save (no support level) is allowed and flips the person flag.
+    const bobPerson = await db
+      .selectFrom('persons')
+      .select('do_not_contact')
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', bob!.id)
+      .executeTakeFirstOrThrow();
+    expect(bobPerson.do_not_contact).toBe(true);
+  });
+
+  it('handles door outcomes, clears, no-conversation codes, and add-person-at-door', async () => {
+    await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
+    const [turf] = await controller.getTurfs(auth);
+    if (!turf) throw new Error('expected a turf');
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
+    });
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    const emptyDoor = companion.households.find((h) => h.people.length === 0);
+    const homeDoor = companion.households.find((h) => h.people.length > 0);
+    if (!emptyDoor || !homeDoor) throw new Error('expected doors');
+
+    const { acks } = await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'd1',
+        recorded_at: null,
+        type: 'door_outcome',
+        payload: { household_id: emptyDoor.id, outcome: 'no_answer' },
+      },
+      {
+        op_id: 'd2',
+        recorded_at: null,
+        type: 'person_result',
+        payload: { household_id: homeDoor.id, person_id: homeDoor.people[0]!.id, result: 'moved' },
+      },
+      {
+        op_id: 'd3',
+        recorded_at: null,
+        type: 'person_create',
+        payload: { household_id: homeDoor.id, name: 'Casey New Neighbor' },
+      },
+    ]);
+    expect(acks.map((a) => a.status)).toEqual(['applied', 'applied', 'applied']);
+    const newPersonId = acks[2]?.person_id;
+    expect(newPersonId).toBeTruthy();
+
+    // Payload shows the outcome + the new person; clearing re-opens the door.
+    let reload = await controller.getCompanionTurf(token, session);
+    expect(reload.households.find((h) => h.id === emptyDoor.id)?.door_outcome).toBe('no_answer');
+    expect(reload.households.find((h) => h.id === homeDoor.id)?.people.map((p) => p.id)).toContain(newPersonId);
+    expect(
+      reload.households.find((h) => h.id === homeDoor.id)?.people.find((p) => p.id === homeDoor.people[0]!.id)?.result,
+    ).toBe('moved');
+
+    await controller.postCompanionResults(token, session, [
+      { op_id: 'd4', recorded_at: null, type: 'clear_outcome', payload: { household_id: emptyDoor.id } },
+    ]);
+    reload = await controller.getCompanionTurf(token, session);
+    expect(reload.households.find((h) => h.id === emptyDoor.id)?.door_outcome).toBeNull();
+
+    // "Added at door" tag on the created person.
+    const tagged = await db
+      .selectFrom('map_peoples_tags')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .select('tags.name')
+      .where('map_peoples_tags.tenant_id', '=', s.tenantId)
+      .where('map_peoples_tags.person_id', '=', String(newPersonId))
+      .execute();
+    expect(tagged.map((t) => t.name)).toContain('Added at door');
+
+    // An op against a household outside the turf is rejected (ack, not throw).
+    const bad = await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'd5',
+        recorded_at: null,
+        type: 'door_outcome',
+        payload: { household_id: '999999999', outcome: 'no_answer' },
+      },
+    ]);
+    expect(bad.acks[0]?.status).toBe('rejected');
   });
 
   it('rejects an invalid Companion token', async () => {
-    await expect(controller.getCompanionTurf('not-a-real-token')).rejects.toThrow();
+    await expect(controller.getCompanionTurf('not-a-real-token', null)).rejects.toThrow();
   });
 
   it('summarises the field for the header sentence', async () => {
@@ -246,50 +590,79 @@ describe('CanvassingController', () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
-    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
-    const companion = await controller.getCompanionTurf(token);
-    await controller.logKnock({
-      token,
-      client_knock_id: 'a',
-      household_id: companion.doors[0]!.household_id,
-      outcome: 'conversation',
-      response: 'lean_support',
-      canvasser_name: 'Sam',
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
     });
-    await controller.logKnock({
-      token,
-      client_knock_id: 'b',
-      household_id: companion.doors[1]!.household_id,
-      outcome: 'no_answer',
-    });
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'fr-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: companion.households[0]!.id,
+          person_id: null,
+          support: 'supporter',
+          issues: [],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+      {
+        op_id: 'fr-2',
+        recorded_at: null,
+        type: 'door_outcome',
+        payload: { household_id: companion.households[1]!.id, outcome: 'no_answer' },
+      },
+    ]);
 
     const report = await controller.getFieldReport(auth, { range: 'campaign' });
     expect(report.doors).toBe(2);
     expect(report.conversations).toBe(1);
     expect(report.supportIds).toBe(1);
     expect(report.contactRatePct).toBe(50);
-    expect(report.topCanvassers[0]?.name).toBe('Sam');
+    expect(report.topCanvassers[0]?.name).toBe('Sam Volunteer');
   });
 
   it('maps coverage: a door per geocoded household, coloured by its knock status, with turf hulls and by-ward roll-up', async () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
-    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
-    const companion = await controller.getCompanionTurf(token);
-    await controller.logKnock({
-      token,
-      client_knock_id: 'c1',
-      household_id: companion.doors[0]!.household_id,
-      outcome: 'conversation',
-      response: 'strong_support',
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
     });
-    await controller.logKnock({
-      token,
-      client_knock_id: 'c2',
-      household_id: companion.doors[1]!.household_id,
-      outcome: 'no_answer',
-    });
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'cov-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: companion.households[0]!.id,
+          person_id: null,
+          support: 'supporter',
+          issues: [],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+      {
+        op_id: 'cov-2',
+        recorded_at: null,
+        type: 'door_outcome',
+        payload: { household_id: companion.households[1]!.id, outcome: 'no_answer' },
+      },
+    ]);
 
     const cov = await controller.getCoverage(auth, { range: 'campaign' });
 
@@ -315,10 +688,31 @@ describe('CanvassingController', () => {
     await controller.cutTurfs(auth, { list_id: s.listId, doors_per_turf: 40 });
     const [turf] = await controller.getTurfs(auth);
     if (!turf) throw new Error('expected a turf');
-    const { token } = await controller.assignTurf(auth, { turf_id: turf.id, team_id: null });
-    const companion = await controller.getCompanionTurf(token);
-    const droppedDoor = companion.doors[0]!.household_id;
-    await controller.logKnock({ token, client_knock_id: 'k', household_id: droppedDoor, outcome: 'conversation' });
+    const { token } = await controller.assignTurf(auth, {
+      turf_id: turf.id,
+      team_id: null,
+      volunteer_person_id: s.volunteerPersonId,
+    });
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.userId);
+    const companion = await controller.getCompanionTurf(token, session);
+    const droppedDoor = companion.households[0]!.id;
+    await controller.postCompanionResults(token, session, [
+      {
+        op_id: 'rf-1',
+        recorded_at: null,
+        type: 'survey',
+        payload: {
+          household_id: droppedDoor,
+          person_id: null,
+          support: 'undecided',
+          issues: [],
+          wants_volunteer: false,
+          wants_yard_sign: false,
+          set_dnc: false,
+          subscribe: false,
+        },
+      },
+    ]);
 
     // Remove that household from the list universe.
     await db
