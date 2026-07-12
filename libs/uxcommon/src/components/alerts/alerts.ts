@@ -56,7 +56,18 @@ export class Alerts {
     return this.position() === 'top';
   }
 
-  /** Tone lives only on the icon — the card surface and text stay neutral (spec §Anatomy). */
+  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
+  protected barToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success'
+      : type === 'warning'
+        ? 'bg-warning'
+        : type === 'error'
+          ? 'bg-error'
+          : 'bg-info';
+  }
+
+  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
   protected toneClass(type?: ALERTTYPE): string {
     return type === 'success'
       ? 'text-success'
