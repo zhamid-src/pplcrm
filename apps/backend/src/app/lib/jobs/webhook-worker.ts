@@ -212,6 +212,9 @@ export class WebhookEventWorker {
       const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
       const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
       const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
+      const isChargeRefunded = eventType === 'charge.refunded';
+      const isDisputeCreated = eventType === 'charge.dispute.created';
+      const isDisputeClosed = eventType === 'charge.dispute.closed';
 
       if (isOneTimeDonation) {
         // Standard one-time donation via checkout.session.completed
@@ -222,6 +225,7 @@ export class WebhookEventWorker {
         const province = String(stripeObj.metadata.residencyProvince || '');
         const country = String(stripeObj.metadata.residencyCountry || '');
         const sessionId = String(stripeObj.id);
+        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
         const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
 
         await donationsController.recordSuccessfulDonation(
@@ -232,6 +236,10 @@ export class WebhookEventWorker {
           province,
           country,
           createdBy,
+          undefined,
+          'card',
+          undefined,
+          paymentIntentId,
         );
       } else if (isRecurringCheckoutComplete) {
         // Subscription checkout completed — create the pledge record.
@@ -281,6 +289,7 @@ export class WebhookEventWorker {
 
           if (!alreadyRecorded) {
             const createdBy = await resolveUserId(String(pledge.tenant_id), null);
+            const invoicePaymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
             await donationsController.recordSuccessfulDonation(
               String(pledge.tenant_id),
               String(pledge.person_id),
@@ -290,6 +299,9 @@ export class WebhookEventWorker {
               pledge.country || '',
               createdBy,
               String(pledge.id),
+              'card',
+              undefined,
+              invoicePaymentIntentId,
             );
           }
         }
@@ -335,6 +347,52 @@ export class WebhookEventWorker {
           .set({ status: 'past_due', updated_at: new Date() })
           .where('stripe_subscription_id', '=', subscriptionId)
           .execute();
+      } else if (isChargeRefunded && eventRecord.tenant_id) {
+        // A donation charge was refunded. Only a FULL refund reverses the gift; a partial refund
+        // can't be represented on a single-amount donation row, so we log it and leave the record.
+        const tenantId = String(eventRecord.tenant_id);
+        const amount = Number(stripeObj.amount || 0);
+        const amountRefunded = Number(stripeObj.amount_refunded || 0);
+        const fullyRefunded = stripeObj.refunded === true || (amount > 0 && amountRefunded >= amount);
+        if (fullyRefunded) {
+          const donationsController = new DonationsController();
+          const userId = await resolveUserId(tenantId, null);
+          await donationsController.reverseDonation(tenantId, userId, {
+            paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
+            invoiceId: stripeObj.invoice ? String(stripeObj.invoice) : null,
+            status: 'refunded',
+          });
+        } else {
+          logger.warn(
+            { tenantId, chargeId: stripeObj.id, amount, amountRefunded },
+            'Partial refund received; donation record left unchanged',
+          );
+        }
+      } else if (isDisputeCreated && eventRecord.tenant_id) {
+        // Chargeback opened — funds are withheld, so stop counting the gift toward totals.
+        const tenantId = String(eventRecord.tenant_id);
+        const donationsController = new DonationsController();
+        const userId = await resolveUserId(tenantId, null);
+        await donationsController.reverseDonation(tenantId, userId, {
+          paymentIntentId: stripeObj.payment_intent ? String(stripeObj.payment_intent) : null,
+          invoiceId: null,
+          status: 'disputed',
+        });
+      } else if (isDisputeClosed && eventRecord.tenant_id) {
+        // Chargeback resolved: 'won' restores the gift; 'lost' makes the reversal permanent.
+        const tenantId = String(eventRecord.tenant_id);
+        const donationsController = new DonationsController();
+        const userId = await resolveUserId(tenantId, null);
+        const paymentIntentId = stripeObj.payment_intent ? String(stripeObj.payment_intent) : null;
+        if (stripeObj.status === 'won') {
+          await donationsController.restoreDisputedDonation(tenantId, userId, { paymentIntentId, invoiceId: null });
+        } else if (stripeObj.status === 'lost') {
+          await donationsController.reverseDonation(tenantId, userId, {
+            paymentIntentId,
+            invoiceId: null,
+            status: 'refunded',
+          });
+        }
       } else {
         const billingController = new BillingController();
         await billingController.processWebhookEvent(payload);

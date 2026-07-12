@@ -19,6 +19,15 @@ import { logger } from '../../logger';
 // API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
 const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
 
+// Donation lifecycle statuses. Only 'succeeded' counts toward cumulative/contribution totals,
+// so flipping a reversed gift to one of the terminal states drops it out of those sums.
+const DONATION_STATUS = {
+  succeeded: 'succeeded',
+  refunded: 'refunded',
+  disputed: 'disputed',
+} as const;
+type ReversedStatus = typeof DONATION_STATUS.refunded | typeof DONATION_STATUS.disputed;
+
 export class DonationsController extends BaseController<'donations', DonationsRepo> {
   private settingsRepo = new SettingsRepo();
   private periodsRepo = new DonationPeriodsRepo();
@@ -707,6 +716,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     pledgeId?: string,
     method: 'card' | 'check' | 'cash' | 'bank_transfer' = 'card',
     campaignId?: string,
+    stripePaymentIntentId?: string | null,
   ): Promise<Selectable<Models['donations']>> {
     // Which fund the gift belongs to (§15); Stripe-path gifts without an
     // explicit campaign land in the office context.
@@ -737,6 +747,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             amount: amountCents,
             status: 'succeeded',
             stripe_session_id: sessionId,
+            stripe_payment_intent_id: stripePaymentIntentId ?? null,
             state: province || null,
             country: country || null,
             pledge_id: pledgeId ? pledgeId : null,
@@ -777,5 +788,107 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     }
 
     return record;
+  }
+
+  /**
+   * Reverse a donation because Stripe reported a full refund or a lost chargeback. Flips the status
+   * to a terminal reversed state (so it drops out of contribution totals, which count only
+   * 'succeeded'), stamps refunded_at, and records an activity entry. Idempotent — a duplicate or
+   * retried webhook for the same reversal is a no-op. Returns true when a donation matched.
+   */
+  public async reverseDonation(
+    tenantId: string,
+    userId: string,
+    opts: { paymentIntentId: string | null; invoiceId: string | null; status: ReversedStatus },
+  ): Promise<boolean> {
+    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
+    if (!donation) {
+      logger.warn(
+        { tenantId, paymentIntentId: opts.paymentIntentId, invoiceId: opts.invoiceId, status: opts.status },
+        'Refund/dispute webhook did not match any donation; nothing to reverse',
+      );
+      return false;
+    }
+    if (donation.status === opts.status) return true; // already reversed — idempotent
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('donations')
+          .set({ status: opts.status, refunded_at: new Date(), updated_at: new Date() })
+          .where('id', '=', donation.id)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+
+        if (donation.person_id) {
+          const verb = opts.status === DONATION_STATUS.refunded ? 'refunded' : 'disputed (chargeback)';
+          try {
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: tenantId,
+                user_id: userId,
+                activity: `Donation of $${donation.amount / 100} ${verb}`,
+                entity: 'persons',
+                entity_id: donation.person_id,
+                quantity: 1,
+                createdby_id: userId,
+                updatedby_id: userId,
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to write audit activity log for donation reversal');
+          }
+        }
+      });
+    return true;
+  }
+
+  /**
+   * Restore a donation whose chargeback the tenant won: Stripe returned the funds, so a gift we
+   * had marked 'disputed' counts again. Only un-reverses a still-disputed row (never resurrects a
+   * genuine refund). Returns true when a donation matched.
+   */
+  public async restoreDisputedDonation(
+    tenantId: string,
+    userId: string,
+    opts: { paymentIntentId: string | null; invoiceId: string | null },
+  ): Promise<boolean> {
+    const donation = await this.getRepo().findByPaymentIntentOrInvoice(tenantId, opts.paymentIntentId, opts.invoiceId);
+    if (!donation) return false;
+    if (donation.status !== DONATION_STATUS.disputed) return true; // nothing to restore — idempotent
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('donations')
+          .set({ status: DONATION_STATUS.succeeded, refunded_at: null, updated_at: new Date() })
+          .where('id', '=', donation.id)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+
+        if (donation.person_id) {
+          try {
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: tenantId,
+                user_id: userId,
+                activity: `Donation of $${donation.amount / 100} chargeback resolved in your favour`,
+                entity: 'persons',
+                entity_id: donation.person_id,
+                quantity: 1,
+                createdby_id: userId,
+                updatedby_id: userId,
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to write audit activity log for donation restore');
+          }
+        }
+      });
+    return true;
   }
 }

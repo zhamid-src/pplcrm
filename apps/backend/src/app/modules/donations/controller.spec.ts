@@ -254,4 +254,137 @@ describe('DonationsController Unit & Integration', () => {
       expect(await controller.getWebhookTokenStatus(tenantId)).toEqual({ configured: true });
     });
   });
+
+  describe('Refunds & chargebacks', () => {
+    const year = new Date().getFullYear();
+
+    async function seedSucceededDonation(paymentIntentId: string, amount = 50000): Promise<string> {
+      const row = await db
+        .insertInto('donations')
+        .values({
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          person_id: personId,
+          amount,
+          status: 'succeeded',
+          stripe_payment_intent_id: paymentIntentId,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      return String(row.id);
+    }
+
+    async function statusOf(id: string): Promise<{ status: string; refunded_at: Date | null }> {
+      const row = await db
+        .selectFrom('donations')
+        .select(['status', 'refunded_at'])
+        .where('id', '=', id)
+        .executeTakeFirstOrThrow();
+      return { status: String(row.status), refunded_at: row.refunded_at };
+    }
+
+    it('reverses a refunded donation and drops it from cumulative totals', async () => {
+      const id = await seedSucceededDonation('pi_refund_1');
+      expect(await controller.getPersonCumulativeDonations(tenantId, personId, year)).toBe(50000);
+
+      const reversed = await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_refund_1',
+        invoiceId: null,
+        status: 'refunded',
+      });
+      expect(reversed).toBe(true);
+
+      const after = await statusOf(id);
+      expect(after.status).toBe('refunded');
+      expect(after.refunded_at).not.toBeNull();
+      // Cumulative totals count only 'succeeded', so the reversed gift no longer counts.
+      expect(await controller.getPersonCumulativeDonations(tenantId, personId, year)).toBe(0);
+    });
+
+    it('is idempotent on a repeated refund webhook', async () => {
+      const id = await seedSucceededDonation('pi_refund_2');
+      await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_refund_2',
+        invoiceId: null,
+        status: 'refunded',
+      });
+      const first = await statusOf(id);
+      const again = await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_refund_2',
+        invoiceId: null,
+        status: 'refunded',
+      });
+      expect(again).toBe(true);
+      const second = await statusOf(id);
+      expect(second.status).toBe('refunded');
+      expect(second.refunded_at?.getTime()).toBe(first.refunded_at?.getTime());
+    });
+
+    it('returns false when no donation matches the reversal', async () => {
+      const matched = await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_does_not_exist',
+        invoiceId: null,
+        status: 'refunded',
+      });
+      expect(matched).toBe(false);
+    });
+
+    it('correlates a subscription refund by invoice id', async () => {
+      // Recurring installments are keyed by invoice id in stripe_session_id, not payment intent.
+      await db
+        .insertInto('donations')
+        .values({
+          tenant_id: tenantId,
+          campaign_id: campaignId,
+          person_id: personId,
+          amount: 2500,
+          status: 'succeeded',
+          stripe_session_id: 'in_invoice_1',
+        })
+        .execute();
+
+      const reversed = await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: null,
+        invoiceId: 'in_invoice_1',
+        status: 'refunded',
+      });
+      expect(reversed).toBe(true);
+    });
+
+    it('excludes a disputed donation from totals, then restores it when the dispute is won', async () => {
+      const id = await seedSucceededDonation('pi_dispute_1');
+      await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_dispute_1',
+        invoiceId: null,
+        status: 'disputed',
+      });
+      expect((await statusOf(id)).status).toBe('disputed');
+      expect(await controller.getPersonCumulativeDonations(tenantId, personId, year)).toBe(0);
+
+      const restored = await controller.restoreDisputedDonation(tenantId, userId, {
+        paymentIntentId: 'pi_dispute_1',
+        invoiceId: null,
+      });
+      expect(restored).toBe(true);
+      const after = await statusOf(id);
+      expect(after.status).toBe('succeeded');
+      expect(after.refunded_at).toBeNull();
+      expect(await controller.getPersonCumulativeDonations(tenantId, personId, year)).toBe(50000);
+    });
+
+    it('does not restore a genuine refund (only disputed rows)', async () => {
+      const id = await seedSucceededDonation('pi_refund_3');
+      await controller.reverseDonation(tenantId, userId, {
+        paymentIntentId: 'pi_refund_3',
+        invoiceId: null,
+        status: 'refunded',
+      });
+      const restored = await controller.restoreDisputedDonation(tenantId, userId, {
+        paymentIntentId: 'pi_refund_3',
+        invoiceId: null,
+      });
+      expect(restored).toBe(true); // idempotent no-op
+      expect((await statusOf(id)).status).toBe('refunded');
+    });
+  });
 });

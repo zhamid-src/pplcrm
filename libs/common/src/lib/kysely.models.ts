@@ -578,6 +578,10 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   amount: number;
   status: Generated<string>;
   stripe_session_id: string | null;
+  /** Stripe PaymentIntent id, used to correlate refund/dispute webhooks back to this gift. */
+  stripe_payment_intent_id: string | null;
+  /** When a refund or lost chargeback reversed this gift; null while it stands. */
+  refunded_at: ColumnType<Date, Date | string, Date | string> | null;
   pledge_id: string | null;
   first_name: string | null;
   last_name: string | null;
