@@ -97,4 +97,29 @@ export class DonationsRepo extends BaseRepository<'donations'> {
       .orderBy('donations.created_at', 'desc')
       .execute();
   }
+
+  /**
+   * Find the donation a refund/dispute webhook refers to. A Stripe Charge carries the payment
+   * intent (matched against `stripe_payment_intent_id`), and a subscription-installment charge
+   * also carries the invoice id (which we store as `stripe_session_id`) — so we try both.
+   * Tenant-scoped: the caller passes the tenant that owns the webhook token.
+   */
+  public async findByPaymentIntentOrInvoice(
+    tenantId: string,
+    paymentIntentId: string | null,
+    invoiceId: string | null,
+  ): Promise<Selectable<Models['donations']> | undefined> {
+    if (!paymentIntentId && !invoiceId) return undefined;
+    let query = this.getSelect().selectAll().where('tenant_id', '=', tenantId);
+    if (paymentIntentId && invoiceId) {
+      query = query.where((eb) =>
+        eb.or([eb('stripe_payment_intent_id', '=', paymentIntentId), eb('stripe_session_id', '=', invoiceId)]),
+      );
+    } else if (paymentIntentId) {
+      query = query.where('stripe_payment_intent_id', '=', paymentIntentId);
+    } else if (invoiceId) {
+      query = query.where('stripe_session_id', '=', invoiceId);
+    }
+    return query.orderBy('created_at', 'desc').executeTakeFirst();
+  }
 }
