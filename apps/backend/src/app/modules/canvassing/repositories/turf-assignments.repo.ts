@@ -14,6 +14,10 @@ export interface ResolvedAssignment {
   /** Real CRM account that deployed this Companion — the responsible actor for
    *  synced knocks (§22.7: honest attribution, never a fabricated user). */
   created_by: string;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link. */
+  expires_at: Date | null;
 }
 
 /** A high-entropy, URL-safe Companion token (the bearer credential). */
@@ -31,7 +35,7 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     trx?: Transaction<Models>,
   ): Promise<ResolvedAssignment | null> {
     const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id'])
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
       .where('tenant_id', '=', input.tenant_id)
       .where('turf_id', '=', input.turf_id)
       .where('status', '=', 'active')
@@ -81,7 +85,7 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     // what resolves the tenant (see the method doc above). Every downstream query
     // is scoped by the resolved tenant_id.
     const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id'])
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
       .where('token', '=', token)
       .where('status', '=', 'active')
       .executeTakeFirst();
@@ -95,6 +99,8 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     team_id: unknown;
     status: unknown;
     createdby_id: unknown;
+    volunteer_person_id?: unknown;
+    expires_at?: unknown;
   }): ResolvedAssignment {
     return {
       id: String(row.id),
@@ -103,6 +109,8 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
       team_id: row.team_id == null ? null : String(row.team_id),
       status: String(row.status),
       created_by: String(row.createdby_id),
+      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
+      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
     };
   }
 }

@@ -170,6 +170,14 @@ apps/
               companies-enrichment.service.ts
             controller.ts
             trpc.router.ts
+          companion-access/
+            repositories/
+              companion-sessions.repo.ts
+              companion-volunteers.repo.ts
+            routes/
+              companion-public.route.ts
+            controller.ts
+            trpc.router.ts
           dashboard/
             controller.ts
             trpc.router.ts
@@ -1627,441 +1635,6 @@ async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<M
 }
 ```
 
-## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { notificationEnabled } from '../../profile-preferences';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import { SmsService } from '../../sms/sms.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-const smsService = new SmsService();
-
-export async function handleSendFormNotifications(
-  payload: JobPayloadOf<'send-form-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const event = await db
-    .selectFrom('volunteer_events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_signup_confirmation',
-      'send_volunteer_alert',
-    ])
-    .where('id', '=', payload.eventId)
-    .executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (event.send_signup_confirmation !== false) {
-    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
-    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
-
-    const coordEmailHtml = event.contact_email
-      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
-      : '';
-    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
-
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Volunteer Signup Confirmation: ${event.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
-  if (event.send_volunteer_alert !== false) {
-    let alertRecipient = event.contact_email || null;
-
-    if (!alertRecipient) {
-      const admin = await db
-        .selectFrom('authusers')
-        .select('email')
-        .where('tenant_id', '=', payload.tenantId)
-        .limit(1)
-        .executeTakeFirst();
-      if (admin && admin.email) {
-        alertRecipient = admin.email;
-      }
-    }
-
-    if (alertRecipient) {
-      await mailService.sendMail({
-        to: alertRecipient,
-        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendShiftReminder(
-  payload: JobPayloadOf<'send-shift-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const shift = await db
-    .selectFrom('volunteer_shifts')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.shiftId)
-    .executeTakeFirst();
-
-  if (!shift) {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
-    return;
-  }
-
-  // Covers cancelled and no-show shifts as well.
-  if (shift.status !== 'signed_up') {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
-    return;
-  }
-
-  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
-    return;
-  }
-
-  if (event.send_reminder === false) {
-    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
-    return;
-  }
-
-  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
-
-  if (!person) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
-    return;
-  }
-
-  if (!person.email) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
-
-  const subject = `Volunteer Shift Reminder: ${event.name}`;
-  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-
-  const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
-  <p>Hi ${person.first_name || 'there'},</p>
-  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
-  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
-    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
-    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
-    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
-  </div>
-  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
-</div>`;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject,
-    text,
-    html,
-  });
-
-  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
-}
-
-export async function handleSendWebformNotifications(
-  payload: JobPayloadOf<'send-webform-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const form = await db
-    .selectFrom('web_forms')
-    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-    .where('id', '=', payload.formId)
-    .executeTakeFirst();
-
-  if (!form) {
-    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
-    return;
-  }
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (form.send_confirmation !== false) {
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Thank you for your submission to ${form.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Tenant Admin (if enabled)
-  if (form.send_alert !== false) {
-    const admin = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', form.tenant_id)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `[ALERT] New Lead Submission on ${form.name}`,
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
-        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendEventRegistrationConfirmation(
-  payload: JobPayloadOf<'send-event-registration-confirmation'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status === 'cancelled') {
-    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
-    return;
-  }
-
-  const event = await db
-    .selectFrom('events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_registration_confirmation',
-    ])
-    .where('id', '=', registration.event_id)
-    .executeTakeFirst();
-
-  if (!event || event.send_registration_confirmation === false) {
-    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const coordLine = [
-    event.contact_email ? `Email: ${event.contact_email}` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const coordHtml = [
-    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('<br>');
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Registration Confirmed: ${event.name}`,
-    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
-  });
-
-  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendEventReminder(
-  payload: JobPayloadOf<'send-event-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status !== 'registered') {
-    logger.info(
-      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
-    );
-    return;
-  }
-
-  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
-
-  if (!event || event.send_reminder === false) {
-    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Reminder: ${event.name} is tomorrow`,
-    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
-  });
-
-  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
-  await mailService.sendMail({
-    to: payload.to,
-    subject: payload.subject ?? '',
-    text: payload.text ?? '',
-    html: payload.html ?? '',
-  });
-}
-
-export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
-  await smsService.sendSms({ to: payload.to, body: payload.body });
-}
-
-export async function handleSendSubscriptionConfirmation(
-  payload: JobPayloadOf<'send-subscription-confirmation'>,
-): Promise<void> {
-  await mailService.sendMail({
-    to: payload.email,
-    subject: 'Please confirm your subscription',
-    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
-    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
-  });
-}
-
-export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
-  await checkDueTasks(db);
-
-  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
-}
-
-export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  try {
-    const dueTasks = await db
-      .selectFrom('tasks')
-      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select([
-        'tasks.id as task_id',
-        'tasks.name as task_name',
-        'tasks.due_at',
-        'tasks.details',
-        'authusers.id as user_id',
-        'authusers.email as user_email',
-        'authusers.first_name',
-        'profiles.preferences as profile_preferences',
-      ])
-      .where('tasks.status', 'not in', ['done', 'archived'])
-      .where('tasks.due_at', '<=', now)
-      .orderBy('tasks.due_at', 'asc')
-      .execute();
-
-    if (dueTasks.length === 0) return;
-
-    const userTasksMap = new Map<string, typeof dueTasks>();
-    for (const row of dueTasks) {
-      const userId = String(row.user_id);
-      let userTasks = userTasksMap.get(userId);
-      if (!userTasks) {
-        userTasks = [];
-        userTasksMap.set(userId, userTasks);
-      }
-      userTasks.push(row);
-    }
-
-    for (const [, tasks] of userTasksMap.entries()) {
-      const firstRow = tasks[0];
-      if (!firstRow) continue;
-      const userEmail = firstRow.user_email;
-      const firstName = firstRow.first_name;
-      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
-
-      if (optedIn && userEmail) {
-        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
-        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
-
-        for (const t of tasks) {
-          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
-        }
-
-        htmlContent += `</ul>`;
-
-        await mailService.sendMail({
-          to: userEmail,
-          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
-          text: textContent,
-          html: htmlContent,
-        });
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check and notify due tasks');
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
 
 ```typescript
@@ -2407,160 +1980,6 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
     default: {
       const _exhaustive: never = step.kind;
       throw new Error(`Unknown step kind: ${String(_exhaustive)}`);
-    }
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/job-handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { z } from 'zod';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { jobPayloadSchema, legacyImportJobSchema } from './job-payloads';
-import { handleCheckAllUsageLimits, handleCheckUsageLimits, handleZapierTrigger } from './handlers/billing.handlers';
-import { handlePerformScheduledDeletions } from './handlers/deletions.handlers';
-import { handleExportCsv } from './handlers/export.handlers';
-import { handleImportJob } from './handlers/import.handlers';
-import {
-  handleCleanupActivities,
-  handlePruneRetention,
-  handleEnrichCompanyGoogle,
-  handleGeocodeHousehold,
-  handleRecomputeAddressFingerprints,
-  handleRecomputeAllDuplicates,
-  handleRefreshCompaniesGoogle,
-  handleRefreshList,
-} from './handlers/maintenance.handlers';
-import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
-import {
-  handleCheckDueTasks,
-  handleSendEventRegistrationConfirmation,
-  handleSendEventReminder,
-  handleSendFormNotifications,
-  handleSendShiftReminder,
-  handleSendSms,
-  handleSendSubscriptionConfirmation,
-  handleSendTransactionalEmail,
-  handleSendWebformNotifications,
-} from './handlers/notifications.handlers';
-import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
-import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
-
-export { checkDueTasks } from './handlers/notifications.handlers';
-
-const typeProbeSchema = z.looseObject({ type: z.unknown() });
-
-/**
- * Background job dispatcher. Parses the raw queue payload against the typed
- * job schemas and routes it to the matching domain handler in `./handlers/`.
- */
-export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: string): Promise<void> {
-  const typed = jobPayloadSchema.safeParse(payload);
-
-  if (!typed.success) {
-    // CSV imports are queued without a `type` discriminator (legacy shape).
-    const legacyImport = legacyImportJobSchema.safeParse(payload);
-    if (legacyImport.success) {
-      await handleImportJob(legacyImport.data, db);
-      return;
-    }
-
-    const probe = typeProbeSchema.safeParse(payload);
-    const typeLabel = probe.success && probe.data.type !== undefined ? String(probe.data.type) : 'unknown';
-    throw new Error(`Unsupported background job type: ${typeLabel}`);
-  }
-
-  const job = typed.data;
-  switch (job.type) {
-    case 'refresh_list':
-      await handleRefreshList(job);
-      break;
-    case 'enrich_company_google':
-      await handleEnrichCompanyGoogle(job, db);
-      break;
-    case 'refresh_companies_google':
-      await handleRefreshCompaniesGoogle(job, db);
-      break;
-    case 'cleanup_activities':
-      await handleCleanupActivities(db);
-      break;
-    case 'prune_retention':
-      await handlePruneRetention(db);
-      break;
-    case 'recompute_all_duplicates':
-      await handleRecomputeAllDuplicates(db);
-      break;
-    case 'recompute_address_fingerprints':
-      await handleRecomputeAddressFingerprints(job, db);
-      break;
-    case 'geocode_household':
-      await handleGeocodeHousehold(job, db);
-      break;
-    case 'schedule_sync_jobs':
-      await handleScheduleSyncJobs(db);
-      break;
-    case 'google_sync':
-      await handleGoogleSync(job, db);
-      break;
-    case 'ms_sync':
-      await handleMsSync(job, db);
-      break;
-    case 'send-form-notifications':
-      await handleSendFormNotifications(job, db);
-      break;
-    case 'send-shift-reminder':
-      await handleSendShiftReminder(job, db);
-      break;
-    case 'send-webform-notifications':
-      await handleSendWebformNotifications(job, db);
-      break;
-    case 'send-event-registration-confirmation':
-      await handleSendEventRegistrationConfirmation(job, db);
-      break;
-    case 'send-event-reminder':
-      await handleSendEventReminder(job, db);
-      break;
-    case 'send-transactional-email':
-      await handleSendTransactionalEmail(job);
-      break;
-    case 'send-sms':
-      await handleSendSms(job);
-      break;
-    case 'send-subscription-confirmation':
-      await handleSendSubscriptionConfirmation(job);
-      break;
-    case 'check_due_tasks':
-      await handleCheckDueTasks(db);
-      break;
-    case 'send-newsletter':
-      await handleSendNewsletter(job, db, jobId);
-      break;
-    case 'prune_newsletter_events':
-      await handlePruneNewsletterEvents(db);
-      break;
-    case 'process_drip_workflows':
-      await handleProcessDripWorkflows(db);
-      break;
-    case 'perform_scheduled_deletions':
-      await handlePerformScheduledDeletions(db);
-      break;
-    case 'zapier_trigger':
-      await handleZapierTrigger(job);
-      break;
-    case 'check_usage_limits':
-      await handleCheckUsageLimits(job, db);
-      break;
-    case 'check_all_usage_limits':
-      await handleCheckAllUsageLimits(db);
-      break;
-    case 'export_csv':
-      await handleExportCsv(job, db);
-      break;
-    default: {
-      const _exhaustive: never = job;
-      throw new Error(`Unsupported background job type: ${JSON.stringify(_exhaustive)}`);
     }
   }
 }
@@ -3069,6 +2488,152 @@ export async function processMentions(
   } catch (error) {
     logger.error({ err: error }, 'Failed to process comment mentions');
   }
+}
+```
+
+## File: apps/backend/src/app/lib/mail/newsletter-render.ts
+
+```typescript
+/**
+ * Pure, I/O-free render transforms applied to newsletter content at send time. Kept side-effect free
+ * so they can be unit-tested in isolation (see newsletter-render.spec.ts). The send handler
+ * (`lib/jobs/handlers/newsletter.handlers.ts`) and the test-email path
+ * (`modules/newsletters/controller.ts`) both compose these before handing HTML to SendGrid.
+ */
+
+// The visual editor embeds its block model as a JSON comment. It must never ship in a sent email.
+const BLOCK_DATA_COMMENT_RE = /<!--\s*PPLCRM_VISUAL_BLOCKS_DATA:[\s\S]*?-->/g;
+
+// The editor's merge-field syntax: {FieldName} or {FieldName|fallback text}. Mirrors the pattern in
+// the frontend visual-newsletter-editor so send-time substitution matches the editor's preview.
+const MERGE_TOKEN_PATTERN = '\\{([a-zA-Z0-9_]+)(?:\\|([^}]*))?\\}';
+
+// Marker attribute so preheader injection is idempotent across composed calls.
+const PREHEADER_MARKER = 'data-pc-preheader';
+
+export interface MergeToken {
+  /** The literal token as it appears in the content, e.g. "{FirstName|there}". */
+  token: string;
+  /** The field name, e.g. "FirstName". */
+  field: string;
+  /** The fallback text after "|", or "" when none was given. */
+  fallback: string;
+}
+
+export interface MergeRecipient {
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  phone?: string | null;
+}
+
+/** Escapes the characters that would break out of an HTML text/attribute context. */
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** True for absolute URLs (with a scheme) and protocol-relative (`//host`) URLs. */
+function isAbsoluteUrl(url: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url);
+}
+
+/** Removes the editor's block-model JSON comment(s) so they never ship in the sent email. */
+export function stripEditorBlockData(html: string): string {
+  return html.replace(BLOCK_DATA_COMMENT_RE, '');
+}
+
+/**
+ * Rewrites relative `<img src>` values (e.g. "assets/newsletters/x.png") to absolute URLs against
+ * baseUrl so they resolve in email clients, which have no notion of the app's origin. Absolute,
+ * protocol-relative, `data:` and `cid:` URLs are left untouched.
+ */
+export function rewriteRelativeImageUrls(html: string, baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '');
+  return html.replace(
+    /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(.*?)\2/gi,
+    (match, prefix: string, quote: string, url: string) => {
+      const trimmed = url.trim();
+      if (!trimmed || isAbsoluteUrl(trimmed)) return match;
+      const path = trimmed.replace(/^\.?\/+/, '');
+      return `${prefix}${quote}${base}/${path}${quote}`;
+    },
+  );
+}
+
+/**
+ * Injects previewText as a hidden preheader block at the top of the body. Idempotent — if a
+ * preheader has already been injected (marker present) or previewText is empty, returns html
+ * unchanged. The preheader is what inboxes show next to the subject line.
+ */
+export function injectPreheader(html: string, previewText: string | null | undefined): string {
+  const text = (previewText ?? '').trim();
+  if (!text || html.includes(PREHEADER_MARKER)) return html;
+  const preheader =
+    `<div ${PREHEADER_MARKER} style="display:none;max-height:0;overflow:hidden;` +
+    `mso-hide:all;font-size:1px;line-height:1px;color:transparent;opacity:0;">` +
+    `${escapeHtml(text)}</div>`;
+  const bodyMatch = html.match(/<body\b[^>]*>/i);
+  if (bodyMatch) {
+    const idx = html.indexOf(bodyMatch[0]) + bodyMatch[0].length;
+    return html.slice(0, idx) + preheader + html.slice(idx);
+  }
+  return preheader + html;
+}
+
+/** Composes the send-time HTML transforms: strip block data, rewrite images, inject preheader. */
+export function renderNewsletterHtml(html: string, options: { baseUrl: string; previewText?: string | null }): string {
+  let out = stripEditorBlockData(html);
+  out = rewriteRelativeImageUrls(out, options.baseUrl);
+  out = injectPreheader(out, options.previewText);
+  return out;
+}
+
+/** Scans the given content strings for the distinct merge tokens they contain. */
+export function extractMergeTokens(...contents: (string | null | undefined)[]): MergeToken[] {
+  const re = new RegExp(MERGE_TOKEN_PATTERN, 'g');
+  const byToken = new Map<string, MergeToken>();
+  for (const content of contents) {
+    if (!content) continue;
+    for (const m of content.matchAll(re)) {
+      const token = m[0];
+      if (byToken.has(token)) continue;
+      byToken.set(token, { token, field: m[1] ?? '', fallback: m[2] ?? '' });
+    }
+  }
+  return [...byToken.values()];
+}
+
+/** Resolves a single merge field for a recipient. Returns null when the field is unknown or empty. */
+function rawFieldValue(field: string, recipient: MergeRecipient): string | null {
+  switch (field.toLowerCase()) {
+    case 'firstname':
+      return recipient.firstName ?? null;
+    case 'lastname':
+      return recipient.lastName ?? null;
+    case 'name':
+      return [recipient.firstName, recipient.lastName].filter(Boolean).join(' ') || null;
+    case 'email':
+      return recipient.email ?? null;
+    case 'phone':
+      return recipient.phone ?? null;
+    default:
+      return null; // unknown field — resolved via fallback below
+  }
+}
+
+/**
+ * Builds the SendGrid substitution map for one recipient: token -> resolved, HTML-escaped value.
+ * A field with no value uses the token's "|fallback" text (or "" when none). Unknown fields also
+ * fall back, so no raw "{Field}" ever ships to a recipient.
+ */
+export function resolveMergeSubstitutions(tokens: MergeToken[], recipient: MergeRecipient): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of tokens) {
+    const value = rawFieldValue(t.field, recipient);
+    const resolved = value != null && value !== '' ? value : t.fallback;
+    out[t.token] = escapeHtml(resolved);
+  }
+  return out;
 }
 ```
 
@@ -3903,139 +3468,6 @@ export const MAX_STOPS_PER_PLAN = 500;
 export const SHARE_TOKEN_TTL_DAYS = 30;
 /** 2-opt improvement pass iteration cap. */
 export const TWO_OPT_MAX_ITERATIONS = 200;
-```
-
-## File: apps/backend/src/app/lib/sms/phone.ts
-
-```typescript
-/**
- * Phone normalization for SMS sending. `persons.mobile` is free-text; Twilio
- * needs E.164. This is deliberately conservative: it only accepts numbers it
- * can normalize unambiguously and returns null for everything else — a null
- * simply means "SMS isn't offered for this contact", never an error.
- */
-
-const NANP_LENGTH = 10;
-const NANP_WITH_COUNTRY_LENGTH = 11;
-
-/** Normalize a free-text phone number to E.164, or null if it can't be done safely. */
-export function normalizeE164(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-
-  const hasPlus = trimmed.startsWith('+');
-  const digits = trimmed.replace(/\D/g, '');
-
-  if (hasPlus) {
-    // Already international — just validate the digit count (E.164 max 15).
-    if (digits.length < 8 || digits.length > 15) return null;
-    return `+${digits}`;
-  }
-  if (digits.length === NANP_LENGTH) return `+1${digits}`;
-  if (digits.length === NANP_WITH_COUNTRY_LENGTH && digits.startsWith('1')) return `+${digits}`;
-  return null;
-}
-
-/** Mask a phone number for display: keeps the last 4 digits ("(•••) •••-4821"). */
-export function maskPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
-  const last4 = digits.slice(-4);
-  return `(•••) •••-${last4}`;
-}
-
-/** Mask an email for display: first letter + domain ("j•••@gmail.com"). */
-export function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!domain) return '•••';
-  const first = local?.charAt(0) ?? '';
-  return `${first}•••@${domain}`;
-}
-```
-
-## File: apps/backend/src/app/lib/sms/sms.service.ts
-
-```typescript
-import type { Kysely, Transaction } from 'kysely';
-import { env } from '../../../env';
-import { InternalError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-import { BaseRepository } from '../base.repo';
-
-export interface SendSmsOptions {
-  /** E.164 destination — normalize with `normalizeE164()` before calling. */
-  to: string;
-  body: string;
-  tenant_id?: string | null;
-}
-
-/**
- * Transactional SMS via the Twilio REST API. Mirrors TransactionalEmailService:
- * plain HTTP (no SDK), and a dev mock that logs instead of sending when the
- * Twilio credentials are unset — so local dev and tests never need an account.
- *
- * Send through `enqueueSms()` inside the business transaction (transactional
- * outbox) — never call `sendSms()` directly from request handlers.
- */
-export class SmsService {
-  private accountSid = env.twilioAccountSid;
-  private authToken = env.twilioAuthToken;
-  private fromNumber = env.twilioFromNumber;
-
-  public async sendSms(options: SendSmsOptions): Promise<void> {
-    if (!this.accountSid || !this.authToken || !this.fromNumber) {
-      logger.info({ from: this.fromNumber, to: options.to, body: options.body }, '[TWILIO DEV MOCK] SMS Outbound');
-      return;
-    }
-
-    try {
-      const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
-      const form = new URLSearchParams({
-        To: options.to,
-        From: this.fromNumber,
-        Body: options.body,
-      });
-      const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.accountSid)}/Messages.json`,
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            Authorization: `Basic ${auth}`,
-          },
-          body: form.toString(),
-        },
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Twilio API responded with status ${response.status}: ${errorText}`);
-      }
-    } catch (error) {
-      throw new InternalError('Failed to send SMS', undefined, { cause: error });
-    }
-  }
-
-  public async enqueueSms(options: SendSmsOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
-    const dbClient = (trx || BaseRepository.dbInstance) as any;
-    await dbClient
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-sms',
-          to: options.to,
-          body: options.body,
-        }),
-        run_at: new Date(),
-        max_attempts: 5,
-      })
-      .execute();
-  }
-}
 ```
 
 ## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
@@ -6229,6 +5661,10 @@ export interface ResolvedAssignment {
   /** Real CRM account that deployed this Companion — the responsible actor for
    *  synced knocks (§22.7: honest attribution, never a fabricated user). */
   created_by: string;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link. */
+  expires_at: Date | null;
 }
 
 /** A high-entropy, URL-safe Companion token (the bearer credential). */
@@ -6246,7 +5682,7 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     trx?: Transaction<Models>,
   ): Promise<ResolvedAssignment | null> {
     const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id'])
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
       .where('tenant_id', '=', input.tenant_id)
       .where('turf_id', '=', input.turf_id)
       .where('status', '=', 'active')
@@ -6296,7 +5732,7 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     // what resolves the tenant (see the method doc above). Every downstream query
     // is scoped by the resolved tenant_id.
     const row = await this.getSelect(trx)
-      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id'])
+      .select(['id', 'tenant_id', 'turf_id', 'team_id', 'status', 'createdby_id', 'volunteer_person_id', 'expires_at'])
       .where('token', '=', token)
       .where('status', '=', 'active')
       .executeTakeFirst();
@@ -6310,6 +5746,8 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
     team_id: unknown;
     status: unknown;
     createdby_id: unknown;
+    volunteer_person_id?: unknown;
+    expires_at?: unknown;
   }): ResolvedAssignment {
     return {
       id: String(row.id),
@@ -6318,6 +5756,8 @@ export class TurfAssignmentsRepo extends BaseRepository<'turf_assignments'> {
       team_id: row.team_id == null ? null : String(row.team_id),
       status: String(row.status),
       created_by: String(row.createdby_id),
+      volunteer_person_id: row.volunteer_person_id == null ? null : String(row.volunteer_person_id),
+      expires_at: row.expires_at ? new Date(String(row.expires_at)) : null,
     };
   }
 }
@@ -7020,6 +6460,892 @@ export const CanvassingRouter = router({
   getCoverage: authProcedure
     .input(FieldReportRangeObj)
     .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
+});
+```
+
+## File: apps/backend/src/app/modules/companion-access/repositories/companion-sessions.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export interface CompanionSession {
+  id: string;
+  tenant_id: string;
+  volunteer_id: string;
+  expires_at: Date;
+  revoked_at: Date | null;
+}
+
+export class CompanionSessionsRepo extends BaseRepository<'companion_sessions'> {
+  constructor() {
+    super('companion_sessions');
+  }
+
+  public async create(
+    input: { tenant_id: string; volunteer_id: string; token_hash: string; expires_at: Date; user_agent: string | null },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const row = {
+      tenant_id: input.tenant_id,
+      volunteer_id: input.volunteer_id,
+      token_hash: input.token_hash,
+      expires_at: input.expires_at,
+      user_agent: input.user_agent,
+    } as OperationDataType<'companion_sessions', 'insert'>;
+    await this.getInsert(trx).values(row).execute();
+  }
+
+  /**
+   * Resolve a device-session token to its session. Like the assignment/route
+   * token lookups, this is intentionally NOT tenant-scoped: the (hashed) token
+   * IS the credential and is what identifies the tenant. Every downstream check
+   * then re-verifies tenant + volunteer match.
+   */
+  public async findByTokenHash(token_hash: string): Promise<CompanionSession | null> {
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const row = await BaseRepository.dbInstance
+      .selectFrom('companion_sessions')
+      .select(['id', 'tenant_id', 'volunteer_id', 'expires_at', 'revoked_at'])
+      .where('token_hash', '=', token_hash)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      tenant_id: String(row.tenant_id),
+      volunteer_id: String(row.volunteer_id),
+      expires_at: new Date(String(row.expires_at)),
+      revoked_at: row.revoked_at ? new Date(String(row.revoked_at)) : null,
+    };
+  }
+
+  public async touchLastUsed(input: { tenant_id: string; id: string }): Promise<void> {
+    await this.getUpdate()
+      .set({ last_used_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Revoking a volunteer dead-ends every device they ever verified. */
+  public async revokeForVolunteer(
+    input: { tenant_id: string; volunteer_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ revoked_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('volunteer_id', '=', input.volunteer_id)
+      .where('revoked_at', 'is', null)
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companion-access/repositories/companion-volunteers.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { CompanionVolunteerRow } from '../../../../../../../libs/common/src';
+
+export interface CompanionVolunteer {
+  id: string;
+  tenant_id: string;
+  person_id: string;
+  status: string;
+  verify_code_hash: string | null;
+  verify_code_expires_at: Date | null;
+  verify_attempts: number;
+  verify_channel: string | null;
+  verified_at: Date | null;
+}
+
+export class CompanionVolunteersRepo extends BaseRepository<'companion_volunteers'> {
+  constructor() {
+    super('companion_volunteers');
+  }
+
+  public async findByPerson(
+    input: { tenant_id: string; person_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer | null> {
+    const row = await this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .executeTakeFirst();
+    return row ? this.toVolunteer(row) : null;
+  }
+
+  public async findById(
+    input: { tenant_id: string; id: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer | null> {
+    const row = await this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return row ? this.toVolunteer(row) : null;
+  }
+
+  /** Get-or-create the volunteer row for a person (idempotent on the unique key). */
+  public async ensureForPerson(
+    input: { tenant_id: string; person_id: string; created_by: string },
+    trx?: Transaction<Models>,
+  ): Promise<CompanionVolunteer> {
+    const row = {
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+      createdby_id: input.created_by,
+      updatedby_id: input.created_by,
+    } as OperationDataType<'companion_volunteers', 'insert'>;
+    await this.getInsert(trx)
+      .values(row)
+      .onConflict((oc) => oc.columns(['tenant_id', 'person_id']).doNothing())
+      .execute();
+    const found = await this.findByPerson(input, trx);
+    if (!found) throw new Error('companion volunteer row missing after ensure');
+    return found;
+  }
+
+  public async setVerifyCode(
+    input: { tenant_id: string; id: string; code_hash: string; expires_at: Date; channel: 'email' | 'sms' },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        verify_code_hash: input.code_hash,
+        verify_code_expires_at: input.expires_at,
+        verify_attempts: 0,
+        verify_channel: input.channel,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async bumpVerifyAttempts(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set((eb) => ({ verify_attempts: eb('verify_attempts', '+', 1), updated_at: new Date() }))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Invalidate a code (attempt lockout / after use). */
+  public async clearVerifyCode(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set({ verify_code_hash: null, verify_code_expires_at: null, updated_at: new Date() })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /**
+   * Record a successful code confirmation: clear the code and move
+   * invited → verified. An already-approved volunteer stays approved.
+   */
+  public async markVerified(input: { tenant_id: string; id: string }, trx?: Transaction<Models>): Promise<void> {
+    await this.getUpdate(trx)
+      .set((eb) => ({
+        verify_code_hash: null,
+        verify_code_expires_at: null,
+        verified_at: new Date(),
+        status: eb
+          .case()
+          .when('status', '=', 'invited')
+          .then('verified')
+          .else(eb.ref('status'))
+          .end()
+          .$castTo<string>(),
+        updated_at: new Date(),
+      }))
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async approve(
+    input: { tenant_id: string; id: string; admin_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        status: 'approved',
+        approved_by: input.admin_id,
+        approved_at: new Date(),
+        revoked_at: null,
+        updatedby_id: input.admin_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  public async revoke(
+    input: { tenant_id: string; id: string; admin_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    await this.getUpdate(trx)
+      .set({
+        status: 'revoked',
+        revoked_at: new Date(),
+        updatedby_id: input.admin_id,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .execute();
+  }
+
+  /** Admin page rows: volunteers joined with their person + approver. */
+  public async getAllWithPerson(tenant_id: string): Promise<CompanionVolunteerRow[]> {
+    const rows = await this.getSelect()
+      .innerJoin('persons', (join) =>
+        join
+          .onRef('persons.id', '=', 'companion_volunteers.person_id')
+          .onRef('persons.tenant_id', '=', 'companion_volunteers.tenant_id'),
+      )
+      .leftJoin('authusers', (join) =>
+        join
+          .onRef('authusers.id', '=', 'companion_volunteers.approved_by')
+          .onRef('authusers.tenant_id', '=', 'companion_volunteers.tenant_id'),
+      )
+      .select([
+        'companion_volunteers.id',
+        'companion_volunteers.person_id',
+        'companion_volunteers.status',
+        'companion_volunteers.verify_channel',
+        'companion_volunteers.verified_at',
+        'companion_volunteers.approved_at',
+        'companion_volunteers.created_at',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'authusers.first_name as approver_first_name',
+        'authusers.last_name as approver_last_name',
+      ])
+      .where('companion_volunteers.tenant_id', '=', tenant_id)
+      .orderBy('companion_volunteers.created_at', 'desc')
+      .execute();
+
+    return rows.map((r) => ({
+      id: String(r.id),
+      person_id: String(r.person_id),
+      first_name: r.first_name,
+      last_name: r.last_name,
+      email: r.email,
+      mobile: r.mobile,
+      status: String(r.status) as CompanionVolunteerRow['status'],
+      verify_channel: (r.verify_channel ?? null) as CompanionVolunteerRow['verify_channel'],
+      verified_at: r.verified_at ? new Date(String(r.verified_at)).toISOString() : null,
+      approved_at: r.approved_at ? new Date(String(r.approved_at)).toISOString() : null,
+      approved_by_name: r.approver_first_name ? `${r.approver_first_name} ${r.approver_last_name ?? ''}`.trim() : null,
+      created_at: new Date(String(r.created_at)).toISOString(),
+    }));
+  }
+
+  /** Volunteers awaiting admin approval (the sidebar badge count). */
+  public async pendingCount(tenant_id: string): Promise<number> {
+    const row = await this.getSelect()
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'verified')
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
+  private toVolunteer(row: Record<string, unknown>): CompanionVolunteer {
+    return {
+      id: String(row['id']),
+      tenant_id: String(row['tenant_id']),
+      person_id: String(row['person_id']),
+      status: String(row['status']),
+      verify_code_hash: row['verify_code_hash'] == null ? null : String(row['verify_code_hash']),
+      verify_code_expires_at: row['verify_code_expires_at'] ? new Date(String(row['verify_code_expires_at'])) : null,
+      verify_attempts: Number(row['verify_attempts'] ?? 0),
+      verify_channel: row['verify_channel'] == null ? null : String(row['verify_channel']),
+      verified_at: row['verified_at'] ? new Date(String(row['verified_at'])) : null,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companion-access/routes/companion-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
+
+import {
+  CompanionAccessQueryObj,
+  CompanionVerifyConfirmObj,
+  CompanionVerifyStartObj,
+} from '../../../../../../../libs/common/src';
+import { CompanionAccessController } from '../controller';
+
+/**
+ * Public companion access API (COMPANION-APPS-PLAN.md §4 A2) — the verify +
+ * approve gate in front of both volunteer companions. No account: the
+ * capability token names the assignment, and these endpoints establish WHO is
+ * holding it. The device session they mint is carried on data requests via the
+ * X-Companion-Session header.
+ */
+
+const controller = new CompanionAccessController();
+
+// Per-IP fixed-window rate limit (same shape as deliveries-public.route.ts).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 60;
+const hits = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = hits.get(ip);
+  if (!entry || entry.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_MAX;
+}
+
+function statusOf(err: unknown): number {
+  if (err && typeof err === 'object' && 'statusCode' in err) {
+    const code = (err as { statusCode?: unknown }).statusCode;
+    if (typeof code === 'number') return code;
+  }
+  return 500;
+}
+
+function messageOf(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
+function sessionTokenOf(req: FastifyRequest): string | null {
+  const header = req.headers['x-companion-session'];
+  if (typeof header === 'string' && header.trim()) return header.trim();
+  return null;
+}
+
+const companionPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // What should the gate render for this link (+ optional device session)?
+  fastify.get('/access', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionAccessQueryObj.safeParse(req.query);
+    if (!parsed.success) return reply.status(200).send({ state: 'dead' });
+    try {
+      const payload = await controller.getAccess(parsed.data.kind, parsed.data.token, sessionTokenOf(req));
+      return reply.status(200).send(payload);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to resolve companion access');
+      // Uniform dead state — never leak why a link failed.
+      return reply.status(200).send({ state: 'dead' });
+    }
+  });
+
+  // Send a one-time code to the volunteer's email or SMS on file.
+  fastify.post('/verify/start', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionVerifyStartObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid request.' });
+    try {
+      const result = await controller.verifyStart(parsed.data.kind, parsed.data.token, parsed.data.channel);
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to start companion verification');
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to send a code right now.') });
+    }
+  });
+
+  // Confirm the code; mint the device session.
+  fastify.post('/verify/confirm', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (rateLimited(req.ip)) return reply.status(429).send({ error: 'Too many requests. Please slow down.' });
+    const parsed = CompanionVerifyConfirmObj.safeParse(req.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Enter the 6-digit code.' });
+    try {
+      const result = await controller.verifyConfirm(
+        parsed.data.kind,
+        parsed.data.token,
+        parsed.data.code,
+        typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+      );
+      return reply.status(200).send(result);
+    } catch (err: unknown) {
+      fastify.log.error(err, 'Failed to confirm companion verification');
+      return reply.status(statusOf(err)).send({ error: messageOf(err, 'Unable to verify that code.') });
+    }
+  });
+
+  done();
+};
+
+export default companionPublicRoute;
+```
+
+## File: apps/backend/src/app/modules/companion-access/controller.ts
+
+```typescript
+import { randomInt } from 'node:crypto';
+
+import type { Transaction } from 'kysely';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type {
+  CompanionAccessPayload,
+  CompanionContact,
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+  IAuthKeyPayload,
+} from '../../../../../../libs/common/src';
+import { BadRequestError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { SmsService } from '../../lib/sms/sms.service';
+import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { env } from '../../../env';
+import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
+import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
+import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
+import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
+
+const CODE_TTL_MS = 10 * 60 * 1000;
+const CODE_MAX_ATTEMPTS = 5;
+const SESSION_TTL_DAYS = 30;
+const VERIFY_START_LIMIT = 3; // sends per token per window
+const VERIFY_START_WINDOW_MS = 15 * 60 * 1000;
+const VERIFY_CONFIRM_LIMIT = 15; // confirms per token per window (attempt lockout is per code)
+const VERIFY_CONFIRM_WINDOW_MS = 15 * 60 * 1000;
+
+/** What a capability link resolves to, whichever app it belongs to. */
+interface ResolvedLink {
+  tenant_id: string;
+  /** Person the link was assigned to; null = staff never attached one. */
+  volunteer_person_id: string | null;
+  /** The staff account behind the link — actor for activity attribution. */
+  organizer_id: string;
+}
+
+interface PersonContacts {
+  first_name: string | null;
+  email: string | null;
+  /** E.164, already normalized — null when the mobile on file can't be normalized. */
+  sms: string | null;
+}
+
+/**
+ * The companion access layer (COMPANION-APPS-PLAN.md §2). The capability token
+ * says WHAT may be touched (one turf / one route); the companion session says
+ * WHO is touching it. Both are required on every companion data request —
+ * `requireSession()` is the guard the canvass/deliveries public controllers
+ * call. Nothing here ever reveals whether a contact exists beyond masked
+ * values for the link's own volunteer.
+ */
+export class CompanionAccessController {
+  private activityRepo = new UserActivityRepo();
+  private mailService = new TransactionalEmailService();
+  private routesRepo = new DeliveryRoutesRepo();
+  private sessionsRepo = new CompanionSessionsRepo();
+  private smsService = new SmsService();
+  private turfAssignmentsRepo = new TurfAssignmentsRepo();
+  private volunteersRepo = new CompanionVolunteersRepo();
+
+  /** GET /api/companion/access — tell the gate UI what to render. */
+  public async getAccess(
+    kind: CompanionLinkKind,
+    token: string,
+    sessionToken: string | null,
+  ): Promise<CompanionAccessPayload> {
+    const link = await this.resolveLink(kind, token);
+    if (!link) return { state: 'dead' };
+
+    const organizationName = await this.organizationName(link.tenant_id);
+    const organizerName = await this.organizerFirstName(link.tenant_id, link.organizer_id);
+    if (!link.volunteer_person_id) return { state: 'unassigned', organizerName, organizationName };
+
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) return { state: 'unassigned', organizerName, organizationName };
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (volunteer?.status === 'revoked') return { state: 'dead' };
+
+    const base = {
+      volunteerName: person.first_name ?? undefined,
+      organizerName,
+      organizationName,
+    };
+
+    const session = await this.findUsableSession(sessionToken, link.tenant_id, volunteer);
+    if (session) {
+      return volunteer?.status === 'approved' ? { state: 'ready', ...base } : { state: 'pending_approval', ...base };
+    }
+
+    return { state: 'need_verification', ...base, contacts: this.contactsOf(person) };
+  }
+
+  /** POST /api/companion/verify/start — send a one-time code to a contact on file. */
+  public async verifyStart(
+    kind: CompanionLinkKind,
+    token: string,
+    channel: CompanionVerifyChannel,
+  ): Promise<{ masked: string }> {
+    checkRateLimit(`companion-verify-start:${token}`, VERIFY_START_LIMIT, VERIFY_START_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+    const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
+    if (!person) throw new NotFoundError('This link is not active.');
+
+    const destination = channel === 'email' ? person.email : person.sms;
+    if (!destination) throw new BadRequestError('That contact method is not on file for this link.');
+
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const orgName = await this.organizationName(link.tenant_id);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      const volunteer = await this.volunteersRepo.ensureForPerson(
+        { tenant_id: link.tenant_id, person_id: String(link.volunteer_person_id), created_by: link.organizer_id },
+        trx,
+      );
+      if (volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+      await this.volunteersRepo.setVerifyCode(
+        {
+          tenant_id: link.tenant_id,
+          id: volunteer.id,
+          code_hash: hashToken(code),
+          expires_at: new Date(Date.now() + CODE_TTL_MS),
+          channel,
+        },
+        trx,
+      );
+      if (channel === 'email') {
+        await this.mailService.enqueueMail(
+          {
+            to: destination,
+            subject: `Your ${orgName} verification code`,
+            text: `Your verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+            html: `<h2>Verify it's you</h2><p>Enter this code on the volunteer page to continue. It expires in 10 minutes.</p><div class="otp-container"><span class="otp-code">${code}</span></div><p class="warning">If you didn't request this code, you can ignore this message.</p>`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      } else {
+        await this.smsService.enqueueSms(
+          {
+            to: destination,
+            body: `${orgName} code: ${code} — expires in 10 minutes.`,
+            tenant_id: link.tenant_id,
+          },
+          trx,
+        );
+      }
+    });
+
+    return { masked: channel === 'email' ? maskEmail(destination) : maskPhone(destination) };
+  }
+
+  /** POST /api/companion/verify/confirm — check the code, mint a device session. */
+  public async verifyConfirm(
+    kind: CompanionLinkKind,
+    token: string,
+    code: string,
+    userAgent: string | null,
+  ): Promise<CompanionVerifyConfirmResult> {
+    checkRateLimit(`companion-verify-confirm:${token}`, VERIFY_CONFIRM_LIMIT, VERIFY_CONFIRM_WINDOW_MS);
+
+    const link = await this.resolveLink(kind, token);
+    if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+
+    const volunteer = await this.volunteersRepo.findByPerson({
+      tenant_id: link.tenant_id,
+      person_id: link.volunteer_person_id,
+    });
+    if (!volunteer || volunteer.status === 'revoked') throw new NotFoundError('This link is not active.');
+    if (!volunteer.verify_code_hash || !volunteer.verify_code_expires_at) {
+      throw new BadRequestError('Request a new code first.');
+    }
+    if (volunteer.verify_code_expires_at < new Date()) {
+      throw new BadRequestError('That code has expired — request a new one.');
+    }
+    if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
+      await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError('Too many attempts — request a new code.');
+    }
+    if (hashToken(code) !== volunteer.verify_code_hash) {
+      await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
+      throw new BadRequestError("That code didn't match. Check it and try again.");
+    }
+
+    const wasApproved = volunteer.status === 'approved';
+    const sessionToken = generateToken();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.markVerified({ tenant_id: link.tenant_id, id: volunteer.id }, trx);
+      await this.sessionsRepo.create(
+        {
+          tenant_id: link.tenant_id,
+          volunteer_id: volunteer.id,
+          token_hash: hashToken(sessionToken),
+          expires_at: expiresAt,
+          user_agent: userAgent,
+        },
+        trx,
+      );
+      if (!wasApproved) {
+        await this.notifyAdminsOfPendingVolunteer(link, trx);
+      }
+      await this.activityRepo.log(
+        {
+          tenant_id: link.tenant_id,
+          user_id: link.organizer_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: volunteer.id,
+          metadata: {
+            action: 'volunteer_verified',
+            message: wasApproved
+              ? 'Volunteer verified a new device via companion link'
+              : 'Volunteer verified their contact and is waiting for approval',
+            via: 'companion link',
+          },
+        },
+        trx,
+      );
+    });
+
+    return {
+      status: wasApproved ? 'ready' : 'pending_approval',
+      sessionToken,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  /**
+   * The guard every companion data endpoint calls: validates the device
+   * session, that it belongs to the link's volunteer, and that the volunteer
+   * is approved. Throws UnauthorizedError (no/invalid session — the gate
+   * re-verifies) or ForbiddenError (valid session, not approved).
+   */
+  public async requireSession(
+    sessionToken: string | null | undefined,
+    link: { tenant_id: string; volunteer_person_id: string | null },
+  ): Promise<void> {
+    if (!link.volunteer_person_id) throw new UnauthorizedError('This link needs to be re-sent by your organizer.');
+    if (!sessionToken) throw new UnauthorizedError('Verification required.');
+
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== link.tenant_id) throw new UnauthorizedError('Verification required.');
+    if (session.revoked_at || session.expires_at < new Date()) throw new UnauthorizedError('Verification required.');
+
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: link.tenant_id, id: session.volunteer_id });
+    if (!volunteer || volunteer.person_id !== link.volunteer_person_id) {
+      throw new UnauthorizedError('Verification required.');
+    }
+    if (volunteer.status !== 'approved') throw new ForbiddenError('Waiting for organizer approval.');
+
+    await this.sessionsRepo.touchLastUsed({ tenant_id: link.tenant_id, id: session.id });
+  }
+
+  // ---------------------------------------------------------------- admin API
+
+  public async getAllVolunteers(tenant_id: string): Promise<CompanionVolunteerRow[]> {
+    return this.volunteersRepo.getAllWithPerson(tenant_id);
+  }
+
+  public async pendingCount(tenant_id: string): Promise<number> {
+    return this.volunteersRepo.pendingCount(tenant_id);
+  }
+
+  public async approveVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.approve({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_approved', message: 'Approved companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  public async revokeVolunteer(auth: IAuthKeyPayload, id: string): Promise<void> {
+    const volunteer = await this.volunteersRepo.findById({ tenant_id: auth.tenant_id, id });
+    if (!volunteer) throw new NotFoundError('Volunteer not found.');
+    await this.volunteersRepo.transaction().execute(async (trx) => {
+      await this.volunteersRepo.revoke({ tenant_id: auth.tenant_id, id, admin_id: auth.user_id }, trx);
+      await this.sessionsRepo.revokeForVolunteer({ tenant_id: auth.tenant_id, volunteer_id: id }, trx);
+      await this.activityRepo.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'update',
+          entity: 'companion_volunteers',
+          entity_id: id,
+          metadata: { action: 'volunteer_revoked', message: 'Revoked companion app access' },
+        },
+        trx,
+      );
+    });
+  }
+
+  // ------------------------------------------------------------------ helpers
+
+  /** Resolve either kind of capability token to its tenant + volunteer. */
+  public async resolveLink(kind: CompanionLinkKind, token: string): Promise<ResolvedLink | null> {
+    if (kind === 'turf') {
+      const assignment = await this.turfAssignmentsRepo.resolveByToken(token);
+      if (!assignment) return null;
+      if (assignment.expires_at && assignment.expires_at < new Date()) return null;
+      return {
+        tenant_id: assignment.tenant_id,
+        volunteer_person_id: assignment.volunteer_person_id,
+        organizer_id: assignment.created_by,
+      };
+    }
+
+    // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
+    // dead-link semantics: canceled, missing expiry, or past expiry all fail).
+    const route = await this.routesRepo.findByTokenHash(hashToken(token));
+    if (!route) return null;
+    if (String(route.status) === 'canceled') return null;
+    const exp = route.share_token_expires_at;
+    if (!exp || new Date(String(exp)) <= new Date()) return null;
+    return {
+      tenant_id: String(route.tenant_id),
+      volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),
+      organizer_id: String(route.createdby_id),
+    };
+  }
+
+  private contactsOf(person: PersonContacts): CompanionContact[] {
+    const contacts: CompanionContact[] = [];
+    if (person.email) contacts.push({ channel: 'email', masked: maskEmail(person.email) });
+    if (person.sms) contacts.push({ channel: 'sms', masked: maskPhone(person.sms) });
+    return contacts;
+  }
+
+  private async findUsableSession(
+    sessionToken: string | null,
+    tenant_id: string,
+    volunteer: CompanionVolunteer | null,
+  ): Promise<boolean> {
+    if (!sessionToken || !volunteer) return false;
+    const session = await this.sessionsRepo.findByTokenHash(hashToken(sessionToken));
+    if (!session || session.tenant_id !== tenant_id) return false;
+    if (session.volunteer_id !== volunteer.id) return false;
+    if (session.revoked_at || session.expires_at < new Date()) return false;
+    return true;
+  }
+
+  private async notifyAdminsOfPendingVolunteer(link: ResolvedLink, trx: Transaction<Models>): Promise<void> {
+    const person = await this.personContacts(link.tenant_id, String(link.volunteer_person_id));
+    const volunteerName = person?.first_name ?? 'A volunteer';
+    const admins = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', link.tenant_id)
+      .where('role', 'in', ['admin', 'owner'])
+      .where('deactivated_at', 'is', null)
+      .execute();
+    const approveUrl = `${env.appUrl}/console/volunteer-access`;
+    for (const admin of admins) {
+      await this.mailService.enqueueMail(
+        {
+          to: admin.email,
+          subject: `${volunteerName} is waiting for companion app approval`,
+          text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
+          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
+          tenant_id: link.tenant_id,
+        },
+        trx,
+      );
+    }
+  }
+
+  private async organizationName(tenant_id: string): Promise<string> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant_id)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
+    return 'PeopleCRM';
+  }
+
+  private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('authusers')
+      .select('first_name')
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', user_id)
+      .executeTakeFirst();
+    return row?.first_name ?? undefined;
+  }
+
+  private async personContacts(tenant_id: string, person_id: string): Promise<PersonContacts | null> {
+    const row = await this.volunteersRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'email', 'mobile'])
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', person_id)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      first_name: row.first_name,
+      email: row.email,
+      sms: normalizeE164(row.mobile),
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companion-access/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema } from '../../../../../../libs/common/src';
+import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
+import { CompanionAccessController } from './controller';
+
+const controller = new CompanionAccessController();
+
+/** Staff surface for the companion access layer: the Volunteer access page. */
+export const CompanionAccessRouter = router({
+  getAll: authProcedure.query(({ ctx }) => controller.getAllVolunteers(ctx.auth.tenant_id)),
+  pendingCount: authProcedure.query(({ ctx }) => controller.pendingCount(ctx.auth.tenant_id)),
+  approve: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.approveVolunteer(ctx.auth, input.id)),
+  revoke: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.revokeVolunteer(ctx.auth, input.id)),
 });
 ```
 
@@ -17244,6 +17570,7 @@ import donationsWebhookRoute from './modules/donations/routes/donations-webhook.
 import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
 import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
 
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
@@ -17262,6 +17589,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register public volunteer delivery-route pages (token is the credential, §14)
   fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
@@ -17446,170 +17776,6 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
 
   return { req, res, auth: payload };
 }
-```
-
-## File: apps/backend/src/env.ts
-
-```typescript
-import { z } from 'zod';
-
-const envSchema = z.object({
-  HOST: z.string().default('localhost'),
-  PORT: z.coerce.number().default(3000),
-  DB_USER: z.string().min(1, 'DB_USER is required'),
-  DB_NAME: z.string().min(1, 'DB_NAME is required'),
-  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
-  DB_PORT: z.coerce.number().default(5432),
-  DB_HOST: z.string().default('localhost'),
-  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
-  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
-  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
-  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
-  // a single-role setup keeps working unchanged.
-  DB_MIGRATION_USER: z.string().optional(),
-  DB_MIGRATION_PASSWORD: z.string().optional(),
-  // Whether the serve process runs pending migrations at boot. Convenient in dev
-  // (default true); set to false in production, where migrations are a separate
-  // deploy step run as the owner role and the runtime role has no DDL rights.
-  MIGRATE_ON_BOOT: z
-    .string()
-    .optional()
-    .default('true')
-    .transform((val) => val !== 'false'),
-  DB_SSL: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  API_URL: z.string().url().default('http://localhost:3000'),
-  APP_URL: z.string().url().default('http://localhost:4200'),
-  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
-  MS_CLIENT_ID: z.string().optional(),
-  MS_CLIENT_SECRET: z.string().optional(),
-  MS_TENANT_ID: z.string().optional().default('common'),
-  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
-  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
-  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
-  // Twilio SMS (companion verification codes). All optional — the SMS service
-  // logs a dev mock instead of sending when these are unset.
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
-  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
-  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
-  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
-  // Dev default is 'localhost' so `<slug>.localhost` works.
-  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
-  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
-  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
-  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
-  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
-  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
-  TRUST_PROXY: z.string().optional().default('false'),
-  // How many background jobs the worker may process concurrently. One slow job (a large sync or
-  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
-  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
-  // this comfortably below the Postgres pool size. Default 4.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
-  // Max connections in the shared pg pool. The API server, the job worker (up to
-  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
-  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
-  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
-  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
-  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
-  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
-  ALLOW_MOCK_PAYMENTS: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
-  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
-  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
-  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
-  // MUST be set in any environment that connects real mailboxes. Rotating it
-  // invalidates existing encrypted tokens (users just re-consent).
-  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
-});
-
-/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
-function parseTrustProxy(raw: string): boolean | number | string {
-  const value = raw.trim();
-  if (value === '' || value.toLowerCase() === 'false') return false;
-  if (value.toLowerCase() === 'true') return true;
-  if (/^\d+$/.test(value)) return Number(value);
-  return value;
-}
-
-const parsedEnv = envSchema.parse(process.env);
-
-export const env = {
-  host: parsedEnv.HOST,
-  port: parsedEnv.PORT,
-  db: {
-    user: parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  // Same target database, but connecting as the owner role for DDL/migrations.
-  // Falls back to the runtime credentials when the migration role is unset.
-  migrationDb: {
-    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
-  apiUrl: parsedEnv.API_URL,
-  appUrl: parsedEnv.APP_URL,
-  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
-  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
-  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
-  dbPoolMax: parsedEnv.DB_POOL_MAX,
-  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
-  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
-  sharedSecret: parsedEnv.SHARED_SECRET,
-  msClientId: parsedEnv.MS_CLIENT_ID,
-  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
-  msTenantId: parsedEnv.MS_TENANT_ID,
-  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
-  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
-  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
-  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
-  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
-  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
-  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
-  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
-  stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
-  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
-  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
-  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
-  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
-  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
-  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
-  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
-  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
-};
 ```
 
 ## File: apps/backend/src/fastify.server.ts
@@ -28926,6 +29092,922 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
 }
 ```
 
+## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+
+```typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../../env';
+import { logger } from '../../../logger';
+import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
+import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
+import { UserActivityRepo } from '../../user-activity.repo';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+import { FilesRepo } from '../../../modules/files/repositories/files.repo';
+import { StorageService } from '../../storage.service';
+import { getPlanLimits } from '../../../modules/billing/usage-limits';
+
+const NEWSLETTER_BATCH_SIZE = 500;
+const BATCH_DELAY_MS = 1000;
+
+export async function handleSendNewsletter(
+  payload: JobPayloadOf<'send-newsletter'>,
+  db: Kysely<Models>,
+  jobId?: string,
+): Promise<void> {
+  const newsletterMailSvc = new NewsletterEmailService();
+  const { tenantId, newsletterId, userId } = payload;
+
+  // 1. Fetch newsletter to get settings, targets, segments, and content
+  const newsletter = await db
+    .selectFrom('newsletters')
+    .selectAll()
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .executeTakeFirst();
+
+  if (!newsletter) {
+    logger.warn(`Newsletter ${newsletterId} not found.`);
+    return;
+  }
+
+  // 2. Build the recipient query using NewslettersController
+  const { NewslettersController } = await import('../../../modules/newsletters/controller');
+  const controller = new NewslettersController();
+  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
+
+  // 3. Count total recipients
+  let offset = payload.offset ?? 0;
+  let deliveredCount = payload.deliveredCount ?? 0;
+
+  const countResult = await baseQuery
+    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
+    .executeTakeFirst();
+  const totalRecipients = Number(countResult?.count || 0);
+
+  if (offset === 0) {
+    await db
+      .updateTable('newsletters')
+      .set({
+        status: 'sending',
+        total_recipients: totalRecipients,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .execute();
+  }
+
+  // Load communications/settings from database
+  const settingsRows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [
+      'communications.sendgrid_api_key',
+      'communications.sendgrid_subuser_username',
+      'communications.default_from_name',
+      'communications.default_from_email',
+      'communications.reply_to',
+      'communications.footer_disclaimer',
+      'communications.verified_emails',
+      'organization.address',
+    ])
+    .execute();
+
+  const settingsMap: Record<string, string> = {};
+  let verifiedEmails: string[] = [];
+  for (const row of settingsRows) {
+    if (typeof row.value === 'string') {
+      settingsMap[row.key] = row.value;
+    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
+    }
+  }
+
+  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  const footer = buildNewsletterFooter(
+    settingsMap['organization.address'],
+    settingsMap['communications.footer_disclaimer'],
+  );
+
+  // Render the stored editor HTML into email-ready HTML once (block-JSON stripped, relative image
+  // URLs made absolute against APP_URL, preview text injected as a hidden preheader). Merge tokens
+  // are left in the content and resolved per-recipient via SendGrid substitutions below.
+  const renderedHtml = renderNewsletterHtml(newsletter.html_content || '', {
+    baseUrl: env.appUrl,
+    previewText: newsletter.preview_text,
+  });
+  const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
+  const finalHtml = renderedHtml + footer.html;
+  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
+
+  const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
+
+  while (offset < totalRecipients) {
+    // Query a chunk of recipients dynamically using LIMIT and OFFSET.
+    // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
+    // while still carrying the person fields the merge tokens need.
+    const chunkRows = await baseQuery
+      .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
+      .distinctOn('persons.email')
+      .orderBy('persons.email', 'asc')
+      .limit(NEWSLETTER_BATCH_SIZE)
+      .offset(offset)
+      .execute();
+
+    const seen = new Set<string>();
+    const recipients: NewsletterRecipient[] = [];
+    for (const r of chunkRows) {
+      const email = r.email?.trim();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      recipients.push({
+        email,
+        substitutions: mergeTokens.length
+          ? resolveMergeSubstitutions(mergeTokens, {
+              email,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              phone: r.mobile || r.home_phone,
+            })
+          : undefined,
+      });
+    }
+
+    if (recipients.length === 0) {
+      break;
+    }
+
+    const batchDelivered = await newsletterMailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients,
+      subject: newsletter.subject || 'Newsletter',
+      html: finalHtml,
+      text: finalText,
+      sendgridApiKey,
+      subuserUsername,
+      newsletterId,
+      tenantId,
+      attachments,
+    });
+
+    deliveredCount += batchDelivered;
+    offset += chunkRows.length;
+
+    // Update progress in the background job payload (no recipients array!)
+    if (jobId) {
+      await db
+        .updateTable('background_jobs')
+        .set({
+          payload: JSON.stringify({
+            type: 'send-newsletter',
+            newsletterId,
+            tenantId,
+            userId,
+            offset,
+            deliveredCount,
+          }),
+          updated_at: new Date(),
+        })
+        .where('id', '=', jobId)
+        .execute();
+    }
+
+    // Add a small delay between batches to respect rate limits
+    if (offset < totalRecipients) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    }
+  }
+
+  // Update newsletter status to 'sent'
+  await db
+    .updateTable('newsletters')
+    .set({
+      status: 'sent',
+      delivered_count: deliveredCount,
+      send_date: new Date(),
+      updatedby_id: userId,
+      updated_at: new Date(),
+    })
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .execute();
+
+  // Log user activity
+  const userActivity = new UserActivityRepo();
+  await userActivity.log({
+    tenant_id: tenantId,
+    user_id: userId,
+    activity: 'send',
+    entity: 'newsletters',
+    entity_id: newsletterId,
+    quantity: totalRecipients,
+    metadata: { recipientsCount: totalRecipients, deliveredCount },
+  });
+
+  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
+  await queueUsageLimitCheck(tenantId, db);
+}
+
+export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  await pruneNewsletterEvents(db);
+  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
+}
+
+// Event types that warrant keeping a per-newsletter engagement record.
+// Delivery-only events (delivered, deferred, processed) are not stored.
+const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
+
+async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  const tenants: { id: string; subscription_plan: string | null }[] = await db
+    .selectFrom('tenants')
+    .select(['id', 'subscription_plan'])
+    .execute();
+
+  for (const tenant of tenants) {
+    try {
+      const plan = tenant.subscription_plan ?? 'free';
+      const retentionDays =
+        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
+
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const tenantId = String(tenant.id);
+
+      // Fetch events older than the retention window that are engagement events.
+      const expiringEvents: {
+        newsletter_id: string;
+        email: string;
+        event_type: string;
+        timestamp: Date;
+      }[] = await db
+        .selectFrom('newsletter_events')
+        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', cutoff)
+        .execute();
+
+      // Group by (newsletter_id, email) to produce one upsert per recipient.
+      const grouped = new Map<
+        string,
+        {
+          newsletter_id: string;
+          email: string;
+          open_count: number;
+          click_count: number;
+          has_unsubscribed: boolean;
+          hard_bounced: boolean;
+          soft_bounced: boolean;
+          first_opened_at: Date | null;
+          last_opened_at: Date | null;
+          first_clicked_at: Date | null;
+          last_clicked_at: Date | null;
+          bounced_at: Date | null;
+          unsubscribed_at: Date | null;
+        }
+      >();
+
+      for (const ev of expiringEvents) {
+        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
+
+        const key = `${ev.newsletter_id}::${ev.email}`;
+        let agg = grouped.get(key);
+        if (!agg) {
+          agg = {
+            newsletter_id: ev.newsletter_id,
+            email: ev.email,
+            open_count: 0,
+            click_count: 0,
+            has_unsubscribed: false,
+            hard_bounced: false,
+            soft_bounced: false,
+            first_opened_at: null,
+            last_opened_at: null,
+            first_clicked_at: null,
+            last_clicked_at: null,
+            bounced_at: null,
+            unsubscribed_at: null,
+          };
+          grouped.set(key, agg);
+        }
+        const ts = new Date(ev.timestamp);
+
+        if (ev.event_type === 'open') {
+          agg.open_count++;
+          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
+          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
+        } else if (ev.event_type === 'click') {
+          agg.click_count++;
+          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
+          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
+        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        } else if (ev.event_type === 'bounce') {
+          // SendGrid bounce events don't carry a sub-type in this table;
+          // treat all as hard bounce (the webhook handler can refine this).
+          agg.hard_bounced = true;
+          if (!agg.bounced_at) agg.bounced_at = ts;
+        } else if (ev.event_type === 'spamreport') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        }
+      }
+
+      // Upsert aggregated rows, then delete the raw events.
+      if (grouped.size > 0) {
+        await db.transaction().execute(async (trx) => {
+          for (const row of grouped.values()) {
+            await trx
+              .insertInto('person_newsletter_engagements')
+              .values({
+                tenant_id: tenantId,
+                newsletter_id: row.newsletter_id,
+                email: row.email,
+                open_count: row.open_count,
+                click_count: row.click_count,
+                has_unsubscribed: row.has_unsubscribed,
+                hard_bounced: row.hard_bounced,
+                soft_bounced: row.soft_bounced,
+                first_opened_at: row.first_opened_at,
+                last_opened_at: row.last_opened_at,
+                first_clicked_at: row.first_clicked_at,
+                last_clicked_at: row.last_clicked_at,
+                bounced_at: row.bounced_at,
+                unsubscribed_at: row.unsubscribed_at,
+              })
+              .onConflict((oc) =>
+                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
+                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
+                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
+                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
+                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
+                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
+                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
+                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
+                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
+                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
+                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
+                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
+                })),
+              )
+              .execute();
+          }
+
+          await trx
+            .deleteFrom('newsletter_events')
+            .where('tenant_id', '=', tenantId)
+            .where('created_at', '<', cutoff)
+            .execute();
+        });
+      } else {
+        // No engagement events to aggregate — still prune non-engagement events.
+        await db
+          .deleteFrom('newsletter_events')
+          .where('tenant_id', '=', tenantId)
+          .where('created_at', '<', cutoff)
+          .execute();
+      }
+    } catch (err) {
+      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
+    }
+  }
+}
+
+/**
+ * Fetches files attached to this newsletter (entity_type = 'newsletter') and downloads them as
+ * base64 email attachments. If the tenant is at or over its storage quota, attachments are skipped
+ * (the newsletter still sends, just without them) — mirrors the Storage settings quota warning.
+ */
+export async function buildNewsletterAttachments(
+  db: Kysely<Models>,
+  tenantId: string,
+  newsletterId: string,
+): Promise<NewsletterAttachment[] | undefined> {
+  const filesRepo = new FilesRepo();
+  const { rows } = await filesRepo.getAllWithCounts({
+    tenant_id: tenantId,
+    options: { entityType: 'newsletter', entityId: newsletterId },
+  });
+  if (rows.length === 0) return undefined;
+
+  const tenant = await db
+    .selectFrom('tenants')
+    .select('subscription_plan')
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  const quotaBytes = getPlanLimits(tenant?.subscription_plan).storageBytes;
+  const usedBytes = await filesRepo.getTotalBytes(tenantId);
+  if (usedBytes >= quotaBytes) {
+    logger.warn(
+      `Newsletter ${newsletterId} for tenant ${tenantId} is at/over its storage quota — sending without attachments.`,
+    );
+    return undefined;
+  }
+
+  const storageService = new StorageService();
+  const attachments: NewsletterAttachment[] = [];
+  for (const file of rows as { filename: string; storage_key: string; mime_type: string | null }[]) {
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      attachments.push({
+        content: buffer.toString('base64'),
+        filename: file.filename,
+        type: file.mime_type || undefined,
+      });
+    } catch (err) {
+      logger.error({ err }, `Failed to download newsletter attachment ${file.storage_key}`);
+    }
+  }
+  return attachments.length > 0 ? attachments : undefined;
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { notificationEnabled } from '../../profile-preferences';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { SmsService } from '../../sms/sms.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+const smsService = new SmsService();
+
+export async function handleSendFormNotifications(
+  payload: JobPayloadOf<'send-form-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const event = await db
+    .selectFrom('volunteer_events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_signup_confirmation',
+      'send_volunteer_alert',
+    ])
+    .where('id', '=', payload.eventId)
+    .executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (event.send_signup_confirmation !== false) {
+    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
+
+    const coordEmailHtml = event.contact_email
+      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+      : '';
+    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
+
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Volunteer Signup Confirmation: ${event.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+  if (event.send_volunteer_alert !== false) {
+    let alertRecipient = event.contact_email || null;
+
+    if (!alertRecipient) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select('email')
+        .where('tenant_id', '=', payload.tenantId)
+        .limit(1)
+        .executeTakeFirst();
+      if (admin && admin.email) {
+        alertRecipient = admin.email;
+      }
+    }
+
+    if (alertRecipient) {
+      await mailService.sendMail({
+        to: alertRecipient,
+        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendShiftReminder(
+  payload: JobPayloadOf<'send-shift-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const shift = await db
+    .selectFrom('volunteer_shifts')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.shiftId)
+    .executeTakeFirst();
+
+  if (!shift) {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+    return;
+  }
+
+  // Covers cancelled and no-show shifts as well.
+  if (shift.status !== 'signed_up') {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+    return;
+  }
+
+  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
+    return;
+  }
+
+  if (event.send_reminder === false) {
+    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+    return;
+  }
+
+  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
+
+  if (!person) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
+    return;
+  }
+
+  if (!person.email) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
+  const subject = `Volunteer Shift Reminder: ${event.name}`;
+  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+  const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject,
+    text,
+    html,
+  });
+
+  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+}
+
+export async function handleSendWebformNotifications(
+  payload: JobPayloadOf<'send-webform-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const form = await db
+    .selectFrom('web_forms')
+    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+    .where('id', '=', payload.formId)
+    .executeTakeFirst();
+
+  if (!form) {
+    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
+    return;
+  }
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (form.send_confirmation !== false) {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Thank you for your submission to ${form.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Tenant Admin (if enabled)
+  if (form.send_alert !== false) {
+    const admin = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', form.tenant_id)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `[ALERT] New Lead Submission on ${form.name}`,
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendEventRegistrationConfirmation(
+  payload: JobPayloadOf<'send-event-registration-confirmation'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status === 'cancelled') {
+    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+    return;
+  }
+
+  const event = await db
+    .selectFrom('events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_registration_confirmation',
+    ])
+    .where('id', '=', registration.event_id)
+    .executeTakeFirst();
+
+  if (!event || event.send_registration_confirmation === false) {
+    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const coordLine = [
+    event.contact_email ? `Email: ${event.contact_email}` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const coordHtml = [
+    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Registration Confirmed: ${event.name}`,
+    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+  });
+
+  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendEventReminder(
+  payload: JobPayloadOf<'send-event-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status !== 'registered') {
+    logger.info(
+      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+    );
+    return;
+  }
+
+  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
+
+  if (!event || event.send_reminder === false) {
+    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Reminder: ${event.name} is tomorrow`,
+    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+  });
+
+  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
+  await mailService.sendMail({
+    to: payload.to,
+    subject: payload.subject ?? '',
+    text: payload.text ?? '',
+    html: payload.html ?? '',
+  });
+}
+
+export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
+  await smsService.sendSms({ to: payload.to, body: payload.body });
+}
+
+export async function handleSendSubscriptionConfirmation(
+  payload: JobPayloadOf<'send-subscription-confirmation'>,
+): Promise<void> {
+  await mailService.sendMail({
+    to: payload.email,
+    subject: 'Please confirm your subscription',
+    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+  });
+}
+
+export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
+  await checkDueTasks(db);
+
+  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
+}
+
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
+      .where('tasks.status', 'not in', ['done', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, typeof dueTasks>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
+      }
+      userTasks.push(row);
+    }
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      if (!firstRow) continue;
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check and notify due tasks');
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/jobs/handlers/sync.handlers.ts
 
 ```typescript
@@ -29049,208 +30131,158 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+## File: apps/backend/src/app/lib/jobs/job-handlers.ts
 
 ```typescript
+import type { Kysely } from 'kysely';
 import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { jobPayloadSchema, legacyImportJobSchema } from './job-payloads';
+import { handleCheckAllUsageLimits, handleCheckUsageLimits, handleZapierTrigger } from './handlers/billing.handlers';
+import { handlePerformScheduledDeletions } from './handlers/deletions.handlers';
+import { handleExportCsv } from './handlers/export.handlers';
+import { handleImportJob } from './handlers/import.handlers';
+import {
+  handleCleanupActivities,
+  handlePruneRetention,
+  handleEnrichCompanyGoogle,
+  handleGeocodeHousehold,
+  handleRecomputeAddressFingerprints,
+  handleRecomputeAllDuplicates,
+  handleRefreshCompaniesGoogle,
+  handleRefreshList,
+} from './handlers/maintenance.handlers';
+import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
+import {
+  handleCheckDueTasks,
+  handleSendEventRegistrationConfirmation,
+  handleSendEventReminder,
+  handleSendFormNotifications,
+  handleSendShiftReminder,
+  handleSendSms,
+  handleSendSubscriptionConfirmation,
+  handleSendTransactionalEmail,
+  handleSendWebformNotifications,
+} from './handlers/notifications.handlers';
+import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
+import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
+
+export { checkDueTasks } from './handlers/notifications.handlers';
+
+const typeProbeSchema = z.looseObject({ type: z.unknown() });
 
 /**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ * Background job dispatcher. Parses the raw queue payload against the typed
+ * job schemas and routes it to the matching domain handler in `./handlers/`.
  */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
+export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: string): Promise<void> {
+  const typed = jobPayloadSchema.safeParse(payload);
 
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
+  if (!typed.success) {
+    // CSV imports are queued without a `type` discriminator (legacy shape).
+    const legacyImport = legacyImportJobSchema.safeParse(payload);
+    if (legacyImport.success) {
+      await handleImportJob(legacyImport.data, db);
+      return;
+    }
 
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
+    const probe = typeProbeSchema.safeParse(payload);
+    const typeLabel = probe.success && probe.data.type !== undefined ? String(probe.data.type) : 'unknown';
+    throw new Error(`Unsupported background job type: ${typeLabel}`);
+  }
 
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
-
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-    // A user-triggered "Re-check Google" re-runs the lookup even when the
-    // company was already enriched; the auto-queue on first load does not.
-    force: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('prune_retention') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
-
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    campaignId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    campaignId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-sms'),
-    to: z.string(),
-    body: z.string(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
-
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
-
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
-
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
-
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
-
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
-
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
-  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
-  list_name: z.string().nullish(),
-  client_skip_reasons: z
-    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
-    .nullish(),
-});
-
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
+  const job = typed.data;
+  switch (job.type) {
+    case 'refresh_list':
+      await handleRefreshList(job);
+      break;
+    case 'enrich_company_google':
+      await handleEnrichCompanyGoogle(job, db);
+      break;
+    case 'refresh_companies_google':
+      await handleRefreshCompaniesGoogle(job, db);
+      break;
+    case 'cleanup_activities':
+      await handleCleanupActivities(db);
+      break;
+    case 'prune_retention':
+      await handlePruneRetention(db);
+      break;
+    case 'recompute_all_duplicates':
+      await handleRecomputeAllDuplicates(db);
+      break;
+    case 'recompute_address_fingerprints':
+      await handleRecomputeAddressFingerprints(job, db);
+      break;
+    case 'geocode_household':
+      await handleGeocodeHousehold(job, db);
+      break;
+    case 'schedule_sync_jobs':
+      await handleScheduleSyncJobs(db);
+      break;
+    case 'google_sync':
+      await handleGoogleSync(job, db);
+      break;
+    case 'ms_sync':
+      await handleMsSync(job, db);
+      break;
+    case 'send-form-notifications':
+      await handleSendFormNotifications(job, db);
+      break;
+    case 'send-shift-reminder':
+      await handleSendShiftReminder(job, db);
+      break;
+    case 'send-webform-notifications':
+      await handleSendWebformNotifications(job, db);
+      break;
+    case 'send-event-registration-confirmation':
+      await handleSendEventRegistrationConfirmation(job, db);
+      break;
+    case 'send-event-reminder':
+      await handleSendEventReminder(job, db);
+      break;
+    case 'send-transactional-email':
+      await handleSendTransactionalEmail(job);
+      break;
+    case 'send-sms':
+      await handleSendSms(job);
+      break;
+    case 'send-subscription-confirmation':
+      await handleSendSubscriptionConfirmation(job);
+      break;
+    case 'check_due_tasks':
+      await handleCheckDueTasks(db);
+      break;
+    case 'send-newsletter':
+      await handleSendNewsletter(job, db, jobId);
+      break;
+    case 'prune_newsletter_events':
+      await handlePruneNewsletterEvents(db);
+      break;
+    case 'process_drip_workflows':
+      await handleProcessDripWorkflows(db);
+      break;
+    case 'perform_scheduled_deletions':
+      await handlePerformScheduledDeletions(db);
+      break;
+    case 'zapier_trigger':
+      await handleZapierTrigger(job);
+      break;
+    case 'check_usage_limits':
+      await handleCheckUsageLimits(job, db);
+      break;
+    case 'check_all_usage_limits':
+      await handleCheckAllUsageLimits(db);
+      break;
+    case 'export_csv':
+      await handleExportCsv(job, db);
+      break;
+    default: {
+      const _exhaustive: never = job;
+      throw new Error(`Unsupported background job type: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
 ```
 
 ## File: apps/backend/src/app/lib/jobs/worker.ts
@@ -30084,149 +31116,294 @@ export class BackgroundJobWorker {
 }
 ```
 
-## File: apps/backend/src/app/lib/mail/newsletter-render.ts
+## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
+
+```typescript
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+
+export interface NewsletterRecipient {
+  email: string;
+  /** Per-recipient SendGrid substitutions (token -> resolved value) for merge fields. */
+  substitutions?: Record<string, string>;
+}
+
+export interface NewsletterAttachment {
+  /** Base64-encoded file content. */
+  content: string;
+  filename: string;
+  type?: string;
+  disposition?: 'attachment' | 'inline';
+}
+
+export interface SendNewsletterOptions {
+  fromName: string;
+  fromEmail: string;
+  replyTo?: string;
+  recipients: NewsletterRecipient[];
+  subject: string;
+  html: string;
+  text?: string;
+  sendgridApiKey?: string;
+  subuserUsername?: string;
+  newsletterId?: string;
+  tenantId?: string;
+  attachments?: NewsletterAttachment[];
+}
+
+export class NewsletterEmailService {
+  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
+    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
+
+    if (!apiKey) {
+      logger.info(
+        {
+          from: `"${options.fromName}" <${options.fromEmail}>`,
+          replyTo: options.replyTo || null,
+          recipientCount: options.recipients.length,
+          subject: options.subject,
+        },
+        '[SENDGRID DEV MOCK] Newsletter Outbound',
+      );
+      return options.recipients.length;
+    }
+
+    const seen = new Set<string>();
+    const uniqueRecipients = options.recipients.filter((r) => {
+      const email = r.email?.trim();
+      if (!email || seen.has(email)) return false;
+      seen.add(email);
+      return true;
+    });
+    if (uniqueRecipients.length === 0) return 0;
+
+    // SendGrid allows up to 1000 personalizations per API request
+    const CHUNK_SIZE = 1000;
+    let deliveredCount = 0;
+
+    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
+      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
+      const personalizations = chunk.map((r) => ({
+        to: [{ email: r.email }],
+        // Per-recipient merge-field values. Keeps the whole batch a single request while still
+        // personalizing content (SendGrid replaces the tokens in subject/html/text per recipient).
+        ...(r.substitutions && Object.keys(r.substitutions).length > 0 ? { substitutions: r.substitutions } : {}),
+      }));
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      };
+
+      if (options.subuserUsername) {
+        headers['on-behalf-of'] = options.subuserUsername;
+      }
+
+      const body = {
+        personalizations,
+        from: {
+          email: options.fromEmail,
+          name: options.fromName,
+        },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
+        subject: options.subject,
+        content: [
+          {
+            type: 'text/html',
+            value: options.html,
+          },
+          ...(options.text
+            ? [
+                {
+                  type: 'text/plain',
+                  value: options.text,
+                },
+              ]
+            : []),
+        ],
+        ...(options.newsletterId && options.tenantId
+          ? {
+              custom_args: {
+                newsletter_id: options.newsletterId,
+                tenant_id: options.tenantId,
+              },
+            }
+          : {}),
+        ...(options.attachments?.length
+          ? {
+              attachments: options.attachments.map((a) => ({
+                content: a.content,
+                filename: a.filename,
+                type: a.type,
+                disposition: a.disposition || 'attachment',
+              })),
+            }
+          : {}),
+        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
+        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        tracking_settings: {
+          subscription_tracking: {
+            enable: true,
+            substitution_tag: '<% unsubscribe %>',
+          },
+        },
+      };
+
+      try {
+        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
+        }
+
+        deliveredCount += chunk.length;
+      } catch (error) {
+        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
+      }
+    }
+
+    return deliveredCount;
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/sms/phone.ts
 
 ```typescript
 /**
- * Pure, I/O-free render transforms applied to newsletter content at send time. Kept side-effect free
- * so they can be unit-tested in isolation (see newsletter-render.spec.ts). The send handler
- * (`lib/jobs/handlers/newsletter.handlers.ts`) and the test-email path
- * (`modules/newsletters/controller.ts`) both compose these before handing HTML to SendGrid.
+ * Phone normalization for SMS sending. `persons.mobile` is free-text; Twilio
+ * needs E.164. This is deliberately conservative: it only accepts numbers it
+ * can normalize unambiguously and returns null for everything else — a null
+ * simply means "SMS isn't offered for this contact", never an error.
  */
 
-// The visual editor embeds its block model as a JSON comment. It must never ship in a sent email.
-const BLOCK_DATA_COMMENT_RE = /<!--\s*PPLCRM_VISUAL_BLOCKS_DATA:[\s\S]*?-->/g;
+const NANP_LENGTH = 10;
+const NANP_WITH_COUNTRY_LENGTH = 11;
 
-// The editor's merge-field syntax: {FieldName} or {FieldName|fallback text}. Mirrors the pattern in
-// the frontend visual-newsletter-editor so send-time substitution matches the editor's preview.
-const MERGE_TOKEN_PATTERN = '\\{([a-zA-Z0-9_]+)(?:\\|([^}]*))?\\}';
+/** Normalize a free-text phone number to E.164, or null if it can't be done safely. */
+export function normalizeE164(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
 
-// Marker attribute so preheader injection is idempotent across composed calls.
-const PREHEADER_MARKER = 'data-pc-preheader';
+  const hasPlus = trimmed.startsWith('+');
+  const digits = trimmed.replace(/\D/g, '');
 
-export interface MergeToken {
-  /** The literal token as it appears in the content, e.g. "{FirstName|there}". */
-  token: string;
-  /** The field name, e.g. "FirstName". */
-  field: string;
-  /** The fallback text after "|", or "" when none was given. */
-  fallback: string;
-}
-
-export interface MergeRecipient {
-  email: string;
-  firstName?: string | null;
-  lastName?: string | null;
-  phone?: string | null;
-}
-
-/** Escapes the characters that would break out of an HTML text/attribute context. */
-function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/** True for absolute URLs (with a scheme) and protocol-relative (`//host`) URLs. */
-function isAbsoluteUrl(url: string): boolean {
-  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url);
-}
-
-/** Removes the editor's block-model JSON comment(s) so they never ship in the sent email. */
-export function stripEditorBlockData(html: string): string {
-  return html.replace(BLOCK_DATA_COMMENT_RE, '');
-}
-
-/**
- * Rewrites relative `<img src>` values (e.g. "assets/newsletters/x.png") to absolute URLs against
- * baseUrl so they resolve in email clients, which have no notion of the app's origin. Absolute,
- * protocol-relative, `data:` and `cid:` URLs are left untouched.
- */
-export function rewriteRelativeImageUrls(html: string, baseUrl: string): string {
-  const base = baseUrl.replace(/\/+$/, '');
-  return html.replace(
-    /(<img\b[^>]*?\bsrc\s*=\s*)(["'])(.*?)\2/gi,
-    (match, prefix: string, quote: string, url: string) => {
-      const trimmed = url.trim();
-      if (!trimmed || isAbsoluteUrl(trimmed)) return match;
-      const path = trimmed.replace(/^\.?\/+/, '');
-      return `${prefix}${quote}${base}/${path}${quote}`;
-    },
-  );
-}
-
-/**
- * Injects previewText as a hidden preheader block at the top of the body. Idempotent — if a
- * preheader has already been injected (marker present) or previewText is empty, returns html
- * unchanged. The preheader is what inboxes show next to the subject line.
- */
-export function injectPreheader(html: string, previewText: string | null | undefined): string {
-  const text = (previewText ?? '').trim();
-  if (!text || html.includes(PREHEADER_MARKER)) return html;
-  const preheader =
-    `<div ${PREHEADER_MARKER} style="display:none;max-height:0;overflow:hidden;` +
-    `mso-hide:all;font-size:1px;line-height:1px;color:transparent;opacity:0;">` +
-    `${escapeHtml(text)}</div>`;
-  const bodyMatch = html.match(/<body\b[^>]*>/i);
-  if (bodyMatch) {
-    const idx = html.indexOf(bodyMatch[0]) + bodyMatch[0].length;
-    return html.slice(0, idx) + preheader + html.slice(idx);
+  if (hasPlus) {
+    // Already international — just validate the digit count (E.164 max 15).
+    if (digits.length < 8 || digits.length > 15) return null;
+    return `+${digits}`;
   }
-  return preheader + html;
+  if (digits.length === NANP_LENGTH) return `+1${digits}`;
+  if (digits.length === NANP_WITH_COUNTRY_LENGTH && digits.startsWith('1')) return `+${digits}`;
+  return null;
 }
 
-/** Composes the send-time HTML transforms: strip block data, rewrite images, inject preheader. */
-export function renderNewsletterHtml(html: string, options: { baseUrl: string; previewText?: string | null }): string {
-  let out = stripEditorBlockData(html);
-  out = rewriteRelativeImageUrls(out, options.baseUrl);
-  out = injectPreheader(out, options.previewText);
-  return out;
+/** Mask a phone number for display: keeps the last 4 digits ("(•••) •••-4821"). */
+export function maskPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  const last4 = digits.slice(-4);
+  return `(•••) •••-${last4}`;
 }
 
-/** Scans the given content strings for the distinct merge tokens they contain. */
-export function extractMergeTokens(...contents: (string | null | undefined)[]): MergeToken[] {
-  const re = new RegExp(MERGE_TOKEN_PATTERN, 'g');
-  const byToken = new Map<string, MergeToken>();
-  for (const content of contents) {
-    if (!content) continue;
-    for (const m of content.matchAll(re)) {
-      const token = m[0];
-      if (byToken.has(token)) continue;
-      byToken.set(token, { token, field: m[1] ?? '', fallback: m[2] ?? '' });
+/** Mask an email for display: first letter + domain ("j•••@gmail.com"). */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return '•••';
+  const first = local?.charAt(0) ?? '';
+  return `${first}•••@${domain}`;
+}
+```
+
+## File: apps/backend/src/app/lib/sms/sms.service.ts
+
+```typescript
+import type { Kysely, Transaction } from 'kysely';
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+import { BaseRepository } from '../base.repo';
+
+export interface SendSmsOptions {
+  /** E.164 destination — normalize with `normalizeE164()` before calling. */
+  to: string;
+  body: string;
+  tenant_id?: string | null;
+}
+
+/**
+ * Transactional SMS via the Twilio REST API. Mirrors TransactionalEmailService:
+ * plain HTTP (no SDK), and a dev mock that logs instead of sending when the
+ * Twilio credentials are unset — so local dev and tests never need an account.
+ *
+ * Send through `enqueueSms()` inside the business transaction (transactional
+ * outbox) — never call `sendSms()` directly from request handlers.
+ */
+export class SmsService {
+  private accountSid = env.twilioAccountSid;
+  private authToken = env.twilioAuthToken;
+  private fromNumber = env.twilioFromNumber;
+
+  public async sendSms(options: SendSmsOptions): Promise<void> {
+    if (!this.accountSid || !this.authToken || !this.fromNumber) {
+      logger.info({ from: this.fromNumber, to: options.to, body: options.body }, '[TWILIO DEV MOCK] SMS Outbound');
+      return;
+    }
+
+    try {
+      const auth = Buffer.from(`${this.accountSid}:${this.authToken}`).toString('base64');
+      const form = new URLSearchParams({
+        To: options.to,
+        From: this.fromNumber,
+        Body: options.body,
+      });
+      const response = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.accountSid)}/Messages.json`,
+        {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Basic ${auth}`,
+          },
+          body: form.toString(),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Twilio API responded with status ${response.status}: ${errorText}`);
+      }
+    } catch (error) {
+      throw new InternalError('Failed to send SMS', undefined, { cause: error });
     }
   }
-  return [...byToken.values()];
-}
 
-/** Resolves a single merge field for a recipient. Returns null when the field is unknown or empty. */
-function rawFieldValue(field: string, recipient: MergeRecipient): string | null {
-  switch (field.toLowerCase()) {
-    case 'firstname':
-      return recipient.firstName ?? null;
-    case 'lastname':
-      return recipient.lastName ?? null;
-    case 'name':
-      return [recipient.firstName, recipient.lastName].filter(Boolean).join(' ') || null;
-    case 'email':
-      return recipient.email ?? null;
-    case 'phone':
-      return recipient.phone ?? null;
-    default:
-      return null; // unknown field — resolved via fallback below
+  public async enqueueSms(options: SendSmsOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
+    await dbClient
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-sms',
+          to: options.to,
+          body: options.body,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
   }
-}
-
-/**
- * Builds the SendGrid substitution map for one recipient: token -> resolved, HTML-escaped value.
- * A field with no value uses the token's "|fallback" text (or "" when none). Unknown fields also
- * fall back, so no raw "{Field}" ever ships to a recipient.
- */
-export function resolveMergeSubstitutions(tokens: MergeToken[], recipient: MergeRecipient): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const t of tokens) {
-    const value = rawFieldValue(t.field, recipient);
-    const resolved = value != null && value !== '' ? value : t.fallback;
-    out[t.token] = escapeHtml(resolved);
-  }
-  return out;
 }
 ```
 
@@ -48566,6 +49743,170 @@ function evaluateRule(node: unknown, person: Record<string, unknown>): boolean {
 }
 ```
 
+## File: apps/backend/src/env.ts
+
+```typescript
+import { z } from 'zod';
+
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
+  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
+  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
+  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
+  // a single-role setup keeps working unchanged.
+  DB_MIGRATION_USER: z.string().optional(),
+  DB_MIGRATION_PASSWORD: z.string().optional(),
+  // Whether the serve process runs pending migrations at boot. Convenient in dev
+  // (default true); set to false in production, where migrations are a separate
+  // deploy step run as the owner role and the runtime role has no DDL rights.
+  MIGRATE_ON_BOOT: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((val) => val !== 'false'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // Twilio SMS (companion verification codes). All optional — the SMS service
+  // logs a dev mock instead of sending when these are unset.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
+  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
+  // Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
+  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
+  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
+  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
+  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
+  TRUST_PROXY: z.string().optional().default('false'),
+  // How many background jobs the worker may process concurrently. One slow job (a large sync or
+  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
+  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
+  // this comfortably below the Postgres pool size. Default 4.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max connections in the shared pg pool. The API server, the job worker (up to
+  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
+  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
+  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
+  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
+  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
+  ALLOW_MOCK_PAYMENTS: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
+  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
+  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
+  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
+  // MUST be set in any environment that connects real mailboxes. Rotating it
+  // invalidates existing encrypted tokens (users just re-consent).
+  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
+});
+
+/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
+function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+const parsedEnv = envSchema.parse(process.env);
+
+export const env = {
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
+  db: {
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  // Same target database, but connecting as the owner role for DDL/migrations.
+  // Falls back to the runtime credentials when the migration role is unset.
+  migrationDb: {
+    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
+  apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
+  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
+  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
+  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  dbPoolMax: parsedEnv.DB_POOL_MAX,
+  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
+  sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
+  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
+};
+```
+
 ## File: apps/companion/src/app/canvass/canvass-page.ts
 
 ```typescript
@@ -49156,643 +50497,208 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
 
 ```typescript
-import type { ExpressionBuilder, Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../../env';
-import { logger } from '../../../logger';
-import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
-import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
-import { UserActivityRepo } from '../../user-activity.repo';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-import { FilesRepo } from '../../../modules/files/repositories/files.repo';
-import { StorageService } from '../../storage.service';
-import { getPlanLimits } from '../../../modules/billing/usage-limits';
-
-const NEWSLETTER_BATCH_SIZE = 500;
-const BATCH_DELAY_MS = 1000;
-
-export async function handleSendNewsletter(
-  payload: JobPayloadOf<'send-newsletter'>,
-  db: Kysely<Models>,
-  jobId?: string,
-): Promise<void> {
-  const newsletterMailSvc = new NewsletterEmailService();
-  const { tenantId, newsletterId, userId } = payload;
-
-  // 1. Fetch newsletter to get settings, targets, segments, and content
-  const newsletter = await db
-    .selectFrom('newsletters')
-    .selectAll()
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .executeTakeFirst();
-
-  if (!newsletter) {
-    logger.warn(`Newsletter ${newsletterId} not found.`);
-    return;
-  }
-
-  // 2. Build the recipient query using NewslettersController
-  const { NewslettersController } = await import('../../../modules/newsletters/controller');
-  const controller = new NewslettersController();
-  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
-
-  // 3. Count total recipients
-  let offset = payload.offset ?? 0;
-  let deliveredCount = payload.deliveredCount ?? 0;
-
-  const countResult = await baseQuery
-    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
-    .executeTakeFirst();
-  const totalRecipients = Number(countResult?.count || 0);
-
-  if (offset === 0) {
-    await db
-      .updateTable('newsletters')
-      .set({
-        status: 'sending',
-        total_recipients: totalRecipients,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .execute();
-  }
-
-  // Load communications/settings from database
-  const settingsRows = await db
-    .selectFrom('settings')
-    .select(['key', 'value'])
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', [
-      'communications.sendgrid_api_key',
-      'communications.sendgrid_subuser_username',
-      'communications.default_from_name',
-      'communications.default_from_email',
-      'communications.reply_to',
-      'communications.footer_disclaimer',
-      'communications.verified_emails',
-      'organization.address',
-    ])
-    .execute();
-
-  const settingsMap: Record<string, string> = {};
-  let verifiedEmails: string[] = [];
-  for (const row of settingsRows) {
-    if (typeof row.value === 'string') {
-      settingsMap[row.key] = row.value;
-    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
-      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
-    }
-  }
-
-  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
-  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
-
-  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
-  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
-  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
-
-  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
-  const footer = buildNewsletterFooter(
-    settingsMap['organization.address'],
-    settingsMap['communications.footer_disclaimer'],
-  );
-
-  // Render the stored editor HTML into email-ready HTML once (block-JSON stripped, relative image
-  // URLs made absolute against APP_URL, preview text injected as a hidden preheader). Merge tokens
-  // are left in the content and resolved per-recipient via SendGrid substitutions below.
-  const renderedHtml = renderNewsletterHtml(newsletter.html_content || '', {
-    baseUrl: env.appUrl,
-    previewText: newsletter.preview_text,
-  });
-  const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
-  const finalHtml = renderedHtml + footer.html;
-  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
-
-  const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
-
-  while (offset < totalRecipients) {
-    // Query a chunk of recipients dynamically using LIMIT and OFFSET.
-    // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
-    // while still carrying the person fields the merge tokens need.
-    const chunkRows = await baseQuery
-      .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
-      .distinctOn('persons.email')
-      .orderBy('persons.email', 'asc')
-      .limit(NEWSLETTER_BATCH_SIZE)
-      .offset(offset)
-      .execute();
-
-    const seen = new Set<string>();
-    const recipients: NewsletterRecipient[] = [];
-    for (const r of chunkRows) {
-      const email = r.email?.trim();
-      if (!email || seen.has(email)) continue;
-      seen.add(email);
-      recipients.push({
-        email,
-        substitutions: mergeTokens.length
-          ? resolveMergeSubstitutions(mergeTokens, {
-              email,
-              firstName: r.first_name,
-              lastName: r.last_name,
-              phone: r.mobile || r.home_phone,
-            })
-          : undefined,
-      });
-    }
-
-    if (recipients.length === 0) {
-      break;
-    }
-
-    const batchDelivered = await newsletterMailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients,
-      subject: newsletter.subject || 'Newsletter',
-      html: finalHtml,
-      text: finalText,
-      sendgridApiKey,
-      subuserUsername,
-      newsletterId,
-      tenantId,
-      attachments,
-    });
-
-    deliveredCount += batchDelivered;
-    offset += chunkRows.length;
-
-    // Update progress in the background job payload (no recipients array!)
-    if (jobId) {
-      await db
-        .updateTable('background_jobs')
-        .set({
-          payload: JSON.stringify({
-            type: 'send-newsletter',
-            newsletterId,
-            tenantId,
-            userId,
-            offset,
-            deliveredCount,
-          }),
-          updated_at: new Date(),
-        })
-        .where('id', '=', jobId)
-        .execute();
-    }
-
-    // Add a small delay between batches to respect rate limits
-    if (offset < totalRecipients) {
-      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
-    }
-  }
-
-  // Update newsletter status to 'sent'
-  await db
-    .updateTable('newsletters')
-    .set({
-      status: 'sent',
-      delivered_count: deliveredCount,
-      send_date: new Date(),
-      updatedby_id: userId,
-      updated_at: new Date(),
-    })
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .execute();
-
-  // Log user activity
-  const userActivity = new UserActivityRepo();
-  await userActivity.log({
-    tenant_id: tenantId,
-    user_id: userId,
-    activity: 'send',
-    entity: 'newsletters',
-    entity_id: newsletterId,
-    quantity: totalRecipients,
-    metadata: { recipientsCount: totalRecipients, deliveredCount },
-  });
-
-  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
-  await queueUsageLimitCheck(tenantId, db);
-}
-
-export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  await pruneNewsletterEvents(db);
-  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
-}
-
-// Event types that warrant keeping a per-newsletter engagement record.
-// Delivery-only events (delivered, deferred, processed) are not stored.
-const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
-
-async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  const tenants: { id: string; subscription_plan: string | null }[] = await db
-    .selectFrom('tenants')
-    .select(['id', 'subscription_plan'])
-    .execute();
-
-  for (const tenant of tenants) {
-    try {
-      const plan = tenant.subscription_plan ?? 'free';
-      const retentionDays =
-        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
-
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const tenantId = String(tenant.id);
-
-      // Fetch events older than the retention window that are engagement events.
-      const expiringEvents: {
-        newsletter_id: string;
-        email: string;
-        event_type: string;
-        timestamp: Date;
-      }[] = await db
-        .selectFrom('newsletter_events')
-        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
-        .where('tenant_id', '=', tenantId)
-        .where('created_at', '<', cutoff)
-        .execute();
-
-      // Group by (newsletter_id, email) to produce one upsert per recipient.
-      const grouped = new Map<
-        string,
-        {
-          newsletter_id: string;
-          email: string;
-          open_count: number;
-          click_count: number;
-          has_unsubscribed: boolean;
-          hard_bounced: boolean;
-          soft_bounced: boolean;
-          first_opened_at: Date | null;
-          last_opened_at: Date | null;
-          first_clicked_at: Date | null;
-          last_clicked_at: Date | null;
-          bounced_at: Date | null;
-          unsubscribed_at: Date | null;
-        }
-      >();
-
-      for (const ev of expiringEvents) {
-        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
-
-        const key = `${ev.newsletter_id}::${ev.email}`;
-        let agg = grouped.get(key);
-        if (!agg) {
-          agg = {
-            newsletter_id: ev.newsletter_id,
-            email: ev.email,
-            open_count: 0,
-            click_count: 0,
-            has_unsubscribed: false,
-            hard_bounced: false,
-            soft_bounced: false,
-            first_opened_at: null,
-            last_opened_at: null,
-            first_clicked_at: null,
-            last_clicked_at: null,
-            bounced_at: null,
-            unsubscribed_at: null,
-          };
-          grouped.set(key, agg);
-        }
-        const ts = new Date(ev.timestamp);
-
-        if (ev.event_type === 'open') {
-          agg.open_count++;
-          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
-          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
-        } else if (ev.event_type === 'click') {
-          agg.click_count++;
-          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
-          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
-        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        } else if (ev.event_type === 'bounce') {
-          // SendGrid bounce events don't carry a sub-type in this table;
-          // treat all as hard bounce (the webhook handler can refine this).
-          agg.hard_bounced = true;
-          if (!agg.bounced_at) agg.bounced_at = ts;
-        } else if (ev.event_type === 'spamreport') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        }
-      }
-
-      // Upsert aggregated rows, then delete the raw events.
-      if (grouped.size > 0) {
-        await db.transaction().execute(async (trx) => {
-          for (const row of grouped.values()) {
-            await trx
-              .insertInto('person_newsletter_engagements')
-              .values({
-                tenant_id: tenantId,
-                newsletter_id: row.newsletter_id,
-                email: row.email,
-                open_count: row.open_count,
-                click_count: row.click_count,
-                has_unsubscribed: row.has_unsubscribed,
-                hard_bounced: row.hard_bounced,
-                soft_bounced: row.soft_bounced,
-                first_opened_at: row.first_opened_at,
-                last_opened_at: row.last_opened_at,
-                first_clicked_at: row.first_clicked_at,
-                last_clicked_at: row.last_clicked_at,
-                bounced_at: row.bounced_at,
-                unsubscribed_at: row.unsubscribed_at,
-              })
-              .onConflict((oc) =>
-                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
-                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
-                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
-                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
-                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
-                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
-                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
-                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
-                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
-                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
-                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
-                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
-                })),
-              )
-              .execute();
-          }
-
-          await trx
-            .deleteFrom('newsletter_events')
-            .where('tenant_id', '=', tenantId)
-            .where('created_at', '<', cutoff)
-            .execute();
-        });
-      } else {
-        // No engagement events to aggregate — still prune non-engagement events.
-        await db
-          .deleteFrom('newsletter_events')
-          .where('tenant_id', '=', tenantId)
-          .where('created_at', '<', cutoff)
-          .execute();
-      }
-    } catch (err) {
-      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
-    }
-  }
-}
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
 
 /**
- * Fetches files attached to this newsletter (entity_type = 'newsletter') and downloads them as
- * base64 email attachments. If the tenant is at or over its storage quota, attachments are skipped
- * (the newsletter still sends, just without them) — mirrors the Storage settings quota warning.
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
  */
-export async function buildNewsletterAttachments(
-  db: Kysely<Models>,
-  tenantId: string,
-  newsletterId: string,
-): Promise<NewsletterAttachment[] | undefined> {
-  const filesRepo = new FilesRepo();
-  const { rows } = await filesRepo.getAllWithCounts({
-    tenant_id: tenantId,
-    options: { entityType: 'newsletter', entityId: newsletterId },
-  });
-  if (rows.length === 0) return undefined;
+const idSchema = z.union([z.string(), z.number()]).transform(String);
 
-  const tenant = await db
-    .selectFrom('tenants')
-    .select('subscription_plan')
-    .where('id', '=', tenantId)
-    .executeTakeFirst();
-  const quotaBytes = getPlanLimits(tenant?.subscription_plan).storageBytes;
-  const usedBytes = await filesRepo.getTotalBytes(tenantId);
-  if (usedBytes >= quotaBytes) {
-    logger.warn(
-      `Newsletter ${newsletterId} for tenant ${tenantId} is at/over its storage quota — sending without attachments.`,
-    );
-    return undefined;
-  }
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
 
-  const storageService = new StorageService();
-  const attachments: NewsletterAttachment[] = [];
-  for (const file of rows as { filename: string; storage_key: string; mime_type: string | null }[]) {
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      attachments.push({
-        content: buffer.toString('base64'),
-        filename: file.filename,
-        type: file.mime_type || undefined,
-      });
-    } catch (err) {
-      logger.error({ err }, `Failed to download newsletter attachment ${file.storage_key}`);
-    }
-  }
-  return attachments.length > 0 ? attachments : undefined;
-}
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
+
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
+
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+    // A user-triggered "Re-check Google" re-runs the lookup even when the
+    // company was already enriched; the auto-queue on first load does not.
+    force: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
+
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    campaignId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    campaignId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-sms'),
+    to: z.string(),
+    body: z.string(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
 
 /**
- * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
- * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
- * subscription tracking is enabled.
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
  */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
+  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
+  list_name: z.string().nullish(),
+  client_skip_reasons: z
+    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
+    .nullish(),
+});
 
-  const htmlParts: string[] = [];
-  const textParts: string[] = [];
-
-  const addr = (address || '').trim();
-  if (addr) {
-    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(addr);
-  }
-
-  const disc = (disclaimer || '').trim();
-  if (disc) {
-    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(disc);
-  }
-
-  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
-  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
-  textParts.push('Unsubscribe: <% unsubscribe %>');
-
-  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
-  const text = `\n\n----\n${textParts.join('\n')}`;
-
-  return { html, text };
-}
-```
-
-## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
-
-```typescript
-import { env } from '../../../env';
-import { InternalError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-
-export interface NewsletterRecipient {
-  email: string;
-  /** Per-recipient SendGrid substitutions (token -> resolved value) for merge fields. */
-  substitutions?: Record<string, string>;
-}
-
-export interface NewsletterAttachment {
-  /** Base64-encoded file content. */
-  content: string;
-  filename: string;
-  type?: string;
-  disposition?: 'attachment' | 'inline';
-}
-
-export interface SendNewsletterOptions {
-  fromName: string;
-  fromEmail: string;
-  replyTo?: string;
-  recipients: NewsletterRecipient[];
-  subject: string;
-  html: string;
-  text?: string;
-  sendgridApiKey?: string;
-  subuserUsername?: string;
-  newsletterId?: string;
-  tenantId?: string;
-  attachments?: NewsletterAttachment[];
-}
-
-export class NewsletterEmailService {
-  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
-    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
-
-    if (!apiKey) {
-      logger.info(
-        {
-          from: `"${options.fromName}" <${options.fromEmail}>`,
-          replyTo: options.replyTo || null,
-          recipientCount: options.recipients.length,
-          subject: options.subject,
-        },
-        '[SENDGRID DEV MOCK] Newsletter Outbound',
-      );
-      return options.recipients.length;
-    }
-
-    const seen = new Set<string>();
-    const uniqueRecipients = options.recipients.filter((r) => {
-      const email = r.email?.trim();
-      if (!email || seen.has(email)) return false;
-      seen.add(email);
-      return true;
-    });
-    if (uniqueRecipients.length === 0) return 0;
-
-    // SendGrid allows up to 1000 personalizations per API request
-    const CHUNK_SIZE = 1000;
-    let deliveredCount = 0;
-
-    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
-      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
-      const personalizations = chunk.map((r) => ({
-        to: [{ email: r.email }],
-        // Per-recipient merge-field values. Keeps the whole batch a single request while still
-        // personalizing content (SendGrid replaces the tokens in subject/html/text per recipient).
-        ...(r.substitutions && Object.keys(r.substitutions).length > 0 ? { substitutions: r.substitutions } : {}),
-      }));
-
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      };
-
-      if (options.subuserUsername) {
-        headers['on-behalf-of'] = options.subuserUsername;
-      }
-
-      const body = {
-        personalizations,
-        from: {
-          email: options.fromEmail,
-          name: options.fromName,
-        },
-        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
-        subject: options.subject,
-        content: [
-          {
-            type: 'text/html',
-            value: options.html,
-          },
-          ...(options.text
-            ? [
-                {
-                  type: 'text/plain',
-                  value: options.text,
-                },
-              ]
-            : []),
-        ],
-        ...(options.newsletterId && options.tenantId
-          ? {
-              custom_args: {
-                newsletter_id: options.newsletterId,
-                tenant_id: options.tenantId,
-              },
-            }
-          : {}),
-        ...(options.attachments?.length
-          ? {
-              attachments: options.attachments.map((a) => ({
-                content: a.content,
-                filename: a.filename,
-                type: a.type,
-                disposition: a.disposition || 'attachment',
-              })),
-            }
-          : {}),
-        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
-        // the server-appended footer with a working, per-recipient unsubscribe URL.
-        tracking_settings: {
-          subscription_tracking: {
-            enable: true,
-            substitution_tag: '<% unsubscribe %>',
-          },
-        },
-      };
-
-      try {
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
-        }
-
-        deliveredCount += chunk.length;
-      } catch (error) {
-        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
-      }
-    }
-
-    return deliveredCount;
-  }
-}
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ```
 
 ## File: apps/backend/src/app/modules/activity/controller.ts
@@ -55327,6 +56233,7 @@ import { DuplicatesRouter } from './duplicates/trpc.router';
 import { CampaignsRouter } from './campaigns/trpc.router';
 import { CanvassingRouter } from './canvassing/trpc.router';
 import { DeliveriesRouter } from './deliveries/trpc.router';
+import { CompanionAccessRouter } from './companion-access/trpc.router';
 import { DemoRouter } from './demo/trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
@@ -55366,6 +56273,7 @@ export const trpcRouter = router({
   campaigns: CampaignsRouter,
   canvassing: CanvassingRouter,
   deliveries: DeliveriesRouter,
+  companionAccess: CompanionAccessRouter,
   demo: DemoRouter,
 });
 

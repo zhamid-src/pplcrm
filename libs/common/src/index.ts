@@ -252,7 +252,25 @@ export {
   INTERACTION_TYPE_LABELS,
   interactionTypeSchema,
   LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
 } from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
 
 export type {
   CampaignKind,
