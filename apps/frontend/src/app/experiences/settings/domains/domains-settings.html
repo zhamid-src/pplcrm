@@ -35,7 +35,7 @@
     <div
       class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
     >
-      <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
+      <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="10"></pc-icon>
       <p class="font-medium text-xs">No custom domains configured yet.</p>
       <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
     </div>
@@ -46,11 +46,11 @@
         <!-- Domain Entry Row -->
         <div class="flex items-center justify-between p-4 flex-wrap gap-3 bg-base-50/30 border-b border-base-200/50">
           <div class="flex items-center gap-3">
-            <pc-icon name="globe-americas" class="text-base-content/60" [size]="20"></pc-icon>
+            <pc-icon name="globe-americas" class="text-base-content/60" [size]="5"></pc-icon>
             <span class="font-semibold text-base-content/95">{{ item.domain }}</span>
             @if (item.status === 'verified') {
             <span class="badge badge-success text-success-content gap-1 font-semibold py-2">
-              <pc-icon name="check-circle" [size]="14"></pc-icon> Verified
+              <pc-icon name="check-circle" [size]="4"></pc-icon> Verified
             </span>
             } @else {
             <span class="badge badge-warning text-warning-content gap-1 font-semibold py-2">

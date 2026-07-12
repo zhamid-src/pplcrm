@@ -369,7 +369,7 @@
               <button
                 type="button"
                 class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                (click)="verifySenderEmail(senderEmailInput())"
                 [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
               >
                 @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
@@ -386,7 +386,7 @@
               class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
             >
               <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
                 Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
               </span>
               <span>
@@ -413,7 +413,7 @@
               <div class="flex flex-wrap gap-2">
                 @for (email of verifiedEmailsList(); track email) {
                 <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  <pc-icon name="check-circle" [size]="4"></pc-icon>
                   {{ email }}
                 </span>
                 }

@@ -14,6 +14,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { createRequestGuard } from '@uxcommon/request-guard';
 import { AuthService } from '../../../auth/auth-service';
 import { publicPageUrl } from '../../../shared/public-pages';
 import { EventsFrontendService } from '../services/events-frontend-service';
@@ -56,6 +57,7 @@ export class EventViewComponent {
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
+  private readonly _requestGuard = createRequestGuard();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
 
@@ -117,6 +119,7 @@ export class EventViewComponent {
   }
 
   protected async loadAllData(id: string) {
+    const isCurrent = this._requestGuard.begin();
     const end = this._loading.begin();
     try {
       const [eventData, ticketData, regData] = await Promise.all([
@@ -124,6 +127,7 @@ export class EventViewComponent {
         this.eventsSvc.getTicketTypes(id),
         this.eventsSvc.getRegistrations(id),
       ]);
+      if (!isCurrent()) return;
       this.event.set(eventData);
       this.ticketTypes.set(ticketData || []);
       this.registrations.set(regData || []);
