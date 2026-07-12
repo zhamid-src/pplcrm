@@ -632,92 +632,79 @@
 }
 
 <!-- Embed dialog -------------------------------------------------------------->
-<dialog #embedDialog class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
-        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
-        Embed this form
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <div class="join mb-3">
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'iframe'"
-        (click)="embedMode.set('iframe')"
-        type="button"
-      >
-        Embed (iframe)
-      </button>
-      <button
-        class="btn join-item btn-sm"
-        [class.btn-active]="embedMode() === 'html'"
-        (click)="embedMode.set('html')"
-        type="button"
-      >
-        Raw HTML form
-      </button>
-    </div>
-
-    <p class="mb-2 text-xs text-base-content/60">
-      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
-      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
-    </p>
-
-    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
-{{ embedCode() }}</pre
+<pc-modal-shell #embedDialog title="Embed this form" icon="file-code" [boxClass]="'max-w-2xl'">
+  <div class="join mb-3">
+    <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'iframe'"
+      (click)="embedMode.set('iframe')"
+      type="button"
     >
-
-    <div class="mt-4 flex justify-end">
-      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy code
-      </button>
-    </div>
+      Embed (iframe)
+    </button>
+    <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'html'"
+      (click)="embedMode.set('html')"
+      type="button"
+    >
+      Raw HTML form
+    </button>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+
+  <p class="mb-2 text-xs text-base-content/60">
+    @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the form.
+    } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+  </p>
+
+  <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+  >
+
+  <div pc-modal-footer>
+    <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      Copy code
+    </button>
+  </div>
+</pc-modal-shell>
 
 <!-- Confirmation-email dialog ------------------------------------------------->
-<dialog #confirmEmailDialog class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="mb-4 flex items-center justify-between">
-      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Subject</span>
-        <input
-          class="input input-bordered w-full"
-          [value]="confirmSubjectDraft()"
-          (input)="confirmSubjectDraft.set($any($event.target).value)"
-        />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Body</span>
-        <textarea
-          class="textarea textarea-bordered min-h-[140px] w-full"
-          [value]="confirmBodyDraft()"
-          (input)="confirmBodyDraft.set($any($event.target).value)"
-        ></textarea>
-      </label>
-      <p class="text-xs text-base-content/50">
-        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
-        greeting.
-      </p>
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
-        <button class="btn btn-primary" type="submit">Save</button>
-      </div>
-    </form>
+<pc-modal-shell
+  #confirmEmailDialog
+  title="Confirmation email"
+  icon="envelope"
+  [boxClass]="'max-w-lg'"
+  [dismissible]="false"
+>
+  <form
+    id="confirm-email-form"
+    (submit)="$event.preventDefault(); saveConfirmEmail()"
+    novalidate
+    class="flex flex-col gap-4"
+  >
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Subject</span>
+      <input
+        class="input input-bordered w-full"
+        [value]="confirmSubjectDraft()"
+        (input)="confirmSubjectDraft.set($any($event.target).value)"
+      />
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Body</span>
+      <textarea
+        class="textarea textarea-bordered min-h-[140px] w-full"
+        [value]="confirmBodyDraft()"
+        (input)="confirmBodyDraft.set($any($event.target).value)"
+      ></textarea>
+    </label>
+    <p class="text-xs text-base-content/50">
+      Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the greeting.
+    </p>
+  </form>
+  <div pc-modal-footer class="flex gap-2">
+    <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
+    <button class="btn btn-primary" type="submit" form="confirm-email-form">Save</button>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
+</pc-modal-shell>

@@ -5,6 +5,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TeamsService } from '../services/teams-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 // View-model for a team card (§15, Fig 17). Derived from the loosely-typed getAll rows.
 interface TeamCard {
@@ -18,7 +19,7 @@ interface TeamCard {
 
 @Component({
   selector: 'pc-teams-grid',
-  imports: [RouterLink, Icon, GridHeaderComponent],
+  imports: [EmptyState, RouterLink, Icon, GridHeaderComponent],
   templateUrl: './teams-grid.html',
 })
 export class TeamsGridComponent implements OnInit {

@@ -27,10 +27,11 @@ interface PersonOption {
 }
 
 import { DatePipe } from '@angular/common';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 @Component({
   selector: 'pc-team-form',
-  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
+  imports: [EmptyState, FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
   templateUrl: './team-form.html',
 })
 export class TeamFormComponent implements OnInit {

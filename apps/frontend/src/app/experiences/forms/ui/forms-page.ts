@@ -1,19 +1,11 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import type { PcIconNameType } from '@icons/icons.index';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FORM_TEMPLATES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -107,7 +99,17 @@ const BUILDER_CARDS: readonly BuilderCard[] = [
 @Component({
   selector: 'pc-forms-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe, Table, GridHeaderComponent, EmptyState],
+  imports: [
+    Icon,
+    FormRenderComponent,
+    RouterLink,
+    NgTemplateOutlet,
+    DatePipe,
+    Table,
+    GridHeaderComponent,
+    EmptyState,
+    ModalShell,
+  ],
   templateUrl: './forms-page.html',
 })
 export class FormsPageComponent implements OnInit {
@@ -141,8 +143,8 @@ export class FormsPageComponent implements OnInit {
   protected readonly newFormStep = signal<1 | 2>(1);
   protected readonly newFormError = signal<string | null>(null);
   protected readonly creating = signal(false);
-  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
-  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
+  private readonly embedDialog = viewChild<ModalShell>('embedDialog');
+  private readonly confirmEmailDialog = viewChild<ModalShell>('confirmEmailDialog');
 
   protected readonly templateCards = TEMPLATE_CARDS;
   protected readonly builderCards = BUILDER_CARDS;
@@ -513,11 +515,11 @@ export class FormsPageComponent implements OnInit {
 
   protected openEmbed(): void {
     this.embedMode.set('iframe');
-    this.embedDialog()?.nativeElement.showModal();
+    this.embedDialog()?.show();
   }
 
   protected closeEmbed(): void {
-    this.embedDialog()?.nativeElement.close();
+    this.embedDialog()?.close();
   }
 
   protected async copyEmbed(): Promise<void> {
@@ -583,11 +585,11 @@ export class FormsPageComponent implements OnInit {
     if (!form) return;
     this.confirmSubjectDraft.set(form.confirm_subject ?? '');
     this.confirmBodyDraft.set(form.confirm_body ?? '');
-    this.confirmEmailDialog()?.nativeElement.showModal();
+    this.confirmEmailDialog()?.show();
   }
 
   protected closeConfirmEmail(): void {
-    this.confirmEmailDialog()?.nativeElement.close();
+    this.confirmEmailDialog()?.close();
   }
 
   protected saveConfirmEmail(): void {

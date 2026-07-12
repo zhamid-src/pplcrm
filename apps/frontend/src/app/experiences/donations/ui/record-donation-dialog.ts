@@ -1,7 +1,8 @@
-import { Component, ElementRef, inject, output, signal, viewChild } from '@angular/core';
+import { Component, inject, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DONATION_METHODS, DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
 import { DonationsService } from '../../../services/api/donations-service';
@@ -16,7 +17,7 @@ type DonorSearchResult = { id: string; first_name: string | null; last_name: str
  */
 @Component({
   selector: 'pc-record-donation-dialog',
-  imports: [Icon, FormsModule],
+  imports: [Icon, FormsModule, ModalShell],
   templateUrl: './record-donation-dialog.html',
 })
 export class RecordDonationDialog {
@@ -24,7 +25,7 @@ export class RecordDonationDialog {
   private readonly personsSvc = inject(PersonsService);
   private readonly alertSvc = inject(AlertService);
 
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
   private readonly _loading = createLoadingGate();
 
   public readonly saved = output<void>();
@@ -54,11 +55,11 @@ export class RecordDonationDialog {
   };
   public open(): void {
     this.resetForm();
-    this.dlgRef().nativeElement.showModal();
+    this.dlgRef().show();
   }
 
   public close(): void {
-    this.dlgRef().nativeElement.close();
+    this.dlgRef().close();
   }
 
   protected initials(p: DonorSearchResult): string {

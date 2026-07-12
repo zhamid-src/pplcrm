@@ -24,6 +24,7 @@ import {
   provideDataGridConfig,
 } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -31,7 +32,7 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon],
+  imports: [DataGrid, GrainTabs, Icon, ModalShell],
   templateUrl: './persons-grid.html',
   host: { class: 'block h-full' },
   providers: [
@@ -59,6 +60,7 @@ export class PersonsGrid implements OnInit {
 
   private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
   private readonly grainTabs = viewChild(GrainTabs);
+  private readonly confirmAddressEditDlg = viewChild.required<ModalShell>('confirmAddressEdit');
 
   public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
 
@@ -356,8 +358,7 @@ export class PersonsGrid implements OnInit {
   }
 
   protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
+    this.confirmAddressEditDlg().close();
 
     if (this.addressChangeModalId !== null) {
       void this.router.navigate(['households', this.addressChangeModalId]);
@@ -365,8 +366,7 @@ export class PersonsGrid implements OnInit {
   }
 
   private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
+    this.confirmAddressEditDlg().show();
   }
 
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {

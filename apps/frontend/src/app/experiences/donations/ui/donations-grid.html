@@ -111,16 +111,18 @@
     </tr>
     } @empty {
     <tr>
-      <td colspan="5" class="text-center py-16 text-base-content/50">
-        <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-        <h3 class="font-semibold text-base-content/70">No donations found</h3>
-        <p class="text-xs text-base-content/50 mt-1 mb-3">
-          Configure your Stripe integration and set up a donation form, or record an offline gift directly.
-        </p>
-        <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Record donation
-        </button>
+      <td colspan="5">
+        <pc-empty-state
+          icon="currency-dollar"
+          [bordered]="false"
+          title="No donations recorded yet"
+          hint="Configure your Stripe integration and set up a donation form, or record an offline gift directly."
+        >
+          <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+            <pc-icon name="plus" [size]="4"></pc-icon>
+            Record donation
+          </button>
+        </pc-empty-state>
       </td>
     </tr>
     } @if (totalGiftCount() > recentGifts().length) {

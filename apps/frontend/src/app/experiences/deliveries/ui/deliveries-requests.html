@@ -63,20 +63,21 @@
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="8" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No delivery requests in this view yet.</p>
-          @if (readyCount() > 0) {
+      <td colspan="8" class="px-6">
+        @if (readyCount() > 0) {
+        <pc-empty-state icon="map-pin" [bordered]="false" title="No delivery requests in this view yet">
           <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
             Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
           </button>
-          } @else {
-          <p class="max-w-sm text-xs text-base-content/45">
-            Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes.
-          </p>
-          }
-        </div>
+        </pc-empty-state>
+        } @else {
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No delivery requests in this view yet"
+          hint="Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes."
+        />
+        }
       </td>
     </tr>
     } @else { @for (row of rows(); track row.id) {

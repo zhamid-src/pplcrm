@@ -242,12 +242,15 @@
 
   <!-- Cropping Modal -->
   @if (cropImageSrc()) {
-  <dialog class="modal modal-open">
-    <div
-      class="modal-box max-w-md bg-base-100 rounded-2xl shadow-xl border border-base-200 p-6 flex flex-col items-center"
-    >
-      <h3 class="font-bold text-lg text-base-content self-start mb-4">Crop profile picture</h3>
-
+  <pc-modal-shell
+    [open]="true"
+    (closed)="cancelCrop()"
+    title="Crop profile picture"
+    icon="user-circle"
+    [boxClass]="'max-w-md'"
+    [dismissible]="false"
+  >
+    <div class="flex flex-col items-center">
       <!-- Drag & Crop Container -->
       <div
         class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
@@ -283,13 +286,13 @@
           class="range range-primary range-sm"
         />
       </div>
-
-      <!-- Action buttons -->
-      <div class="modal-action w-full flex justify-end gap-2 mt-6 border-t border-base-200 pt-4">
-        <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
-      </div>
     </div>
-  </dialog>
+
+    <!-- Action buttons -->
+    <div pc-modal-footer class="flex gap-2">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+    </div>
+  </pc-modal-shell>
   }
 </div>

@@ -104,7 +104,7 @@
             @if (tags().length > 0) {
             <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
-            <span class="text-xs italic text-base-content/40">No tags assigned</span>
+            <span class="text-xs text-base-content/40">No tags assigned</span>
             }
           </div>
           <div>
@@ -157,7 +157,7 @@
         <pc-tab-panel id="emails" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
             @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            <div class="text-center py-10 text-base-content/40">No direct email correspondence recorded</div>
             } @else {
             <div class="flex flex-col gap-3">
               @for (mail of activityData().emails; track mail.id) {
@@ -259,7 +259,7 @@
         <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
             @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            <div class="text-center py-10 text-base-content/40">No shift records found for this person</div>
             } @else {
             <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
               <table class="table pc-table w-full">
@@ -328,7 +328,7 @@
             </div>
             } @if (donationHistory().length === 0) {
             <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+              class="text-center py-10 text-base-content/40 bg-base-100 rounded-xl border border-dashed border-base-200"
             >
               No donations recorded yet for this person.
             </div>
@@ -380,9 +380,7 @@
         <pc-tab-panel id="events" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
             @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
+            <div class="text-center py-10 text-base-content/40">No event registrations found for this person.</div>
             } @else {
             <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
               <table class="table pc-table w-full">
@@ -460,80 +458,75 @@
   }
   <!-- Collect Donation Modal -->
   @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
+  <pc-modal-shell
+    [open]="true"
+    (closed)="closeDonationModal()"
+    title="Collect donation"
+    icon="currency-dollar"
+    [boxClass]="'max-w-md'"
+  >
+    <div class="space-y-4">
+      <p class="text-xs text-base-content/60">
+        Enter the donation amount in dollars. Residency validation and limit verification will be performed
+        automatically before redirecting to the payment gateway.
+      </p>
 
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-outline btn-accent"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
+      <!-- Donor Residency Profile -->
+      <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+        <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+          >Donor Residency Profile</span
         >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
+        <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          {{ addressString() }}
+        </div>
       </div>
+
+      <!-- Donation Amount input -->
+      <div class="flex flex-col gap-1.5">
+        <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+        <div class="relative">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+          <input
+            id="donation_input"
+            type="number"
+            min="1"
+            placeholder="250"
+            class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+            [(ngModel)]="donationAmount"
+          />
+        </div>
+      </div>
+
+      <!-- Error alert -->
+      @if (eligibilityError()) {
+      <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+        <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+        <span>{{ eligibilityError() }}</span>
+      </div>
+      }
     </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
+
+    <div pc-modal-footer class="flex gap-3">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent"
+        (click)="closeDonationModal()"
+        [disabled]="isCheckingEligibility()"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[140px] text-sm font-semibold"
+        (click)="submitDonation()"
+        [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+      >
+        @if (isCheckingEligibility()) {
+        <span class="loading loading-spinner loading-xs mr-1.5"></span>
+        Verifying... } @else { Verify & Proceed }
+      </button>
+    </div>
+  </pc-modal-shell>
   }
 </pc-detail-layout>

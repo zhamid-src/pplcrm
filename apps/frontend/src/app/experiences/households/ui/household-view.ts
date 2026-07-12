@@ -23,12 +23,14 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
 
 @Component({
   selector: 'pc-household-view',
   imports: [
+    EmptyState,
     RouterModule,
     PeopleInHousehold,
     Icon,

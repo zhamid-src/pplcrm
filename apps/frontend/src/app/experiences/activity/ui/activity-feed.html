@@ -124,26 +124,16 @@
 
   <!-- Empty State -->
   @if (!isLoading() && activities().length === 0) {
-  <div class="card bg-base-100 border border-base-300 shadow-xl max-w-md mx-auto mt-10">
-    <div class="card-body items-center text-center py-12">
-      <pc-icon name="information-circle" class="text-base-content/30 mb-2" [size]="10"></pc-icon>
-      <h2
-        class="card-title text-base-content/70"
-        i18n="
-                Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading"
-      >
-        No activity logged
-      </h2>
-      <p
-        class="text-xs text-base-content/50 mt-1"
-        i18n="
-                Activity feed empty state|Description text when no activity has been logged
-                yet@@activityFeed.emptyState.description"
-      >
-        Activity logs will appear here once actions are performed in the system.
-      </p>
-    </div>
-  </div>
+  <pc-empty-state
+    class="mx-auto mt-10 block max-w-md"
+    icon="information-circle"
+    title="No activity logged yet"
+    i18n-title="Activity feed empty state|Heading when no activity has been logged yet@@activityFeed.emptyState.heading"
+    hint="Activity logs will appear here once actions are performed in the system."
+    i18n-hint="
+      Activity feed empty state|Description text when no activity has been logged
+      yet@@activityFeed.emptyState.description"
+  />
   }
 
   <!-- Feed Timeline -->

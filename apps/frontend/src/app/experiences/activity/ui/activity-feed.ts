@@ -8,10 +8,11 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 import { PcIconNameType } from '@icons/icons.index';
 import { UserService } from '../../../services/user.service';
 import { IAuthUser } from '../../../../../../../libs/common/src';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 @Component({
   selector: 'pc-activity-feed',
-  imports: [DatePipe, RouterLink, Icon, GridHeaderComponent],
+  imports: [EmptyState, DatePipe, RouterLink, Icon, GridHeaderComponent],
   templateUrl: './activity-feed.html',
   styles: [
     `

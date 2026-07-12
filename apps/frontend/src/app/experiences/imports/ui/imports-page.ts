@@ -9,6 +9,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Table } from '@uxcommon/components/table/table';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
@@ -27,7 +28,7 @@ type HistoryTab = 'imports' | 'exports';
 
 @Component({
   selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent],
+  imports: [FormsModule, Icon, TabBar, Table, GridHeaderComponent, ModalShell],
   templateUrl: './imports-page.html',
 })
 export class ImportsPage {
@@ -194,19 +195,18 @@ export class ImportsPage {
     void this.router.navigate(['/imports/new']);
   }
 
-  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
+  protected openDeleteDialog(item: ImportListItem, dialog: ModalShell) {
     if (this.deleting()) return;
     this.pendingDelete.set(item);
-    dialog.showModal();
+    dialog.show();
   }
 
-  protected closeDeleteDialog(dialog: HTMLDialogElement) {
-    if (!dialog.open) return;
+  protected closeDeleteDialog(dialog: ModalShell) {
     dialog.close();
     this.pendingDelete.set(null);
   }
 
-  protected async confirmDelete(dialog: HTMLDialogElement) {
+  protected async confirmDelete(dialog: ModalShell) {
     const item = this.pendingDelete();
     if (!item || this.deleting()) return;
 

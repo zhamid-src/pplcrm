@@ -20,12 +20,15 @@
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="7" class="px-6 py-14 text-center">
-        <div class="flex flex-col items-center gap-3">
-          <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-          <p class="text-sm text-base-content/60">No routes yet. Approve requests, then plan routes.</p>
+      <td colspan="7" class="px-6">
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No routes yet"
+          hint="Approve requests, then plan routes."
+        >
           <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-        </div>
+        </pc-empty-state>
       </td>
     </tr>
     } @else { @for (row of rows(); track row.id) {

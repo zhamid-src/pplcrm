@@ -34,10 +34,12 @@ import { UserService } from '../../../services/user.service';
 
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 @Component({
   selector: 'pc-task-view',
   imports: [
+    EmptyState,
     DatePipe,
     DecimalPipe,
     SlicePipe,
