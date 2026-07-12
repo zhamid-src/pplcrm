@@ -37,16 +37,12 @@
     @if (showHeader()) {
     <div class="p-3 space-y-2">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <input
-          class="input-pplcrm w-full"
-          placeholder="To (comma or semicolon separated)"
-          [formControl]="form.controls.to"
-        />
-        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
-        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
+        <input class="input-pplcrm w-full" placeholder="To (comma or semicolon separated)" [formField]="form.to" />
+        <input class="input-pplcrm w-full" placeholder="Cc" [formField]="form.cc" />
+        <input class="input-pplcrm w-full" placeholder="Bcc" [formField]="form.bcc" />
       </div>
 
-      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formField]="form.subject" />
     </div>
     }
   </div>
@@ -122,9 +118,9 @@
     <quill-editor
       class="compose-quill flex-1"
       [modules]="modules"
-      [formControl]="form.controls.html"
       [placeholder]="'Write your message…'"
       (onEditorCreated)="onEditorCreated($event)"
+      (onContentChanged)="onContentChanged($event)"
     ></quill-editor>
   </div>
   <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />

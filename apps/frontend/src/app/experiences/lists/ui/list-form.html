@@ -1,17 +1,18 @@
 <div class="flex min-h-full flex-col bg-base-100">
   @if (!isNew()) {
   <!-- Simple Edit Form -->
-  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10" (submit)="save($event)">
+  <form class="mx-5 my-8 flex flex-col gap-6 sm:mx-10" (submit)="save($event)">
     <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
       <div class="flex items-center gap-3">
         <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
         <div>
-          <h1 class="text-xl font-bold">Edit {{ form.get('name')?.value || 'List' }}</h1>
+          <h1 class="text-xl font-bold">Edit {{ payload().name || 'List' }}</h1>
           <p class="text-sm text-base-content/60 mt-0.5">Modify the name and description of this list.</p>
         </div>
       </div>
       <pc-form-actions
         [isLoading]="isLoading()"
+        [signalForm]="form"
         (btn1Clicked)="save($event)"
         [btn1Text]="'Save List'"
         [showDelete]="true"
@@ -28,7 +29,7 @@
           id="list-name"
           type="text"
           class="input input-bordered w-full"
-          formControlName="name"
+          [formField]="form.name"
           placeholder="List Name"
         />
       </div>
@@ -40,14 +41,14 @@
           rows="4"
           class="textarea textarea-bordered w-full"
           placeholder="Describe the purpose of this list"
-          formControlName="description"
+          [formField]="form.description"
         ></textarea>
       </div>
     </section>
   </form>
   } @else {
   <!-- Stepper Form for New Lists -->
-  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
+  <form class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-base-200 pb-4">
       <div class="flex items-center gap-3">
@@ -116,8 +117,8 @@
       <button
         type="button"
         class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('object')?.value === 'people'"
-        (click)="form.get('object')?.setValue('people'); next()"
+        [class.bg-base-200]="listType() === 'people'"
+        (click)="setObject('people'); next()"
       >
         <div class="flex items-center gap-4">
           <pc-icon name="users" [size]="10"></pc-icon>
@@ -131,8 +132,8 @@
       <button
         type="button"
         class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('object')?.value === 'households'"
-        (click)="form.get('object')?.setValue('households'); next()"
+        [class.bg-base-200]="listType() === 'households'"
+        (click)="setObject('households'); next()"
       >
         <div class="flex items-center gap-4">
           <pc-icon name="house-modern" [size]="10"></pc-icon>
@@ -153,7 +154,7 @@
         class="card border border-base-300 hover:border-primary p-6 text-left"
         [class.border-primary]="isDynamic()"
         [class.bg-base-200]="isDynamic()"
-        (click)="form.get('is_dynamic')?.setValue(true)"
+        (click)="setDynamic(true)"
       >
         <div class="flex items-center gap-2 mb-1">
           <pc-icon name="arrow-path" class="text-primary" [size]="5"></pc-icon>
@@ -168,7 +169,7 @@
         class="card border border-base-300 hover:border-primary p-6 text-left"
         [class.border-primary]="!isDynamic()"
         [class.bg-base-200]="!isDynamic()"
-        (click)="form.get('is_dynamic')?.setValue(false)"
+        (click)="setDynamic(false)"
       >
         <div class="flex items-center gap-2 mb-1">
           <pc-icon name="archive-box" class="text-primary" [size]="5"></pc-icon>
@@ -222,9 +223,9 @@
             class="input input-bordered w-full"
             placeholder="List name"
             aria-label="List name"
-            formControlName="name"
+            [formField]="form.name"
           />
-          @if (form.get('name')?.invalid && form.get('name')?.touched) {
+          @if (form.name().invalid() && form.name().touched()) {
           <span class="flex items-center gap-1 text-xs text-error">
             <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
             Give the list a name so you can find it later.
@@ -235,7 +236,7 @@
           class="input input-bordered w-full"
           placeholder="Description (optional)"
           aria-label="Description"
-          formControlName="description"
+          [formField]="form.description"
         />
       </div>
 
@@ -251,7 +252,7 @@
       </div>
 
       <div class="h-96 border border-base-300 rounded">
-        @if (form.get('object')?.value === 'people') {
+        @if (listType() === 'people') {
         <pc-people-filter-grid
           [showToolbar]="false"
           [enableSelection]="false"
@@ -273,6 +274,7 @@
         <button type="button" class="btn" (click)="back()">Back</button>
         <pc-form-actions
           [isLoading]="isLoading()"
+          [signalForm]="form"
           [btn1Text]="createLabel()"
           (btn1Clicked)="save($event)"
           buttonsToShow="two"

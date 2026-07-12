@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -28,7 +27,7 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-route-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, StatusBadge, Icon, DatePipe, RecordActivities],
+  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities],
   templateUrl: './deliveries-route-detail.html',
 })
 export class DeliveriesRouteDetail {
@@ -55,7 +54,12 @@ export class DeliveriesRouteDetail {
   });
 
   constructor() {
-    void this.load();
+    // Load only once the router has bound the required `id` input — reading it
+    // synchronously in the constructor throws NG0950. Re-runs if the id changes.
+    effect(() => {
+      this.id();
+      untracked(() => void this.load());
+    });
 
     // Navbar trail with the route's real name once loaded (until then the route's
     // `data.breadcrumb` default — Deliveries / Routes — is showing).
@@ -88,6 +92,10 @@ export class DeliveriesRouteDetail {
     } finally {
       end();
     }
+  }
+
+  protected onDraftNameInput(event: Event): void {
+    this.draftName.set((event.target as HTMLInputElement).value);
   }
 
   protected startRename(): void {

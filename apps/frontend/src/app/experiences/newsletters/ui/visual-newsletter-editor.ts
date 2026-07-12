@@ -1,5 +1,4 @@
 import { Component, OnInit, computed, model, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
@@ -15,7 +14,7 @@ import {
 
 @Component({
   selector: 'pc-visual-newsletter-editor',
-  imports: [FormsModule, Icon, TabBar],
+  imports: [Icon, TabBar],
   templateUrl: './visual-newsletter-editor.html',
 })
 export class VisualNewsletterEditorComponent implements OnInit {
@@ -281,6 +280,55 @@ export class VisualNewsletterEditorComponent implements OnInit {
     this.propagateChanges();
   }
 
+  // --- Ad-hoc style/content knobs (value + input/change handlers, no forms) ---
+
+  /** Writes a plain-text field of the block (content, urls, footer copy) from a native input/textarea event. */
+  protected setBlockText(block: EmailBlock, field: EditableBlockTextField, event: Event): void {
+    block[field] = eventValue(event);
+    this.updateBlocks();
+  }
+
+  /** Writes a string-valued style property (colors, sizes, paddings) from a native control event. */
+  protected setBlockStyle(block: EmailBlock, key: StringStyleKey, event: Event): void {
+    this.ensureStyles(block)[key] = eventValue(event);
+    this.updateBlocks();
+  }
+
+  protected setBlockAlign(block: EmailBlock, event: Event): void {
+    const value = eventValue(event);
+    if (value === 'left' || value === 'center' || value === 'right') {
+      this.ensureStyles(block).textAlign = value;
+      this.updateBlocks();
+    }
+  }
+
+  protected setSocialIconStyle(block: EmailBlock, event: Event): void {
+    const value = eventValue(event);
+    if (
+      value === 'circular-solid' ||
+      value === 'circular-gray' ||
+      value === 'simple-color' ||
+      value === 'simple-gray'
+    ) {
+      block.socialIconStyle = value;
+      this.updateBlocks();
+    }
+  }
+
+  protected setSocialUrl(social: { url: string }, event: Event): void {
+    social.url = eventValue(event);
+    this.updateBlocks();
+  }
+
+  protected onRawHtmlInput(event: Event): void {
+    this.handleRawHtmlEdit(eventValue(event));
+  }
+
+  private ensureStyles(block: EmailBlock): NonNullable<EmailBlock['styles']> {
+    block.styles ??= {};
+    return block.styles;
+  }
+
   protected handleRawHtmlEdit(html: string): void {
     this.htmlContent.set(html);
     // Simple text version conversion from html tags
@@ -309,4 +357,40 @@ export class VisualNewsletterEditorComponent implements OnInit {
     this.htmlContent.set(html);
     this.plainTextContent.set(text);
   }
+}
+
+/** Block fields that are edited as free text in the Customize panel. */
+type EditableBlockTextField =
+  | 'content'
+  | 'linkUrl'
+  | 'imageUrl'
+  | 'imageAlt'
+  | 'imageWidth'
+  | 'footerCompany'
+  | 'footerAddress'
+  | 'footerUnsubscribeUrl';
+
+/** Style keys typed as plain strings on EmailBlock['styles'] (textAlign is handled separately). */
+type StringStyleKey =
+  | 'color'
+  | 'backgroundColor'
+  | 'fontSize'
+  | 'paddingTop'
+  | 'paddingBottom'
+  | 'borderRadius'
+  | 'borderColor'
+  | 'borderWidth'
+  | 'height';
+
+/** Safely reads the string value from a native input/textarea/select event target. */
+function eventValue(event: Event): string {
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return target.value;
+  }
+  return '';
 }

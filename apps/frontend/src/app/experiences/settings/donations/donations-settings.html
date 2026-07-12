@@ -231,10 +231,8 @@
             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
             <input
               type="number"
-              min="1"
               class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [ngModel]="newPeriodLimit()"
-              (ngModelChange)="newPeriodLimit.set($event)"
+              [formField]="newPeriodLimitForm"
             />
           </div>
         </div>
@@ -524,11 +522,9 @@
           <input
             id="new_limit"
             type="number"
-            min="1"
             placeholder="500"
             class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newLimit()"
-            (ngModelChange)="newLimit.set($event)"
+            [formField]="newLimitForm"
           />
         </div>
       </div>
@@ -540,12 +536,9 @@
           <input
             id="new_rate"
             type="number"
-            min="0"
-            max="100"
             placeholder="75"
             class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newRate()"
-            (ngModelChange)="newRate.set($event)"
+            [formField]="newRateForm"
           />
           <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
         </div>

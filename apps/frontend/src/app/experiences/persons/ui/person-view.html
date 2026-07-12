@@ -502,7 +502,8 @@
               min="1"
               placeholder="250"
               class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
+              [value]="donationAmount() ?? ''"
+              (input)="onDonationAmountInput($event)"
             />
           </div>
         </div>

@@ -3,7 +3,6 @@ import { RouterLink } from '@angular/router';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
 import {
   IAuthUserDetail,
   IUserStatsSnapshot,
@@ -19,7 +18,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 
 @Component({
   selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, RouterLink],
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, DecimalPipe, RouterLink],
   templateUrl: './profile-page.html',
 })
 export class ProfilePage implements OnInit {
@@ -256,6 +255,11 @@ export class ProfilePage implements OnInit {
 
   protected cancelCrop() {
     this.cropImageSrc.set(null);
+  }
+
+  protected onCropZoomInput(event: Event) {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    if (!Number.isNaN(value)) this.cropZoom.set(value);
   }
 
   protected onCropDragStart(event: MouseEvent) {
