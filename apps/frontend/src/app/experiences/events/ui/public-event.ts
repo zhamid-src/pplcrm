@@ -83,7 +83,7 @@ const COUNTRY_OPTIONS = [
               </a>
             }
 
-            <div class="rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+            <div class="pc-panel p-8">
               <div class="mb-4 flex items-center gap-2">
                 <div
                   class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
@@ -144,9 +144,7 @@ const COUNTRY_OPTIONS = [
                   <h2 class="mb-2 text-sm font-semibold text-base-content">Tickets</h2>
                   <div class="flex flex-col gap-2">
                     @for (ticket of tickets(); track ticket.name) {
-                      <div
-                        class="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-4 py-3"
-                      >
+                      <div class="flex items-center justify-between pc-panel px-4 py-3">
                         <div>
                           <p class="text-sm font-medium text-base-content">{{ ticket.name }}</p>
                           @if (ticket.description) {
@@ -242,9 +240,7 @@ const COUNTRY_OPTIONS = [
           </div>
         }
         @case ('thanks') {
-          <div
-            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
-          >
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
             <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
               ✓
             </div>
@@ -255,9 +251,7 @@ const COUNTRY_OPTIONS = [
           </div>
         }
         @default {
-          <div
-            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
-          >
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
             <h1 class="mb-2 text-xl font-semibold text-base-content">Event not found</h1>
             <p class="text-sm text-base-content/60">This event doesn’t exist or hasn’t been published yet.</p>
           </div>

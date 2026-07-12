@@ -39,9 +39,7 @@
   </div>
 
   @if (totalPages() > 1) {
-  <div
-    class="flex flex-col sm:flex-row items-center justify-between mt-8 bg-base-100 border border-base-300 p-4 rounded-xl shadow-sm gap-4"
-  >
+  <div class="flex flex-col sm:flex-row items-center justify-between mt-8 pc-panel p-4 gap-4">
     <div class="text-sm text-base-content/60 font-light">
       Page <span class="font-semibold text-base-content">{{ currentPage() }}</span> of
       <span class="font-semibold text-base-content">{{ totalPages() }}</span>

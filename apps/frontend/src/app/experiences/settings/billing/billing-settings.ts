@@ -6,6 +6,7 @@ import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { TRPCService } from '../../../services/api/trpc-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
 export interface BillingDetailsSnapshot {
   plan: string;
@@ -19,7 +20,7 @@ export interface BillingDetailsSnapshot {
 
 @Component({
   selector: 'pc-billing-settings',
-  imports: [DatePipe, Icon],
+  imports: [DatePipe, Icon, StatusBadge],
   templateUrl: './billing-settings.html',
 })
 export class BillingSettingsComponent extends TRPCService<any> implements OnInit {

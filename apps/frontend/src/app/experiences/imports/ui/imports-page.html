@@ -66,7 +66,7 @@
         </td>
         <td>
           @switch (item.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Pending</span>
+          <pc-status-badge type="ghost">Pending</pc-status-badge>
           } @case ('processing') {
           <span class="badge badge-info text-xs gap-1">
             <span class="loading loading-spinner loading-xs"></span>
@@ -90,9 +90,9 @@
             }
           </div>
           } @case ('failed') {
-          <span class="badge badge-error text-xs cursor-help" [title]="item.errorMessage || 'Unknown error'">
+          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
             Failed
-          </span>
+          </pc-status-badge>
           } }
         </td>
         <td>
@@ -200,7 +200,7 @@
         </td>
         <td>
           @switch (job.status) { @case ('pending') {
-          <span class="badge badge-ghost text-xs">Queued</span>
+          <pc-status-badge type="ghost">Queued</pc-status-badge>
           } @case ('processing') {
           <span class="badge badge-info text-xs gap-1">
             <span class="loading loading-spinner loading-xs"></span>
@@ -209,7 +209,7 @@
           } @case ('completed') {
           <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
           } @default {
-          <span class="badge badge-error text-xs">Failed</span>
+          <pc-status-badge type="error">Failed</pc-status-badge>
           } }
         </td>
         <td class="text-right">

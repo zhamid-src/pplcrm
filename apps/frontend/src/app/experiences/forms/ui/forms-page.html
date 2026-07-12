@@ -1,7 +1,7 @@
 <!-- Preview panel (shared by browse + edit) ---------------------------------->
 <ng-template #previewPanel let-showEdit="showEdit">
   @if (selected(); as form) {
-  <div class="rounded-2xl border border-base-300 bg-base-100">
+  <div class="pc-panel">
     <!-- Actions row -->
     <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
       <div class="join">
@@ -202,13 +202,9 @@
             >{{ form.name }}</span
           >
           <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span
-            class="badge badge-xs shrink-0"
-            [class.badge-success]="form.status === 'published'"
-            [class.badge-ghost]="form.status !== 'published'"
-          >
+          <pc-status-badge class="shrink-0" [type]="form.status === 'published' ? 'success' : 'ghost'">
             {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </span>
+          </pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
@@ -235,7 +231,7 @@
         <div class="flex items-center gap-2">
           <span class="truncate text-sm font-medium">{{ form.name }}</span>
           <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-xs badge-ghost shrink-0">Archived</span>
+          <pc-status-badge type="ghost" class="shrink-0">Archived</pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
           {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
@@ -312,7 +308,7 @@
     <button
       type="button"
       (click)="selectTemplate(card.type)"
-      class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
       <div
         class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
@@ -331,7 +327,7 @@
     <button
       type="button"
       (click)="openBuilder(card)"
-      class="group flex cursor-pointer flex-col items-start gap-3 rounded-2xl border border-base-300 bg-base-100 p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
       <div
         class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"

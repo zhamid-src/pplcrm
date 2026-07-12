@@ -109,6 +109,35 @@ hides. Note: `loading` gates the initial skeleton; use a separate `saving`/`rese
 boolean signal (see `saving`/`resettingPassword` in `user-view.ts`) to disable buttons during
 in-progress actions — don't reuse the gate for both.
 
+## Request guard: stale responses must not land
+
+Any component that reloads on an input change (detail views reloading on `id()` via prev/next
+record navigation) must pair the loading gate with `createRequestGuard()`
+(`libs/uxcommon/src/request-guard.ts`) — otherwise a slow earlier response overwrites the newer
+record when the user navigates quickly:
+
+```ts
+import { createRequestGuard } from '@uxcommon/request-guard';
+
+private readonly _requestGuard = createRequestGuard();
+
+protected async loadAllData(id: string) {
+  const isCurrent = this._requestGuard.begin();
+  const end = this._loading.begin();
+  try {
+    const data = await this.svc.getById(id);
+    if (!isCurrent()) return; // superseded — do not land stale data
+    this.detail.set(data);
+  } finally {
+    end();
+  }
+}
+```
+
+Check `isCurrent()` after **every** await before writing signals (see `person-view.ts` for the
+multi-await shape). All `*-view` detail components use this; `people-in-household.ts` keeps its
+own richer sequence counter because it also guards pagination appends.
+
 ## pc-icon: required `name`, integer `[size]` only
 
 `libs/uxcommon/src/components/icons/icon.ts`:
@@ -125,6 +154,12 @@ Whole integers only for `[size]`. The size renders as Tailwind classes `w-${size
 so `[size]="4"` → `w-4 h-4`. Do not pass decimals (`[size]="3.5"`) and do not put
 width/height/`size-*` utilities on `<pc-icon>` — its class-scrubber strips them. Real usage:
 `<pc-icon name="lock-closed" [size]="4"></pc-icon>` (`user-view.html`).
+
+**Size values are Tailwind spacing units, not pixels** (`[size]="4"` = 16px, `6` = 24px,
+`10` = 40px). Because the classes are built at runtime, Tailwind's scanner can't see them —
+every size in use must be in the `@source inline("{w,h}-{2,3,4,...}")` safelist near the top of
+`apps/frontend/src/styles.css`. Using a size outside that list silently renders an unsized
+icon; add the new value to the safelist in the same change. Sizes in use: 2–8, 10, 12, 16.
 
 ## Signals-only state, `inject()` at the field level
 

@@ -20,6 +20,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { ShiftsService } from '../../shifts/services/shifts-service';
 import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
 import { WorkflowsService } from '../services/workflows-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import {
   SequenceStep,
   SequenceStepPayload,
@@ -62,6 +63,7 @@ interface EnrollmentRow {
 @Component({
   selector: 'pc-workflow-form',
   imports: [
+    StatusBadge,
     RouterModule,
     FormsModule,
     FormField,

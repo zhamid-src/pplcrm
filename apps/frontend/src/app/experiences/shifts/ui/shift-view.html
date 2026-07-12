@@ -29,13 +29,13 @@
         <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
         <div class="flex gap-2 mb-4">
           @if (event().is_private) {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
+          <pc-status-badge type="warning">Private</pc-status-badge>
           } @else {
-          <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
+          <pc-status-badge type="success">Public</pc-status-badge>
           } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
+          <pc-status-badge type="neutral">Passed</pc-status-badge>
           } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          <pc-status-badge type="info">Upcoming</pc-status-badge>
           }
         </div>
 
