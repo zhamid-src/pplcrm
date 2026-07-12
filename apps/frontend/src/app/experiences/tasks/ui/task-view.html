@@ -138,9 +138,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">
-            No subtasks defined. Add one below to break this task down.
-          </div>
+          <pc-empty-state
+            icon="clipboard-document-list"
+            [bordered]="false"
+            title="No subtasks yet"
+            hint="Add one below to break this task down."
+          />
           }
 
           <div class="flex gap-2 mt-2">
@@ -206,9 +209,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">
-            No comments yet. Start the conversation!
-          </div>
+          <pc-empty-state
+            icon="chat-bubble-bottom-center-text"
+            [bordered]="false"
+            title="No comments yet"
+            hint="Start the conversation below — use @ to mention colleagues."
+          />
           }
 
           <!-- Comment Composer with User Mentions -->
@@ -310,7 +316,12 @@
             }
           </div>
           } @else {
-          <div class="text-center py-6 text-sm text-base-content/40 italic">No files attached to this task.</div>
+          <pc-empty-state
+            icon="paper-clip"
+            [bordered]="false"
+            title="No files attached to this task"
+            hint="Attach one below with a name and a URL."
+          />
           }
 
           <div class="flex flex-col sm:flex-row gap-2 mt-2 border-t border-base-200 pt-4">

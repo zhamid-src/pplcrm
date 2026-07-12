@@ -31,13 +31,11 @@
 
   <!-- Pledges table -->
   @if (!_loading.visible() && pledges().length === 0) {
-  <div class="flex flex-col items-center justify-center py-20 text-center text-base-content/50 gap-3">
-    <pc-icon name="arrow-path" [size]="12" class="opacity-20"></pc-icon>
-    <p class="text-lg font-semibold">No pledges yet</p>
-    <p class="text-sm max-w-sm">
-      Monthly pledges will appear here once donors commit through a recurring donation form or direct checkout.
-    </p>
-  </div>
+  <pc-empty-state
+    icon="arrow-path"
+    title="No pledges yet"
+    hint="Monthly pledges will appear here once donors commit through a recurring donation form or direct checkout."
+  />
   } @else {
   <pc-table [columns]="7">
     <ng-container pcTableHead>

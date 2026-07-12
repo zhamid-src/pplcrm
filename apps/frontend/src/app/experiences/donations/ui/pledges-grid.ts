@@ -1,7 +1,6 @@
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TitleCasePipe } from '@angular/common';
-import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
@@ -9,10 +8,11 @@ import { Table } from '@uxcommon/components/table/table';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 @Component({
   selector: 'pc-pledges-grid',
-  imports: [RouterLink, TitleCasePipe, Icon, TabBar, Table, GridHeaderComponent],
+  imports: [EmptyState, RouterLink, TitleCasePipe, TabBar, Table, GridHeaderComponent],
   templateUrl: './pledges-grid.html',
 })
 export class PledgesGridComponent implements OnInit {

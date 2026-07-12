@@ -1,7 +1,8 @@
-import { Component, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { Component, inject, input, signal, viewChild } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import {
@@ -18,7 +19,7 @@ import { TasksService } from '../../../tasks/services/tasks-service';
 
 @Component({
   selector: 'pc-email-create-task-dialog',
-  imports: [FormField, Icon],
+  imports: [FormField, Icon, ModalShell],
   templateUrl: './email-create-task-dialog.html',
 })
 export class EmailCreateTaskDialog {
@@ -28,7 +29,7 @@ export class EmailCreateTaskDialog {
   private readonly teamsSvc = inject(TeamsService);
 
   private readonly _loading = createLoadingGate();
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
 
   public readonly email = input.required<EmailType>();
 
@@ -100,11 +101,11 @@ export class EmailCreateTaskDialog {
       }
     }
 
-    this.dlgRef().nativeElement.showModal();
+    this.dlgRef().show();
   }
 
   public close() {
-    this.dlgRef().nativeElement.close();
+    this.dlgRef().close();
   }
 
   protected async submit() {

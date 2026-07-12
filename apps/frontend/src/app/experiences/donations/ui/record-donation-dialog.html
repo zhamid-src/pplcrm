@@ -1,155 +1,132 @@
-<dialog #dlg class="modal">
-  <div class="modal-box max-w-md">
-    <div class="flex items-center justify-between mb-5">
-      <h3 class="text-xl font-bold flex items-center gap-2">
-        <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
-        Record donation
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <form class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
-      <!-- Donor -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
-        @if (selectedDonor()) {
-        <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-          <div
-            class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-          >
-            {{ initials(selectedDonor()!) }}
-          </div>
-          <span class="text-sm font-medium flex-1 truncate"
-            >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
-          >
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle"
-            (click)="clearDonor()"
-            aria-label="Change donor"
-          >
-            <pc-icon name="x-mark" [size]="3"></pc-icon>
-          </button>
+<pc-modal-shell #dlg title="Record donation" icon="currency-dollar" [boxClass]="'max-w-md'" [dismissible]="false">
+  <form id="record-donation-form" class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
+    <!-- Donor -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
+      @if (selectedDonor()) {
+      <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
+        <div
+          class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+        >
+          {{ initials(selectedDonor()!) }}
         </div>
-        } @else {
-        <div class="relative">
-          <input
-            id="rd-donor"
-            type="text"
-            class="input input-bordered w-full pr-10 text-sm"
-            [class.input-error]="donorInvalid()"
-            placeholder="Search by name or email..."
-            [ngModel]="donorSearch()"
-            [ngModelOptions]="{ standalone: true }"
-            (ngModelChange)="onDonorSearchChange($event)"
-            (blur)="touchedDonor.set(true)"
-            autofocus
-          />
-          <pc-icon
-            name="magnifying-glass"
-            [size]="4"
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-          ></pc-icon>
-        </div>
-        @if (donorResults().length > 0) {
-        <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
-          @for (p of donorResults(); track p.id) {
-          <button
-            type="button"
-            class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
-            (click)="selectDonor(p)"
-          >
-            <div
-              class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-            >
-              {{ initials(p) }}
-            </div>
-            <div class="flex flex-col min-w-0">
-              <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
-              @if (p.email) {
-              <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
-              }
-            </div>
-          </button>
-          }
-        </div>
-        } @if (isSearching() && donorSearch().length > 0) {
-        <span class="text-xs text-base-content/40 italic">Searching...</span>
-        } @if (donorInvalid()) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          Choose who gave this gift — receipts need a name.
-        </p>
-        } }
+        <span class="text-sm font-medium flex-1 truncate"
+          >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
+        >
+        <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearDonor()" aria-label="Change donor">
+          <pc-icon name="x-mark" [size]="3"></pc-icon>
+        </button>
       </div>
-
-      <!-- Amount -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
-        <div class="relative">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-          <input
-            id="rd-amount"
-            type="number"
-            min="0.01"
-            step="0.01"
-            inputmode="decimal"
-            class="input input-bordered w-full pl-7 text-sm tabular-nums"
-            [class.input-error]="amountInvalid()"
-            placeholder="50.00"
-            [ngModel]="amount()"
-            [ngModelOptions]="{ standalone: true }"
-            (ngModelChange)="amount.set($event === '' ? null : +$event)"
-            (blur)="touchedAmount.set(true)"
-          />
-        </div>
-        @if (amountInvalid()) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-          Enter an amount above zero, like 50.
-        </p>
+      } @else {
+      <div class="relative">
+        <input
+          id="rd-donor"
+          type="text"
+          class="input input-bordered w-full pr-10 text-sm"
+          [class.input-error]="donorInvalid()"
+          placeholder="Search by name or email..."
+          [ngModel]="donorSearch()"
+          [ngModelOptions]="{ standalone: true }"
+          (ngModelChange)="onDonorSearchChange($event)"
+          (blur)="touchedDonor.set(true)"
+          autofocus
+        />
+        <pc-icon
+          name="magnifying-glass"
+          [size]="4"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+        ></pc-icon>
+      </div>
+      @if (donorResults().length > 0) {
+      <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
+        @for (p of donorResults(); track p.id) {
+        <button
+          type="button"
+          class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
+          (click)="selectDonor(p)"
+        >
+          <div
+            class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+          >
+            {{ initials(p) }}
+          </div>
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
+            @if (p.email) {
+            <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
+            }
+          </div>
+        </button>
         }
       </div>
-
-      <!-- Method -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
-        <select
-          id="rd-method"
-          class="select select-bordered w-full text-sm"
-          [ngModel]="method()"
-          [ngModelOptions]="{ standalone: true }"
-          (ngModelChange)="method.set($event)"
-        >
-          @for (m of methods; track m) {
-          <option [value]="m">{{ methodLabels[m] }}</option>
-          }
-        </select>
-      </div>
-
-      <p class="text-xs text-base-content/50 flex items-start gap-1.5">
-        <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
-        A receipt goes out automatically — that's set in Workspace settings → Donations.
+      } @if (isSearching() && donorSearch().length > 0) {
+      <span class="text-xs text-base-content/40">Searching...</span>
+      } @if (donorInvalid()) {
+      <p class="text-xs text-error mt-1 flex items-center gap-1">
+        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+        Choose who gave this gift — receipts need a name.
       </p>
+      } }
+    </div>
 
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">
-          Cancel
-        </button>
-        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
-          @if (submitting()) {
-          <span class="loading loading-spinner loading-sm"></span>
-          } @else {
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          } Record donation
-        </button>
+    <!-- Amount -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
+      <div class="relative">
+        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+        <input
+          id="rd-amount"
+          type="number"
+          min="0.01"
+          step="0.01"
+          inputmode="decimal"
+          class="input input-bordered w-full pl-7 text-sm tabular-nums"
+          [class.input-error]="amountInvalid()"
+          placeholder="50.00"
+          [ngModel]="amount()"
+          [ngModelOptions]="{ standalone: true }"
+          (ngModelChange)="amount.set($event === '' ? null : +$event)"
+          (blur)="touchedAmount.set(true)"
+        />
       </div>
-    </form>
-  </div>
+      @if (amountInvalid()) {
+      <p class="text-xs text-error mt-1 flex items-center gap-1">
+        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+        Enter an amount above zero, like 50.
+      </p>
+      }
+    </div>
 
-  <form method="dialog" class="modal-backdrop">
-    <button (click)="close()">close</button>
+    <!-- Method -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
+      <select
+        id="rd-method"
+        class="select select-bordered w-full text-sm"
+        [ngModel]="method()"
+        [ngModelOptions]="{ standalone: true }"
+        (ngModelChange)="method.set($event)"
+      >
+        @for (m of methods; track m) {
+        <option [value]="m">{{ methodLabels[m] }}</option>
+        }
+      </select>
+    </div>
+
+    <p class="text-xs text-base-content/50 flex items-start gap-1.5">
+      <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
+      A receipt goes out automatically — that's set in Workspace settings → Donations.
+    </p>
   </form>
-</dialog>
+
+  <div pc-modal-footer class="flex gap-2">
+    <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">Cancel</button>
+    <button type="submit" form="record-donation-form" class="btn btn-primary" [disabled]="submitting()">
+      @if (submitting()) {
+      <span class="loading loading-spinner loading-sm"></span>
+      } @else {
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      } Record donation
+    </button>
+  </div>
+</pc-modal-shell>

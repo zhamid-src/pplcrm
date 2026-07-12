@@ -317,12 +317,12 @@
         }
       </div>
       } @else {
-      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
-        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
-        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Import your people</a
-        >
+      <div class="flex min-h-[200px] flex-col items-center justify-center">
+        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
+          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Import your people</a
+          >
+        </pc-empty-state>
       </div>
       }
     </div>
@@ -353,12 +353,12 @@
         }
       </ul>
       } @else {
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Plan an event</a
-        >
+      <div class="flex flex-1 flex-col items-center justify-center">
+        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
+          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Plan an event</a
+          >
+        </pc-empty-state>
       </div>
       }
 
@@ -417,7 +417,14 @@
           </tr>
           } @empty {
           <tr>
-            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+            <td colspan="6">
+              <pc-empty-state
+                icon="user-group"
+                [bordered]="false"
+                title="No representative activity yet"
+                hint="Stats build up as your team works emails and tasks."
+              />
+            </td>
           </tr>
           }
         </tbody>

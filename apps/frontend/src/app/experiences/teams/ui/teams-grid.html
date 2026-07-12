@@ -26,19 +26,19 @@
   </div>
   } @else if (teams().length === 0) {
   <!-- Empty state: icon + cause + one action (§3) -->
-  <div
-    class="mx-auto mt-10 flex max-w-md flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center"
+  <pc-empty-state
+    class="mx-auto mt-10 block max-w-md"
+    icon="add-group"
+    title="No teams yet"
+    i18n-title
+    hint="Teams let you hand a group of volunteers to a lead who fields their questions."
+    i18n-hint
   >
-    <pc-icon name="add-group" class="text-base-content/30" [size]="10"></pc-icon>
-    <h2 class="text-base font-semibold text-base-content/80" i18n>No teams yet</h2>
-    <p class="text-sm text-base-content/55" i18n>
-      Teams let you hand a group of volunteers to a lead who fields their questions.
-    </p>
     <a routerLink="add" class="btn btn-primary btn-sm mt-1 gap-2">
       <pc-icon name="add-group" [size]="4"></pc-icon>
       <span i18n>New team</span>
     </a>
-  </div>
+  </pc-empty-state>
   } @else {
   <!-- Team cards (Fig 17) -->
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

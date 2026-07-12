@@ -19,12 +19,15 @@
 
     @if (ranked().length === 0) {
     <tr>
-      <td colspan="6" class="py-12 text-center">
-        <div class="flex flex-col items-center gap-2">
-          <pc-icon name="shield-exclamation" class="text-base-content/30" [size]="8"></pc-icon>
-          <p class="text-xs text-base-content/60">No issues yet.</p>
+      <td colspan="6">
+        <pc-empty-state
+          icon="shield-exclamation"
+          [bordered]="false"
+          title="No issues yet"
+          hint="Issues flow in from survey forms and profile edits — or start the vocabulary yourself."
+        >
           <button type="button" class="btn btn-sm btn-primary" (click)="openAddDialog()">New issue</button>
-        </div>
+        </pc-empty-state>
       </td>
     </tr>
     } @else { @for (entry of ranked(); track entry.row.id) {

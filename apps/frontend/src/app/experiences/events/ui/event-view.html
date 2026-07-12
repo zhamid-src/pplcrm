@@ -219,7 +219,11 @@
             </div>
 
             @if (registrations().length === 0) {
-            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
+            <pc-empty-state
+              icon="user-group"
+              title="No registrations yet for this event"
+              hint="Pick a person above and hit Register to start the attendee list."
+            />
             } @else {
             <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
               <table class="table pc-table w-full">

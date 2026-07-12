@@ -1,19 +1,10 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  computed,
-  inject,
-  input,
-  output,
-  signal,
-  viewChild,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { email, form, required } from '@angular/forms/signals';
 
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -42,7 +33,7 @@ const DEFAULT_ROLE = 'user';
 @Component({
   selector: 'pc-invite-user-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, PcInput, PcSelect],
+  imports: [Icon, PcInput, PcSelect, ModalShell],
   templateUrl: './invite-user-dialog.html',
 })
 export class InviteUserDialog {
@@ -51,7 +42,7 @@ export class InviteUserDialog {
   private readonly settings = inject(SettingsService);
   private readonly alerts = inject(AlertService);
 
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
 
   public readonly seatUsage = input<SeatUsage | null>(null);
   public readonly saved = output<void>();
@@ -88,11 +79,11 @@ export class InviteUserDialog {
     this.payload.set({ email: '', first_name: '', last_name: '', role: DEFAULT_ROLE });
     this.form().reset();
     void this.prefillDefaultRole();
-    this.dlgRef().nativeElement.showModal();
+    this.dlgRef().show();
   }
 
   public close(): void {
-    this.dlgRef().nativeElement.close();
+    this.dlgRef().close();
   }
 
   protected async submit(event: Event): Promise<void> {

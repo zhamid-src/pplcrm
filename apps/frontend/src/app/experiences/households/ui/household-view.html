@@ -122,7 +122,12 @@
         @if (h.notes) {
         <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ h.notes }}</p>
         } @else {
-        <p class="text-sm italic text-base-content/40">No door notes recorded for this household.</p>
+        <pc-empty-state
+          icon="document-text"
+          [bordered]="false"
+          title="No door notes recorded yet"
+          hint="Use Edit household to jot down what matters at this door."
+        />
         }
       </pc-card>
     </div>

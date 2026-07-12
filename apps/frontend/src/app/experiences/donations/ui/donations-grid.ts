@@ -10,6 +10,7 @@ import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-heade
 import { DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
 import { DonationsService } from '../../../services/api/donations-service';
 import { RecordDonationDialog } from './record-donation-dialog';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 /** Row shapes inferred from the actual tRPC return types (superjson preserves `Date`, so
  * `created_at` arrives as a real `Date`, not a string) — avoids a hand-rolled interface drifting
@@ -23,7 +24,7 @@ const RECENT_GIFTS_LIMIT = 8;
 
 @Component({
   selector: 'pc-donations-grid',
-  imports: [RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
+  imports: [EmptyState, RouterLink, Icon, CurrencyPipe, RecordDonationDialog, TabBar, Table, GridHeaderComponent],
   templateUrl: './donations-grid.html',
 })
 export class DonationsGridComponent implements OnInit {

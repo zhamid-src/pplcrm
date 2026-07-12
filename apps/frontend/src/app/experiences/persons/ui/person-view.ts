@@ -27,6 +27,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { Tags } from '@experiences/tags/ui/tags';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
@@ -51,6 +52,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     Tags,
     PersonCampaignFacts,
     PersonConnections,
+    ModalShell,
   ],
   templateUrl: './person-view.html',
 })
