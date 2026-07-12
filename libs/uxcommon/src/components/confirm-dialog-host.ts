@@ -41,17 +41,17 @@ export class ConfirmDialogHost {
           return 'btn-ghost';
       }
     }
+    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
+    // affirmative confirms (info/success/neutral) are the surface's main action.
     switch (v) {
       case 'danger':
-        return 'btn-error';
+        return 'btn-outline btn-error';
       case 'warning':
-        return 'btn-warning';
+        return 'btn-outline btn-warning';
       case 'info':
-        return 'btn-info';
       case 'success':
-        return 'btn-success';
       default:
-        return '';
+        return 'btn-primary';
     }
   });
 
@@ -65,13 +65,12 @@ export class ConfirmDialogHost {
     if (!v) return '';
     switch (v) {
       case 'danger':
-        return 'btn-error';
+        return 'btn-outline btn-error';
       case 'warning':
-        return 'btn-warning';
+        return 'btn-outline btn-warning';
       case 'info':
-        return 'btn-info';
       case 'success':
-        return 'btn-success';
+        return 'btn-primary';
       default:
         return '';
     }
