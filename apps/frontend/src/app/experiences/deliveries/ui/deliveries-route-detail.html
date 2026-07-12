@@ -9,8 +9,8 @@
       @if (renaming()) {
       <input
         class="input input-bordered input-sm w-72 text-lg font-bold"
-        [ngModel]="draftName()"
-        (ngModelChange)="draftName.set($event)"
+        [value]="draftName()"
+        (input)="onDraftNameInput($event)"
         (keyup.enter)="saveRename()"
       />
       <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>

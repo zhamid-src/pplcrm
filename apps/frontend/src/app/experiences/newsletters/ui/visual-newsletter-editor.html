@@ -375,8 +375,8 @@
         </div>
         <textarea
           class="textarea textarea-bordered font-mono text-xs w-full flex-1"
-          [ngModel]="compiledHtml()"
-          (ngModelChange)="handleRawHtmlEdit($event)"
+          [value]="compiledHtml()"
+          (input)="onRawHtmlInput($event)"
           placeholder="Paste or edit HTML here..."
         ></textarea>
       </div>
@@ -498,14 +498,14 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
           />
           } @else {
           <textarea
             class="textarea textarea-bordered w-full textarea-sm min-h-24"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
           ></textarea>
           }
 
@@ -574,8 +574,8 @@
             <label class="label text-xs font-semibold py-1">Font Size</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.fontSize"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.fontSize ?? ''"
+              (change)="setBlockStyle(block, 'fontSize', $event)"
             >
               <option value="12px">12px (Small)</option>
               <option value="14px">14px</option>
@@ -593,8 +593,8 @@
             <label class="label text-xs font-semibold py-1">Text Align</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
             >
               <option value="left">Left</option>
               <option value="center">Center</option>
@@ -609,8 +609,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
             />
           </div>
           <div class="form-control">
@@ -618,8 +618,8 @@
             <input
               type="text"
               class="input input-bordered input-sm w-full font-mono text-xs"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
             />
           </div>
         </div>
@@ -632,8 +632,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.imageUrl"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.imageUrl ?? ''"
+            (input)="setBlockText(block, 'imageUrl', $event)"
             placeholder="https://..."
           />
         </div>
@@ -643,8 +643,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.imageAlt"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.imageAlt ?? ''"
+            (input)="setBlockText(block, 'imageAlt', $event)"
           />
         </div>
 
@@ -654,8 +654,8 @@
             <input
               type="text"
               class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.imageWidth"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.imageWidth ?? ''"
+              (input)="setBlockText(block, 'imageWidth', $event)"
             />
           </div>
 
@@ -663,8 +663,8 @@
             <label class="label text-xs font-semibold py-1">Alignment</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
             >
               <option value="left">Left</option>
               <option value="center">Center</option>
@@ -678,8 +678,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.linkUrl"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.linkUrl ?? ''"
+            (input)="setBlockText(block, 'linkUrl', $event)"
             placeholder="https://..."
           />
         </div>
@@ -692,8 +692,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.content"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.content ?? ''"
+            (input)="setBlockText(block, 'content', $event)"
           />
 
           <!-- Quick-Insert Variables -->
@@ -736,8 +736,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.linkUrl"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.linkUrl ?? ''"
+            (input)="setBlockText(block, 'linkUrl', $event)"
             placeholder="https://..."
           />
         </div>
@@ -748,8 +748,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.backgroundColor"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.backgroundColor ?? ''"
+              (input)="setBlockStyle(block, 'backgroundColor', $event)"
             />
           </div>
           <div class="form-control">
@@ -757,8 +757,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
             />
           </div>
         </div>
@@ -769,8 +769,8 @@
             <input
               type="number"
               class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.styles!.borderRadius"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.borderRadius ?? ''"
+              (input)="setBlockStyle(block, 'borderRadius', $event)"
               min="0"
               max="30"
             />
@@ -780,8 +780,8 @@
             <label class="label text-xs font-semibold py-1">Alignment</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
             >
               <option value="left">Left</option>
               <option value="center">Center</option>
@@ -799,8 +799,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.borderColor"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.borderColor ?? ''"
+              (input)="setBlockStyle(block, 'borderColor', $event)"
             />
           </div>
 
@@ -809,8 +809,8 @@
             <input
               type="number"
               class="input input-bordered w-full input-sm"
-              [(ngModel)]="block.styles!.borderWidth"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.borderWidth ?? ''"
+              (input)="setBlockStyle(block, 'borderWidth', $event)"
               min="1"
               max="10"
             />
@@ -825,8 +825,8 @@
           <input
             type="number"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.styles!.height"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.styles?.height ?? ''"
+            (input)="setBlockStyle(block, 'height', $event)"
             min="5"
             max="150"
             step="5"
@@ -841,8 +841,8 @@
             <label class="label text-xs font-semibold py-1">Icon Style & Colors</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.socialIconStyle"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.socialIconStyle ?? 'circular-solid'"
+              (change)="setSocialIconStyle(block, $event)"
             >
               <option value="circular-solid">Circular Brand Color</option>
               <option value="circular-gray">Circular Grayscale</option>
@@ -858,8 +858,8 @@
             <input
               type="text"
               class="input input-bordered input-xs w-full font-mono"
-              [(ngModel)]="social.url"
-              (ngModelChange)="updateBlocks()"
+              [value]="social.url"
+              (input)="setSocialUrl(social, $event)"
               placeholder="https://..."
             />
           </div>
@@ -869,8 +869,8 @@
             <label class="label text-xs font-semibold py-1">Alignment</label>
             <select
               class="select select-bordered select-sm w-full"
-              [(ngModel)]="block.styles!.textAlign"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.textAlign ?? ''"
+              (change)="setBlockAlign(block, $event)"
             >
               <option value="left">Left</option>
               <option value="center">Center</option>
@@ -887,8 +887,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.footerCompany"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.footerCompany ?? ''"
+            (input)="setBlockText(block, 'footerCompany', $event)"
           />
           <div class="mt-1 flex flex-wrap gap-1">
             <button
@@ -905,8 +905,8 @@
           <label class="label text-xs font-semibold py-1">Address Info</label>
           <textarea
             class="textarea textarea-bordered w-full textarea-sm min-h-16"
-            [(ngModel)]="block.footerAddress"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.footerAddress ?? ''"
+            (input)="setBlockText(block, 'footerAddress', $event)"
           ></textarea>
           <div class="mt-1 flex flex-wrap gap-1">
             <button
@@ -938,8 +938,8 @@
           <input
             type="text"
             class="input input-bordered w-full input-sm"
-            [(ngModel)]="block.footerUnsubscribeUrl"
-            (ngModelChange)="updateBlocks()"
+            [value]="block.footerUnsubscribeUrl ?? ''"
+            (input)="setBlockText(block, 'footerUnsubscribeUrl', $event)"
           />
         </div>
 
@@ -949,8 +949,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.backgroundColor"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.backgroundColor ?? ''"
+              (input)="setBlockStyle(block, 'backgroundColor', $event)"
             />
           </div>
           <div class="form-control">
@@ -958,8 +958,8 @@
             <input
               type="color"
               class="input input-bordered p-1 w-full h-8"
-              [(ngModel)]="block.styles!.color"
-              (ngModelChange)="updateBlocks()"
+              [value]="block.styles?.color ?? ''"
+              (input)="setBlockStyle(block, 'color', $event)"
             />
           </div>
         </div>
@@ -974,8 +974,8 @@
               <input
                 type="number"
                 class="input input-bordered w-full input-sm"
-                [(ngModel)]="block.styles!.paddingTop"
-                (ngModelChange)="updateBlocks()"
+                [value]="block.styles?.paddingTop ?? ''"
+                (input)="setBlockStyle(block, 'paddingTop', $event)"
                 min="0"
                 max="80"
               />
@@ -986,8 +986,8 @@
               <input
                 type="number"
                 class="input input-bordered w-full input-sm"
-                [(ngModel)]="block.styles!.paddingBottom"
-                (ngModelChange)="updateBlocks()"
+                [value]="block.styles?.paddingBottom ?? ''"
+                (input)="setBlockStyle(block, 'paddingBottom', $event)"
                 min="0"
                 max="80"
               />

@@ -152,9 +152,8 @@
                       type="text"
                       class="input input-bordered input-sm w-full pl-9"
                       placeholder="Search by name or email..."
-                      [ngModel]="personSearch()"
-                      (ngModelChange)="onPersonSearch($event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="personSearch()"
+                      (input)="onPersonSearchInput($event)"
                     />
                     <div
                       class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
@@ -181,11 +180,10 @@
                   <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
                   <select
                     class="select select-bordered select-sm w-full"
-                    [ngModel]="selectedTicketTypeId()"
-                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
-                    [ngModelOptions]="{standalone: true}"
+                    [value]="selectedTicketTypeId() ?? ''"
+                    (change)="onTicketTypeChange($event)"
                   >
-                    <option [value]="null">No ticket</option>
+                    <option value="">No ticket</option>
                     @for (t of ticketTypes(); track t.id) {
                     <option [value]="t.id">{{ t.name }}</option>
                     }
@@ -255,9 +253,8 @@
                     <td>
                       <select
                         class="select select-bordered select-xs font-medium"
-                        [ngModel]="reg.status"
-                        (ngModelChange)="updateStatus(reg, $event)"
-                        [ngModelOptions]="{standalone: true}"
+                        [value]="reg.status"
+                        (change)="onStatusChange(reg, $event)"
                         [class.select-success]="reg.status === 'attended'"
                         [class.select-warning]="reg.status === 'registered'"
                         [class.select-error]="reg.status === 'no_show'"

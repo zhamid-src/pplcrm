@@ -31,8 +31,8 @@
         type="number"
         min="1"
         placeholder="As many as needed"
-        [ngModel]="drivers()"
-        (ngModelChange)="drivers.set($event ? +$event : null)"
+        [value]="drivers() ?? ''"
+        (input)="onDriversInput($event)"
       />
     </label>
 
@@ -52,8 +52,8 @@
             class="input input-bordered input-sm w-24"
             type="number"
             min="0"
-            [ngModel]="serviceMinutes()"
-            (ngModelChange)="serviceMinutes.set(+$event)"
+            [value]="serviceMinutes()"
+            (input)="onServiceMinutesInput($event)"
           />
         </label>
         <label class="flex items-center justify-between text-sm">
@@ -62,8 +62,8 @@
             class="input input-bordered input-sm w-24"
             type="number"
             min="1"
-            [ngModel]="avgSpeed()"
-            (ngModelChange)="avgSpeed.set(+$event)"
+            [value]="avgSpeed()"
+            (input)="onAvgSpeedInput($event)"
           />
         </label>
         <label class="flex items-center justify-between text-sm">

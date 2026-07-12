@@ -147,7 +147,7 @@ export class EmailClient {
     if (this.isComposing()) {
       try {
         const c = this.composer();
-        if (c?.form.dirty) {
+        if (c?.form().dirty()) {
           await c.saveDraft();
         }
       } catch (e) {

@@ -1,11 +1,10 @@
 import { Component, input, output } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-swap',
-  imports: [ReactiveFormsModule, Icon],
+  imports: [Icon],
   template: `<label
     class="swap ml-auto flex-none cursor-pointer p-2"
     [class.swap-flip]="animation() === 'flip'"
@@ -19,6 +18,7 @@ import { PcIconNameType } from '@icons/icons.index';
   </label> `,
 })
 export class Swap {
+  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
   public readonly click = output<void>();
 
   public animation = input<'flip' | 'rotate'>('rotate');

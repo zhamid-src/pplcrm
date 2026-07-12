@@ -1,6 +1,5 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -32,7 +31,6 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
   selector: 'pc-shift-form',
   imports: [
     DatePipe,
-    FormsModule,
     FormField,
     PcInput,
     PcTextarea,
@@ -320,6 +318,27 @@ export class ShiftFormComponent implements OnInit {
 
   protected onSlugInput() {
     this.slugManuallyEdited = true;
+  }
+
+  protected onVolunteerSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.volunteerSearch.set(input?.value ?? '');
+  }
+
+  protected onShiftStatusChange(shift: any, event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    void this.updateShiftStatus(shift, select.value);
+  }
+
+  protected onShiftHoursInput(shift: any, event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.updateShiftHours(shift, input?.value ?? '');
+  }
+
+  protected onShiftNotesInput(shift: any, event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.updateShiftNotes(shift, input?.value ?? '');
   }
 
   protected async removeVolunteer(shift: any) {

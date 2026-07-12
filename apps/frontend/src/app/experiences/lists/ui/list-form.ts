@@ -1,9 +1,7 @@
 import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { map } from 'rxjs';
+import { FormField, form, required } from '@angular/forms/signals';
 import { AddListType, UpdateListType } from '../../../../../../../libs/common/src';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -151,12 +149,11 @@ export class PeopleFilterGrid {
 
 @Component({
   selector: 'pc-list-form',
-  imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
+  imports: [FormField, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
   templateUrl: './list-form.html',
 })
 export class ListForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly listsSvc = inject(ListsService);
   private readonly personsSvc = inject(PersonsService);
@@ -174,20 +171,28 @@ export class ListForm implements OnInit {
   protected readonly id = signal<string | null>(null);
   protected readonly isNew = signal<boolean>(true);
 
-  protected readonly form = this.fb.group({
-    name: ['', [Validators.required]],
-    description: [''],
-    object: ['people'],
-    is_dynamic: [false],
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    object: 'people' as 'people' | 'households',
+    is_dynamic: false,
   });
 
-  protected readonly listType = toSignal(this.form.controls.object.valueChanges.pipe(map((v) => v || 'people')), {
-    initialValue: (this.form.controls.object.value ?? 'people') as string,
+  protected readonly form = form(this.payload, (p) => {
+    required(p.name);
   });
 
-  protected readonly isDynamic = toSignal(this.form.controls.is_dynamic.valueChanges.pipe(map((v) => v === true)), {
-    initialValue: this.form.controls.is_dynamic.value === true,
-  });
+  protected readonly listType = computed<'people' | 'households'>(() => this.payload().object);
+
+  protected readonly isDynamic = computed<boolean>(() => this.payload().is_dynamic);
+
+  protected setObject(object: 'people' | 'households'): void {
+    this.payload.update((p) => ({ ...p, object }));
+  }
+
+  protected setDynamic(is_dynamic: boolean): void {
+    this.payload.update((p) => ({ ...p, is_dynamic }));
+  }
 
   public ngOnInit(): void {
     void this.loadOnInit();
@@ -210,11 +215,11 @@ export class ListForm implements OnInit {
     try {
       const list = (await this.listsSvc.getById(id)) as any;
       if (list) {
-        this.form.patchValue({
+        this.payload.set({
           name: list.name ?? '',
           description: list.description ?? '',
-          object: list.object ?? 'people',
-          is_dynamic: list.is_dynamic ?? false,
+          object: list.object === 'households' ? 'households' : 'people',
+          is_dynamic: list.is_dynamic === true,
         });
 
         const definition = list.definition as any;
@@ -436,7 +441,10 @@ export class ListForm implements OnInit {
       doneFn = done;
     }
 
-    const formValue = this.form.getRawValue();
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    const formValue = this.payload();
     const listId = this.id();
     if (!this.isNew() && !listId) return;
 
@@ -445,10 +453,10 @@ export class ListForm implements OnInit {
 
     if (this.isNew()) {
       const payload: AddListType = {
-        name: formValue.name ?? '',
-        description: formValue.description ?? null,
-        object: formValue.object as 'people' | 'households',
-        is_dynamic: formValue.is_dynamic ?? false,
+        name: formValue.name,
+        description: formValue.description || null,
+        object: formValue.object,
+        is_dynamic: formValue.is_dynamic,
       };
 
       if (payload.is_dynamic) {
@@ -480,8 +488,8 @@ export class ListForm implements OnInit {
       savePromise = this.listsSvc.add(payload);
     } else {
       const payload: UpdateListType = {
-        name: formValue.name ?? '',
-        description: formValue.description ?? null,
+        name: formValue.name,
+        description: formValue.description || null,
       };
       savePromise = this.listsSvc.update(listId ?? '', payload);
     }
@@ -524,7 +532,7 @@ export class ListForm implements OnInit {
     } catch {
       // Fall back to the generic body if consumers can't be loaded.
     }
-    const listName = this.form.get('name')?.value ?? '';
+    const listName = this.payload().name;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete list',
       message: buildDeleteConfirmMessage(listName, consumers),

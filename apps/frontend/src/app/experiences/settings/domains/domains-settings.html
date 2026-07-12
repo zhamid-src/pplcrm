@@ -10,8 +10,8 @@
           type="text"
           class="input input-bordered focus:input-primary w-full bg-base-100"
           placeholder="e.g. newsletter.myorganization.org"
-          [(ngModel)]="newDomain"
-          name="newDomain"
+          [value]="newDomain()"
+          (input)="newDomain.set($any($event.target).value)"
           [disabled]="addingDomain()"
         />
       </div>

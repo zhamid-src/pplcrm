@@ -1,6 +1,5 @@
 import { DatePipe, SlicePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { Component, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import type { IAuthUser } from '../../../../../../../../libs/common/src';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
@@ -16,7 +15,7 @@ import type { EmailCommentType, EmailType } from '../../../../../../../../libs/c
 
 @Component({
   selector: 'pc-email-comments',
-  imports: [DatePipe, SlicePipe, FormsModule, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
+  imports: [DatePipe, SlicePipe, TimeAgoPipe, Icon, SanitizeHtmlPipe, MentionifyPipe],
   templateUrl: 'email-comments.html',
 })
 export class EmailComments {
@@ -26,7 +25,7 @@ export class EmailComments {
 
   private dialogs = inject(ConfirmDialogService);
 
-  private readonly emailComposer = viewChild<any>('emailComposer');
+  private readonly emailComposer = viewChild<ElementRef<HTMLTextAreaElement>>('emailComposer');
 
   protected readonly deleting = signal<Set<string>>(new Set());
 
@@ -54,7 +53,7 @@ export class EmailComments {
   public myUserId = input<string>(); // set this from parent; used for chat-start/chat-end and bubble color
 
   public newComment = signal('');
-  public trackByComment = (_: number, c: Partial<EmailCommentType>) => (c as any).id ?? _;
+  public trackByComment = (_: number, c: Partial<EmailCommentType>): string | number => c.id ?? _;
 
   // expose util for templates
   public userDisplay = userDisplay;
@@ -101,7 +100,7 @@ export class EmailComments {
 
   public canDelete(comment: Partial<EmailCommentType>): boolean {
     const me = this.meId;
-    const authorId = (comment as Partial<EmailCommentType> as any)?.author_id ?? null;
+    const authorId = comment.author_id ?? null;
     // Adjust rule if you want admins/moderators here
     return !!me && String(authorId) === String(me);
   }
@@ -129,13 +128,13 @@ export class EmailComments {
     return this.usersById().get(id)?.first_name ?? 'Not Assigned';
   }
 
-  public isDeleting(id: any): boolean {
+  public isDeleting(id: string | number | undefined): boolean {
     return this.deleting().has(String(id));
   }
 
   protected async deleteComment(comment: Partial<EmailCommentType>): Promise<void> {
     const em = this.email();
-    const cid = String((comment as Partial<EmailCommentType> as any).id ?? '');
+    const cid = String(comment.id ?? '');
     if (!em?.id || !cid) return;
 
     // de-dupe
@@ -184,7 +183,7 @@ export class EmailComments {
     ev?.preventDefault();
     const res = this.mc.select(u, this.newComment());
     this.newComment.set(res.text);
-    const el = this.emailComposer()?.nativeElement as HTMLTextAreaElement | undefined;
+    const el = this.emailComposer()?.nativeElement;
     setTimeout(() => {
       if (el) {
         el.focus();

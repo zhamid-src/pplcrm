@@ -281,8 +281,8 @@
           min="1"
           max="3"
           step="0.05"
-          [ngModel]="cropZoom()"
-          (ngModelChange)="cropZoom.set($event)"
+          [value]="cropZoom()"
+          (input)="onCropZoomInput($event)"
           class="range range-primary range-sm"
         />
       </div>

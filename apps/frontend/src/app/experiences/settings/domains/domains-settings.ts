@@ -1,5 +1,4 @@
 import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -35,7 +34,7 @@ export interface VerifiedDomain {
 
 @Component({
   selector: 'pc-domains-settings',
-  imports: [EmptyState, FormsModule, Icon, StatusBadge],
+  imports: [EmptyState, Icon, StatusBadge],
   templateUrl: './domains-settings.html',
 })
 export class DomainSettingsComponent implements OnInit {

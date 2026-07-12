@@ -1,36 +1,21 @@
-import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
-import { Validators } from '@angular/forms';
-
-// Consolidated form control builders and password breach utilities
-export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;
-
-export function emailControl(fb: AnyFormBuilder) {
-  return fb.control('', { validators: [Validators.required, Validators.email] });
-}
+// Password breach utilities for signal-forms fields.
+//
+// Callers (signup-page, new-password-page) pass a called field node —
+// `this.form.password()` — i.e. the FieldState. The structural type below is
+// the slice of FieldState we read, so this file does not depend on the
+// experimental signal-forms types directly.
 
 type BreachError = { kind: string; pwnedPasswordOccurrence?: number };
-type SignalFieldState = { errors: () => BreachError[] };
+type BreachFieldState = { errors: () => BreachError[] };
 
-export function passwordBreachNumber(control: unknown) {
-  let errs: { pwnedPasswordOccurrence?: number } | null = null;
-  if (control && typeof (control as SignalFieldState).errors === 'function') {
-    // It's a FieldState (Signal Forms)
-    const activeErrors = (control as SignalFieldState).errors();
-    const breachErr = activeErrors.find(
-      (e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined,
-    );
-    errs = breachErr ?? null;
-  } else {
-    // It's an AbstractControl (Reactive Forms)
-    errs = (control as { errors?: { pwnedPasswordOccurrence?: number } | null } | null)?.errors ?? null;
-  }
-  return errs?.pwnedPasswordOccurrence ?? null;
+/** How many times the candidate password appears in known breaches, or null if none. */
+export function passwordBreachNumber(field: BreachFieldState): number | null {
+  const breachErr = field
+    .errors()
+    .find((e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined);
+  return breachErr?.pwnedPasswordOccurrence ?? null;
 }
 
-export function passwordControl(fb: AnyFormBuilder) {
-  return fb.control('', { validators: [Validators.required, Validators.minLength(8)] });
-}
-
-export function passwordInBreach(control: unknown) {
-  return !!passwordBreachNumber(control);
+export function passwordInBreach(field: BreachFieldState): boolean {
+  return (passwordBreachNumber(field) ?? 0) > 0;
 }

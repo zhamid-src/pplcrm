@@ -151,9 +151,8 @@
                 type="text"
                 class="input input-bordered w-full pl-10"
                 placeholder="Search volunteers by name or email..."
-                [ngModel]="volunteerSearch()"
-                (ngModelChange)="volunteerSearch.set($event)"
-                [ngModelOptions]="{standalone: true}"
+                [value]="volunteerSearch()"
+                (input)="onVolunteerSearchInput($event)"
               />
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
                 <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
@@ -221,9 +220,8 @@
                   <td>
                     <select
                       class="select select-bordered select-sm w-full font-medium"
-                      [ngModel]="shift.status"
-                      (ngModelChange)="updateShiftStatus(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="shift.status"
+                      (change)="onShiftStatusChange(shift, $event)"
                       [class.select-success]="shift.status === 'attended'"
                       [class.select-warning]="shift.status === 'signed_up'"
                       [class.select-error]="shift.status === 'no_show'"
@@ -243,9 +241,8 @@
                       min="0"
                       max="24"
                       step="0.5"
-                      [ngModel]="shift.hours_worked"
-                      (ngModelChange)="updateShiftHours(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="shift.hours_worked ?? ''"
+                      (input)="onShiftHoursInput(shift, $event)"
                       [disabled]="shift.status !== 'attended'"
                     />
                   </td>
@@ -255,9 +252,8 @@
                       type="text"
                       class="input input-bordered input-sm w-full"
                       placeholder="Optional details..."
-                      [ngModel]="shift.notes"
-                      (ngModelChange)="updateShiftNotes(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
+                      [value]="shift.notes ?? ''"
+                      (input)="onShiftNotesInput(shift, $event)"
                     />
                   </td>
                   <!-- Actions -->

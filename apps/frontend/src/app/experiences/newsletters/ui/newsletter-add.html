@@ -110,7 +110,6 @@
 
   <main class="flex-1 overflow-y-auto px-6 py-6">
     <form
-      [formGroup]="regularForm"
       class="mx-auto flex w-full flex-col gap-6"
       [class.max-w-3xl]="currentStep() !== 2"
       [class.max-w-none]="currentStep() === 2"
@@ -173,10 +172,10 @@
           </span>
         </div>
         <pc-visual-newsletter-editor
-          [htmlContent]="regularForm.get('htmlContent')?.value || ''"
-          [plainTextContent]="regularForm.get('plainTextContent')?.value || ''"
-          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event); onFieldInput()"
-          (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
+          [htmlContent]="regularPayload().htmlContent"
+          [plainTextContent]="regularPayload().plainTextContent"
+          (htmlContentChange)="onEditorHtmlChange($event)"
+          (plainTextContentChange)="onEditorTextChange($event)"
         ></pc-visual-newsletter-editor>
       </div>
       }
@@ -196,7 +195,7 @@
             <input
               #subjectInput
               class="input input-bordered input-sm w-full"
-              formControlName="subject"
+              [formField]="regularForm.subject"
               placeholder="What recipients see first"
               (input)="onFieldInput()"
             />
@@ -213,7 +212,7 @@
             <label class="mb-1 block text-xs font-medium">Preview text</label>
             <input
               class="input input-bordered input-sm w-full"
-              formControlName="previewText"
+              [formField]="regularForm.previewText"
               placeholder="Optional — shows after the subject in most inboxes"
               (input)="onFieldInput()"
             />
@@ -224,7 +223,7 @@
             <input
               #fromNameInput
               class="input input-bordered input-sm w-full"
-              formControlName="fromName"
+              [formField]="regularForm.fromName"
               placeholder="Who is sending"
               (input)="onFieldInput()"
             />
@@ -239,7 +238,7 @@
             <select
               #fromAddressInput
               class="select select-bordered select-sm w-full"
-              formControlName="fromAddress"
+              [formField]="regularForm.fromAddress"
               (change)="onFieldInput()"
             >
               <option value="" disabled>Choose a verified sender</option>
@@ -456,12 +455,12 @@
             </div>
             <div class="flex items-center justify-between gap-4 py-2.5">
               <dt class="text-base-content/60">Subject</dt>
-              <dd class="truncate text-right font-medium">{{ regularForm.get('subject')?.value || '—' }}</dd>
+              <dd class="truncate text-right font-medium">{{ regularPayload().subject || '—' }}</dd>
             </div>
             <div class="flex items-center justify-between gap-4 py-2.5">
               <dt class="text-base-content/60">From</dt>
               <dd class="truncate text-right font-medium">
-                {{ regularForm.get('fromName')?.value }} &lt;{{ regularForm.get('fromAddress')?.value || '—' }}&gt;
+                {{ regularPayload().fromName }} &lt;{{ regularPayload().fromAddress || '—' }}&gt;
               </dd>
             </div>
             <div class="flex items-center justify-between gap-4 py-2.5">
@@ -471,8 +470,7 @@
             <div class="flex items-center justify-between gap-4 py-2.5">
               <dt class="text-base-content/60">Timing</dt>
               <dd class="text-right font-medium">
-                @if (regularForm.get('timingMode')?.value === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send
-                now }
+                @if (regularPayload().timingMode === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send now }
               </dd>
             </div>
           </dl>
@@ -487,10 +485,11 @@
             >
               <input
                 type="radio"
+                name="timingMode"
                 class="radio radio-sm radio-primary mt-0.5"
                 value="now"
-                formControlName="timingMode"
-                (change)="onTimingChange()"
+                [checked]="regularPayload().timingMode === 'now'"
+                (change)="setTimingMode('now')"
               />
               <span>
                 <span class="block text-sm font-medium">Send now</span>
@@ -502,10 +501,11 @@
             >
               <input
                 type="radio"
+                name="timingMode"
                 class="radio radio-sm radio-primary mt-0.5"
                 value="schedule"
-                formControlName="timingMode"
-                (change)="onTimingChange()"
+                [checked]="regularPayload().timingMode === 'schedule'"
+                (change)="setTimingMode('schedule')"
               />
               <span>
                 <span class="block text-sm font-medium">Schedule for later</span>
@@ -514,7 +514,7 @@
             </label>
           </div>
 
-          @if (regularForm.get('timingMode')?.value === 'schedule') {
+          @if (regularPayload().timingMode === 'schedule') {
           <div class="mt-4 grid gap-4 sm:grid-cols-2">
             <div class="relative flex flex-col gap-1">
               <label class="text-xs font-medium">Send date</label>
@@ -537,14 +537,13 @@
                 </calendar-date>
               </div>
               }
-              <input type="hidden" formControlName="scheduledDate" />
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium">Send time</label>
               <input
                 type="time"
                 class="input input-bordered input-sm w-full"
-                formControlName="scheduledTime"
+                [formField]="regularForm.scheduledTime"
                 (input)="onTimingChange()"
               />
             </div>
@@ -578,8 +577,8 @@
     <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
       <button type="button" class="btn btn-primary btn-sm" [disabled]="saving() || isDemo()" (click)="sendRegular()">
         @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
-        <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule')
-        { Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
+        <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularPayload().timingMode === 'schedule') {
+        Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
         peopleLabel(estimatedAudienceCount()) }} }
       </button>
     </span>

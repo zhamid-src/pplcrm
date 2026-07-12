@@ -30,6 +30,22 @@ describe('NewsletterAddComponent', () => {
 
   const validDetails = { subject: 'Big News', fromName: 'Jane', fromAddress: 'jane@example.com' };
 
+  /** Patches the signal-form payload the way a user filling the fields would. */
+  function patchPayload(
+    patch: Partial<{
+      subject: string;
+      fromName: string;
+      fromAddress: string;
+      htmlContent: string;
+      plainTextContent: string;
+      timingMode: 'now' | 'schedule';
+      scheduledDate: string;
+      scheduledTime: string;
+    }>,
+  ): void {
+    component['regularPayload'].update((p) => ({ ...p, ...patch }));
+  }
+
   beforeEach(async () => {
     mockAlertSvc = { showSuccess: vi.fn(), showError: vi.fn() };
     mockListsSvc = {
@@ -104,8 +120,8 @@ describe('NewsletterAddComponent', () => {
     component['selectTemplate']('product');
 
     expect(component['selectedTemplate']()).toBe('product');
-    expect(component['regularForm'].get('htmlContent')?.value).toContain('Introducing Visual Newsletters!');
-    expect(component['regularForm'].get('plainTextContent')?.value).toContain('Introducing Visual Newsletters!');
+    expect(component['regularPayload']().htmlContent).toContain('Introducing Visual Newsletters!');
+    expect(component['regularPayload']().plainTextContent).toContain('Introducing Visual Newsletters!');
   });
 
   it('exposes sentence-case template names for the review step', () => {
@@ -128,7 +144,7 @@ describe('NewsletterAddComponent', () => {
   it('advances to step 4 once required detail fields are valid', () => {
     component['selectRegular']();
     component['currentStep'].set(3);
-    component['regularForm'].patchValue(validDetails);
+    patchPayload(validDetails);
 
     component['handleNext']();
 
@@ -203,7 +219,7 @@ describe('NewsletterAddComponent', () => {
 
   it('runs a send preflight and, on confirm, saves then sends immediately for "now"', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+    patchPayload({ ...validDetails, timingMode: 'now' });
 
     await component['sendRegular']();
 
@@ -219,7 +235,7 @@ describe('NewsletterAddComponent', () => {
   it('does not send when the preflight is cancelled', async () => {
     mockConfirmDlg.confirm.mockResolvedValueOnce(false);
     component['selectRegular']();
-    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+    patchPayload({ ...validDetails, timingMode: 'now' });
 
     await component['sendRegular']();
 
@@ -229,7 +245,7 @@ describe('NewsletterAddComponent', () => {
 
   it('schedules (status scheduled, no immediate send) with a valid date/time', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({
+    patchPayload({
       ...validDetails,
       timingMode: 'schedule',
       scheduledDate: '2026-12-01',
@@ -244,7 +260,7 @@ describe('NewsletterAddComponent', () => {
 
   it('requires a schedule date/time before sending a scheduled newsletter', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({ ...validDetails, timingMode: 'schedule' });
+    patchPayload({ ...validDetails, timingMode: 'schedule' });
 
     await component['sendRegular']();
 
@@ -255,7 +271,7 @@ describe('NewsletterAddComponent', () => {
 
   it('saves a draft and exits with a toast', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue(validDetails);
+    patchPayload(validDetails);
 
     await component['saveDraft']();
 
@@ -266,7 +282,7 @@ describe('NewsletterAddComponent', () => {
 
   it('sends a test email to the current user and confirms the recipient', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({ subject: 'Big News' });
+    patchPayload({ subject: 'Big News' });
 
     await component['sendTestEmail']();
 
@@ -278,7 +294,7 @@ describe('NewsletterAddComponent', () => {
 
   it('shows an error when the newsletter fails to save', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+    patchPayload({ ...validDetails, timingMode: 'now' });
     mockNewslettersSvc.add.mockRejectedValueOnce(new Error('Save failed'));
 
     await component['sendRegular']();

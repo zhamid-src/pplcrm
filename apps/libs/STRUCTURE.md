@@ -52,6 +52,7 @@ libs/
           campaigns.schema.ts
           canvassing.schema.ts
           companies.schema.ts
+          companion-access.schema.ts
           connections.schema.ts
           core.schema.ts
           deliveries.schema.ts
@@ -113,6 +114,8 @@ libs/
           detail-layout.ts
         detail-row/
           detail-row.ts
+        empty-state/
+          empty-state.ts
         entity-overview/
           entity-overview.ts
         fields-selector/
@@ -134,6 +137,8 @@ libs/
         map/
           map-types.ts
           map.ts
+        modal-shell/
+          modal-shell.ts
         not-found/
           not-found.ts
         profile-card/
@@ -182,8 +187,11 @@ libs/
         sanitize-html.pipe.ts
         svg-html-pipe.ts
         timeago.pipe.ts
+      styles/
+        themes.css
       index.ts
       loading-gate.ts
+      request-guard.ts
       test-setup.ts
     eslint.config.cjs
     project.json
@@ -195,6 +203,50 @@ libs/
 ```
 
 # Files
+
+## File: libs/common/src/lib/schemas/activity.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+/**
+ * Interaction types a user can log by hand from a record page ("Log an
+ * interaction"). These are stored in `user_activity.activity` alongside the
+ * auto-generated audit types (create/update/…); they are the human-authored
+ * subset. Keep in sync with the `UserActivityType` union in
+ * `apps/backend/src/app/lib/user-activity.repo.ts`.
+ */
+export const INTERACTION_TYPES = ['call', 'door_knock', 'note', 'meeting'] as const;
+export type InteractionType = (typeof INTERACTION_TYPES)[number];
+
+export const INTERACTION_TYPE_LABELS: Record<InteractionType, string> = {
+  call: 'Call',
+  door_knock: 'Door knock',
+  note: 'Email / note',
+  meeting: 'Meeting',
+};
+
+export const interactionTypeSchema = z.enum(INTERACTION_TYPES);
+
+/** Longest note we accept for a logged interaction. */
+export const INTERACTION_NOTE_MAX = 2000;
+
+/**
+ * Payload for the `activity.logInteraction` mutation. `entity` is the DB table
+ * name the record lives in (`persons` / `households` / `companies`), `entityId`
+ * the record id. `note` is optional free text; `occurredAt` lets the user
+ * back-date the interaction (defaults to now server-side).
+ */
+export const LogInteractionObj = z.object({
+  entity: z.string().min(1),
+  entityId: z.string().min(1),
+  type: interactionTypeSchema,
+  note: z.string().trim().max(INTERACTION_NOTE_MAX).optional(),
+  occurredAt: z.coerce.date().optional(),
+});
+
+export type LogInteractionType = z.infer<typeof LogInteractionObj>;
+```
 
 ## File: libs/common/src/lib/schemas/companies.schema.ts
 
@@ -1455,234 +1507,6 @@ export class AddressFormGroup {
 }
 ```
 
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-
-export class AlertMessage {
-  public readonly visible = signal(true);
-  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
-  public readonly count = signal(1);
-
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
-  public type?: ALERTTYPE;
-
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
-const MAX_TOAST_STACK = 3;
-
-@Injectable({
-  providedIn: 'root',
-})
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
-
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
-
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
-
-    if (!alert) return;
-
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
-
-    alert.visible.set(false);
-
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // Coalesce an identical (same text + type) toast into a ×N count with a
-    // refreshed timer instead of stacking duplicates (§2).
-    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
-
-    if (existing) {
-      existing.count.update((c) => c + 1);
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
-      return;
-    }
-
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
-    this.alertsSignal.update((list) => {
-      const next = [messageWithMeta, ...list];
-      const dropped = next.slice(MAX_TOAST_STACK);
-      dropped.forEach((m) => clearTimeout(m.timeoutId));
-      return next.slice(0, MAX_TOAST_STACK);
-    });
-
-    const duration = messageWithMeta.duration || 3000;
-    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
-  }
-}
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="z-50 top-0 absolute w-full left-0"
-  [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-
-  <div
-    class="alert rounded-none"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
-  >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
-    </div>
-    @if (alert.count() > 1) {
-    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
-    }
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
-    >
-      {{ alert.OKBtn }}
-    </button>
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected OKBtnClick(id: string): void {
-    this.alertSvc.OKBtnCallback(id);
-    this.alertSvc.dismiss(id);
-  }
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    return this.position() === 'top' ? list.slice().reverse() : list;
-  });
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type: ALERTTYPE) {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'x-circle'
-          : 'exclamation-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-}
-```
-
 ## File: libs/uxcommon/src/components/card/card.ts
 
 ```typescript
@@ -2134,6 +1958,58 @@ export class Icon {
       target.set(withClass);
     }
   }
+}
+```
+
+## File: libs/uxcommon/src/components/input/input.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { FormField } from '@angular/forms/signals';
+
+@Component({
+  selector: 'pc-input',
+  imports: [FormField],
+  template: `
+    <div class="flex flex-col gap-1 w-full">
+      @if (label()) {
+        <label class="label py-0 pl-1">
+          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
+        </label>
+      }
+
+      <label
+        class="input w-full flex items-center gap-2"
+        [class.input-error]="
+          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
+        "
+      >
+        <ng-content select="[pc-prefix]"></ng-content>
+        <input
+          [type]="type()"
+          [placeholder]="placeholder()"
+          [formField]="formField()"
+          class="grow"
+          (blur)="blurred.emit()"
+        />
+        <ng-content select="[pc-suffix]"></ng-content>
+      </label>
+
+      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
+        @for (err of formField()().errors(); track err) {
+          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
+        }
+      }
+    </div>
+  `,
+})
+export class Input {
+  public label = input<string>();
+  public type = input<string>('text');
+  public placeholder = input<string>('');
+  public formField = input.required<any>();
+  public hasError = input<boolean>(false);
+  public blurred = output<void>();
 }
 ```
 
@@ -2660,66 +2536,6 @@ export class SideDrawer {
 }
 ```
 
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
-```
-
 ## File: libs/uxcommon/src/components/status-badge/status-badge.ts
 
 ```typescript
@@ -2737,12 +2553,14 @@ export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' 
 })
 export class StatusBadge {
   public type = input<PcStatusType>('ghost');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
 
   protected badgeClass = computed(() => {
     const t = this.type();
     let cls = '';
-    if (this.size() === 'sm') cls += 'badge-sm ';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
     else if (this.size() === 'lg') cls += 'badge-lg ';
 
     switch (t) {
@@ -2767,13 +2585,12 @@ export class StatusBadge {
 
 ```typescript
 import { Component, input, output } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
 @Component({
   selector: 'pc-swap',
-  imports: [ReactiveFormsModule, Icon],
+  imports: [Icon],
   template: `<label
     class="swap ml-auto flex-none cursor-pointer p-2"
     [class.swap-flip]="animation() === 'flip'"
@@ -2787,6 +2604,7 @@ import { PcIconNameType } from '@icons/icons.index';
   </label> `,
 })
 export class Swap {
+  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
   public readonly click = output<void>();
 
   public animation = input<'flip' | 'rotate'>('rotate');
@@ -3082,86 +2900,6 @@ export class Toggle {
 }
 ```
 
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import { NgClass } from '@angular/common';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-          [ngClass]="colorClass()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
-      }
-    </div>
-  `,
-  imports: [NgClass],
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-
-  protected readonly colorClass = computed(() => {
-    const PALETTES = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-      'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-    ];
-    const n = this.name() ?? '';
-    let sum = 0;
-    for (let i = 0; i < n.length; i++) sum += n.charCodeAt(i);
-    return PALETTES[sum % PALETTES.length];
-  });
-}
-```
-
 ## File: libs/uxcommon/src/components/confirm-dialog-host.html
 
 ```html
@@ -3180,7 +2918,7 @@ export class UserAvatarComponent {
       [placeholder]="state()!.inputPlaceholder || ''"
       class="input input-bordered w-full mb-4"
       [value]="promptValue()"
-      (input)="promptValue.set($any($event.target).value)"
+      (input)="onPromptInput($event)"
     />
     } @if (state()!.type === 'choose') {
     <div class="flex flex-col gap-2 w-full mt-4">
@@ -3484,50 +3222,6 @@ export class AnimateIfDirective {
 
     if (condition) this.animatedEntry();
     else if (this.view) this.animatedExit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-
-```typescript
-import { Directive, DestroyRef, ElementRef, HostListener, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  @HostListener('click')
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
   }
 }
 ```
@@ -3990,142 +3684,101 @@ export class BypassHtmlSanitizerPipe implements PipeTransform {
 }
 ```
 
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
+## File: libs/uxcommon/src/loading-gate.ts
 
 ```typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
+// _loading-gate.ts
+import { type Signal, signal } from '@angular/core';
 
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
+export type loadingGate = {
+  /**
+   * Spinner visibility — intentionally delayed by `delay` ms and held for
+   * `minDuration` ms to suppress flicker. Bind this to spinners ONLY; it can stay
+   * false for a whole sub-`delay` operation, so it is not a truthful "did work
+   * happen" signal.
+   */
+  visible: ReturnType<typeof signal<boolean>>;
 
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
+  /**
+   * True once the first operation has COMPLETED — ungated, so it flips even for a
+   * fast operation that never trips `visible`. Set when a load finishes (not when
+   * it begins), so the data it produced is already in place. Use this for
+   * "has loaded at least once" state (first-load gating, skeleton-vs-empty)
+   * instead of watching `visible`.
+   */
+  loaded: Signal<boolean>;
 
-  constructor(private cdr: ChangeDetectorRef) {}
+  begin(): () => void;
+};
 
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
+export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
+  const delay = options?.delay ?? 300; // ms before showing
+  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
 
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
+  const visible = signal(false);
+  const loaded = signal(false);
+  let pendingCount = 0;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+  let shownAt = 0;
+
+  const clearShowTimer = () => {
+    if (showTimer) {
+      clearTimeout(showTimer);
+      showTimer = null;
     }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
+  };
+  const clearHideTimer = () => {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
     }
+  };
 
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
+  function scheduleShow() {
+    clearShowTimer();
+    showTimer = setTimeout(() => {
+      showTimer = null;
+      if (pendingCount > 0 && !visible()) {
+        visible.set(true);
+        shownAt = performance.now();
+      }
+    }, delay);
   }
 
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
+  function scheduleHide() {
+    clearHideTimer();
+    if (!visible()) return; // never shown → nothing to hide
 
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
+    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
+    hideTimer = setTimeout(() => {
+      if (pendingCount === 0) visible.set(false);
+    }, remaining);
   }
 
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
+  function begin() {
+    pendingCount++;
+    if (pendingCount === 1) {
+      // First operation: start the delayed show
+      scheduleShow();
     }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
+    // Return disposer
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      pendingCount--;
+      loaded.set(true); // an operation has completed — its result is now in place
+      if (pendingCount <= 0) {
+        pendingCount = 0;
+        // If we never showed, cancel the show timer so _loading never appears
+        clearShowTimer();
+        scheduleHide(); // hides now or after minDuration
+      }
+    };
   }
 
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
+  return { begin, visible, loaded };
 }
 ```
 
@@ -4362,50 +4015,6 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: libs/common/src/lib/schemas/activity.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-/**
- * Interaction types a user can log by hand from a record page ("Log an
- * interaction"). These are stored in `user_activity.activity` alongside the
- * auto-generated audit types (create/update/…); they are the human-authored
- * subset. Keep in sync with the `UserActivityType` union in
- * `apps/backend/src/app/lib/user-activity.repo.ts`.
- */
-export const INTERACTION_TYPES = ['call', 'door_knock', 'note', 'meeting'] as const;
-export type InteractionType = (typeof INTERACTION_TYPES)[number];
-
-export const INTERACTION_TYPE_LABELS: Record<InteractionType, string> = {
-  call: 'Call',
-  door_knock: 'Door knock',
-  note: 'Email / note',
-  meeting: 'Meeting',
-};
-
-export const interactionTypeSchema = z.enum(INTERACTION_TYPES);
-
-/** Longest note we accept for a logged interaction. */
-export const INTERACTION_NOTE_MAX = 2000;
-
-/**
- * Payload for the `activity.logInteraction` mutation. `entity` is the DB table
- * name the record lives in (`persons` / `households` / `companies`), `entityId`
- * the record id. `note` is optional free text; `occurredAt` lets the user
- * back-date the interaction (defaults to now server-side).
- */
-export const LogInteractionObj = z.object({
-  entity: z.string().min(1),
-  entityId: z.string().min(1),
-  type: interactionTypeSchema,
-  note: z.string().trim().max(INTERACTION_NOTE_MAX).optional(),
-  occurredAt: z.coerce.date().optional(),
-});
-
-export type LogInteractionType = z.infer<typeof LogInteractionObj>;
-```
-
 ## File: libs/common/src/lib/schemas/auth.schema.ts
 
 ```typescript
@@ -4580,93 +4189,305 @@ export const CarryOverCampaignObj = z.object({
 });
 ```
 
-## File: libs/common/src/lib/schemas/canvassing.schema.ts
+## File: libs/common/src/lib/schemas/companion-access.schema.ts
 
 ```typescript
 import { z } from 'zod';
 
-import { idSchema, nameSchema, notesSchema } from './core.schema';
-
 /**
- * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
- * they drive both Zod validation and exhaustive discriminated-union switches on
- * the frontend and in the controller.
+ * Companion access layer (COMPANION-APPS-PLAN.md §2). A companion capability
+ * link (/t/:token canvass turf, /r/:token delivery route) is not enough on its
+ * own: the volunteer must verify a one-time code sent to their email/SMS on
+ * file, be approved once by an admin, and then hold a device session that
+ * accompanies every companion request.
  */
 
-/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
-export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
-export type TurfStatus = (typeof TURF_STATUSES)[number];
+export const COMPANION_LINK_KINDS = ['turf', 'route'] as const;
+export type CompanionLinkKind = (typeof COMPANION_LINK_KINDS)[number];
 
-/** What happened at the door. "attempted" = any knock; "conversation" = a talk. */
-export const KNOCK_OUTCOMES = ['conversation', 'no_answer', 'not_home', 'refused', 'inaccessible'] as const;
-export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
+export const COMPANION_VERIFY_CHANNELS = ['email', 'sms'] as const;
+export type CompanionVerifyChannel = (typeof COMPANION_VERIFY_CHANNELS)[number];
 
-/** The voter's stance, when a conversation happened ("what voters said"). */
-export const KNOCK_RESPONSES = ['strong_support', 'lean_support', 'undecided', 'opposed'] as const;
-export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
-
-/** Doors-per-turf presets from the Cut-new-turfs dialog. */
-export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
-
-export const turfStatusSchema = z.enum(TURF_STATUSES);
-export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
-export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
-
-export const AddTurfObj = z.object({
-  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Name', 120),
-  list_id: idSchema.nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateTurfObj = z.object({
-  name: nameSchema('Name', 120).optional(),
-  status: turfStatusSchema.optional(),
-  notes: notesSchema,
-});
-
-/** Preview and Cut share this input; preview never writes. */
-export const CutTurfsObj = z.object({
-  list_id: idSchema,
-  doors_per_turf: z.number().int().min(5).max(500),
-});
-
-export const AssignTurfObj = z.object({
-  turf_id: idSchema,
-  team_id: idSchema.nullable().optional(),
-});
-
-export const FieldReportRangeObj = z.object({
-  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
-  from: z.string().datetime().nullable().optional(),
-  to: z.string().datetime().nullable().optional(),
-});
+export const COMPANION_VOLUNTEER_STATUSES = ['invited', 'verified', 'approved', 'revoked'] as const;
+export type CompanionVolunteerStatus = (typeof COMPANION_VOLUNTEER_STATUSES)[number];
 
 /**
- * Companion knock payload. Arrives over the tokenised public route (no account),
- * so the token authorises the turf and `client_knock_id` de-dupes offline
- * re-sends. Parsed from `unknown` at the REST boundary.
+ * What the gate UI renders:
+ * - dead: unknown/expired/revoked link — friendly dead-link page
+ * - unassigned: link has no volunteer person attached — ask the organizer to re-send
+ * - need_verification: pick a channel, get a code
+ * - pending_approval: verified, waiting for an admin — the page polls
+ * - ready: approved with a valid device session — load the app
  */
-export const LogKnockObj = z.object({
-  token: z.string().min(10).max(200),
-  client_knock_id: z.string().min(1).max(200),
-  household_id: idSchema,
-  person_id: idSchema.nullable().optional(),
-  outcome: knockOutcomeSchema,
-  response: knockResponseSchema.nullable().optional(),
-  notes: z.string().trim().max(2000).nullable().optional(),
-  canvasser_name: z.string().trim().max(120).nullable().optional(),
-  knocked_at: z.string().datetime().nullable().optional(),
+export const COMPANION_ACCESS_STATES = [
+  'dead',
+  'unassigned',
+  'need_verification',
+  'pending_approval',
+  'ready',
+] as const;
+export type CompanionAccessState = (typeof COMPANION_ACCESS_STATES)[number];
+
+export const CompanionAccessQueryObj = z.object({
+  kind: z.enum(COMPANION_LINK_KINDS),
+  token: z.string().min(8).max(200),
 });
 
-export function isTurfStatus(v: unknown): v is TurfStatus {
-  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
+export const CompanionVerifyStartObj = CompanionAccessQueryObj.extend({
+  channel: z.enum(COMPANION_VERIFY_CHANNELS),
+});
+
+export const CompanionVerifyConfirmObj = CompanionAccessQueryObj.extend({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the 6-digit code'),
+});
+
+export type CompanionAccessQueryType = z.infer<typeof CompanionAccessQueryObj>;
+export type CompanionVerifyStartType = z.infer<typeof CompanionVerifyStartObj>;
+export type CompanionVerifyConfirmType = z.infer<typeof CompanionVerifyConfirmObj>;
+
+/** A verifiable contact on file, masked for display — never the raw value. */
+export interface CompanionContact {
+  channel: CompanionVerifyChannel;
+  masked: string;
 }
 
-export function isKnockOutcome(v: unknown): v is KnockOutcome {
-  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
+/** Response of GET /api/companion/access. */
+export interface CompanionAccessPayload {
+  state: CompanionAccessState;
+  /** Volunteer first name — identity card ("Walking as Jordan"). */
+  volunteerName?: string;
+  /** Who to contact about a dead/unassigned link. */
+  organizerName?: string;
+  /** Organization name for the gate header. */
+  organizationName?: string;
+  contacts?: CompanionContact[];
 }
+
+/** Response of POST /api/companion/verify/confirm. */
+export interface CompanionVerifyConfirmResult {
+  status: 'ready' | 'pending_approval';
+  sessionToken: string;
+  expiresAt: string;
+}
+
+/** One row of the admin Volunteer access page. */
+export interface CompanionVolunteerRow {
+  id: string;
+  person_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  mobile: string | null;
+  status: CompanionVolunteerStatus;
+  verify_channel: CompanionVerifyChannel | null;
+  verified_at: string | null;
+  approved_at: string | null;
+  approved_by_name: string | null;
+  created_at: string;
+}
+```
+
+## File: libs/common/src/lib/schemas/core.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 ```
 
 ## File: libs/common/src/lib/schemas/deliveries.schema.ts
@@ -4789,6 +4610,38 @@ export type ReorderStopType = z.infer<typeof ReorderStopObj>;
 export type StopActionType = z.infer<typeof StopActionObj>;
 export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+```
+
+## File: libs/common/src/lib/schemas/donations.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { idSchema } from './core.schema';
+
+/**
+ * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
+ * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
+ * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
+ */
+export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
+export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
+  card: 'Card',
+  check: 'Check',
+  cash: 'Cash',
+  bank_transfer: 'Bank transfer',
+};
+
+export const donationMethodSchema = z.enum(DONATION_METHODS);
+export type DonationMethod = z.infer<typeof donationMethodSchema>;
+
+export const RecordDonationObj = z.object({
+  personId: idSchema,
+  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
+  method: donationMethodSchema,
+  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+});
+export type RecordDonationType = z.infer<typeof RecordDonationObj>;
 ```
 
 ## File: libs/common/src/lib/schemas/events.schema.ts
@@ -5354,136 +5207,6 @@ export const FormSubmissionObj = z.object({
 });
 ```
 
-## File: libs/common/src/lib/auth.ts
-
-```typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name?: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  email_verified: boolean;
-
-  passkey_setup_dismissed_at?: Date | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-
-  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
-  tenant_slug?: string | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  /** Most recent session activity; null until the user has signed in at least once. */
-  last_active_at?: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-/**
- * The one generic message shown for any failed sign-in attempt, regardless of
- * whether the email or the password was wrong — never reveal which, so that
- * sign-in cannot be used to probe which emails have accounts. Shared by the
- * backend error formatter and the frontend so the copy never drifts.
- */
-export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-```
-
 ## File: libs/common/src/lib/emails.ts
 
 ```typescript
@@ -5669,7 +5392,7 @@ export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((
 ## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
 
 ```typescript
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
+import { Component, ElementRef, OnInit, effect, inject, input, output, viewChild } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
 import { AddressType } from '../../../../common/src/lib/kysely.models';
 import { parseAddress } from './googlePlacesAddressMapper';
@@ -5725,12 +5448,16 @@ export class AddressAutocomplete implements OnInit {
   private isLibraryLoaded = false;
   private isAutocompleteInitialized = false;
 
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
+  private readonly inputEl = viewChild<ElementRef<HTMLInputElement>>('inputEl');
+
+  constructor() {
+    effect(() => {
+      const elRef = this.inputEl();
+      if (elRef) {
+        this.inputElement = elRef.nativeElement;
+        this.tryInitAutocomplete();
+      }
+    });
   }
 
   public ngOnInit() {
@@ -5782,6 +5509,236 @@ export class AddressAutocomplete implements OnInit {
         this.addressSelected.emit(address);
       }
     });
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/alerts/alert-service.ts
+
+```typescript
+import { Injectable, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+
+export class AlertMessage {
+  public readonly visible = signal(true);
+  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
+  public readonly count = signal(1);
+
+  public duration = 3000;
+  public id: string;
+  public text: string;
+  public timeoutId: NodeJS.Timeout | undefined;
+  public type?: ALERTTYPE;
+
+  constructor(init?: Partial<AlertMessage>) {
+    Object.assign(this, init);
+    this.id = init?.id ?? crypto.randomUUID();
+    this.duration = init?.duration || 3000;
+    this.text = init?.text ?? 'Alert';
+  }
+}
+
+/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
+const MAX_TOAST_STACK = 3;
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AlertService {
+  private readonly alertsSignal = signal<AlertMessage[]>([]);
+
+  public readonly alertList = this.alertsSignal.asReadonly();
+  public readonly alerts$ = toObservable(this.alertsSignal);
+
+  public dismiss(id: string): void {
+    const alert = this.findById(id);
+
+    if (!alert) return;
+
+    // Clear any pending removal timeout
+    clearTimeout(alert.timeoutId);
+    alert.timeoutId = undefined;
+
+    alert.visible.set(false);
+
+    // Have to let the animation do its thing first
+    setTimeout(() => {
+      const next = this.alertsSignal().filter((msg) => msg.id !== id);
+      this.alertsSignal.set(next);
+    }, 300);
+  }
+
+  public getAlerts(): AlertMessage[] {
+    return this.alertsSignal();
+  }
+
+  public show(alert: Partial<AlertMessage>): void {
+    // Coalesce an identical (same text + type) toast into a ×N count with a
+    // refreshed timer instead of stacking duplicates (§2).
+    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
+
+    if (existing) {
+      existing.count.update((c) => c + 1);
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
+      return;
+    }
+
+    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
+    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
+    this.alertsSignal.update((list) => {
+      const next = [messageWithMeta, ...list];
+      const dropped = next.slice(MAX_TOAST_STACK);
+      dropped.forEach((m) => clearTimeout(m.timeoutId));
+      return next.slice(0, MAX_TOAST_STACK);
+    });
+
+    const duration = messageWithMeta.duration || 3000;
+    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
+  }
+
+  public showError(text: string): void {
+    this.show(new AlertMessage({ text, type: 'error' }));
+  }
+
+  public showInfo(text: string): void {
+    this.show(new AlertMessage({ text, type: 'info' }));
+  }
+
+  public showSuccess(text: string): void {
+    this.show(new AlertMessage({ text, type: 'success' }));
+  }
+
+  public showWarn(text: string): void {
+    this.show(new AlertMessage({ text, type: 'warning' }));
+  }
+
+  private findById(id: string) {
+    return this.alertsSignal().find((m) => m.id === id);
+  }
+}
+
+export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
+```
+
+## File: libs/uxcommon/src/components/alerts/alerts.html
+
+```html
+<div
+  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
+  [class.absolute]="!isPositionRelative()"
+  [class.left-0]="!isPositionRelative()"
+  [class.top-4]="isPositionTop()"
+  [class.bottom-4]="isPositionBottom()"
+>
+  @for (alert of alerts(); track alert.id) {
+  <div
+    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
+    role="alert"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
+    (click)="dismiss(alert.id)"
+  >
+    <span
+      aria-hidden="true"
+      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
+    ></span>
+    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
+    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
+      {{ alert.text }}
+    </div>
+    @if (alert.count() > 1) {
+    <span
+      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
+    >
+      ×{{ alert.count() }}
+    </span>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: libs/uxcommon/src/components/alerts/alerts.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+import { ALERTTYPE, AlertService } from './alert-service';
+
+@Component({
+  selector: 'pc-alerts',
+  imports: [Icon, AnimateIfDirective],
+  templateUrl: './alerts.html',
+})
+export class Alerts {
+  protected alertSvc = inject(AlertService);
+
+  public position = input<'top' | 'bottom' | 'relative'>('bottom');
+
+  protected readonly alerts = computed(() => {
+    const list = this.alertSvc.alertList();
+    // Service list is newest-first; render newest nearest the pinned edge
+    // (bottom of the stack when pinned bottom — spec §2).
+    return this.isPositionBottom() ? list.slice().reverse() : list;
+  });
+
+  protected dismiss(id: string): void {
+    this.alertSvc.dismiss(id);
+  }
+
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
+  }
+
+  protected icon(type?: ALERTTYPE): PcIconNameType {
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'exclamation-circle'
+          : 'information-circle';
+  }
+
+  protected isPositionBottom() {
+    return this.position() === 'bottom';
+  }
+
+  protected isPositionRelative() {
+    return this.position() === 'relative';
+  }
+
+  protected isPositionTop() {
+    return this.position() === 'top';
+  }
+
+  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
+  protected barToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success'
+      : type === 'warning'
+        ? 'bg-warning'
+        : type === 'error'
+          ? 'bg-error'
+          : 'bg-info';
+  }
+
+  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
+  protected toneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'text-success'
+      : type === 'warning'
+        ? 'text-warning'
+        : type === 'error'
+          ? 'text-error'
+          : 'text-info';
   }
 }
 ```
@@ -6177,83 +6134,45 @@ export function autoMapPersonsHeader(header: string): string {
 }
 ```
 
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
+## File: libs/uxcommon/src/components/empty-state/empty-state.ts
 
 ```typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
+import { Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
+/**
+ * The one empty-state idiom (design §3): icon + sentence naming the cause +
+ * ONE projected action button. Never italic grey placeholder text.
+ *
+ * `bordered` (default) draws the dashed full-surface container; turn it off
+ * when the surrounding surface (a table cell, a card body) already frames it.
+ */
 @Component({
-  selector: 'pc-detail-item',
+  selector: 'pc-empty-state',
   imports: [Icon],
   template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
+    <div
+      class="flex flex-col items-center gap-3 py-16 text-center"
+      [class.rounded-xl]="bordered()"
+      [class.border]="bordered()"
+      [class.border-dashed]="bordered()"
+      [class.border-base-300]="bordered()"
+    >
+      <pc-icon [name]="icon()" [size]="8" class="opacity-30" />
+      <span class="text-base font-medium">{{ title() }}</span>
+      @if (hint(); as h) {
+        <span class="text-sm opacity-70">{{ h }}</span>
+      }
+      <ng-content />
     </div>
   `,
 })
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
+export class EmptyState {
+  public readonly bordered = input<boolean>(true);
+  public readonly hint = input<string>();
+  public readonly icon = input.required<PcIconNameType>();
+  public readonly title = input.required<string>();
 }
 ```
 
@@ -6384,55 +6303,300 @@ export class GridHeaderComponent {
 }
 ```
 
-## File: libs/uxcommon/src/components/input/input.ts
+## File: libs/uxcommon/src/components/icons/icons.index.ts
 
 ```typescript
-import { Component, input, output } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
 
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  if (!_cache.has(name)) {
+    _cache.set(
+      name,
+      fetch(icons[name])
+        .then((r) => {
+          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
+          return r.text();
+        })
+        .catch(async () => {
+          // last-resort: fetch the unknown icon (cached too)
+          if (!_cache.has(UNKNOWN)) {
+            _cache.set(
+              UNKNOWN,
+              fetch(icons[UNKNOWN]).then((r) => r.text()),
+            );
+          }
+          return _cache.get(UNKNOWN)!;
+        }),
+    );
+  }
+  return _cache.get(name)!;
+}
+
+const UNKNOWN: PcIconNameType = 'unknown';
+
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
+
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  loading: 'assets/icons/loading.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
+```
+
+## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
+
+```typescript
+import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * The one modal chrome for form/tool dialogs: native <dialog> + DaisyUI modal
+ * with the house header (primary icon, bold title, ghost-circle close) and a
+ * `[pc-modal-footer]` slot for actions. Blocking yes/no decisions stay on
+ * ConfirmDialogService — this shell is for dialogs with real content.
+ *
+ * Drive it either declaratively (`[open]="someSignal()"`) or imperatively via
+ * a template ref (`#dlg` → `dlg.show()` / `dlg.close()`). `closed` fires on
+ * every close path (X button, ESC, backdrop, programmatic).
+ */
 @Component({
-  selector: 'pc-input',
-  imports: [FormField],
+  selector: 'pc-modal-shell',
+  imports: [Icon],
   template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
+    <dialog #dlg class="modal" (close)="closed.emit()" (cancel)="onCancel($event)">
+      <div class="modal-box" [class]="boxClass()">
+        <div class="mb-5 flex items-center justify-between">
+          <h3 class="flex items-center gap-2 text-lg font-bold">
+            @if (icon(); as ic) {
+              <pc-icon [name]="ic" [size]="5" class="text-primary" />
+            }
+            {{ title() }}
+          </h3>
+          <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
+            <pc-icon name="x-mark" [size]="4" />
+          </button>
+        </div>
+        <ng-content />
+        <div class="modal-action empty:hidden">
+          <ng-content select="[pc-modal-footer]" />
+        </div>
+      </div>
+      @if (dismissible()) {
+        <form method="dialog" class="modal-backdrop">
+          <button type="submit" aria-label="Close">close</button>
+        </form>
       }
-
-      <label
-        class="input w-full flex items-center gap-2"
-        [class.input-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      >
-        <ng-content select="[pc-prefix]"></ng-content>
-        <input
-          [type]="type()"
-          [placeholder]="placeholder()"
-          [formField]="formField()"
-          class="grow"
-          (blur)="blurred.emit()"
-        />
-        <ng-content select="[pc-suffix]"></ng-content>
-      </label>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
+    </dialog>
   `,
 })
-export class Input {
-  public label = input<string>();
-  public type = input<string>('text');
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-  public blurred = output<void>();
+export class ModalShell {
+  /** Extra classes for the modal box — width overrides only (e.g. 'max-w-3xl'). */
+  public readonly boxClass = input<string>('');
+  /** Allow ESC / backdrop-click to dismiss. Turn off for dialogs holding unsaved work. */
+  public readonly dismissible = input<boolean>(true);
+  public readonly icon = input<PcIconNameType | null>(null);
+  /** Declarative visibility; leave unset to drive imperatively via show()/close(). */
+  public readonly open = input<boolean | undefined>(undefined);
+  public readonly title = input.required<string>();
+
+  public readonly closed = output<void>();
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  constructor() {
+    effect(() => {
+      const open = this.open();
+      if (open === undefined) return;
+      const dlg = this.dlgRef().nativeElement;
+      try {
+        if (open && !dlg.open) dlg.showModal();
+        else if (!open && dlg.open) dlg.close();
+      } catch {
+        /* dialog not connected yet — the next effect run settles it */
+      }
+    });
+  }
+
+  public close(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (dlg.open) dlg.close();
+  }
+
+  public show(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (!dlg.open) dlg.showModal();
+  }
+
+  protected onCancel(e: Event): void {
+    if (!this.dismissible()) e.preventDefault();
+  }
 }
 ```
 
@@ -6457,6 +6621,66 @@ export class Input {
     </div>
   </div>
 </pc-card>
+```
+
+## File: libs/uxcommon/src/components/stat-card/stat-card.ts
+
+```typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-stat-card',
+  imports: [Icon],
+  template: `
+    <div
+      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
+    >
+      <div class="stat p-0 leading-normal">
+        @if (title()) {
+          <div class="stat-title pc-eyebrow">
+            {{ title() }}
+          </div>
+        }
+        @if (loading()) {
+          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
+          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
+        } @else {
+          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
+            {{ value() }}
+          </div>
+        }
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+          @if (description()) {
+            <span>{{ description() }}</span>
+          }
+          <ng-content select="[pc-stat-desc]"></ng-content>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 flex items-center justify-center gap-2">
+        @if (icon()) {
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
+            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
+          </div>
+        }
+        <ng-content select="[pc-stat-extra]"></ng-content>
+      </div>
+    </div>
+  `,
+})
+export class StatCard {
+  public title = input<string>();
+  public value = input<string | number>();
+  /** When true, the value renders as a skeleton block instead of a number/spinner. */
+  public loading = input<boolean>(false);
+  public description = input<string>();
+  public icon = input<PcIconNameType>();
+  public valueColorClass = input<string>('text-base-content');
+  public iconBgClass = input<string>('bg-base-200/50');
+  public iconColorClass = input<string>('text-base-content/70');
+}
 ```
 
 ## File: libs/uxcommon/src/components/table/table.ts
@@ -6676,1169 +6900,648 @@ export class TabPanel {
 }
 ```
 
-## File: libs/uxcommon/src/index.ts
+## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
 
 ```typescript
-export * from './loading-gate';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/table/table';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-export * from './components/map/map';
-export * from './components/map/map-types';
-export * from './components/geocode-chip/geocode-chip';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-```
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
-    campaignId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const exportEntitySchema = z.enum([
-  'persons',
-  'households',
-  'companies',
-  'tags',
-  'issues',
-  'tasks',
-  'lists',
-  'newsletters',
-  'teams',
-  'users',
-  'volunteer',
-  'forms',
-  'workflows',
-]);
-
-export const queueExportInput = z.object({
-  entity: exportEntitySchema,
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
- * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
- * so the resulting record is not re-downloadable. */
-export const logInstantExportInput = z.object({
-  entity: exportEntitySchema,
-  fileName: z.string(),
-  rowCount: z.number().int().nonnegative(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  downloadable: z.boolean(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-```
-
-## File: libs/common/src/lib/schemas/donations.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema } from './core.schema';
-
-/**
- * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
- * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
- * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
- */
-export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
-export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
-  card: 'Card',
-  check: 'Check',
-  cash: 'Cash',
-  bank_transfer: 'Bank transfer',
-};
-
-export const donationMethodSchema = z.enum(DONATION_METHODS);
-export type DonationMethod = z.infer<typeof donationMethodSchema>;
-
-export const RecordDonationObj = z.object({
-  personId: idSchema,
-  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
-  method: donationMethodSchema,
-  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-});
-export type RecordDonationType = z.infer<typeof RecordDonationObj>;
-```
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
+import { Component, computed, input } from '@angular/core';
 
 @Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
+  selector: 'pc-user-avatar',
   template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [avatarText]="avatarText()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [showCancel]="showCancel()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
+    <div class="avatar" [class.placeholder]="!avatarUrl()">
+      @if (avatarUrl()) {
+        <div
+          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
         >
-          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
+          <img
+            [src]="avatarUrl()!"
+            [alt]="name() + ' avatar'"
+            class="w-full h-full object-cover"
+            referrerpolicy="no-referrer"
+          />
+        </div>
+      } @else {
+        <div
+          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1 bg-primary/15 text-primary"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
+          [style.font-size.rem]="fontSizeRem()"
+        >
+          <span>{{ initials() }}</span>
+        </div>
+      }
     </div>
   `,
+  host: { class: 'contents' },
 })
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
+export class UserAvatarComponent {
+  readonly avatarUrl = input<string | null | undefined>(null);
 
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** A read/detail view has no edit to cancel — the header action is a navigation
-   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
-  public showCancel = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
+  readonly name = input.required<string>();
 
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
+  readonly size = input<number>(8);
 
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
+  protected readonly sizeRem = computed(() => this.size() * 0.25);
+  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
 
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
+  protected readonly initials = computed(() => {
+    const n = (this.name() ?? '').trim();
+    if (!n) return '?';
+    const parts = n.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
     }
-  }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
+    return n[0]!.toUpperCase();
+  });
 }
 ```
 
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
+## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
 
 ```typescript
-import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { merge } from 'rxjs';
+import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
 
-@Component({
-  selector: 'pc-form-actions',
-  imports: [ReactiveFormsModule, Icon],
-  templateUrl: './form-actions.html',
+@Directive({
+  selector: 'button[pcSpinOnClick]',
+  exportAs: 'pcSpinOnClick',
+  host: { '(click)': 'onButtonClick()' },
 })
-export class FormActions implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly cdr = inject(ChangeDetectorRef);
+export class SpinOnClickDirective {
+  private readonly el = inject(ElementRef<HTMLButtonElement>);
   private readonly destroyRef = inject(DestroyRef);
 
-  private stay = false;
+  readonly minMs = input(700);
 
-  protected form?: FormGroup;
-
-  public signalForm = input<any>();
-
-  public disabled = input<boolean>(false);
-
-  /**
-   * §4 "Save never disables": when true, the primary button stays enabled
-   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
-   * consuming form is expected to guide on click (markAsTouched + focus the
-   * first invalid field) rather than block via a dead button.
-   */
-  public saveAlwaysEnabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  /** Whether to render the Cancel button. Read/detail views turn this off — a
-   * read view has no edit to cancel; the header's action is a navigation "Edit". */
-  public showCancel = input<boolean>(true);
-
-  public deleteText = input<string>('Delete');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('Save');
-
-  public btn2Text = input<string>('Save & add more');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
-  public size = input<'xs' | 'sm'>('sm');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    // Save never disables on validity/dirtiness — the form guides on click.
-    if (this.saveAlwaysEnabled()) return false;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    if (this.form) {
-      return this.form.invalid || !this.form.dirty;
-    }
-    return false;
-  }
-
-  public cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked() {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked() {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked() {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public ngOnInit() {
-    this.form = this.rootFormGroup?.control;
-    if (this.form) {
-      merge(this.form.valueChanges, this.form.statusChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          this.cdr.markForCheck();
-        });
-    }
-  }
-
-  public stayOrCancel = () => {
-    if (this.stay) {
-      const sigF = this.signalForm();
-      if (sigF) {
-        sigF().reset();
-      } else if (this.form) {
-        this.form.reset();
-      }
-    } else {
-      this.cancel();
-    }
-  };
-}
-```
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-
-```typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  mailbox: 'assets/icons/mailbox.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  message: 'assets/icons/message.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  route: 'assets/icons/route.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-
-```typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // signal instead of ngModel
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  });
-
-  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
-  // (danger variants by default, or any explicit emphasizeCancel), style the safe
-  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
-  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
-  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
+    this.destroyRef.onDestroy(() => this.clearTimer());
   }
 
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
+  protected onButtonClick(): void {
+    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
+    if (!icon) return;
+
+    icon.classList.add('animate-spin', 'inline-block');
+    this.clearTimer();
+
+    this.timer = setTimeout(() => {
+      icon.classList.remove('animate-spin', 'inline-block');
+      this.timer = null;
+    }, this.minMs());
   }
 
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
   }
 }
 ```
 
-## File: libs/uxcommon/src/loading-gate.ts
+## File: libs/uxcommon/src/pipes/timeago.pipe.ts
 
 ```typescript
-// _loading-gate.ts
-import { type Signal, signal } from '@angular/core';
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
 
-export type loadingGate = {
-  /**
-   * Spinner visibility — intentionally delayed by `delay` ms and held for
-   * `minDuration` ms to suppress flicker. Bind this to spinners ONLY; it can stay
-   * false for a whole sub-`delay` operation, so it is not a truthful "did work
-   * happen" signal.
-   */
-  visible: ReturnType<typeof signal<boolean>>;
+export interface TimeAgoOptions {
+  thresholdDays?: number;
+  style?: 'long' | 'short' | 'compact' | string;
+  compact?: boolean;
+  hideSuffix?: boolean;
+  // Index signature ensures any other existing options in your codebase are accepted
+  [key: string]: any;
+}
 
-  /**
-   * True once the first operation has COMPLETED — ungated, so it flips even for a
-   * fast operation that never trips `visible`. Set when a load finishes (not when
-   * it begins), so the data it produced is already in place. Use this for
-   * "has loaded at least once" state (first-load gating, skeleton-vs-empty)
-   * instead of watching `visible`.
-   */
-  loaded: Signal<boolean>;
+@Pipe({
+  name: 'timeAgo', // Matched to your template casing
+  pure: false, // Must be false to update the UI over time
+})
+export class TimeAgoPipe implements PipeTransform, OnDestroy {
+  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private lastValue?: string | number | Date | null;
+  private lastOptsJson?: string;
+  private lastResult = '';
 
-  begin(): () => void;
-};
+  private readonly cdr = inject(ChangeDetectorRef);
 
-export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 300; // ms before showing
-  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
+  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
+    // Stringify options to avoid pure:false memory reference loops
+    const optsJson = opts ? JSON.stringify(opts) : '';
 
-  const visible = signal(false);
-  const loaded = signal(false);
-  let pendingCount = 0;
-  let showTimer: ReturnType<typeof setTimeout> | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let shownAt = 0;
-
-  const clearShowTimer = () => {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = null;
+    // Only recalculate if the date OR the options have actually changed
+    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
+      return this.lastResult;
     }
-  };
-  const clearHideTimer = () => {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
 
-  function scheduleShow() {
-    clearShowTimer();
-    showTimer = setTimeout(() => {
-      showTimer = null;
-      if (pendingCount > 0 && !visible()) {
-        visible.set(true);
-        shownAt = performance.now();
-      }
-    }, delay);
+    this.lastValue = value;
+    this.lastOptsJson = optsJson;
+    this.clearTimer();
+
+    if (!value) {
+      this.lastResult = '';
+      return this.lastResult;
+    }
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+      this.lastResult = String(value);
+      return this.lastResult;
+    }
+
+    const diffMs = new Date().getTime() - date.getTime();
+
+    // Calculate and cache the result
+    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
+    this.setupTimer(diffMs);
+
+    return this.lastResult;
   }
 
-  function scheduleHide() {
-    clearHideTimer();
-    if (!visible()) return; // never shown → nothing to hide
+  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
 
-    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
-    hideTimer = setTimeout(() => {
-      if (pendingCount === 0) visible.set(false);
-    }, remaining);
-  }
-
-  function begin() {
-    pendingCount++;
-    if (pendingCount === 1) {
-      // First operation: start the delayed show
-      scheduleShow();
+    // If a threshold is set and exceeded, fallback to a standard date string
+    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
+      return date.toLocaleDateString(undefined, {
+        month: opts.style === 'short' ? 'short' : 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
     }
-    // Return disposer
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      pendingCount--;
-      loaded.set(true); // an operation has completed — its result is now in place
-      if (pendingCount <= 0) {
-        pendingCount = 0;
-        // If we never showed, cancel the show timer so _loading never appears
-        clearShowTimer();
-        scheduleHide(); // hides now or after minDuration
-      }
-    };
+
+    const suffix = opts?.hideSuffix ? '' : ' ago';
+
+    // Handle compact/short styles
+    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
+      if (seconds < 60) return 'now';
+      if (minutes < 60) return `${minutes}m`;
+      if (hours < 24) return `${hours}h`;
+      return `${days}d`;
+    }
+
+    // Default long style
+    if (seconds < 60) return 'just now';
+    if (minutes === 1) return `a minute${suffix}`;
+    if (minutes < 60) return `${minutes} minutes${suffix}`;
+    if (hours === 1) return `an hour${suffix}`;
+    if (hours < 24) return `${hours} hours${suffix}`;
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days${suffix}`;
+
+    const months = Math.floor(days / 30);
+    if (months === 1) return `a month${suffix}`;
+    if (months < 12) return `${months} months${suffix}`;
+
+    const years = Math.floor(days / 365);
+    if (years === 1) return `a year${suffix}`;
+    return `${years} years${suffix}`;
   }
 
-  return { begin, visible, loaded };
+  private setupTimer(diffMs: number): void {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+
+    let timeoutMs = 60000;
+
+    // Scale update frequency based on age to save CPU
+    if (seconds < 60) {
+      timeoutMs = 10000; // 10 seconds
+    } else if (minutes < 60) {
+      timeoutMs = 60000; // 1 minute
+    } else if (minutes < 1440) {
+      timeoutMs = 3600000; // 1 hour
+    } else {
+      timeoutMs = 86400000; // 1 day
+    }
+
+    // Native setTimeout triggers Angular's zoneless scheduler internally
+    // when markForCheck is called inside it.
+    this.timerId = setTimeout(() => {
+      this.cdr.markForCheck();
+    }, timeoutMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
+    }
+  }
+
+  public ngOnDestroy(): void {
+    this.clearTimer();
+  }
 }
 ```
 
-## File: libs/common/src/lib/schemas/marketing.schema.ts
+## File: libs/uxcommon/src/styles/themes.css
+
+```css
+/*
+ * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * palette, consumed by every app (apps/frontend, apps/companion). Import this
+ * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
+ * these values into an app-local theme block; change them here.
+ */
+
+/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
+   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
+   DaisyUI blocks below, same as --color-line. */
+@theme {
+  --color-base-50: #fbfbfc;
+}
+
+/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
+   scanner cannot see — without this safelist an icon size only works if some other
+   file happens to use the same w-/h- class literally. Covers every [size] in use. */
+@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #3498db;
+  --color-primary-content: #ffffff;
+  --color-secondary: #22a6b3;
+  --color-secondary-content: #ffffff;
+  --color-accent: #818789;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: rgb(226, 226, 226);
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e3d6a7;
+  --color-warning-content: #4a3d0a;
+  --color-error: #eb4d4b;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
+
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+```
+
+## File: libs/uxcommon/src/request-guard.ts
+
+````typescript
+export type RequestGuard = {
+  /**
+   * Marks the start of a new request and returns a checker for it. After each
+   * `await`, bail out unless the checker still returns true — a newer request
+   * has superseded this one and its (stale) response must not land.
+   */
+  begin(): () => boolean;
+};
+
+/**
+ * Guards a reloadable async data source against out-of-order responses: when a
+ * component reloads on an input change (e.g. prev/next record navigation), a
+ * slow earlier response must not overwrite the newer record.
+ *
+ * ```ts
+ * private readonly guard = createRequestGuard();
+ *
+ * async load(id: string) {
+ *   const isCurrent = this.guard.begin();
+ *   const data = await this.svc.getById(id);
+ *   if (!isCurrent()) return;
+ *   this.detail.set(data);
+ * }
+ * ```
+ */
+export function createRequestGuard(): RequestGuard {
+  let sequence = 0;
+  return {
+    begin(): () => boolean {
+      const requestId = ++sequence;
+      return () => requestId === sequence;
+    },
+  };
+}
+````
+
+## File: libs/common/src/lib/schemas/canvassing.schema.ts
 
 ```typescript
 import { z } from 'zod';
 
-import { idSchema } from './core.schema';
+import { idSchema, nameSchema, notesSchema } from './core.schema';
 
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
+/**
+ * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
+ * they drive both Zod validation and exhaustive discriminated-union switches on
+ * the frontend and in the controller.
+ */
 
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
+/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
+export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
+export type TurfStatus = (typeof TURF_STATUSES)[number];
 
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+/**
+ * What happened at the door. "attempted" = any knock except `cleared`;
+ * "conversation" = a talk. `moved` is a person-level no-conversation code;
+ * `cleared` is the append-only "door outcome toggled off" marker — the latest
+ * outcome knock wins, and `cleared` means the door is back on the list.
+ */
+export const KNOCK_OUTCOMES = [
+  'conversation',
+  'no_answer',
+  'not_home',
+  'moved',
+  'refused',
+  'inaccessible',
+  'cleared',
+] as const;
+export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
+
+/**
+ * The voter's stance, when a conversation happened — the spec §3.5 five-option
+ * support scale. `not_voting`/`already_voted` feed `voting_status` rather than
+ * `support_level` on campaign_person_facts.
+ */
+export const KNOCK_RESPONSES = ['supporter', 'undecided', 'non_supporter', 'not_voting', 'already_voted'] as const;
+export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
+
+/** Survey labels for the five support options (sentence case, spec §3.5). */
+export const KNOCK_RESPONSE_LABELS: Record<KnockResponse, string> = {
+  supporter: 'Supporter',
+  undecided: 'Undecided',
+  non_supporter: 'Non-supporter',
+  not_voting: 'Not voting',
+  already_voted: 'Already voted',
+};
+
+/** Doors-per-turf presets from the Cut-new-turfs dialog. */
+export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
+
+export const turfStatusSchema = z.enum(TURF_STATUSES);
+export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
+export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
+
+export const AddTurfObj = z.object({
+  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
   campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  name: nameSchema('Name', 120),
+  list_id: idSchema.nullable().optional(),
+  notes: notesSchema,
 });
 
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
+export const UpdateTurfObj = z.object({
+  name: nameSchema('Name', 120).optional(),
+  status: turfStatusSchema.optional(),
+  notes: notesSchema,
 });
 
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
+/** Preview and Cut share this input; preview never writes. */
+export const CutTurfsObj = z.object({
+  list_id: idSchema,
+  doors_per_turf: z.number().int().min(5).max(500),
 });
 
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
+export const AssignTurfObj = z.object({
+  turf_id: idSchema,
+  team_id: idSchema.nullable().optional(),
+  /**
+   * The person this Companion link belongs to. Required: the companion access
+   * layer verifies the holder against this person's email/mobile on file, so
+   * an assignment without a person produces a link nobody can open.
+   */
+  volunteer_person_id: idSchema,
 });
 
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
+export const FieldReportRangeObj = z.object({
+  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
+  from: z.string().datetime().nullable().optional(),
+  to: z.string().datetime().nullable().optional(),
 });
 
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
+/**
+ * Companion knock payload. Arrives over the tokenised public route (no account),
+ * so the token authorises the turf and `client_knock_id` de-dupes offline
+ * re-sends. Parsed from `unknown` at the REST boundary.
+ */
+export const LogKnockObj = z.object({
+  token: z.string().min(10).max(200),
+  client_knock_id: z.string().min(1).max(200),
+  household_id: idSchema,
+  person_id: idSchema.nullable().optional(),
+  outcome: knockOutcomeSchema,
+  response: knockResponseSchema.nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  canvasser_name: z.string().trim().max(120).nullable().optional(),
+  knocked_at: z.string().datetime().nullable().optional(),
 });
 
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+export function isTurfStatus(v: unknown): v is TurfStatus {
+  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
+}
+
+export function isKnockOutcome(v: unknown): v is KnockOutcome {
+  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
+// Companion batched results (spec §3.5/§5) — POST /api/canvass/t/:token/results
+// ---------------------------------------------------------------------------
+
+/**
+ * A full survey (spec §3.5). `person_id` null = the anonymous household-level
+ * survey. `support` is the one required field — EXCEPT that toggling
+ * "Do not contact" alone is saveable, which the refine below encodes.
+ */
+export const CompanionSurveyObj = z
+  .object({
+    household_id: idSchema,
+    person_id: idSchema.nullable().optional(),
+    support: knockResponseSchema.nullable().optional(),
+    issues: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+    wants_volunteer: z.boolean().default(false),
+    wants_yard_sign: z.boolean().default(false),
+    set_dnc: z.boolean().default(false),
+    contact_phone: z.string().trim().max(40).nullable().optional(),
+    contact_email: z.string().trim().email().max(200).nullable().optional(),
+    subscribe: z.boolean().default(false),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((v) => v.support != null || v.set_dnc, { message: 'Pick a support level to save' });
+
+/** One-tap no-conversation codes for a person (spec §3.5). */
+export const CompanionPersonResultObj = z.object({
+  household_id: idSchema,
+  person_id: idSchema,
+  result: z.enum(['not_home', 'moved', 'refused']),
 });
 
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
+/** Door-level outcome (spec §3.4 quick actions). */
+export const CompanionDoorOutcomeObj = z.object({
+  household_id: idSchema,
+  outcome: z.enum(['no_answer', 'inaccessible', 'refused']),
 });
+
+export const CompanionClearOutcomeObj = z.object({
+  household_id: idSchema,
+});
+
+/** "+ Add someone at this door" (spec §3.4). */
+export const CompanionPersonCreateObj = z.object({
+  household_id: idSchema,
+  name: z.string().trim().min(1).max(120),
+});
+
+const companionOpBase = {
+  /** Client-generated UUID — the idempotency key (companion_ops ledger). */
+  op_id: z.string().min(8).max(100),
+  /** On-device timestamp so offline results keep their true door time. */
+  recorded_at: z.string().datetime().nullable().optional(),
+};
+
+export const CompanionOpObj = z.discriminatedUnion('type', [
+  z.object({ ...companionOpBase, type: z.literal('survey'), payload: CompanionSurveyObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_result'), payload: CompanionPersonResultObj }),
+  z.object({ ...companionOpBase, type: z.literal('door_outcome'), payload: CompanionDoorOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('clear_outcome'), payload: CompanionClearOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_create'), payload: CompanionPersonCreateObj }),
+]);
+
+export const CompanionResultsObj = z.object({
+  ops: z.array(CompanionOpObj).min(1).max(200),
+});
+
+export type CompanionSurveyType = z.infer<typeof CompanionSurveyObj>;
+export type CompanionOpType = z.infer<typeof CompanionOpObj>;
+export type CompanionResultsType = z.infer<typeof CompanionResultsObj>;
+
+/** Per-op server acknowledgement — `duplicate` means "already applied, treat as success". */
+export interface CompanionOpAck {
+  op_id: string;
+  status: 'applied' | 'duplicate' | 'rejected';
+  error?: string;
+  /** For person_create: the real id to swap in for the client's temp person. */
+  person_id?: string;
+}
+
+// ------------------------------------------------------------------------
+// Companion GET payload (spec §3, §5) — shared by backend + apps/companion.
+// Payload minimization is an acceptance criterion: names, walk data and prior
+// door RESULTS only — never emails, phones, donation history, or notes.
+// ------------------------------------------------------------------------
+
+/** Pre-fill for re-editing a surveyed person/door. Deliberately excludes notes + contact info. */
+export interface CompanionSurveyPrefill {
+  support: KnockResponse | null;
+  issues: string[];
+  wants_volunteer: boolean;
+  wants_yard_sign: boolean;
+  set_dnc: boolean;
+  subscribe: boolean;
+}
+
+export type CompanionPersonResult = 'canvassed' | 'not_home' | 'moved' | 'refused';
+
+export interface CompanionPerson {
+  id: string;
+  name: string;
+  /** Suppressed from all outreach — card renders dimmed and non-interactive. */
+  dnc: boolean;
+  result: CompanionPersonResult | null;
+  survey: CompanionSurveyPrefill | null;
+}
+
+export type CompanionDoorOutcome = 'no_answer' | 'inaccessible' | 'refused';
+
+export interface CompanionHousehold {
+  id: string;
+  walk_order: number;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  /** Whole-door do-not-contact (every resident is DNC) — skip, but it still counts. */
+  dnc: boolean;
+  door_outcome: CompanionDoorOutcome | null;
+  /** The anonymous household-level survey, when one was recorded. */
+  hh_survey: CompanionSurveyPrefill | null;
+  people: CompanionPerson[];
+}
+
+export interface CompanionTurfPayload {
+  campaign_name: string;
+  turf_name: string;
+  /** Whose name results save under — the assignment's volunteer. */
+  canvasser_name: string;
+  /** Collapsible door script (campaign-configured; empty string = none). */
+  script: string;
+  /** Issue-chip vocabulary (campaign-configured). */
+  issues: string[];
+  expires_at: string | null;
+  households: CompanionHousehold[];
+}
+
+/** Staff-configured survey vocabulary (campaigns.canvass_issues/script). */
+export const UpdateCompanionSettingsObj = z.object({
+  campaign_id: idSchema.optional(),
+  issues: z.array(z.string().trim().min(1).max(80)).max(30),
+  script: z.string().trim().max(4000).nullable(),
+});
+export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
 ```
 
 ## File: libs/common/src/lib/models.ts
@@ -8109,6 +7812,856 @@ export * from './schemas/campaigns.schema';
 export * from './schemas/canvassing.schema';
 export * from './schemas/deliveries.schema';
 export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+```
+
+## File: libs/uxcommon/src/components/detail-item/detail-item.ts
+
+```typescript
+import { Component, inject, input, output } from '@angular/core';
+import { AlertService } from '../alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-detail-item',
+  imports: [Icon],
+  template: `
+    <div class="flex flex-col gap-1 mb-4">
+      <span class="pc-eyebrow">
+        {{ label() }}
+      </span>
+      <div class="flex items-center gap-2">
+        @if (icon()) {
+          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
+        }
+        @if (value() && link()) {
+          <button
+            type="button"
+            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            (click)="linkClicked.emit()"
+          >
+            {{ value() }}
+          </button>
+        } @else {
+          <span class="text-sm font-medium text-base-content break-words">
+            @if (value()) {
+              {{ value() }}
+            } @else {
+              <span class="italic text-base-content/30">Not provided</span>
+            }
+          </span>
+        }
+        @if (value() && copyable()) {
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
+            [attr.data-tip]="'Copy ' + label()"
+            (click)="copyToClipboard($event)"
+          >
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+          </button>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailItem {
+  public label = input.required<string>();
+  public value = input<string | null | undefined>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public copyable = input<boolean>(false);
+  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
+  public link = input<boolean>(false);
+  public readonly linkClicked = output<void>();
+
+  private readonly alertSvc = inject(AlertService);
+
+  protected copyToClipboard(event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const val = this.value();
+    if (!val) return;
+
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${this.label()}`);
+      });
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { DetailHeader } from '../detail-header/detail-header';
+
+@Component({
+  selector: 'pc-detail-layout',
+  imports: [Icon, DetailHeader],
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+  },
+  template: `
+    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
+      <div class="flex w-full max-w-7xl flex-col gap-6">
+        <!-- Header -->
+        <pc-detail-header
+          [title]="title()"
+          [subtitle]="subtitle()"
+          [crumbs]="crumbs()"
+          [eyebrow]="eyebrow()"
+          [statusChip]="statusChip()"
+          [icon]="icon()"
+          [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
+          [isLoading]="isLoading()"
+          [disabled]="disabled()"
+          [showActions]="showActions()"
+          [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
+          [deleteText]="deleteText()"
+          [btn1Text]="btn1Text()"
+          [btn1Icon]="btn1Icon()"
+          [positionLabel]="positionLabel()"
+          [hasPrev]="hasPrev()"
+          [hasNext]="hasNext()"
+          [prevLabel]="prevLabel()"
+          [nextLabel]="nextLabel()"
+          (save)="save.emit($event)"
+          (delete)="delete.emit()"
+          (prevRecord)="prevRecord.emit()"
+          (nextRecord)="nextRecord.emit()"
+        >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
+          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
+          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
+          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
+        </pc-detail-header>
+
+        <!-- Body/Content Area -->
+        @if (isLoading()) {
+          <div class="flex justify-center items-center py-20">
+            <progress class="progress w-56"></progress>
+          </div>
+        } @else if (error()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ error() }}</span>
+          </div>
+        } @else if (!hasRecord()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ notFoundText() }}</span>
+          </div>
+        } @else {
+          <!-- Main Content Slot -->
+          <ng-content></ng-content>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailLayout {
+  public title = input.required<string>();
+  public subtitle = input<string | null | undefined>();
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title (§3). */
+  public statusChip = input<string | null>(null);
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public error = input<string | null | undefined>();
+  public hasRecord = input<boolean>(true);
+  public notFoundText = input<string>('Record not found or failed to load.');
+
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
+  public deleteText = input<string>('Delete');
+  public btn1Text = input<string>('Edit');
+  public btn1Icon = input<PcIconNameType>('pencil-square');
+  public disabled = input<boolean>(false);
+
+  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  public readonly save = output<any>();
+  public readonly delete = output<void>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (!this.positionLabel()) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isEditableTarget(event.target)) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'j' && this.hasNext()) {
+      event.preventDefault();
+      this.nextRecord.emit();
+    } else if (key === 'k' && this.hasPrev()) {
+      event.preventDefault();
+      this.prevRecord.emit();
+    }
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+```
+
+## File: libs/uxcommon/src/components/form-actions/form-actions.ts
+
+```typescript
+import { Component, inject, input, output } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * Minimal structural view of a signal-forms root (the object returned by
+ * `form()` from '@angular/forms/signals'): calling it yields the root field
+ * state. Kept structural so this shared control does not depend on the
+ * experimental signal-forms types directly.
+ */
+export type SignalFormRoot = () => {
+  dirty(): boolean;
+  invalid(): boolean;
+  reset(): void;
+};
+
+@Component({
+  selector: 'pc-form-actions',
+  imports: [Icon],
+  templateUrl: './form-actions.html',
+})
+export class FormActions {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  private stay = false;
+
+  public signalForm = input<SignalFormRoot>();
+
+  public disabled = input<boolean>(false);
+
+  /**
+   * §4 "Save never disables": when true, the primary button stays enabled
+   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
+   * consuming form is expected to guide on click (markAsTouched + focus the
+   * first invalid field) rather than block via a dead button.
+   */
+  public saveAlwaysEnabled = input<boolean>(false);
+
+  public showDelete = input<boolean>(false);
+
+  /** Whether to render the Cancel button. Read/detail views turn this off — a
+   * read view has no edit to cancel; the header's action is a navigation "Edit". */
+  public showCancel = input<boolean>(true);
+
+  public deleteText = input<string>('Delete');
+
+  public readonly deleteClicked = output<void>();
+
+  public readonly btn1Clicked = output<() => void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+
+  public btn1Text = input<string>('Save');
+
+  public btn2Text = input<string>('Save & add more');
+
+  public buttonsToShow = input<'two' | 'three'>('three');
+
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
+
+  public isLoading = input.required<boolean>();
+
+  protected get isSaveDisabled(): boolean {
+    if (this.isLoading()) return true;
+    if (this.disabled()) return true;
+    // Save never disables on validity/dirtiness — the form guides on click.
+    if (this.saveAlwaysEnabled()) return false;
+    const sigF = this.signalForm();
+    if (sigF) {
+      return sigF().invalid() || !sigF().dirty();
+    }
+    // No form at all: plain button bar (e.g. list-view) — never gate Save.
+    return false;
+  }
+
+  public cancel(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  public handleDeleteClicked(): void {
+    this.deleteClicked.emit();
+  }
+
+  public handleBtn1Clicked(): void {
+    this.stay = false;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public handleBtn2Clicked(): void {
+    this.stay = true;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public stayOrCancel = (): void => {
+    if (this.stay) {
+      this.signalForm()?.().reset();
+    } else {
+      this.cancel();
+    }
+  };
+}
+```
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.ts
+
+```typescript
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
+
+@Component({
+  selector: 'pc-dialog-host',
+  imports: [Icon],
+  templateUrl: './confirm-dialog-host.html',
+})
+export class ConfirmDialogHost {
+  private readonly svc = inject(ConfirmDialogService);
+
+  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
+
+  private readonly stateSignal = this.svc.stateSignal;
+  private readonly openSignal = this.svc.isOpenSignal;
+  public state = this.stateSignal;
+  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
+  // default to emphasizing the cancel/keep button unless a caller opts out, and
+  // only when a cancel button is actually shown.
+  public readonly effectiveEmphasizeCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    const explicit = st.emphasizeCancel;
+    const wants = explicit ?? st.variant === 'danger';
+    return wants && this.showCancel();
+  });
+  public confirmBtnClass = computed(() => {
+    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
+    if (this.effectiveEmphasizeCancel()) {
+      switch (v) {
+        case 'danger':
+          return 'btn-ghost text-error';
+        case 'warning':
+          return 'btn-ghost text-warning';
+        case 'info':
+          return 'btn-ghost text-info';
+        case 'success':
+          return 'btn-ghost text-success';
+        default:
+          return 'btn-ghost';
+      }
+    }
+    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
+    // affirmative confirms (info/success/neutral) are the surface's main action.
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+      default:
+        return 'btn-primary';
+    }
+  });
+
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
+
+  public choiceBtnClass(v?: DialogVariant): string {
+    if (!v) return '';
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+        return 'btn-primary';
+      default:
+        return '';
+    }
+  }
+
+  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
+  public showCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    if (st.type === 'choose') {
+      return !!st.cancelText;
+    }
+    return !!st.cancelText && st.type !== 'alert';
+  });
+
+  constructor() {
+    effect(() => {
+      const open = this.openSignal();
+      const dlg = this.dlgRef()?.nativeElement;
+      if (!dlg) return;
+
+      if (open) {
+        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
+        if (!dlg.open) {
+          try {
+            dlg.showModal();
+          } catch {}
+        }
+      } else if (dlg.open) {
+        try {
+          dlg.close();
+        } catch {}
+      }
+    });
+  }
+
+  public onPromptInput(event: Event): void {
+    this.promptValue.set((event.target as HTMLInputElement).value);
+  }
+
+  public onBackdrop(): void {
+    const st = this.state();
+    if (st?.allowBackdropClose) this.svc.cancel();
+  }
+
+  public onCancel(): void {
+    this.svc.cancel();
+  }
+
+  public onConfirm(): void {
+    const st = this.state();
+    if (!st) return;
+    if (st.type === 'prompt') this.svc.ok(this.promptValue());
+    else if (st.type === 'alert') this.svc.ok();
+    else this.svc.ok(true);
+  }
+
+  public onChoice(value: unknown): void {
+    this.svc.ok(value);
+  }
+}
+```
+
+## File: libs/uxcommon/src/index.ts
+
+```typescript
+export * from './loading-gate';
+export * from './request-guard';
+
+// Components
+export * from './components/alerts/alert-service';
+export * from './components/alerts/alerts';
+export * from './components/icons/icon';
+export * from './components/icons/icons.index';
+export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
+export * from './components/user-avatar/user-avatar';
+export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/table/table';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
+export * from './components/detail-item/detail-item';
+export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
+
+// Directives
+export * from './directives/animate-if.directive';
+export * from './directives/spin-on-click.directive';
+
+// Pipes
+export * from './pipes/file-icon.pipe';
+export * from './pipes/filesize.pipe';
+export * from './pipes/sanitize-html.pipe';
+export * from './pipes/svg-html-pipe';
+export * from './pipes/timeago.pipe';
+```
+
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+```
+
+## File: libs/common/src/lib/auth.ts
+
+```typescript
+import { z } from 'zod';
+
+export interface IAuthKeyPayload {
+  name?: string;
+
+  session_id: string;
+
+  tenant_id: string;
+
+  user_id: string;
+
+  role?: string | null;
+
+  source?: string;
+}
+
+export interface IAuthUser {
+  email: string;
+
+  first_name: string;
+
+  last_name?: string;
+
+  id: string;
+
+  role?: string | null;
+
+  avatar_url?: string | null;
+
+  email_verified: boolean;
+
+  passkey_setup_dismissed_at?: Date | null;
+
+  tenant_deletion_scheduled_at?: Date | null;
+
+  tenant_paused_at?: Date | null;
+
+  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
+  tenant_demo_mode_at?: Date | null;
+
+  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
+  tenant_slug?: string | null;
+}
+
+export interface IUserStatsSnapshot {
+  emails_assigned: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  contacts_added: {
+    total: number;
+    last_created_at: Date | null;
+  };
+  files_imported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+  files_exported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+}
+
+export interface IAuthUserRecord extends IAuthUser {
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: Date | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
+  deactivated_at?: Date | null;
+  /** Most recent session activity; null until the user has signed in at least once. */
+  last_active_at?: Date | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  previous_email?: string | null;
+  previous_role?: string | null;
+  avatar_url?: string | null;
+  notification_preferences?: {
+    mention_in_comment: boolean;
+    mention_in_comment_in_app: boolean;
+    task_assigned: boolean;
+    task_assigned_in_app: boolean;
+    task_due: boolean;
+    task_due_in_app: boolean;
+    person_assigned: boolean;
+    person_assigned_in_app: boolean;
+    export_ready: boolean;
+    export_ready_in_app: boolean;
+    import_summary: boolean;
+    import_summary_in_app: boolean;
+  };
+}
+
+export interface IAuthUserDetail extends IAuthUserRecord {
+  stats: IUserStatsSnapshot;
+}
+
+export interface IToken {
+  auth_token: string | null;
+  refresh_token: string | null;
+}
+
+/**
+ * The one generic message shown for any failed sign-in attempt, regardless of
+ * whether the email or the password was wrong — never reveal which, so that
+ * sign-in cannot be used to probe which emails have accounts. Shared by the
+ * backend error formatter and the frontend so the copy never drifts.
+ */
+export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
+
+/**
+ * Product names for the stored role values — the working role 'user' is shown as
+ * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
+ */
+export const AUTH_ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+export function authRoleLabel(role: string | null | undefined): string {
+  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
+}
+
+export type signInInputType = z.infer<typeof signInInputObj>;
+
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
+export const signInInputObj = z.object({
+  email: z.email(),
+  password: z.string().min(8).max(72),
+  rememberMe: z.boolean().optional(),
+});
+
+export const signUpInputObj = z.object({
+  organization: z.string(),
+  email: z.string().max(100),
+  password: z.string().min(8).max(72),
+  first_name: z.string().max(100),
+});
 ```
 
 ## File: libs/uxcommon/src/components/form-actions/form-actions.html
@@ -8169,6 +8722,575 @@ export * from './schemas/donations.schema';
   </button>
   }
 </div>
+```
+
+## File: libs/common/src/index.ts
+
+```typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel } from './lib/schemas/persons.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+} from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+```
+
+## File: libs/uxcommon/src/components/detail-header/detail-header.ts
+
+```typescript
+import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
+import { FormActions } from '../form-actions/form-actions';
+
+@Component({
+  selector: 'pc-detail-header',
+  imports: [Icon, FormActions],
+  template: `
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 items-center gap-3">
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
+            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
+          }
+          <div class="min-w-0">
+            @if (eyebrow()) {
+              <p class="pc-eyebrow">{{ eyebrow() }}</p>
+            }
+            <div class="flex min-w-0 items-center gap-2">
+              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+              @if (statusChip()) {
+                <span
+                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
+                  >{{ statusChip() }}</span
+                >
+              }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
+            </div>
+            @if (dirtyFieldCount() > 0) {
+              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
+                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
+              </p>
+            } @else if (subtitle()) {
+              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle btn-ghost btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
+          <ng-content select="[pc-actions-prefix]"></ng-content>
+          @if (showActions()) {
+            <pc-form-actions
+              size="sm"
+              [isLoading]="isLoading()"
+              [signalForm]="form()"
+              [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
+              [buttonsToShow]="formActionsButtons()"
+              [btn1Text]="btn1Text()"
+              [btn1Icon]="btn1Icon()"
+              [showDelete]="false"
+              [showCancel]="showCancel()"
+              (btn1Clicked)="save.emit($event)"
+            ></pc-form-actions>
+          }
+          <ng-content select="[pc-actions-suffix]"></ng-content>
+          @if (showDelete()) {
+            <div class="dropdown dropdown-end">
+              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
+                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
+              </button>
+              <ul
+                tabindex="0"
+                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+              >
+                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                <ng-content select="[pc-overflow-extra]"></ng-content>
+                <li>
+                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                    <pc-icon name="trash" [size]="4"></pc-icon>
+                    {{ deleteText() }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class DetailHeader {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  public readonly delete = output<void>();
+  public readonly save = output<any>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+  public btn1Text = input<string>('Save');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public deleteText = input<string>('Delete');
+  public disabled = input<boolean>(false);
+  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
+  public saveAlwaysEnabled = input<boolean>(false);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
+  public statusChip = input<string | null>(null);
+  public form = input<any>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
+  public subtitle = input<string | null | undefined>();
+  public title = input.required<string>();
+
+  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
+  public dirtyFieldCount = input<number>(0);
+
+  // Delete moved to the overflow menu. Suppressing the third button whenever
+  // Delete is offered preserves the layout form-actions previously produced
+  // when it rendered the Delete button inline.
+  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
+    this.showDelete() ? 'two' : this.buttonsToShow(),
+  );
+
+  constructor() {
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: this.prevLabel(),
+        nextLabel: this.nextLabel(),
+        onPrev: () => this.prevRecord.emit(),
+        onNext: () => this.nextRecord.emit(),
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+  }
+}
 ```
 
 ## File: libs/common/src/lib/kysely.models.ts
@@ -8282,6 +9404,9 @@ export interface Models {
   delivery_requests: DeliveryRequests;
   delivery_routes: DeliveryRoutes;
   delivery_route_stops: DeliveryRouteStops;
+  companion_volunteers: CompanionVolunteers;
+  companion_sessions: CompanionSessions;
+  companion_ops: CompanionOps;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -8377,6 +9502,8 @@ interface AuthUsers extends RecordType {
   two_factor_expires_at: Timestamp | null;
   two_factor_attempts: Generated<number>;
   deletion_scheduled_at: Timestamp | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. NULL = active. */
+  deactivated_at: Timestamp | null;
   previous_email: string | null;
   previous_role: string | null;
   passkey_setup_dismissed_at: Timestamp | null;
@@ -8431,6 +9558,10 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   kind: Generated<string>;
   /** 'active' | 'archived' — archived campaigns are read-only history. */
   status: Generated<string>;
+  /** Issue-chip vocabulary shown in the canvass companion survey (spec §3.5). */
+  canvass_issues: Generated<string[]>;
+  /** Door script shown (collapsible) at the top of the companion survey. */
+  canvass_script: string | null;
 }
 
 export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
@@ -8559,6 +9690,8 @@ interface Turfs extends RecordType {
 interface TurfHouseholds extends JunctionRecordType {
   turf_id: string;
   household_id: string;
+  /** Suggested visiting order (1-based), computed at cut/assign time. A hint, never a lock. */
+  walk_order: number | null;
 }
 
 /** A turf handed to a team and/or opened via a tokenised Companion link. */
@@ -8568,6 +9701,60 @@ interface TurfAssignments extends RecordType {
   token: string;
   status: string;
   assigned_at: Timestamp;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link (companion access layer). */
+  expires_at: Timestamp | null;
+}
+
+/**
+ * Companion access layer (COMPANION-APPS-PLAN.md §2): one row per (tenant,
+ * person) who has ever been sent a companion link. `status` is the approval
+ * lifecycle — 'invited' → 'verified' (code confirmed, awaiting admin) →
+ * 'approved' | 'revoked'. Approval is per volunteer, not per assignment.
+ */
+interface CompanionVolunteers {
+  id: Generated<string>;
+  tenant_id: string;
+  person_id: string;
+  status: Generated<string>;
+  verify_code_hash: string | null;
+  verify_code_expires_at: Timestamp | null;
+  verify_attempts: Generated<number>;
+  verify_channel: 'email' | 'sms' | null;
+  verified_at: Timestamp | null;
+  approved_by: string | null;
+  approved_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  createdby_id: string | null;
+  updatedby_id: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/** A verified companion device — only the sha256 of the session token is stored. */
+interface CompanionSessions {
+  id: Generated<string>;
+  tenant_id: string;
+  volunteer_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  revoked_at: Timestamp | null;
+  last_used_at: Timestamp | null;
+  user_agent: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/**
+ * Write-once idempotency ledger for volunteer actions (both companions).
+ * Insert ON CONFLICT DO NOTHING; a conflict means "op already applied".
+ */
+interface CompanionOps {
+  tenant_id: string;
+  op_id: string;
+  scope: 'canvass' | 'deliveries';
+  created_at: Generated<Timestamp>;
 }
 
 /** One door interaction, synced live from a Canvass Companion. */
@@ -8582,6 +9769,16 @@ interface TurfKnocks extends RecordType {
   canvasser_name: string | null;
   client_knock_id: string | null;
   knocked_at: Timestamp;
+  /** Issue chips picked in the survey (campaign-configured vocabulary). */
+  issues: Generated<string[]>;
+  /** Follow-up toggles from the survey (spec §3.5). */
+  wants_volunteer: Generated<boolean>;
+  wants_yard_sign: Generated<boolean>;
+  set_dnc: Generated<boolean>;
+  /** Contact info captured at the door (also applied to the person if blank there). */
+  contact_phone: string | null;
+  contact_email: string | null;
+  subscribe: Generated<boolean>;
 }
 
 export interface MapListsPersons extends JunctionRecordType {
@@ -8679,6 +9876,10 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   amount: number;
   status: Generated<string>;
   stripe_session_id: string | null;
+  /** Stripe PaymentIntent id, used to correlate refund/dispute webhooks back to this gift. */
+  stripe_payment_intent_id: string | null;
+  /** When a refund or lost chargeback reversed this gift; null while it stands. */
+  refunded_at: ColumnType<Date, Date | string, Date | string> | null;
   pledge_id: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -8794,6 +9995,8 @@ interface Tenants extends RecordType, AddressType {
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;
   paused_at: Timestamp | null;
+  /** Demo mode: set while the seeded test-drive data is present; NULL = exited/never. */
+  demo_mode_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {
@@ -9360,531 +10563,4 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-```
-
-## File: libs/common/src/index.ts
-
-```typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-} from './lib/schema';
-
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel } from './lib/schemas/persons.schema';
-
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
-
-export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-} from './lib/schemas/workflows.schema';
-export type { TurfStatus, KnockOutcome, KnockResponse } from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-```
-
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-
-```typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (avatarText()) {
-            <span
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
-              aria-hidden="true"
-              >{{ avatarText() }}</span
-            >
-          } @else if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
-              <ng-content select="[pc-title-suffix]"></ng-content>
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
-               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
-          @if (positionLabel()) {
-            <div class="mr-1 flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                class="btn btn-circle btn-ghost btn-xs"
-                [attr.aria-label]="prevLabel()"
-                [disabled]="!hasPrev()"
-                [class.btn-ghost]="!hasPrev()"
-                (click)="prevRecord.emit()"
-              >
-                <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              </button>
-              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
-                positionLabel()
-              }}</span>
-              <button
-                type="button"
-                class="btn btn-circle btn-xs"
-                [attr.aria-label]="nextLabel()"
-                [disabled]="!hasNext()"
-                [class.btn-ghost]="!hasNext()"
-                (click)="nextRecord.emit()"
-              >
-                <pc-icon name="chevron-right" [size]="4"></pc-icon>
-              </button>
-            </div>
-          }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
-   * detail-layout overrides it to false for read views. */
-  public showCancel = input<boolean>(true);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail renders in the navbar; the record pager now lives in
-    // this header card (design source), so publish the trail only and leave the
-    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
-    // empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: null,
-        hasPrev: false,
-        hasNext: false,
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-}
 ```

@@ -1,5 +1,4 @@
 import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -25,7 +24,6 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 @Component({
   selector: 'pc-event-form',
   imports: [
-    FormsModule,
     FormField,
     PcInput,
     PcTextarea,
@@ -105,14 +103,18 @@ export class EventFormComponent implements OnInit {
 
   protected slugManuallyEdited = false;
 
-  protected setNewTicketName(v: string) {
-    this.newTicket.update((t) => ({ ...t, name: v }));
+  protected setNewTicketName(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.newTicket.update((t) => ({ ...t, name: input?.value ?? '' }));
   }
-  protected setNewTicketPrice(v: string) {
-    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  protected setNewTicketPrice(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.newTicket.update((t) => ({ ...t, price_cents: +(input?.value ?? '') }));
   }
-  protected setNewTicketCapacity(v: string) {
-    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  protected setNewTicketCapacity(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    const value = input?.value ?? '';
+    this.newTicket.update((t) => ({ ...t, capacity: value ? +value : null }));
   }
 
   public readonly id = input<string>();

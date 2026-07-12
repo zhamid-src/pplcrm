@@ -1,7 +1,6 @@
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
@@ -32,7 +31,6 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
     EmptyState,
     DatePipe,
     RouterModule,
-    FormsModule,
     Icon,
     RecordActivities,
     DetailLayout,
@@ -179,6 +177,22 @@ export class EventViewComponent {
   }
 
   // Person search
+  protected onPersonSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    void this.onPersonSearch(input?.value ?? '');
+  }
+
+  protected onTicketTypeChange(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    this.selectedTicketTypeId.set(select?.value ? select.value : null);
+  }
+
+  protected onStatusChange(reg: any, event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    void this.updateStatus(reg, select.value);
+  }
+
   protected async onPersonSearch(query: string) {
     this.personSearch.set(query);
     this.selectedPersonId.set(null);

@@ -1,5 +1,5 @@
 import { Component, inject, output, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormField, form, min, required } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
@@ -17,7 +17,7 @@ type DonorSearchResult = { id: string; first_name: string | null; last_name: str
  */
 @Component({
   selector: 'pc-record-donation-dialog',
-  imports: [Icon, FormsModule, ModalShell],
+  imports: [Icon, FormField, ModalShell],
   templateUrl: './record-donation-dialog.html',
 })
 export class RecordDonationDialog {
@@ -40,7 +40,11 @@ export class RecordDonationDialog {
   protected readonly touchedDonor = signal(false);
 
   protected readonly amount = signal<number | null>(null);
-  protected readonly touchedAmount = signal(false);
+  /** Signal form over the amount — required, and at least one cent (mirrors the input's min/step). */
+  protected readonly amountForm = form(this.amount, (a) => {
+    required(a);
+    min(a, 0.01);
+  });
 
   protected readonly method = signal<DonationMethod>('card');
   protected readonly submitting = signal(false);
@@ -49,10 +53,7 @@ export class RecordDonationDialog {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly donorInvalid = () => this.touchedDonor() && !this.selectedDonor();
-  protected readonly amountInvalid = () => {
-    const amt = this.amount();
-    return this.touchedAmount() && (amt === null || amt <= 0);
-  };
+  protected readonly amountInvalid = () => this.amountForm().invalid() && this.amountForm().touched();
   public open(): void {
     this.resetForm();
     this.dlgRef().show();
@@ -112,10 +113,10 @@ export class RecordDonationDialog {
 
   protected async submit(): Promise<void> {
     this.touchedDonor.set(true);
-    this.touchedAmount.set(true);
+    this.amountForm().markAsTouched();
     const donor = this.selectedDonor();
     const amt = this.amount();
-    if (!donor || amt === null || amt <= 0) return;
+    if (!donor || amt === null || amt <= 0 || this.amountForm().invalid()) return;
 
     this.submitting.set(true);
     const end = this._loading.begin();
@@ -136,13 +137,19 @@ export class RecordDonationDialog {
     }
   }
 
+  /** Applies a method choice from the select, narrowing the raw DOM string to DonationMethod. */
+  protected setMethod(value: string): void {
+    const match = this.methods.find((m) => m === value);
+    if (match) this.method.set(match);
+  }
+
   private resetForm(): void {
     this.donorSearch.set('');
     this.donorResults.set([]);
     this.selectedDonor.set(null);
     this.touchedDonor.set(false);
     this.amount.set(null);
-    this.touchedAmount.set(false);
+    this.amountForm().reset();
     this.method.set('card');
     this.submitting.set(false);
   }

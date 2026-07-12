@@ -1,5 +1,5 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { FormField, form, max, min } from '@angular/forms/signals';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Table } from '@uxcommon/components/table/table';
@@ -26,7 +26,7 @@ export interface DonationPeriod {
 
 @Component({
   selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon, Table, StatusBadge],
+  imports: [FormField, Icon, Table, StatusBadge],
   templateUrl: './donations-settings.html',
 })
 export class DonationsSettingsComponent implements OnInit {
@@ -53,7 +53,11 @@ export class DonationsSettingsComponent implements OnInit {
   protected readonly newPeriodName = signal('');
   protected readonly newPeriodStartDate = signal('');
   protected readonly newPeriodEndDate = signal('');
-  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly newPeriodLimit = signal<number | null>(1000);
+  /** Binds the period-limit number input; native number parsing yields null when cleared. */
+  protected readonly newPeriodLimitForm = form(this.newPeriodLimit, (p) => {
+    min(p, 1);
+  });
   protected readonly isSavingPeriod = signal(false);
 
   // New multi-country autocomplete & states checkboxes
@@ -218,7 +222,14 @@ export class DonationsSettingsComponent implements OnInit {
 
   // Tiers editing inputs
   protected readonly newLimit = signal<number | null>(null);
+  protected readonly newLimitForm = form(this.newLimit, (p) => {
+    min(p, 1);
+  });
   protected readonly newRate = signal<number | null>(null);
+  protected readonly newRateForm = form(this.newRate, (p) => {
+    min(p, 0);
+    max(p, 100);
+  });
 
   protected readonly isSaving = signal(false);
 

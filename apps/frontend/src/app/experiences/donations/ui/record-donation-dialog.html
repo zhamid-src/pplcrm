@@ -25,9 +25,8 @@
           class="input input-bordered w-full pr-10 text-sm"
           [class.input-error]="donorInvalid()"
           placeholder="Search by name or email..."
-          [ngModel]="donorSearch()"
-          [ngModelOptions]="{ standalone: true }"
-          (ngModelChange)="onDonorSearchChange($event)"
+          [value]="donorSearch()"
+          (input)="onDonorSearchChange($any($event.target).value)"
           (blur)="touchedDonor.set(true)"
           autofocus
         />
@@ -60,7 +59,7 @@
         }
       </div>
       } @if (isSearching() && donorSearch().length > 0) {
-      <span class="text-xs text-base-content/40">Searching...</span>
+      <span class="text-xs text-base-content/40 italic">Searching...</span>
       } @if (donorInvalid()) {
       <p class="text-xs text-error mt-1 flex items-center gap-1">
         <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
@@ -77,16 +76,12 @@
         <input
           id="rd-amount"
           type="number"
-          min="0.01"
           step="0.01"
           inputmode="decimal"
           class="input input-bordered w-full pl-7 text-sm tabular-nums"
           [class.input-error]="amountInvalid()"
           placeholder="50.00"
-          [ngModel]="amount()"
-          [ngModelOptions]="{ standalone: true }"
-          (ngModelChange)="amount.set($event === '' ? null : +$event)"
-          (blur)="touchedAmount.set(true)"
+          [formField]="amountForm"
         />
       </div>
       @if (amountInvalid()) {
@@ -103,12 +98,10 @@
       <select
         id="rd-method"
         class="select select-bordered w-full text-sm"
-        [ngModel]="method()"
-        [ngModelOptions]="{ standalone: true }"
-        (ngModelChange)="method.set($event)"
+        (change)="setMethod($any($event.target).value)"
       >
         @for (m of methods; track m) {
-        <option [value]="m">{{ methodLabels[m] }}</option>
+        <option [value]="m" [selected]="m === method()">{{ methodLabels[m] }}</option>
         }
       </select>
     </div>

@@ -46,8 +46,7 @@
   <div class="mt-4 form-control relative">
     <textarea
       #emailComposer
-      [ngModel]="newComment()"
-      (ngModelChange)="newComment.set($event)"
+      [value]="newComment()"
       placeholder="Add a comment"
       class="textarea textarea-bordered w-full"
       (input)="onComposerInput($event)"
