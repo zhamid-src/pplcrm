@@ -1,6 +1,6 @@
 import type { ApplicationConfig } from '@angular/core';
 import { provideZonelessChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 
 import { environment } from '../environments/environment';
@@ -16,7 +16,7 @@ export const appConfig: ApplicationConfig = {
           libraries: ['marker'],
         }),
     },
-    provideRouter(appRoutes),
+    provideRouter(appRoutes, withComponentInputBinding()),
     provideZonelessChangeDetection(),
   ],
 };
