@@ -1,16 +1,13 @@
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
   <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
   <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
-    <span
-      class="tooltip-left"
-      [class.tooltip]="seatsRemaining() === 0"
-      [attr.data-tip]="
-        seatsRemaining() === 0
-          ? 'All ' + seatUsage()?.seatLimit + ' seats on the ' + planLabel() + ' plan are in use — upgrade in Settings → Billing'
-          : null
-      "
-    >
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="seatsRemaining() === 0" (click)="openInvite()">
+    <span class="tooltip-left" [class.tooltip]="inviteLockReason() !== null" [attr.data-tip]="inviteLockReason()">
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="inviteLockReason() !== null"
+        (click)="openInvite()"
+      >
         <pc-icon name="user-plus" [size]="4"></pc-icon>
         Invite user
       </button>

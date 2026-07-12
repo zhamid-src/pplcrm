@@ -1855,3 +1855,484 @@ export const DEMO_EMAILS: DemoEmailDef[] = [
       '<p>Merci Marc!</p><p>A large sign is yours — we will drop it off this week and confirm the day by text. Thanks for the support.</p>',
   },
 ];
+
+// ── Canvassing (§13) ────────────────────────────────────────────────────────
+// Pre-cut turfs over the demo households so the /canvassing page opens with a
+// real field operation instead of an empty state. Turfs never cross a ward
+// (the cutting engine's only barrier), so each turf's households all share one
+// ward. Progress ("In field now", "Complete") is DERIVED from the knocks at
+// read time — we store only the lifecycle status + the knock rows, never
+// counters. Timings are relative to seed time (`knockedHoursAgo`) so the
+// derived state is the same however long after signup the user looks:
+//   • active + every door knocked, last knock long ago → "Complete"
+//   • active + a knock within the last 6h            → "In field now"
+//   • active + some/no knocks, nothing recent        → "Assigned"
+//   • draft (not handed out)                         → "Draft"
+
+export interface DemoKnockDef {
+  /** Household key — must belong to the turf. */
+  household: string;
+  /** Resident spoken to (conversation outcomes); links the knock to a contact. */
+  person?: string;
+  outcome: 'conversation' | 'no_answer' | 'not_home' | 'refused' | 'inaccessible';
+  /** The voter's stance — only meaningful on a conversation. */
+  response?: 'strong_support' | 'lean_support' | 'undecided' | 'opposed';
+  /** Display name written to the knock (the volunteer who logged it). */
+  canvasser: string;
+  notes?: string;
+  /** Hours before seed time — drives the derived in-field / complete window. */
+  knockedHoursAgo: number;
+}
+
+export interface DemoTurfDef {
+  key: string;
+  name: string;
+  /** All households must sit in this ward (turfs are ward-bounded). */
+  ward: string;
+  /** Stored lifecycle: 'active' = handed out/knocked, 'draft' = cut, not yet assigned. */
+  status: 'draft' | 'active';
+  /** Whether a tokenised Companion assignment exists (active turfs only). */
+  assigned: boolean;
+  /** Household keys (from DEMO_HOUSEHOLDS) that make up the door list. */
+  households: string[];
+  knocks?: DemoKnockDef[];
+  notes?: string;
+}
+
+export const DEMO_TURFS: DemoTurfDef[] = [
+  {
+    key: 'turf-somerset',
+    name: 'Centretown core (Somerset)',
+    ward: 'Somerset',
+    status: 'active',
+    assigned: true,
+    households: ['hh-cooper', 'hh-maclaren', 'hh-frank', 'hh-arlington', 'hh-gladstone', 'hh-bay'],
+    notes: 'First turf out the door this cycle — fully canvassed.',
+    knocks: [
+      {
+        household: 'hh-cooper',
+        person: 'marc-tremblay',
+        outcome: 'conversation',
+        response: 'strong_support',
+        canvasser: 'Priya S.',
+        notes: 'Wants a large lawn sign — dropping one off Thursday.',
+        knockedHoursAgo: 50,
+      },
+      {
+        household: 'hh-maclaren',
+        person: 'priya-sharma',
+        outcome: 'conversation',
+        response: 'strong_support',
+        canvasser: 'Jake M.',
+        knockedHoursAgo: 49,
+      },
+      {
+        household: 'hh-frank',
+        person: 'kevin-obrien',
+        outcome: 'conversation',
+        response: 'lean_support',
+        canvasser: 'Priya S.',
+        knockedHoursAgo: 49,
+      },
+      {
+        household: 'hh-arlington',
+        person: 'devon-clarke',
+        outcome: 'conversation',
+        response: 'lean_support',
+        canvasser: 'Jake M.',
+        knockedHoursAgo: 48,
+      },
+      {
+        household: 'hh-gladstone',
+        outcome: 'no_answer',
+        canvasser: 'Priya S.',
+        notes: 'Buzzer broken — try back in the evening.',
+        knockedHoursAgo: 48,
+      },
+      {
+        household: 'hh-bay',
+        person: 'norma-wilson',
+        outcome: 'refused',
+        canvasser: 'Jake M.',
+        notes: 'Not interested — asked us not to return.',
+        knockedHoursAgo: 47,
+      },
+    ],
+  },
+  {
+    key: 'turf-kitchissippi',
+    name: 'Westboro east (Kitchissippi)',
+    ward: 'Kitchissippi',
+    status: 'active',
+    assigned: true,
+    households: ['hh-byron', 'hh-kirkwood', 'hh-java', 'hh-armstrong', 'hh-huron'],
+    notes: 'Being knocked right now — Saturday afternoon shift.',
+    knocks: [
+      {
+        household: 'hh-byron',
+        person: 'heather-macdonald',
+        outcome: 'conversation',
+        response: 'strong_support',
+        canvasser: 'Mai N.',
+        notes: 'Sign blew over in the storm — flagged for a replacement.',
+        knockedHoursAgo: 3,
+      },
+      {
+        household: 'hh-java',
+        person: 'mai-nguyen',
+        outcome: 'conversation',
+        response: 'strong_support',
+        canvasser: 'Julie L.',
+        knockedHoursAgo: 2,
+      },
+      {
+        household: 'hh-huron',
+        person: 'anna-kowalski',
+        outcome: 'conversation',
+        response: 'lean_support',
+        canvasser: 'Mai N.',
+        knockedHoursAgo: 1,
+      },
+      {
+        household: 'hh-armstrong',
+        outcome: 'not_home',
+        canvasser: 'Julie L.',
+        knockedHoursAgo: 2,
+      },
+    ],
+  },
+  {
+    key: 'turf-capital',
+    name: 'The Glebe (Capital)',
+    ward: 'Capital',
+    status: 'active',
+    assigned: true,
+    households: ['hh-fifth', 'hh-holmwood', 'hh-sunnyside', 'hh-powell', 'hh-aylmer'],
+    notes: 'Assigned to the crew — not started yet.',
+    knocks: [],
+  },
+  {
+    key: 'turf-rideau-vanier',
+    name: 'Sandy Hill (Rideau-Vanier)',
+    ward: 'Rideau-Vanier',
+    status: 'active',
+    assigned: true,
+    households: ['hh-sweetland', 'hh-marlborough', 'hh-blackburn', 'hh-charlotte'],
+    notes: 'A first pass went out yesterday — two doors left.',
+    knocks: [
+      {
+        household: 'hh-sweetland',
+        person: 'julie-lavoie',
+        outcome: 'conversation',
+        response: 'strong_support',
+        canvasser: 'Julie L.',
+        knockedHoursAgo: 26,
+      },
+      {
+        household: 'hh-blackburn',
+        person: 'dmitri-petrov',
+        outcome: 'conversation',
+        response: 'opposed',
+        canvasser: 'Jake M.',
+        notes: 'Leaning the other way — do not follow up.',
+        knockedHoursAgo: 25,
+      },
+    ],
+  },
+  {
+    key: 'turf-alta-vista',
+    name: 'Alta Vista',
+    ward: 'Alta Vista',
+    status: 'draft',
+    assigned: false,
+    households: ['hh-kilborn', 'hh-pleasantpark', 'hh-halifax', 'hh-featherston'],
+    notes: 'Cut and ready to hand out next weekend.',
+    knocks: [],
+  },
+];
+
+// ── Deliveries (§14) ────────────────────────────────────────────────────────
+// Yard-sign requests → driving routes → volunteers. "Routed" is NEVER stored:
+// a request is on a route iff it has an active (pending) stop, so a request's
+// stored status is 'approved' while it sits on a pending stop and 'delivered'
+// once its stop is delivered. The seed spreads requests across every tab (new
+// to triage, approved-and-ready to plan, declined) and ships two routes — one
+// completed, one in progress — so the routes list and detail open populated.
+// Route leg/estimate numbers are computed from the real household coordinates
+// at seed time (same geo helpers as the routing engine), never hand-faked.
+
+export interface DemoDeliveryRequestDef {
+  key: string;
+  household: string;
+  person?: string;
+  status: 'new' | 'approved' | 'declined' | 'delivered';
+  source?: 'web_form' | 'manual';
+  notes?: string;
+  skipReason?: string;
+  /** Days before seed time for created_at (spreads the intake timeline). */
+  createdDaysAgo: number;
+}
+
+export interface DemoDeliveryStopDef {
+  /** Request key — the request this stop serves. */
+  request: string;
+  status: 'pending' | 'delivered' | 'skipped';
+  actedVia?: 'volunteer_link' | 'staff';
+  reason?: string;
+  /** Hours before seed time the stop was acted on (delivered/skipped only). */
+  actedHoursAgo?: number;
+}
+
+export interface DemoDeliveryRouteDef {
+  key: string;
+  name: string;
+  status: 'assigned' | 'in_progress' | 'completed';
+  /** Volunteer driving it (person key). */
+  volunteerPerson?: string;
+  startAddress: string;
+  startLat: number;
+  startLng: number;
+  /** Whether a share link is still live (sets share_token_hash). */
+  shared?: boolean;
+  scheduledInDays?: number;
+  /** Ordered stops — seq is assigned by position. */
+  stops: DemoDeliveryStopDef[];
+}
+
+export const DEMO_DELIVERY_REQUESTS: DemoDeliveryRequestDef[] = [
+  // New — waiting to be triaged (populates the New tab + selection bar).
+  {
+    key: 'dr-maclaren',
+    household: 'hh-maclaren',
+    person: 'priya-sharma',
+    status: 'new',
+    source: 'web_form',
+    createdDaysAgo: 1,
+  },
+  {
+    key: 'dr-arlington',
+    household: 'hh-arlington',
+    person: 'devon-clarke',
+    status: 'new',
+    source: 'web_form',
+    createdDaysAgo: 2,
+  },
+  {
+    key: 'dr-sweetland',
+    household: 'hh-sweetland',
+    person: 'julie-lavoie',
+    status: 'new',
+    source: 'manual',
+    notes: 'Julie asked for a sign for the corner lot — good visibility.',
+    createdDaysAgo: 2,
+  },
+  {
+    key: 'dr-charlotte',
+    household: 'hh-charlotte',
+    person: 'liam-byrne',
+    status: 'new',
+    source: 'web_form',
+    createdDaysAgo: 3,
+  },
+
+  // Approved and ready to plan — geocoded, not yet on a route ("N ready").
+  {
+    key: 'dr-kilborn',
+    household: 'hh-kilborn',
+    person: 'ayesha-rahman',
+    status: 'approved',
+    source: 'web_form',
+    createdDaysAgo: 5,
+  },
+  {
+    key: 'dr-holmwood',
+    household: 'hh-holmwood',
+    person: 'gordon-ferguson',
+    status: 'approved',
+    source: 'manual',
+    createdDaysAgo: 5,
+  },
+  {
+    key: 'dr-halifax',
+    household: 'hh-halifax',
+    person: 'carla-rossi',
+    status: 'approved',
+    source: 'web_form',
+    createdDaysAgo: 6,
+  },
+  {
+    key: 'dr-marlborough',
+    household: 'hh-marlborough',
+    person: 'grace-okafor',
+    status: 'approved',
+    source: 'manual',
+    createdDaysAgo: 6,
+  },
+
+  // Declined — not everyone wants a sign.
+  {
+    key: 'dr-bay',
+    household: 'hh-bay',
+    person: 'norma-wilson',
+    status: 'declined',
+    source: 'manual',
+    notes: 'Declined at the door — no sign.',
+    createdDaysAgo: 8,
+  },
+  {
+    key: 'dr-pleasantpark',
+    household: 'hh-pleasantpark',
+    person: 'bruce-whitfield',
+    status: 'declined',
+    source: 'web_form',
+    notes: 'Do-not-contact — declined.',
+    createdDaysAgo: 9,
+  },
+
+  // Delivered on the completed route (status is derived from the delivered stop).
+  {
+    key: 'dr-byron',
+    household: 'hh-byron',
+    person: 'heather-macdonald',
+    status: 'delivered',
+    source: 'web_form',
+    createdDaysAgo: 7,
+  },
+  {
+    key: 'dr-armstrong',
+    household: 'hh-armstrong',
+    person: 'jake-morrison',
+    status: 'delivered',
+    source: 'manual',
+    createdDaysAgo: 7,
+  },
+  {
+    key: 'dr-kirkwood',
+    household: 'hh-kirkwood',
+    person: 'fatima-elsayed',
+    status: 'delivered',
+    source: 'web_form',
+    createdDaysAgo: 7,
+  },
+
+  // The in-progress route: one delivered, two still pending (approved + routed).
+  {
+    key: 'dr-fifth',
+    household: 'hh-fifth',
+    person: 'nadia-haddad',
+    status: 'delivered',
+    source: 'web_form',
+    createdDaysAgo: 4,
+  },
+  {
+    key: 'dr-powell',
+    household: 'hh-powell',
+    person: 'rebecca-stein',
+    status: 'approved',
+    source: 'manual',
+    createdDaysAgo: 4,
+  },
+  {
+    key: 'dr-sunnyside',
+    household: 'hh-sunnyside',
+    person: 'harpreet-singh',
+    status: 'approved',
+    source: 'web_form',
+    createdDaysAgo: 4,
+  },
+];
+
+export const DEMO_DELIVERY_ROUTES: DemoDeliveryRouteDef[] = [
+  {
+    key: 'route-westboro',
+    name: 'Westboro run',
+    status: 'completed',
+    volunteerPerson: 'jake-morrison',
+    startAddress: '1064 Wellington St W, Ottawa, ON K1Y 2Y3',
+    startLat: 45.4012,
+    startLng: -75.7196,
+    scheduledInDays: -3,
+    stops: [
+      { request: 'dr-byron', status: 'delivered', actedVia: 'volunteer_link', actedHoursAgo: 72 },
+      { request: 'dr-armstrong', status: 'delivered', actedVia: 'volunteer_link', actedHoursAgo: 71 },
+      { request: 'dr-kirkwood', status: 'delivered', actedVia: 'volunteer_link', actedHoursAgo: 71 },
+    ],
+  },
+  {
+    key: 'route-glebe',
+    name: 'Glebe & Old Ottawa South run',
+    status: 'in_progress',
+    volunteerPerson: 'julie-lavoie',
+    startAddress: '175 Third Ave, Ottawa, ON K1S 2K2',
+    startLat: 45.4009,
+    startLng: -75.6889,
+    shared: true,
+    scheduledInDays: 0,
+    stops: [
+      { request: 'dr-fifth', status: 'delivered', actedVia: 'volunteer_link', actedHoursAgo: 2 },
+      { request: 'dr-powell', status: 'pending' },
+      { request: 'dr-sunnyside', status: 'pending' },
+    ],
+  },
+];
+
+// ── Fundraising / Donations (spec §12) ──────────────────────────────────────
+// The two donation "giving page" web_forms (One-time / Recurring donation) are
+// created by seedStarterForms and SURVIVE exit-demo — they are the fundraising
+// forms, and they live on the Donations page, not the Forms page (donation
+// types are filtered out of Forms by design). What was missing is a populated
+// ledger, so the Donations page reads as a real operation instead of zeros.
+// These recorded gifts + monthly pledges ARE demo data and are removed on exit.
+//
+// Amounts are in CENTS (matching donations.amount / donation_pledges.monthly_amount).
+// Only status 'succeeded' gifts and 'active' pledges count toward the page stats,
+// so every seeded row uses those. created_at is spread across this month and last
+// month so the month-over-month tile has a real delta.
+
+export interface DemoPledgeDef {
+  key: string;
+  /** Person key — the monthly donor (also snapshotted onto the row). */
+  person: string;
+  monthlyAmountCents: number;
+  startedDaysAgo: number;
+  /** Days from now the next charge is due. */
+  nextBillingInDays: number;
+}
+
+export interface DemoDonationDef {
+  /** Person key — the donor (name/email are snapshotted from the person). */
+  person: string;
+  amountCents: number;
+  method: 'card' | 'check' | 'cash' | 'bank_transfer';
+  createdDaysAgo: number;
+  receiptSent?: boolean;
+  /** Pledge key — set when this gift is a monthly recurring charge. */
+  pledge?: string;
+}
+
+export const DEMO_PLEDGES: DemoPledgeDef[] = [
+  { key: 'pledge-mai', person: 'mai-nguyen', monthlyAmountCents: 2000, startedDaysAgo: 95, nextBillingInDays: 12 },
+  { key: 'pledge-jessica', person: 'jessica-lam', monthlyAmountCents: 2500, startedDaysAgo: 70, nextBillingInDays: 6 },
+  { key: 'pledge-theo', person: 'theo-lavoie', monthlyAmountCents: 1000, startedDaysAgo: 40, nextBillingInDays: 19 },
+];
+
+export const DEMO_DONATIONS: DemoDonationDef[] = [
+  // This month.
+  { person: 'marc-tremblay', amountCents: 10000, method: 'card', createdDaysAgo: 3 },
+  { person: 'priya-sharma', amountCents: 5000, method: 'card', createdDaysAgo: 5 },
+  { person: 'harpreet-singh', amountCents: 7500, method: 'card', createdDaysAgo: 6 },
+  { person: 'michelle-thibault', amountCents: 20000, method: 'card', createdDaysAgo: 8 },
+  { person: 'nadia-haddad', amountCents: 6000, method: 'card', createdDaysAgo: 9 },
+  { person: 'devon-clarke', amountCents: 12000, method: 'check', createdDaysAgo: 10 },
+  { person: 'ayesha-rahman', amountCents: 3000, method: 'card', createdDaysAgo: 12 },
+  // Recurring charges from active pledges (linked via pledge_id).
+  { person: 'mai-nguyen', amountCents: 2000, method: 'card', createdDaysAgo: 7, pledge: 'pledge-mai' },
+  { person: 'jessica-lam', amountCents: 2500, method: 'card', createdDaysAgo: 4, pledge: 'pledge-jessica' },
+  // Last month (drives the month-over-month comparison).
+  { person: 'heather-macdonald', amountCents: 25000, method: 'card', createdDaysAgo: 34 },
+  { person: 'grace-okafor', amountCents: 50000, method: 'check', createdDaysAgo: 37 },
+  { person: 'julie-lavoie', amountCents: 15000, method: 'card', createdDaysAgo: 40 },
+  { person: 'jake-morrison', amountCents: 4000, method: 'cash', createdDaysAgo: 42 },
+  { person: 'fatima-elsayed', amountCents: 4500, method: 'card', createdDaysAgo: 45 },
+  { person: 'mai-nguyen', amountCents: 2000, method: 'card', createdDaysAgo: 37, pledge: 'pledge-mai' },
+];

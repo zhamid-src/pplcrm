@@ -32,6 +32,11 @@ function mockAuthDb() {
   } as any);
 }
 
+// signUp seeds demo mode, which blocks invites (demo-guard); tests that invite exercise post-demo behavior.
+async function clearDemoMode(db: any, tenant_id: any) {
+  await db.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', tenant_id).execute();
+}
+
 async function cleanup(db: any, user_id: any, tenant_id: any) {
   await db
     .updateTable('tenants')
@@ -41,6 +46,25 @@ async function cleanup(db: any, user_id: any, tenant_id: any) {
 
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenant_id).execute();
+
+  // Demo seed data (signUp): children of persons/households/campaigns, deepest first.
+  await db.deleteFrom('delivery_route_stops').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('delivery_routes').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('delivery_requests').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_knocks').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_assignments').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turf_households').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('turfs').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('donation_pledges').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('donations').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('form_submissions').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('notifications').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('newsletter_events').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('person_newsletter_engagements').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('campaign_person_facts').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('campaign_subscriptions').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('volunteer_shifts').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('map_campaigns_users').where('tenant_id', '=', tenant_id).execute();
 
   await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
@@ -215,6 +239,7 @@ describe('AuthController Integration', () => {
     };
 
     const inviteEmail = `invited-${Date.now()}@example.com`;
+    await clearDemoMode(db, creator.tenant_id);
 
     const result = await controller.inviteUser(authPayload, {
       email: inviteEmail,
@@ -564,6 +589,7 @@ describe('AuthController Integration', () => {
     };
 
     // 2. Invite Admin
+    await clearDemoMode(db, owner.tenant_id);
     const emailAdmin = `admin-${Date.now()}@example.com`;
     await controller.inviteUser(authOwner, {
       email: emailAdmin,
@@ -684,6 +710,7 @@ describe('AuthController Integration', () => {
     expect(signInResult).toBeDefined();
 
     // Invite an admin to act as the other user
+    await clearDemoMode(db, user.tenant_id);
     const invitedUser = await controller.inviteUser(authPayload, {
       email: `invited-admin-${Date.now()}@example.com`,
       first_name: 'OtherAdmin',

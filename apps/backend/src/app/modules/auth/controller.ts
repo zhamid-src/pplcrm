@@ -40,7 +40,7 @@ import { getPwnedCount } from '../../lib/hibp';
 import { parseProfilePreferences } from '../../lib/profile-preferences';
 import { getPlanLimits } from '../billing/usage-limits';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { hashPassword, verifyPassword } from '../../lib/password-hash';
+import { hashPassword, verifyPasswordConstantTime } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
 import { generateToken, hashToken } from '../../lib/token-hash';
 import { logger } from '../../logger';
@@ -49,6 +49,7 @@ import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
 import { seedStarterForms } from './onboarding-seed';
+import { DEMO_MODE_INVITES_BLOCKED_MESSAGE, assertNotDemoMode } from '../demo/demo-guard';
 import { seedDemoData } from '../demo/demo-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
@@ -188,6 +189,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
   /** Re-sends the invitation email to a user who hasn't activated yet, with a fresh temp password + code. */
   public async adminResendInvite(auth: IAuthKeyPayload, userId: string) {
+    // Same capability as inviteUser — locked during the demo (see demo-guard).
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
     const callerRole = auth.role;
     if (callerRole !== 'admin' && callerRole !== 'owner') {
       throw new ForbiddenError('Only admins and owners can resend invitations.');
@@ -746,6 +749,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
+    // Demo teammates are seeded; real invites unlock with a plan (see demo-guard).
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id, DEMO_MODE_INVITES_BLOCKED_MESSAGE);
     const callerRole = auth.role;
     if (callerRole === 'user') {
       throw new ForbiddenError('You do not have permission to invite users.');
@@ -1234,10 +1239,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
-    const user = await this.getUserByEmail(input.email.toLowerCase());
+    const user = await this.getUserByEmailOrNull(input.email.toLowerCase());
 
-    const valid = await verifyPassword(input.password, user.password);
-    if (!valid) {
+    // Always run a password verification — against a dummy hash when the account does not exist —
+    // so a non-existent email and a wrong password cost the same and fail with the same 401. This
+    // closes the enumeration oracle: previously an unknown email threw NotFoundError (404) and
+    // returned faster (no argon2), distinguishing registered emails despite the generic message.
+    const valid = await verifyPasswordConstantTime(input.password, user?.password);
+    if (!user || !valid) {
       throw new UnauthorizedError();
     }
 
@@ -1731,7 +1740,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
-    const user = await this.getUserByEmail(email.toLowerCase());
+    // Do not reveal whether the email is registered: an unknown account fails with the same
+    // "Invalid verification code" as a wrong code, not a distinct 404. (A user with no active
+    // challenge already has a null stored code and hits the same failure below.)
+    const user = await this.getUserByEmailOrNull(email.toLowerCase());
+    if (!user) {
+      throw new BadRequestError('Invalid verification code.');
+    }
 
     // The OTP is stored hashed; hash the input and compare with a timing-safe
     // equality to eliminate the brute-force side-channel.
@@ -2146,6 +2161,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new NotFoundError('User not found');
     }
     return user;
+  }
+
+  // Same lookup as getUserByEmail but returns null instead of throwing, for the pre-auth flows
+  // (sign-in, 2FA) that must not reveal — via a distinct error code or path — whether an email
+  // is registered. Callers equalize behavior for the found/not-found cases themselves.
+  private async getUserByEmailOrNull(email: string): Promise<AuthUsersType | null> {
+    const user = (await this.getRepo().getByEmail(email)) as AuthUsersType | undefined;
+    return user ?? null;
   }
 
   private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {

@@ -58,6 +58,7 @@ const TEMPLATE_OPTIONS: ReadonlyArray<{
 
 const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
 const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
+const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo — choose a plan, then exit demo mode';
 const SUBJECT_COACH = "Add a subject line — it's the one field every recipient sees.";
 const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
 const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
@@ -86,6 +87,11 @@ export class NewsletterAddComponent implements OnInit {
   private readonly settingsSvc = inject(SettingsService);
   private readonly tagsSvc = inject(TagsService);
   private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  private readonly user = this.authSvc.getUserSignal();
+  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
+  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
 
   private readonly requiresScheduleDate = computed(() => {
     const timing = this.regularForm.get('timingMode')?.value;

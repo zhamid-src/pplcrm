@@ -697,6 +697,27 @@ export class BackgroundJobWorker {
   private async recoverStaleJobs(): Promise<void> {
     try {
       const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
+
+      // A job that crashes the worker process (OOM, native fault, an escaping rejection) never
+      // reaches the catch block that enforces max_attempts — it stays 'processing' until it goes
+      // stale. Dead-letter such jobs once they have already been claimed max_attempts times,
+      // instead of requeuing them forever (a poison job would otherwise re-crash the worker every
+      // 30 minutes indefinitely). `attempts` is incremented at claim time, so it reflects real tries.
+      await this.db
+        .updateTable('background_jobs')
+        .set({
+          status: 'failed',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+          error: 'Job processing timed out after maximum attempts',
+        })
+        .where('status', '=', 'processing')
+        .where('locked_at', '<', staleTime)
+        .where(sql<boolean>`attempts >= coalesce(max_attempts, 3)`)
+        .execute();
+
+      // Requeue stale jobs that still have retries left.
       await this.db
         .updateTable('background_jobs')
         .set({
@@ -708,6 +729,7 @@ export class BackgroundJobWorker {
         })
         .where('status', '=', 'processing')
         .where('locked_at', '<', staleTime)
+        .where(sql<boolean>`attempts < coalesce(max_attempts, 3)`)
         .execute();
 
       // Clean up/timeout data exports stuck in pending/processing for more than 1 hour

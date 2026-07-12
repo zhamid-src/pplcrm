@@ -99,6 +99,20 @@ export class UsersPageComponent implements OnInit {
     return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
   });
 
+  private readonly userSignal = this.auth.getUserSignal();
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+
+  /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected readonly inviteLockReason = computed<string | null>(() => {
+    if (this.isDemo()) {
+      return 'Inviting teammates is locked during the demo — choose a plan, then exit demo mode';
+    }
+    if (this.seatsRemaining() === 0) {
+      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use — upgrade in Settings → Billing`;
+    }
+    return null;
+  });
+
   protected readonly planLabel = computed(() => {
     const usage = this.seatUsage();
     return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';

@@ -8,12 +8,26 @@ import superjson from 'superjson';
 import { logger } from './app/logger';
 import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
 
+// Shown to the client in place of any unexpected (500) error's real message in production.
+const GENERIC_INTERNAL_ERROR = 'Something went wrong, please try again';
+
 const trpc = initTRPC.context<Context>().create({
   transformer: superjson,
   errorFormatter({ shape, error }) {
     logger.error({ err: error }, 'tRPC Error');
     if (error.cause) {
       logger.error({ err: error.cause }, 'tRPC Error Cause');
+    }
+
+    // In production, never let an unexpected error's raw message reach the client. AppErrors are
+    // mapped to explicit non-500 codes by the errorMappingMiddleware; anything still surfacing as
+    // INTERNAL_SERVER_ERROR is unexpected (a raw Kysely/Postgres error, a TypeError, etc.) and its
+    // message can leak internals (e.g. a constraint/table/column name), so redact it here. tRPC v11
+    // resolves a downstream throw to a result rather than rejecting, so the middleware can miss
+    // non-AppError causes — this formatter is the last line that always runs. Dev/test keep the
+    // real message for debuggability.
+    if (process.env['NODE_ENV'] === 'production' && error.code === 'INTERNAL_SERVER_ERROR') {
+      shape = { ...shape, message: GENERIC_INTERNAL_ERROR };
     }
     // Path may be on error.path, or on shape.data.path (or absent)
     const errorObj = error as unknown as Record<string, unknown>;

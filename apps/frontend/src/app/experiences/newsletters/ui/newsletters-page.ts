@@ -10,6 +10,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Icon } from '@icons/icon';
 
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { AuthService } from '../../../auth/auth-service';
 import { CampaignContextService } from '../../../services/campaign-context.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { SettingsService } from '../../settings/services/settings-service';
@@ -76,6 +77,10 @@ const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused
 })
 export class NewslettersPage {
   private readonly svc = inject(NewslettersService);
+  private readonly auth = inject(AuthService);
+  private readonly userSignal = this.auth.getUserSignal();
+  /** Sending is blocked server-side during demo mode; sendBlocker() explains it (§2 explained-disabled). */
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
   private readonly context = inject(CampaignContextService);
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
@@ -153,6 +158,9 @@ export class NewslettersPage {
    * the Send button never greys out silently — the tooltip names exactly what's missing).
    */
   protected sendBlocker(row: NewsletterRow): string | null {
+    if (this.isDemo()) {
+      return 'Sending is locked during the demo — choose a plan, then exit demo mode';
+    }
     if (this.verifiedSenders().length === 0) {
       return 'Verify a sender address under Settings → Communications before sending';
     }
