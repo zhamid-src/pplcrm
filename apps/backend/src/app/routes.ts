@@ -15,6 +15,7 @@ import donationsWebhookRoute from './modules/donations/routes/donations-webhook.
 import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
 import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
 
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
@@ -33,6 +34,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register public volunteer delivery-route pages (token is the credential, §14)
   fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });

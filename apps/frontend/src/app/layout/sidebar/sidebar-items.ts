@@ -208,6 +208,13 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'users',
       },
       {
+        name: 'Volunteer access',
+        route: '/volunteer-access',
+        icon: 'identification',
+        // badgeCount = volunteers awaiting approval, populated at runtime by
+        // Sidebar from `companionAccess.pendingCount`.
+      },
+      {
         name: 'Activity',
         route: '/activity',
         icon: 'clipboard-document-list',

@@ -18,6 +18,8 @@ import {
   type InFieldToday,
   type TurfListItem,
 } from '../services/canvassing-service';
+import { AssignTurfDialog } from './assign-turf-dialog';
+import { CompanionSettingsDialog } from './companion-settings-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
 
 type TurfStatus = TurfListItem['status'];
@@ -73,7 +75,7 @@ const RANGES: { key: ReportRange; label: string }[] = [
 
 @Component({
   selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog],
+  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog, CompanionSettingsDialog],
   templateUrl: './canvassing-page.html',
 })
 export class CanvassingPage implements OnInit {
@@ -100,6 +102,10 @@ export class CanvassingPage implements OnInit {
   protected readonly coverageView = signal<CoverageView>('map');
 
   protected readonly cutOpen = signal(false);
+  /** Turf currently being assigned in the pick-a-volunteer dialog (null = closed). */
+  protected readonly assignTarget = signal<TurfListItem | null>(null);
+  /** Companion survey settings dialog (issues vocabulary + door script). */
+  protected readonly settingsOpen = signal(false);
 
   protected readonly ranges = RANGES;
   protected readonly statusLabel = STATUS_LABEL;
@@ -129,10 +135,11 @@ export class CanvassingPage implements OnInit {
     if (!t) return [];
     const m = t.responseMix;
     return [
-      { key: 'strong', label: 'Strong support', value: m.strong_support, cls: 'bg-success' },
-      { key: 'lean', label: 'Lean support', value: m.lean_support, cls: 'bg-success/60' },
+      { key: 'supporter', label: 'Supporters', value: m.supporter, cls: 'bg-success' },
       { key: 'undecided', label: 'Undecided', value: m.undecided, cls: 'bg-warning' },
-      { key: 'opposed', label: 'Opposed', value: m.opposed, cls: 'bg-error' },
+      { key: 'non_supporter', label: 'Non-supporters', value: m.non_supporter, cls: 'bg-error' },
+      { key: 'not_voting', label: 'Not voting', value: m.not_voting, cls: 'bg-base-content/30' },
+      { key: 'already_voted', label: 'Already voted', value: m.already_voted, cls: 'bg-info' },
       { key: 'no_answer', label: 'No answer', value: m.no_answer, cls: 'bg-base-300' },
     ].filter((s) => s.value > 0);
   });
@@ -245,33 +252,31 @@ export class CanvassingPage implements OnInit {
     }
   }
 
-  /** Assign a turf as a shareable Companion link and copy it. */
-  protected async assign(t: TurfListItem): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const { token } = await this.svc.assign({ turf_id: t.id, team_id: null });
-      await this.copyCompanionLink(token);
-      await this.loadTurfs();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to assign turf.');
-    } finally {
-      end();
-    }
+  /** Assignment is personal now — open the pick-a-volunteer dialog (plan §5 B1). */
+  protected assign(t: TurfListItem): void {
+    this.assignTarget.set(t);
   }
 
+  /** An existing link can be re-copied; a missing one needs an assignment first. */
   protected async copyLink(t: TurfListItem): Promise<void> {
     if (t.token) {
       await this.copyCompanionLink(t.token);
       return;
     }
-    await this.assign(t);
+    this.assign(t);
+  }
+
+  protected async onAssigned(token: string): Promise<void> {
+    this.assignTarget.set(null);
+    await this.copyCompanionLink(token);
+    await this.loadTurfs();
   }
 
   private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/companion?token=${encodeURIComponent(token)}`;
+    const url = `${location.origin}/t/${encodeURIComponent(token)}`;
     try {
       await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Companion link copied — anyone who opens it works this turf.');
+      this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');
     } catch {
       this.alerts.showSuccess(`Companion link: ${url}`);
     }

@@ -106,6 +106,9 @@ export interface Models {
   delivery_requests: DeliveryRequests;
   delivery_routes: DeliveryRoutes;
   delivery_route_stops: DeliveryRouteStops;
+  companion_volunteers: CompanionVolunteers;
+  companion_sessions: CompanionSessions;
+  companion_ops: CompanionOps;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -257,6 +260,10 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   kind: Generated<string>;
   /** 'active' | 'archived' — archived campaigns are read-only history. */
   status: Generated<string>;
+  /** Issue-chip vocabulary shown in the canvass companion survey (spec §3.5). */
+  canvass_issues: Generated<string[]>;
+  /** Door script shown (collapsible) at the top of the companion survey. */
+  canvass_script: string | null;
 }
 
 export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
@@ -385,6 +392,8 @@ interface Turfs extends RecordType {
 interface TurfHouseholds extends JunctionRecordType {
   turf_id: string;
   household_id: string;
+  /** Suggested visiting order (1-based), computed at cut/assign time. A hint, never a lock. */
+  walk_order: number | null;
 }
 
 /** A turf handed to a team and/or opened via a tokenised Companion link. */
@@ -394,6 +403,60 @@ interface TurfAssignments extends RecordType {
   token: string;
   status: string;
   assigned_at: Timestamp;
+  /** The person this link belongs to — the companion access layer verifies against them. */
+  volunteer_person_id: string | null;
+  /** Optional hard expiry for the capability link (companion access layer). */
+  expires_at: Timestamp | null;
+}
+
+/**
+ * Companion access layer (COMPANION-APPS-PLAN.md §2): one row per (tenant,
+ * person) who has ever been sent a companion link. `status` is the approval
+ * lifecycle — 'invited' → 'verified' (code confirmed, awaiting admin) →
+ * 'approved' | 'revoked'. Approval is per volunteer, not per assignment.
+ */
+interface CompanionVolunteers {
+  id: Generated<string>;
+  tenant_id: string;
+  person_id: string;
+  status: Generated<string>;
+  verify_code_hash: string | null;
+  verify_code_expires_at: Timestamp | null;
+  verify_attempts: Generated<number>;
+  verify_channel: 'email' | 'sms' | null;
+  verified_at: Timestamp | null;
+  approved_by: string | null;
+  approved_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  createdby_id: string | null;
+  updatedby_id: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/** A verified companion device — only the sha256 of the session token is stored. */
+interface CompanionSessions {
+  id: Generated<string>;
+  tenant_id: string;
+  volunteer_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  revoked_at: Timestamp | null;
+  last_used_at: Timestamp | null;
+  user_agent: string | null;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+/**
+ * Write-once idempotency ledger for volunteer actions (both companions).
+ * Insert ON CONFLICT DO NOTHING; a conflict means "op already applied".
+ */
+interface CompanionOps {
+  tenant_id: string;
+  op_id: string;
+  scope: 'canvass' | 'deliveries';
+  created_at: Generated<Timestamp>;
 }
 
 /** One door interaction, synced live from a Canvass Companion. */
@@ -408,6 +471,16 @@ interface TurfKnocks extends RecordType {
   canvasser_name: string | null;
   client_knock_id: string | null;
   knocked_at: Timestamp;
+  /** Issue chips picked in the survey (campaign-configured vocabulary). */
+  issues: Generated<string[]>;
+  /** Follow-up toggles from the survey (spec §3.5). */
+  wants_volunteer: Generated<boolean>;
+  wants_yard_sign: Generated<boolean>;
+  set_dnc: Generated<boolean>;
+  /** Contact info captured at the door (also applied to the person if blank there). */
+  contact_phone: string | null;
+  contact_email: string | null;
+  subscribe: Generated<boolean>;
 }
 
 export interface MapListsPersons extends JunctionRecordType {

@@ -1,8 +1,9 @@
 # 🚀 PeopleCRM Setup Guide
 
-This guide covers setting up your local development environment for **PeopleCRM** from scratch. 
+This guide covers setting up your local development environment for **PeopleCRM** from scratch.
 
 If you are a macOS user, you can alternately run the automated setup script:
+
 ```bash
 ./setup.sh
 ```
@@ -14,9 +15,10 @@ Otherwise, follow the step-by-step instructions below.
 ## 📋 Prerequisites
 
 Ensure you have the following installed on your machine:
-* **Node.js**: Version 18 or higher (LTS recommended)
-* **npm** or **Yarn**
-* **Docker Desktop**: Recommended for Postgres database and Azurite blob storage emulation.
+
+- **Node.js**: Version 18 or higher (LTS recommended)
+- **npm** or **Yarn**
+- **Docker Desktop**: Recommended for Postgres database and Azurite blob storage emulation.
 
 ---
 
@@ -46,11 +48,22 @@ DB_SSL=false
 SHARED_SECRET=your-super-secret
 ```
 
+Optional — SMS for companion-app verification codes (Twilio). Leave these unset in
+dev: the SMS service logs a `[TWILIO DEV MOCK]` line instead of sending, and email
+codes work the same way via the Postmark dev mock.
+
+```env
+# TWILIO_ACCOUNT_SID=ACxxxxxxxx
+# TWILIO_AUTH_TOKEN=xxxxxxxx
+# TWILIO_FROM_NUMBER=+15550006789
+```
+
 ### 3. Create Background Services (Docker)
 
 Make sure Docker Desktop is open and running, then spin up the database and storage services:
 
 #### Database (PostgreSQL)
+
 ```bash
 docker run --name pplcrm-db \
   -e POSTGRES_PASSWORD=postgres \
@@ -60,6 +73,7 @@ docker run --name pplcrm-db \
 ```
 
 #### Blob Storage Emulation (Azurite)
+
 ```bash
 docker run --name pplcrm-azurite \
   -p 10000:10000 -p 10001:10001 -p 10002:10002 \
@@ -68,7 +82,8 @@ docker run --name pplcrm-azurite \
 # Initialize the storage container structure
 npm run azurite:init
 ```
-*(The init script creates the required `uploads` container, configures CORS, and outputs a local SAS URL valid for one hour).*
+
+_(The init script creates the required `uploads` container, configures CORS, and outputs a local SAS URL valid for one hour)._
 
 ### 4. Run Database Migrations
 
@@ -80,7 +95,24 @@ npm run db:migrate
 
 ---
 
+## 📱 The companion app (volunteers)
+
+The volunteer companions (canvassing `/t/:token`, deliveries `/r/:token`) are a
+separate small Angular app, `apps/companion`, so volunteers never download the CRM
+bundle.
+
+- **Dev:** `npx nx serve companion` → http://localhost:4300 (the CRM stays on 4200).
+  It proxies `/api` to the backend on :3000, so no CORS setup is needed.
+- **Production:** build both apps (`nx build frontend && nx build companion`) and
+  path-route at the reverse proxy: send `/t/*` and `/r/*` to the `companion` build
+  output, everything else to the CRM build. Both are static bundles; the API stays
+  same-origin.
+- **Access model:** companion links are personal. The volunteer verifies a one-time
+  code (email via Postmark, SMS via Twilio — both dev-mocked when unconfigured) and
+  a first-time volunteer needs a one-time admin approval under **Volunteer access**
+  in the CRM.
+
 ## 🎉 Next Steps
 
-Now that your first-time setup is complete, you can start developing daily! 
+Now that your first-time setup is complete, you can start developing daily!
 Refer back to the main [README.md](README.md) for details on daily command usage, starting/stopping services, and running tests.

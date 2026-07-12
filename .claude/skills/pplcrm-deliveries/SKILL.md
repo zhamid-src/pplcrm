@@ -62,17 +62,35 @@ Every internal query is tenant-scoped. Key behaviours:
   `metadata.via = 'volunteer_link'` and a "via volunteer link" message; the `user_id` is the route's
   `createdby_id` (same convention as web-forms public writes) — never a fabricated user.
 
-## The public volunteer page — token IS the credential
+## The public volunteer page — token + verified session (see `pplcrm-companion-access`)
 
 Backend REST route `modules/deliveries/routes/deliveries-public.route.ts` at prefix `/api/deliveries`
 (registered in `app/routes.ts`): `GET /r/:token`, `POST /r/:token/stops/:stopId`. Resolution differs
 from `/f/:slug`: **there is no subdomain/tenant param** — `findByTokenHash(sha256(token))` resolves the
 route AND its tenant (the one intentional `// eslint-disable-next-line local/no-unscoped-db-query`,
-cross-tenant by design; every follow-up query is scoped by the resolved `tenant_id`). Uniform 404 for
-any invalid/expired/revoked/canceled state (never distinguish which). Per-IP rate limit. Payload is
-**first name + address only** — verify the payload, not just the UI. Frontend page:
-`experiences/deliveries/ui/public-route.ts` at Angular route `/r/:token` (in `app.routes.ts`), fetches
-the REST endpoints; List/Map via `<pc-map>`.
+cross-tenant by design; every follow-up query is scoped by the resolved `tenant_id`).
+
+The token alone is no longer enough (COMPANION-APPS-PLAN.md): both endpoints then call
+`CompanionAccessController.requireSession(X-Companion-Session header, { tenant_id,
+volunteer_person_id })` — the volunteer must have verified a code and been admin-approved.
+401/403 from the guard pass through (the gate renders verify/pending from them); everything
+else stays a uniform 404 (never distinguish invalid/expired/revoked/canceled). Because the
+link is personal, **`mintShareLink` refuses when the route has no `volunteer_person_id`** —
+assign the volunteer first. Per-IP rate limit. Payload is **first name + address only**
+(field `organization_name` carries the org display name — it was renamed from the lying
+`campaign_name`) — verify the payload, not just the UI.
+
+`POST .../stops/:stopId` accepts an optional `op_id` (client uuid): it is claimed in the
+`companion_ops` ledger inside the same transaction as the action, so a retried
+deliver/skip/defer/undo applies exactly once and just returns the authoritative payload.
+
+Frontend page: **`apps/companion/src/app/deliveries/route-page.ts`** at `/r/:token` of the
+separate companion app (NOT apps/frontend — the old `experiences/deliveries/ui/public-route`
+page was deleted), wrapped in `<pc-companion-gate kind="route">`; relative `/api` fetches with
+`CompanionSessionService.headers()`, a fresh `op_id` per action, Undo on every terminal stop
+(including after reload / from the completed state), List/Map via `<pc-map>`. The staff
+share-URL builder (`deliveries-route-detail.ts`) still emits `${origin}/r/${token}` — the
+companion app is path-routed on the same domain.
 
 ## Frontend — `apps/frontend/src/app/experiences/deliveries/`
 

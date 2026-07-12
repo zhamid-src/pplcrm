@@ -8,54 +8,10 @@
 /* Self-hosted app font — bundled from node_modules, no external font CDN */
 @import '@fontsource-variable/inter';
 
-/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
-   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
-   DaisyUI blocks below, same as --color-line. */
-@theme {
-  --color-base-50: #fbfbfc;
-}
-
-/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
-   scanner cannot see — without this safelist an icon size only works if some other
-   file happens to use the same w-/h- class literally. Covers every [size] in use. */
-@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #3498db;
-  --color-primary-content: #ffffff;
-  --color-secondary: #22a6b3;
-  --color-secondary-content: #ffffff;
-  --color-accent: #818789;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: rgb(226, 226, 226);
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e3d6a7;
-  --color-warning-content: #4a3d0a;
-  --color-error: #eb4d4b;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
-     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
-     (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
+/* Theme tokens (light + dark, incl. the base-50 card wash + pc-icon size
+   safelist) are shared with the companion app — single source of truth in
+   libs/uxcommon. */
+@import '../../../libs/uxcommon/src/styles/themes.css';
 
 .input::placeholder,
 textarea::placeholder,
@@ -78,45 +34,6 @@ label.input input:-webkit-autofill:focus,
 label.input input:-webkit-autofill:active {
   transition: background-color 5000s ease-in-out 0s;
   -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
 }
 
 html,

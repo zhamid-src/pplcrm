@@ -1,0 +1,188 @@
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+
+import { CanvassStore } from './canvass-store';
+
+const CLOCK_TICK_MS = 30_000;
+
+/**
+ * Me tab (spec §3.6): identity + provenance, today's derived stats, top
+ * issues heard, and the sync card (queue, work-offline, sync now). "End shift
+ * on this device" wipes every local trace behind the project confirm dialog.
+ */
+@Component({
+  selector: 'pc-canvass-me',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="flex flex-col gap-4 p-4">
+      <header class="flex flex-col gap-0.5">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">
+          {{ store.payload()?.campaign_name }}
+        </p>
+        <h1 class="text-xl font-bold">{{ store.payload()?.canvasser_name }}</h1>
+      </header>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-xs text-base-content/70">
+          Signed in through your assignment link — your organizer can revoke it. No voter data stays in this browser
+          after your shift.
+        </p>
+        <button type="button" class="btn btn-outline btn-error w-full" (click)="endShift()">
+          End shift on this device
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Doors attempted</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().doors_attempted }} of {{ stats().doors_total }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Conversations</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().conversations }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Supporters ID'd</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().supporters }}</p>
+        </div>
+        <div class="rounded-lg border border-base-300 bg-base-100 p-3">
+          <p class="text-xs text-base-content/60">Contact rate</p>
+          <p class="text-lg font-bold tabular-nums">{{ stats().contact_rate }}%</p>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-base-300 bg-base-100 p-4">
+        <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Top issues heard</p>
+        @if (stats().top_issues.length > 0) {
+          <ul class="mt-2 flex flex-col gap-1.5">
+            @for (item of topIssues(); track item.issue) {
+              <li class="flex items-center justify-between text-sm">
+                <span>{{ item.issue }}</span>
+                <span class="tabular-nums text-base-content/70">{{ item.count }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="mt-2 text-xs text-base-content/60">
+            No issues recorded yet — they appear as you log conversations.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
+        <div class="flex items-center justify-between">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-base-content/50">Sync</p>
+          <span [class]="syncChip().cls">{{ syncChip().label }}</span>
+        </div>
+        <p class="text-xs text-base-content/70">{{ lastSyncedLabel() }}</p>
+
+        @if (store.queue().length > 0) {
+          <div>
+            <p class="text-xs font-medium text-base-content/80">Waiting to sync</p>
+            <ul class="mt-1 flex flex-col gap-1">
+              @for (entry of store.queue(); track entry.op.op_id) {
+                <li class="truncate text-xs text-base-content/70">{{ entry.label }}</li>
+              }
+            </ul>
+          </div>
+        }
+
+        <label class="flex min-h-11 items-center justify-between gap-3">
+          <span>
+            Work offline
+            <span class="block text-xs text-base-content/60">Hold results on this phone until you sync</span>
+          </span>
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            [checked]="store.workOffline()"
+            (change)="onWorkOffline($event)"
+          />
+        </label>
+
+        <button
+          type="button"
+          class="btn btn-outline btn-secondary w-full"
+          [disabled]="store.queue().length === 0"
+          (click)="syncNow()"
+        >
+          {{ store.queue().length > 0 ? 'Sync now' : 'All synced' }}
+        </button>
+      </div>
+    </div>
+  `,
+})
+export class CanvassMe {
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  protected readonly store = inject(CanvassStore);
+
+  protected readonly stats = computed(() => this.store.stats());
+  protected readonly topIssues = computed(() => this.stats().top_issues.slice(0, 5));
+
+  /** Ticks so "Last synced N min ago" stays honest while the tab sits open. */
+  private readonly now = signal(Date.now());
+
+  protected readonly lastSyncedLabel = computed(() => {
+    const at = this.store.lastSyncedAt();
+    if (at == null) return 'Not synced yet this visit';
+    const minutes = Math.floor((this.now() - at.getTime()) / 60_000);
+    if (minutes < 1) return 'Last synced just now';
+    if (minutes < 60) return `Last synced ${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return `Last synced ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  });
+
+  protected readonly syncChip = computed<{ label: string; cls: string }>(() => {
+    const status = this.store.syncStatus();
+    switch (status) {
+      case 'syncing':
+        return { label: 'Syncing…', cls: 'badge badge-info' };
+      case 'offline':
+        return { label: 'Offline', cls: 'badge badge-warning' };
+      case 'error':
+        return { label: 'Sync issue', cls: 'badge badge-error' };
+      case 'idle':
+        return this.store.queue().length > 0
+          ? { label: 'Waiting to sync', cls: 'badge badge-warning' }
+          : { label: 'Up to date', cls: 'badge badge-success' };
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
+    }
+  });
+
+  constructor() {
+    const timer = setInterval(() => this.now.set(Date.now()), CLOCK_TICK_MS);
+    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+  }
+
+  protected async endShift(): Promise<void> {
+    const queued = this.store.queue().length;
+    const confirmed = await this.dialogs.confirm({
+      title: 'End shift on this device?',
+      message:
+        queued > 0
+          ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
+          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+      variant: 'danger',
+      confirmText: 'End shift',
+      cancelText: 'Keep walking',
+    });
+    if (!confirmed) return;
+    this.store.endShift();
+    this.alerts.showSuccess('Shift ended — reopen your link anytime');
+  }
+
+  protected onWorkOffline(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) this.store.setWorkOffline(target.checked);
+  }
+
+  protected syncNow(): void {
+    void this.store.flush(true);
+  }
+}

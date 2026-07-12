@@ -20,6 +20,7 @@ import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
+import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -41,6 +42,7 @@ export class Sidebar {
   private readonly tasksSvc = inject(TasksService);
   private readonly duplicatesSvc = inject(DuplicatesService);
   private readonly deliveriesSvc = inject(DeliveriesRequestsService);
+  private readonly volunteerAccessSvc = inject(VolunteerAccessService);
 
   /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
    *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
@@ -53,6 +55,10 @@ export class Sidebar {
   /** Live approved-and-ready delivery request count for the Deliveries sidebar badge (spec §14).
    *  Same one-shot-per-session loading shape as the badges above. */
   protected readonly deliveriesReadyCount = signal<number | null>(null);
+
+  /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
+   *  Same one-shot-per-session loading shape as the badges above. */
+  protected readonly volunteerAccessPending = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -115,6 +121,16 @@ export class Sidebar {
     void this.loadTaskSlaBreaches();
     void this.loadDuplicatesQueueCount();
     void this.loadDeliveriesReadyCount();
+    void this.loadVolunteerAccessPending();
+  }
+
+  /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
+  private async loadVolunteerAccessPending(): Promise<void> {
+    try {
+      this.volunteerAccessPending.set(await this.volunteerAccessSvc.pendingCount());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
   }
 
   /** Deliveries badge = live approved-and-ready request count (spec §14). One fetch per session. */
@@ -150,6 +166,7 @@ export class Sidebar {
     const breaches = this.taskSlaBreaches();
     const duplicatesQueue = this.duplicatesQueueCount();
     const deliveriesReady = this.deliveriesReadyCount();
+    const volunteerPending = this.volunteerAccessPending();
     return items.map((item) => {
       const children = item.children ? this.applyBadges(item.children) : undefined;
       if (item.route === '/tasks') {
@@ -160,6 +177,9 @@ export class Sidebar {
       }
       if (item.route === '/deliveries') {
         return { ...item, ...(children ? { children } : {}), badgeCount: deliveriesReady };
+      }
+      if (item.route === '/volunteer-access') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: volunteerPending };
       }
       return children ? { ...item, children } : item;
     });

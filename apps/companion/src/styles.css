@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+@plugin "daisyui";
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+/* Theme tokens (light + dark) are shared with the CRM — single source of
+   truth in libs/uxcommon. */
+@import '../../../libs/uxcommon/src/styles/themes.css';
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  /* Mobile volunteer app: default type is text-sm (vs the CRM's text-xs) —
+     read at arm's length in daylight, not at a desk. */
+  font-size: 0.875rem;
+  line-height: calc(1.25 / 0.875);
+}
+
+/* Every tap target in the companion is at least 44px (spec §2 accessibility). */
+.btn {
+  min-height: 2.75rem;
+}

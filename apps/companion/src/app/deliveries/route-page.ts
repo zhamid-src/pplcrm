@@ -1,5 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 
 import { PcMap } from '@uxcommon/components/map/map';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -8,7 +7,8 @@ import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-typ
 import { DELIVERY_SKIP_REASONS } from '@common';
 import { Icon } from '@icons/icon';
 
-import { apiBase } from '../../../shared/public-pages';
+import { CompanionGate } from '../gate/companion-gate';
+import { CompanionSessionService } from '../gate/companion-api';
 
 interface PublicStop {
   id: string;
@@ -23,7 +23,7 @@ interface PublicStop {
 }
 
 interface PublicRouteData {
-  campaign_name: string;
+  organization_name: string;
   route_name: string;
   status: 'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled';
   start: { lat: number; lng: number };
@@ -32,22 +32,28 @@ interface PublicRouteData {
   stops: PublicStop[];
 }
 
-type PageState = 'loading' | 'ready' | 'notfound';
+type PageState = 'loading' | 'ready' | 'notfound' | 'session-expired';
 type ViewMode = 'list' | 'map';
 
 /**
- * Public tokenized volunteer route page (spec §4.4–4.5), served at /r/:token outside the app shell.
- * The token is the only credential; the payload carries first name + address only. Every action
- * posts to the public endpoint and re-renders from the authoritative response.
+ * Deliveries companion (spec §4.4–4.5), served at /r/:token behind the
+ * companion gate. The capability token scopes the route; the device session
+ * header proves who is driving it. Every action posts with a fresh op_id so a
+ * flaky-network retry applies exactly once, and re-renders from the
+ * authoritative response.
  */
 @Component({
-  selector: 'pc-public-route',
+  selector: 'pc-route-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PcMap, StatusBadge, Icon, TabBar],
-  templateUrl: './public-route.html',
+  imports: [CompanionGate, PcMap, StatusBadge, Icon, TabBar],
+  templateUrl: './route-page.html',
 })
-export class PublicRoute implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+export class RoutePage {
+  private readonly session = inject(CompanionSessionService);
+
+  /** Route param — the capability token from /r/:token. */
+  public readonly token = input.required<string>();
+
   protected readonly reasons = DELIVERY_SKIP_REASONS;
 
   protected readonly state = signal<PageState>('loading');
@@ -59,15 +65,10 @@ export class PublicRoute implements OnInit {
     { id: 'map', label: 'Map' },
   ];
 
-  protected setView(view: string): void {
-    if (view === 'list' || view === 'map') this.view.set(view);
-  }
   protected readonly reasonPickerFor = signal<string | null>(null);
   protected readonly lastActioned = signal<string | null>(null);
   protected readonly selectedStopId = signal<string | null>(null);
   protected readonly busy = signal(false);
-
-  private token = '';
 
   protected readonly activeStopId = computed(() => this.data()?.stops.find((s) => s.status === 'pending')?.id ?? null);
   protected readonly handled = computed(() => this.data()?.stops.filter((s) => s.status !== 'pending').length ?? 0);
@@ -88,16 +89,8 @@ export class PublicRoute implements OnInit {
       }));
   });
 
-  public ngOnInit(): void {
-    this.token = this.route.snapshot.paramMap.get('token') ?? '';
-    void this.load();
-  }
-
-  private pinVariant(s: PublicStop, activeId: string | null): PcMapVariant {
-    if (s.status === 'delivered') return 'success';
-    if (s.status === 'skipped') return 'warning';
-    if (s.id === activeId) return 'primary';
-    return 'muted';
+  protected setView(view: string): void {
+    if (view === 'list' || view === 'map') this.view.set(view);
   }
 
   protected statusChip(): { type: 'neutral' | 'warning' | 'success'; label: string } {
@@ -158,15 +151,22 @@ export class PublicRoute implements OnInit {
     await this.post(stopId, 'undo');
   }
 
-  private async load(): Promise<void> {
-    if (!this.token) {
+  protected reload(): void {
+    window.location.reload();
+  }
+
+  protected async load(): Promise<void> {
+    const token = this.token();
+    if (!token) {
       this.state.set('notfound');
       return;
     }
     try {
-      const res = await fetch(`${apiBase()}/api/deliveries/r/${encodeURIComponent(this.token)}`);
+      const res = await fetch(`/api/deliveries/r/${encodeURIComponent(token)}`, {
+        headers: { Accept: 'application/json', ...this.session.headers() },
+      });
       if (!res.ok) {
-        this.state.set('notfound');
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
         return;
       }
       this.data.set((await res.json()) as PublicRouteData);
@@ -176,20 +176,28 @@ export class PublicRoute implements OnInit {
     }
   }
 
+  private pinVariant(s: PublicStop, activeId: string | null): PcMapVariant {
+    if (s.status === 'delivered') return 'success';
+    if (s.status === 'skipped') return 'warning';
+    if (s.id === activeId) return 'primary';
+    return 'muted';
+  }
+
   private async post(stopId: string, action: 'deliver' | 'skip' | 'defer' | 'undo', reason?: string): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
     try {
       const res = await fetch(
-        `${apiBase()}/api/deliveries/r/${encodeURIComponent(this.token)}/stops/${encodeURIComponent(stopId)}`,
+        `/api/deliveries/r/${encodeURIComponent(this.token())}/stops/${encodeURIComponent(stopId)}`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ action, reason: reason ?? null }),
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.session.headers() },
+          // A fresh op_id per tap — the server ledger makes retries apply exactly once.
+          body: JSON.stringify({ action, reason: reason ?? null, op_id: crypto.randomUUID() }),
         },
       );
       if (!res.ok) {
-        this.state.set('notfound');
+        this.state.set(res.status === 401 || res.status === 403 ? 'session-expired' : 'notfound');
         return;
       }
       this.data.set((await res.json()) as PublicRouteData);

@@ -5,6 +5,7 @@ import type {
   AssignTurfType,
   CutTurfsType,
   FieldReportRangeType,
+  UpdateCompanionSettingsType,
   UpdateTurfType,
 } from '../../../../../../../libs/common/src';
 
@@ -56,8 +57,12 @@ export class CanvassingService extends TRPCService<unknown> {
     return this.api.canvassing.assign.mutate(input);
   }
 
-  public getCompanionLink(turfId: string): Promise<{ token: string }> {
-    return this.api.canvassing.getCompanionLink.mutate(turfId);
+  public getCompanionSettings(): Promise<RouterOutputs['canvassing']['getCompanionSettings']> {
+    return this.api.canvassing.getCompanionSettings.query(undefined);
+  }
+
+  public updateCompanionSettings(input: UpdateCompanionSettingsType): Promise<void> {
+    return this.api.canvassing.updateCompanionSettings.mutate(input).then(() => undefined);
   }
 
   public retire(turfId: string): Promise<void> {

@@ -4,10 +4,12 @@ import type { Models } from '../../../../../../../libs/common/src/lib/kysely.mod
 import { logger } from '../../../logger';
 import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { SmsService } from '../../sms/sms.service';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
 
 const mailService = new TransactionalEmailService();
+const smsService = new SmsService();
 
 export async function handleSendFormNotifications(
   payload: JobPayloadOf<'send-form-notifications'>,
@@ -337,6 +339,10 @@ export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-t
     text: payload.text ?? '',
     html: payload.html ?? '',
   });
+}
+
+export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
+  await smsService.sendSms({ to: payload.to, body: payload.body });
 }
 
 export async function handleSendSubscriptionConfirmation(

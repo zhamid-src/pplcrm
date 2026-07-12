@@ -10,10 +10,16 @@
       <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
       }
     </div>
-    <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-      <pc-icon name="map-pin" [size]="4" />
-      Cut new turfs
-    </button>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
+        <pc-icon name="cog" [size]="4" />
+        Survey settings
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+        <pc-icon name="map-pin" [size]="4" />
+        Cut new turfs
+      </button>
+    </div>
   </div>
 
   <!-- Tabs (the standard pill tab bar) -->
@@ -297,17 +303,19 @@
     <div class="card mb-4 border border-base-300 bg-base-100 p-4">
       <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
       <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.strong_support, r.doors)"></div>
-        <div class="h-full bg-success/60" [style.width.%]="barPct(r.responseMix.lean_support, r.doors)"></div>
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
         <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.opposed, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
+        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
+        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
         <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
       </div>
       <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Strong {{ r.responseMix.strong_support }}</span>
-        <span>Lean {{ r.responseMix.lean_support }}</span>
+        <span>Supporters {{ r.responseMix.supporter }}</span>
         <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Opposed {{ r.responseMix.opposed }}</span>
+        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
+        <span>Not voting {{ r.responseMix.not_voting }}</span>
+        <span>Already voted {{ r.responseMix.already_voted }}</span>
         <span>No answer {{ r.responseMix.no_answer }}</span>
       </div>
     </div>
@@ -408,5 +416,14 @@
   </section>
   } @if (cutOpen()) {
   <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  } @if (assignTarget(); as target) {
+  <pc-assign-turf-dialog
+    [turfId]="target.id"
+    [turfName]="target.name"
+    (cancelled)="assignTarget.set(null)"
+    (assigned)="onAssigned($event)"
+  />
+  } @if (settingsOpen()) {
+  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
   }
 </div>

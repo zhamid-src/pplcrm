@@ -48,6 +48,7 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 - `pplcrm-page-layout-ux` — detail-layout/header/breadcrumbs/record-navigation/activity-log/toasts/dialogs composition
 - `pplcrm-forms` — the North Star "living funnel" Forms experience: web_forms lifecycle, `normForm()` email invariant + templates, browse/live-edit page, `form_submissions`, the cross-tenant public `/f/:slug` page, and why donation forms stay separate
 - `pplcrm-deliveries` — the Deliveries feature (§14): yard-sign requests → pure-preview route planning → volunteer routes, the three `delivery_*` tables and the "routed is derived" invariant, the pure routing engine, the tokenized public `/r/:token` volunteer page, and honest activity attribution
+- `pplcrm-companion-access` — the volunteer access layer gating both companion apps (verify-a-code + once-per-volunteer admin approval + hashed device sessions), the `requireSession()` guard, the `apps/companion` gate component, Twilio SMS, and the `/volunteer-access` admin page
 - `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
 - `pplcrm-debugging` — tracing a bug end-to-end (correlationId → Pino → tRPC → Kysely → signals)
 - `pplcrm-schemas-validation` — the Zod schema triad (`AddXObj`/`UpdateXObj`/`XObj`) and `core.schema` helpers
@@ -61,12 +62,13 @@ If a change you make invalidates an existing skill (a path it names, a flow it d
 
 **Monorepo layout — keep logic in its layer:**
 
-| Path               | Purpose                                   |
-| ------------------ | ----------------------------------------- |
-| `apps/frontend/`   | Angular SPA                               |
-| `apps/backend/`    | Fastify 5 + tRPC backend                  |
-| `libs/common/src/` | Shared types, DB definitions, Zod schemas |
-| `libs/uxcommon/`   | Generic shared UI controls                |
+| Path               | Purpose                                                                         |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `apps/frontend/`   | Angular SPA (the desktop CRM)                                                   |
+| `apps/companion/`  | Mobile volunteer companions (`/t/:token`, `/r/:token`) — REST-only, no tRPC     |
+| `apps/backend/`    | Fastify 5 + tRPC backend                                                        |
+| `libs/common/src/` | Shared types, DB definitions, Zod schemas                                       |
+| `libs/uxcommon/`   | Generic shared UI controls + the shared DaisyUI theme (`src/styles/themes.css`) |
 
 **Path aliases** (defined in `tsconfig.base.json`) — never use relative paths across package boundaries:
 

@@ -21,7 +21,7 @@ export class CampaignSubscriptionsRepo extends BaseRepository<'campaign_subscrip
       person_id: string;
       email: string;
       status: 'subscribed' | 'pending' | 'unsubscribed';
-      consent_source: 'form' | 'import' | 'manual' | 'copied';
+      consent_source: 'form' | 'import' | 'manual' | 'copied' | 'canvass';
       user_id: string;
     },
     trx?: Transaction<Models>,

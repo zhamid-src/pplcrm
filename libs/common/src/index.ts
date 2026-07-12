@@ -220,12 +220,21 @@ export {
   TURF_STATUSES,
   KNOCK_OUTCOMES,
   KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
   DOORS_PER_TURF_PRESETS,
   turfStatusSchema,
   knockOutcomeSchema,
   knockResponseSchema,
   isTurfStatus,
   isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
   AddDeliveryRequestObj,
   UpdateDeliveryRequestObj,
   SetDeliveryRequestStatusObj,
@@ -252,7 +261,25 @@ export {
   INTERACTION_TYPE_LABELS,
   interactionTypeSchema,
   LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
 } from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
 
 export type {
   CampaignKind,
@@ -277,7 +304,22 @@ export type {
   WorkflowStepConfigType,
   WorkflowRunType,
 } from './lib/schemas/workflows.schema';
-export type { TurfStatus, KnockOutcome, KnockResponse } from './lib/schemas/canvassing.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
 export type {
   AddDeliveryRequestType,
   UpdateDeliveryRequestType,

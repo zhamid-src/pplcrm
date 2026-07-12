@@ -226,12 +226,26 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
       {
         kind: 'p',
-        text: 'Assigning a turf sends it to every member of its [team](/teams)’s Canvass Companion — a web app, so there is nothing to install. Prefer walk-up volunteers? **Copy app link** hands out the same turf to anyone who opens it, no account required. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it — text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list** — it pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number — that’s where their verification code goes. No contact on file means the link can’t be opened.',
       },
       { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
       {
         kind: 'p',
-        text: 'Volunteers open their link, add their name, and walk the door list. For each door they log an outcome — talked, no answer, not home, refused — and when they talk to someone, how that person leaned. Every knock syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Knocks queue on the phone and upload automatically when the volunteer is back online.',
+        text: 'The Companion is a web app — nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file — support level, top issues, follow-up flags, and notes — or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** tags them as a volunteer prospect, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey — both scoped to the campaign the turf was cut for.',
       },
       { kind: 'h2', id: 'report', text: 'The field report' },
       {
@@ -291,12 +305,12 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'assign', text: 'Assign and share' },
       {
         kind: 'p',
-        text: 'On a route, **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard — paste it wherever you talk to your volunteer. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+        text: 'On a route, assign the volunteer first — the link is personal to them — then **Copy volunteer link** mints a private link valid for 30 days and copies it to your clipboard. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
       },
       { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
       {
         kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is always there for the last action. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only — never a constituent’s email or phone. Undo is available on any delivered or skipped stop — even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
       },
       {
         kind: 'callout',
