@@ -47,7 +47,7 @@ import { logger } from '../../logger';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { seedStarterForms } from './onboarding-seed';
+import { seedStarterForms, seedStarterTags } from './onboarding-seed';
 import { DEMO_MODE_INVITES_BLOCKED_MESSAGE, assertNotDemoMode } from '../demo/demo-guard';
 import { seedDemoData } from '../demo/demo-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
@@ -1423,7 +1423,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .where('id', '=', tenant_id)
           .execute();
 
-        // Starter forms survive exit-demo; the demo dataset does not — see modules/demo.
+        // Starter tags/issues and forms survive exit-demo; the demo dataset does
+        // not — see modules/demo. Tags first: the demo seeder attaches to them by name.
+        await seedStarterTags({ tenant_id, user_id: userId }, trx);
         const starterForms = await seedStarterForms({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
         await seedDemoData(
           {

@@ -11,10 +11,13 @@ import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '.
  *   user does with the demo data — including actually sending the draft
  *   newsletter — can ever reach a real inbox.
  * - Phone numbers use the fictional 555 exchange in Ottawa area codes.
- * - Tags are freeform organizational labels only. Donor / supporter /
- *   subscriber are structured concepts in this product (donations table,
+ * - Tags and issues are STARTER vocabulary, seeded by seedStarterTags
+ *   (modules/auth/onboarding-seed.ts) and kept when demo data is deleted. The
+ *   demo data only ATTACHES persons/households to them by name — names here
+ *   must match STARTER_TAGS / STARTER_ISSUES. Donor / supporter / subscriber
+ *   are structured concepts in this product (donations table,
  *   campaign_person_facts, campaign_subscriptions) and were retired as tags —
- *   the demo data must not resurrect them (see modules/tags/system-tags.ts).
+ *   the demo data must not resurrect them.
  * - Newsletter aggregates are DERIVED from the engagement specs at seed time,
  *   so the report page numbers always add up.
  */
@@ -39,7 +42,7 @@ export interface DemoHouseholdDef {
   ward: string;
   home_phone?: string;
   notes?: string;
-  /** Demo tag names attached via map_households_tags. */
+  /** Starter tag names (STARTER_TAGS) attached via map_households_tags. */
   tags?: string[];
 }
 
@@ -56,7 +59,7 @@ export interface DemoPersonDef {
   notes?: string;
   /** Staggers persons.created_at so the dashboard growth chart draws a real curve. */
   createdDaysAgo: number;
-  /** Freeform demo tag names. */
+  /** Starter tag names (STARTER_TAGS) attached via map_peoples_tags. */
   tags?: string[];
   supportLevel?: SupportLevel;
   votingStatus?: VotingStatus;
@@ -66,12 +69,6 @@ export interface DemoPersonDef {
   /** Seeds a campaign_subscriptions row (status subscribed, consent_source import). */
   subscribed?: boolean;
   doNotContact?: boolean;
-}
-
-export interface DemoTagDef {
-  name: string;
-  description: string;
-  color: string;
 }
 
 export interface DemoTaskDef {
@@ -162,12 +159,11 @@ export interface DemoUserDef {
   role: 'admin' | 'user';
 }
 
-/** Issues are tags with type 'issue' — the structured what-do-they-care-about vocabulary. */
-export interface DemoIssueDef {
-  name: string;
-  description: string;
-  color: string;
-  /** Person keys this issue is attached to via map_peoples_tags. */
+/** Attaches demo persons to a starter issue (STARTER_ISSUES) via map_peoples_tags. */
+export interface DemoIssueAssignmentDef {
+  /** Starter issue name — must match a STARTER_ISSUES entry. */
+  issue: string;
+  /** Person keys this issue is attached to. */
   people: string[];
 }
 
@@ -1220,23 +1216,6 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
   },
 ];
 
-/**
- * Freeform organizational labels only — donor/supporter/subscriber are
- * structured concepts and must not come back as tags.
- */
-export const DEMO_TAGS: DemoTagDef[] = [
-  { name: 'community leader', description: 'Runs or anchors a local association, league, or board.', color: '#8b5cf6' },
-  { name: 'small business owner', description: 'Owns or operates a business in the riding.', color: '#f97316' },
-  { name: 'senior', description: 'Prefers daytime calls and print material.', color: '#64748b' },
-  { name: 'student', description: 'Student — usually reachable evenings and weekends.', color: '#22c55e' },
-  { name: 'new to riding', description: 'Moved into the riding within the last year.', color: '#06b6d4' },
-  { name: 'letter writer', description: 'Has written letters to the editor or to council.', color: '#eab308' },
-  { name: 'media contact', description: 'Journalist or newsletter editor — route through comms.', color: '#ef4444' },
-  { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
-  { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
-  { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
-];
-
 export const DEMO_TASKS: DemoTaskDef[] = [
   {
     name: 'Call Marc Tremblay about the Cooper Street lawn sign',
@@ -1741,41 +1720,29 @@ export const DEMO_USERS: DemoUserDef[] = [
   },
 ];
 
-export const DEMO_ISSUES: DemoIssueDef[] = [
+export const DEMO_ISSUE_ASSIGNMENTS: DemoIssueAssignmentDef[] = [
   {
-    name: 'housing affordability',
-    description: 'Rents, missing-middle supply, and three-bedroom family units.',
-    color: '#f43f5e',
+    issue: 'housing affordability',
     people: ['fatima-elsayed', 'rebecca-stein', 'ayesha-rahman', 'omar-khalil'],
   },
   {
-    name: 'transit reliability',
-    description: 'On-time performance on the core routes — the #1 doorstep topic this spring.',
-    color: '#0ea5e9',
+    issue: 'transit reliability',
     people: ['rebecca-stein', 'kevin-obrien', 'steve-papadopoulos', 'anna-kowalski'],
   },
   {
-    name: 'road safety',
-    description: 'Traffic calming, crossings, and lighting on residential streets.',
-    color: '#f59e0b',
+    issue: 'road safety',
     people: ['liam-byrne', 'harpreet-singh', 'julie-lavoie'],
   },
   {
-    name: 'parks & greenspace',
-    description: 'Park maintenance, canal access, and tree cover.',
-    color: '#22c55e',
+    issue: 'parks & greenspace',
     people: ['marc-tremblay', 'kevin-obrien', 'grace-okafor'],
   },
   {
-    name: 'small business support',
-    description: 'Main-street vacancy, patio rules, and local procurement.',
-    color: '#f97316',
+    issue: 'small business support',
     people: ['wei-chen', 'devon-clarke', 'vincenzo-rossi', 'marcus-webb'],
   },
   {
-    name: 'climate action',
-    description: 'Retrofit programs, river health, and active transportation.',
-    color: '#14b8a6',
+    issue: 'climate action',
     people: ['amadou-diallo', 'grace-okafor', 'theo-lavoie'],
   },
 ];

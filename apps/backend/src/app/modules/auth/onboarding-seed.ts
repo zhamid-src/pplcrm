@@ -3,6 +3,111 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
 import type { FormType } from '../../../../../../libs/common/src';
 
+export interface StarterTagDef {
+  name: string;
+  description: string;
+  color: string;
+}
+
+/**
+ * Starter tag vocabulary (freeform organizational labels). Donor / supporter /
+ * subscriber are structured concepts in this product (donations table,
+ * campaign_person_facts, campaign_subscriptions) and were retired as tags —
+ * the starter vocabulary must not resurrect them.
+ *
+ * The demo dataset (modules/demo/demo-seed-data.ts) attaches demo persons and
+ * households to these by NAME — keep the two in sync when renaming.
+ */
+export const STARTER_TAGS: StarterTagDef[] = [
+  { name: 'community leader', description: 'Runs or anchors a local association, league, or board.', color: '#8b5cf6' },
+  { name: 'small business owner', description: 'Owns or operates a business in the riding.', color: '#f97316' },
+  { name: 'senior', description: 'Prefers daytime calls and print material.', color: '#64748b' },
+  { name: 'student', description: 'Student — usually reachable evenings and weekends.', color: '#22c55e' },
+  { name: 'new to riding', description: 'Moved into the riding within the last year.', color: '#06b6d4' },
+  { name: 'letter writer', description: 'Has written letters to the editor or to council.', color: '#eab308' },
+  { name: 'media contact', description: 'Journalist or newsletter editor — route through comms.', color: '#ef4444' },
+  { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
+  { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
+  { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
+];
+
+/**
+ * Starter issue vocabulary (tags with type 'issue' — the structured
+ * what-do-they-care-about list). Deliberately generic doorstep topics; the
+ * demo dataset attaches demo persons to these by NAME.
+ */
+export const STARTER_ISSUES: StarterTagDef[] = [
+  {
+    name: 'housing affordability',
+    description: 'Rents, missing-middle supply, and three-bedroom family units.',
+    color: '#f43f5e',
+  },
+  {
+    name: 'transit reliability',
+    description: 'On-time performance, frequency, and coverage on the core routes.',
+    color: '#0ea5e9',
+  },
+  {
+    name: 'road safety',
+    description: 'Traffic calming, crossings, and lighting on residential streets.',
+    color: '#f59e0b',
+  },
+  {
+    name: 'parks & greenspace',
+    description: 'Park maintenance, trail access, and tree cover.',
+    color: '#22c55e',
+  },
+  {
+    name: 'small business support',
+    description: 'Main-street vacancy, patio rules, and local procurement.',
+    color: '#f97316',
+  },
+  {
+    name: 'climate action',
+    description: 'Retrofit programs, clean air and water, and active transportation.',
+    color: '#14b8a6',
+  },
+];
+
+/**
+ * Creates the starter tag + issue vocabulary for a new tenant. Like the
+ * starter forms below, these are deliberately separate from the demo dataset
+ * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
+ * keeps this vocabulary — a ready-made starting point that also shows what
+ * tags and issues are for. All rows are `deletable: true` (suggestions, not
+ * system data — the user can rename, recolor, merge, or delete them).
+ *
+ * Must run BEFORE seedDemoData: the demo seeder attaches demo persons and
+ * households to these rows by name.
+ */
+export async function seedStarterTags(
+  params: { tenant_id: string; user_id: string },
+  trx: Transaction<Models>,
+): Promise<void> {
+  const audit = { tenant_id: params.tenant_id, createdby_id: params.user_id, updatedby_id: params.user_id };
+  await trx
+    .insertInto('tags')
+    .values([
+      ...STARTER_TAGS.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'tag' as const,
+      })),
+      ...STARTER_ISSUES.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'issue' as const,
+      })),
+    ])
+    .execute();
+}
+
 /**
  * Creates the six starter web forms (one of every kind, all drafts) for a new
  * tenant. These are deliberately separate from the demo dataset

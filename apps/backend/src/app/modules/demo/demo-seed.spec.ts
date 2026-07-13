@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { BaseRepository } from '../../lib/base.repo';
 import { useTestTransaction } from '../../lib/test-utils/db-test-isolation';
-import { seedStarterForms } from '../auth/onboarding-seed';
+import { STARTER_ISSUES, STARTER_TAGS, seedStarterForms, seedStarterTags } from '../auth/onboarding-seed';
 import { DemoController } from './controller';
 import { assertNotDemoMode } from './demo-guard';
 import { DEMO_MANIFEST_SETTINGS_KEY, deleteDemoData, seedDemoData } from './demo-seed';
@@ -14,13 +14,11 @@ import {
   DEMO_DONATIONS,
   DEMO_EMAILS,
   DEMO_HOUSEHOLDS,
-  DEMO_ISSUES,
   DEMO_LISTS,
   DEMO_NEWSLETTERS,
   DEMO_PERSONS,
   DEMO_SUBMISSIONS,
   DEMO_PLEDGES,
-  DEMO_TAGS,
   DEMO_TASKS,
   DEMO_TURFS,
   DEMO_USERS,
@@ -95,6 +93,7 @@ describe('demo seeding and exit-demo', () => {
       .set({ admin_id: user_id, createdby_id: user_id, placeholder_household_id })
       .where('id', '=', tenant_id)
       .execute();
+    await seedStarterTags({ tenant_id, user_id }, trx);
     const forms = await seedStarterForms({ tenant_id, user_id, campaign_id }, trx);
     const manifest = await seedDemoData({ tenant_id, user_id, campaign_id, placeholder_household_id, forms }, trx);
     return { tenant_id, user_id, campaign_id, placeholder_household_id, forms, manifest };
@@ -146,7 +145,7 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('persons', f.tenant_id)).toBe(DEMO_PERSONS.length);
     expect(await count('households', f.tenant_id)).toBe(DEMO_HOUSEHOLDS.length + 1); // + placeholder
     expect(await count('companies', f.tenant_id)).toBe(DEMO_COMPANIES.length);
-    expect(await count('tags', f.tenant_id)).toBe(DEMO_TAGS.length + DEMO_ISSUES.length);
+    expect(await count('tags', f.tenant_id)).toBe(STARTER_TAGS.length + STARTER_ISSUES.length);
     expect(await count('tasks', f.tenant_id)).toBe(DEMO_TASKS.length);
     expect(await count('emails', f.tenant_id)).toBe(DEMO_EMAILS.length);
     expect(await count('authusers', f.tenant_id)).toBe(DEMO_USERS.length + 1); // + owner
@@ -255,7 +254,9 @@ describe('demo seeding and exit-demo', () => {
       .where('tenant_id', '=', f.tenant_id)
       .where('type', '=', 'issue')
       .execute();
-    expect(issues).toHaveLength(DEMO_ISSUES.length);
+    expect(issues).toHaveLength(STARTER_ISSUES.length);
+    // The starter vocabulary is not manifest-tracked — it survives exit-demo.
+    expect(f.manifest.tags).toHaveLength(0);
 
     // Some tasks and inbox emails are assigned to the demo teammates.
     const assignedToDemoUsers = await trx
@@ -306,14 +307,19 @@ describe('demo seeding and exit-demo', () => {
     expect((topLinks as { url: string; clicks: number }[]).length).toBeGreaterThan(0);
   });
 
-  it('exit-demo deletes exactly the manifest rows and keeps forms, system tags, and user data', async () => {
+  it('exit-demo deletes exactly the manifest rows and keeps forms, starter tags/issues, and user data', async () => {
     const f = await seedFixture();
     const trx = ctx.trx;
 
     // Simulate work the user did while exploring: a real person inside a demo
-    // household (with a demo tag), and a real task.
+    // household (tagged with a starter tag), and a real task.
     const demoHouseholdId = f.manifest.households[0] as string;
-    const demoTagId = f.manifest.tags[0] as string;
+    const starterTag = await trx
+      .selectFrom('tags')
+      .select('id')
+      .where('tenant_id', '=', f.tenant_id)
+      .where('name', '=', String(STARTER_TAGS[0]?.name))
+      .executeTakeFirstOrThrow();
     const realPerson = await trx
       .insertInto('persons')
       .values({
@@ -332,7 +338,7 @@ describe('demo seeding and exit-demo', () => {
       .values({
         tenant_id: f.tenant_id,
         person_id: realPerson.id,
-        tag_id: demoTagId,
+        tag_id: starterTag.id,
         createdby_id: f.user_id,
         updatedby_id: f.user_id,
       })
@@ -371,7 +377,9 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('form_submissions', f.tenant_id)).toBe(0);
     expect(await count('campaign_person_facts', f.tenant_id)).toBe(0);
     expect(await count('campaign_subscriptions', f.tenant_id)).toBe(0);
-    expect(await count('map_peoples_tags', f.tenant_id)).toBe(0);
+    // Demo persons' tag/issue mappings are gone; the real person's starter-tag
+    // mapping survives (both sides of it were kept).
+    expect(await count('map_peoples_tags', f.tenant_id)).toBe(1);
     expect(await count('map_households_tags', f.tenant_id)).toBe(0);
     expect(await count('emails', f.tenant_id)).toBe(0);
     expect(await count('profiles', f.tenant_id)).toBe(0);
@@ -386,13 +394,26 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('donations', f.tenant_id)).toBe(0);
     expect(await count('donation_pledges', f.tenant_id)).toBe(0);
 
-    // Kept: starter forms (still drafts), the user's own rows. Volunteer/staff are
-    // first-class person status now (§15), not tags — no system tags survive.
+    // Kept: starter forms (still drafts), the starter tag/issue vocabulary
+    // (fully editable), and the user's own rows.
     const forms = await trx.selectFrom('web_forms').select('status').where('tenant_id', '=', f.tenant_id).execute();
     expect(forms).toHaveLength(6);
     expect(forms.every((w) => w.status === 'draft')).toBe(true);
-    const tags = await trx.selectFrom('tags').select('name').where('tenant_id', '=', f.tenant_id).execute();
-    expect(tags).toHaveLength(0);
+    const tags = await trx
+      .selectFrom('tags')
+      .select(['name', 'deletable'])
+      .where('tenant_id', '=', f.tenant_id)
+      .execute();
+    expect(tags).toHaveLength(STARTER_TAGS.length + STARTER_ISSUES.length);
+    expect(tags.every((t) => t.deletable)).toBe(true);
+    const survivingMappings = await trx
+      .selectFrom('map_peoples_tags')
+      .select(['person_id', 'tag_id'])
+      .where('tenant_id', '=', f.tenant_id)
+      .execute();
+    expect(survivingMappings).toHaveLength(1);
+    expect(String(survivingMappings[0]?.person_id)).toBe(String(realPerson.id));
+    expect(String(survivingMappings[0]?.tag_id)).toBe(String(starterTag.id));
     const persons = await trx
       .selectFrom('persons')
       .select(['id', 'household_id'])
