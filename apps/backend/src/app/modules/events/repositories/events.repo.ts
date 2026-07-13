@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
 
 export class EventsRepo extends BaseRepository<'events'> {
   constructor() {
@@ -16,7 +17,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as GridFilterModel;
 
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {

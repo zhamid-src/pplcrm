@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 
 import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
 
 export class NewslettersRepo extends BaseRepository<'newsletters'> {
   constructor() {
@@ -14,7 +15,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const opts: QueryParams<'newsletters'> = options ?? {};
     const searchStr = this.normalizeSearch(opts.searchStr);
-    const filterModel = (opts?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (opts?.filterModel ?? {}) as GridFilterModel;
     const startRow =
       typeof opts.startRow === 'number' ? opts.startRow : typeof opts.offset === 'number' ? opts.offset : 0;
     const limit =
@@ -29,7 +30,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
         .where('newsletters.tenant_id', '=', tenant_id)
         .$if(!!searchStr, (q) => q.where(sql<boolean>`LOWER(newsletters.name) LIKE ${searchStr}`))
         .$if(!!filterModel['name']?.value, (q) =>
-          q.where('newsletters.name', 'ilike', `%${filterModel['name'].value}%`),
+          q.where('newsletters.name', 'ilike', `%${filterModel['name']?.value}%`),
         )
         .$if(!!filterModel['status']?.value || typeof filterModel['status'] === 'string', (q) => {
           const raw: unknown = filterModel['status']?.value ?? filterModel['status'];
@@ -64,7 +65,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
         })
         .$if(!!filterModel['send_date']?.value, (q) =>
           q.where(
-            sql<boolean>`CAST(newsletters.send_date AS TEXT) ILIKE ${'%' + filterModel['send_date'].value + '%'}`,
+            sql<boolean>`CAST(newsletters.send_date AS TEXT) ILIKE ${'%' + String(filterModel['send_date']?.value) + '%'}`,
           ),
         )
         .$if(!!filterModel['total_recipients']?.value || typeof filterModel['total_recipients'] === 'string', (q) => {
@@ -76,14 +77,14 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
         })
         .$if(!!filterModel['updated_at']?.value, (q) =>
           q.where(
-            sql<boolean>`CAST(newsletters.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`,
+            sql<boolean>`CAST(newsletters.updated_at AS TEXT) ILIKE ${'%' + String(filterModel['updated_at']?.value) + '%'}`,
           ),
         )
         .$if(!!filterModel['subject']?.value, (q) =>
-          q.where('newsletters.subject', 'ilike', `%${filterModel['subject'].value}%`),
+          q.where('newsletters.subject', 'ilike', `%${filterModel['subject']?.value}%`),
         )
         .$if(!!filterModel['summary']?.value, (q) =>
-          q.where('newsletters.summary', 'ilike', `%${filterModel['summary'].value}%`),
+          q.where('newsletters.summary', 'ilike', `%${filterModel['summary']?.value}%`),
         );
 
     const countResult = await applyFilters(this.getSelect())

@@ -187,6 +187,22 @@ export const addressSchema = z.object({
   country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
 });
 
+/**
+ * One column's server-side filter as the datagrid posts it inside `filterModel`:
+ * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
+ * `value` to match. Consumed by BaseRepository.applyColumnFilter /
+ * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
+ * numbers, and booleans — coerce with String(...) at the point of use. Matches
+ * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
+ */
+export interface GridColumnFilter {
+  op?: string;
+  value?: unknown;
+}
+
+/** The datagrid's per-column filter bag: column id → its filter. */
+export type GridFilterModel = Record<string, GridColumnFilter>;
+
 export const nameSchema = (fieldName: string, maxLen = 100) =>
   z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
 

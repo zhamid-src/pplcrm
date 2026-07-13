@@ -28,6 +28,7 @@ import type {
   TypeTableColumns,
   TypeTenantId,
 } from '../../../../../libs/common/src/lib/kysely.models';
+import type { GridColumnFilter } from '../../../../../libs/common/src';
 import { Pool } from 'pg';
 import { env } from '../../env';
 import { currentTenantId } from './tenant-context';
@@ -454,7 +455,7 @@ export class BaseRepository<T extends keyof Models> {
     return query;
   }
 
-  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: unknown }) {
+  protected applyColumnFilter(query: any, column: string, filter: GridColumnFilter | undefined) {
     if (!filter) {
       return query;
     }
@@ -497,7 +498,7 @@ export class BaseRepository<T extends keyof Models> {
   protected applyCastColumnFilter(
     query: any,
     sqlExpression: ReturnType<typeof sql>,
-    filter: { op?: string; value?: unknown },
+    filter: GridColumnFilter | undefined,
   ) {
     if (!filter) {
       return query;

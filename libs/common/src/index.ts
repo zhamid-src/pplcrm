@@ -297,6 +297,7 @@ export type {
   ConsentSource,
 } from './lib/schemas/campaigns.schema';
 export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
 
 export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 

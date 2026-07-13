@@ -2,6 +2,7 @@ import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
 import { sql } from 'kysely';
 
 import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import { generateToken, hashToken } from '../../../lib/token-hash';
@@ -18,7 +19,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as GridFilterModel;
 
     const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
     const endRowCandidate =
@@ -50,7 +51,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
                 : String(raw?.value ?? raw ?? '').toLowerCase() === 'true';
           return builder.where('authusers.verified', '=', boolVal);
         })
-        .$if(filterModel['role']?.value || typeof filterModel['role'] === 'string', (builder) => {
+        .$if(!!filterModel['role']?.value || typeof filterModel['role'] === 'string', (builder) => {
           const raw = filterModel['role']?.value ?? filterModel['role'];
           const value = String(raw ?? '').trim();
           if (!value) return builder;

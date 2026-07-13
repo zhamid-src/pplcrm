@@ -5,6 +5,7 @@ import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { TASK_OPEN_STATUSES } from '../../../../../../../libs/common/src';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
 
 type TaskStatus = NonNullable<Models['tasks']['status']>;
 type TaskPriority = NonNullable<Models['tasks']['priority']>;
@@ -86,7 +87,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
     const text = this.normalizeSearch(options?.searchStr);
-    const filterModel: Record<string, any> = options?.filterModel ?? {};
+    const filterModel = (options?.filterModel ?? {}) as GridFilterModel;
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
@@ -106,21 +107,21 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
     const applyGridFilters = <QB extends ReturnType<typeof this.getSelectWithColumns>>(qb: QB) =>
       qb
-        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name']?.value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const raw = filterModel['status'].value;
+          const raw = filterModel['status']?.value;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
           return norm.length ? q.where('tasks.status', 'in', norm as TaskStatus[]) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const raw = filterModel['priority'].value;
+          const raw = filterModel['priority']?.value;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
           return norm.length ? q.where('tasks.priority', 'in', norm as TaskPriority[]) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) =>
-          q.where(sql<boolean>`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}`),
+          q.where(sql<boolean>`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + String(filterModel['due_at']?.value) + '%'}`),
         )
         .$if(!!hasAssignedFilter, (q) => {
           const raw = filterModel['assigned_to']?.value ?? filterModel['assigned_to'];
@@ -165,7 +166,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
           return q.where(sql<boolean>`(${orExpr})`);
         })
         .$if(!!filterModel?.['team_id']?.value, (q) =>
-          q.where('tasks.team_id', '=', filterModel['team_id'].value as string),
+          q.where('tasks.team_id', '=', filterModel['team_id']?.value as string),
         );
 
     return applyGridFilters(this.getSelectWithColumns(rest))

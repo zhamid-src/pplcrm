@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { GridFilterModel } from '../../../../../../../libs/common/src';
 
 export class ListsRepo extends BaseRepository<'lists'> {
   constructor() {
@@ -20,7 +21,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as GridFilterModel;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
@@ -48,9 +49,9 @@ export class ListsRepo extends BaseRepository<'lists'> {
           );
         })
         // Column filters
-        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name']?.value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
-          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
+          q.where('lists.description', 'ilike', `%${filterModel['description']?.value}%`),
         )
         .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
           const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
@@ -79,7 +80,9 @@ export class ListsRepo extends BaseRepository<'lists'> {
           );
         })
         .$if(!!filterModel['updated_at']?.value, (q) =>
-          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
+          q.where(
+            sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + String(filterModel['updated_at']?.value) + '%'}`,
+          ),
         );
 
     const countResult = await applyFilters(this.getSelect(trx))
