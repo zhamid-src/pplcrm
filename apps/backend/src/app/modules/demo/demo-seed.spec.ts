@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { BaseRepository } from '../../lib/base.repo';
 import { useTestTransaction } from '../../lib/test-utils/db-test-isolation';
 import { seedStarterForms } from '../auth/onboarding-seed';
-import { TagsRepo } from '../tags/repositories/tags.repo';
 import { DemoController } from './controller';
 import { assertNotDemoMode } from './demo-guard';
 import { DEMO_MANIFEST_SETTINGS_KEY, deleteDemoData, seedDemoData } from './demo-seed';
@@ -96,8 +95,6 @@ describe('demo seeding and exit-demo', () => {
       .set({ admin_id: user_id, createdby_id: user_id, placeholder_household_id })
       .where('id', '=', tenant_id)
       .execute();
-    await new TagsRepo().ensureSystemTags({ tenant_id, user_id }, trx);
-
     const forms = await seedStarterForms({ tenant_id, user_id, campaign_id }, trx);
     const manifest = await seedDemoData({ tenant_id, user_id, campaign_id, placeholder_household_id, forms }, trx);
     return { tenant_id, user_id, campaign_id, placeholder_household_id, forms, manifest };
@@ -149,7 +146,7 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('persons', f.tenant_id)).toBe(DEMO_PERSONS.length);
     expect(await count('households', f.tenant_id)).toBe(DEMO_HOUSEHOLDS.length + 1); // + placeholder
     expect(await count('companies', f.tenant_id)).toBe(DEMO_COMPANIES.length);
-    expect(await count('tags', f.tenant_id)).toBe(DEMO_TAGS.length + DEMO_ISSUES.length + 2); // + system tags
+    expect(await count('tags', f.tenant_id)).toBe(DEMO_TAGS.length + DEMO_ISSUES.length);
     expect(await count('tasks', f.tenant_id)).toBe(DEMO_TASKS.length);
     expect(await count('emails', f.tenant_id)).toBe(DEMO_EMAILS.length);
     expect(await count('authusers', f.tenant_id)).toBe(DEMO_USERS.length + 1); // + owner
@@ -389,12 +386,13 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('donations', f.tenant_id)).toBe(0);
     expect(await count('donation_pledges', f.tenant_id)).toBe(0);
 
-    // Kept: starter forms (still drafts), system tags, the user's own rows.
+    // Kept: starter forms (still drafts), the user's own rows. Volunteer/staff are
+    // first-class person status now (§15), not tags — no system tags survive.
     const forms = await trx.selectFrom('web_forms').select('status').where('tenant_id', '=', f.tenant_id).execute();
     expect(forms).toHaveLength(6);
     expect(forms.every((w) => w.status === 'draft')).toBe(true);
     const tags = await trx.selectFrom('tags').select('name').where('tenant_id', '=', f.tenant_id).execute();
-    expect(tags.map((t) => t.name).sort()).toEqual(['staff', 'volunteer']);
+    expect(tags).toHaveLength(0);
     const persons = await trx
       .selectFrom('persons')
       .select(['id', 'household_id'])

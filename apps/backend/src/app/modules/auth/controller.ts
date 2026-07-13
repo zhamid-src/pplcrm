@@ -46,7 +46,6 @@ import { generateToken, hashToken } from '../../lib/token-hash';
 import { logger } from '../../logger';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
 import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
 import { seedStarterForms } from './onboarding-seed';
 import { DEMO_MODE_INVITES_BLOCKED_MESSAGE, assertNotDemoMode } from '../demo/demo-guard';
@@ -65,7 +64,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private profiles: UserProfiles = new UserProfiles();
   private sessions: SessionsRepo = new SessionsRepo();
   private storage = new StorageService();
-  private tagsRepo: TagsRepo = new TagsRepo();
   private tenants: TenantsRepo = new TenantsRepo();
 
   constructor() {
@@ -1368,7 +1366,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         const userId = String(user.id);
         const profile = await this.createProfile(trx, user.id, tenant_id, user.id);
         await this.updateTenantWithAdmin(trx, tenant_id, user.id, user.id);
-        await this.tagsRepo.ensureSystemTags({ tenant_id, user_id: userId }, trx);
 
         // Create the tenant's permanent office context (Campaigns §15). Election
         // campaigns are added later by the user; this one always exists.

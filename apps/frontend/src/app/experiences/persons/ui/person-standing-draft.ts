@@ -5,8 +5,12 @@ import {
   SUPPORT_LEVEL_LABELS,
   VOTING_STATUSES,
   VOTING_STATUS_LABELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
 } from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus } from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
 
 import { CampaignContextService } from '../../../services/campaign-context.service';
 
@@ -31,6 +35,8 @@ export class PersonStandingDraft {
   readonly votingStatus = model<VotingStatus | ''>('');
   readonly subscribe = model<boolean>(false);
   readonly doNotContact = model<boolean>(false);
+  readonly volunteerStatus = model<VolunteerStatus | ''>('');
+  readonly staffStatus = model<StaffStatus | ''>('');
 
   protected readonly context = inject(CampaignContextService);
 
@@ -38,6 +44,10 @@ export class PersonStandingDraft {
   protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
   protected readonly votingStatuses = VOTING_STATUSES;
   protected readonly votingLabels = VOTING_STATUS_LABELS;
+  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
+  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
+  protected readonly staffStatuses = STAFF_STATUSES;
+  protected readonly staffLabels = STAFF_STATUS_LABELS;
 
   protected readonly activeCampaign = this.context.activeCampaign;
   /** Archived contexts are read-only — campaign-scoped writes would be rejected. */
@@ -64,5 +74,15 @@ export class PersonStandingDraft {
 
   protected onDncToggle(event: Event): void {
     this.doNotContact.set((event.target as HTMLInputElement).checked);
+  }
+
+  protected onVolunteerChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.volunteerStatus.set(value === '' ? '' : (value as VolunteerStatus));
+  }
+
+  protected onStaffChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    this.staffStatus.set(value === '' ? '' : (value as StaffStatus));
   }
 }

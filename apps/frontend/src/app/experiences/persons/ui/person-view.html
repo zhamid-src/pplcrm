@@ -137,6 +137,8 @@
       <pc-person-campaign-facts
         [personId]="id()"
         [dncFlag]="!!person().do_not_contact"
+        [volunteerStatus]="person().volunteer_status ?? null"
+        [staffStatus]="person().staff_status ?? null"
         [householdId]="isPlaceholderHousehold() ? null : householdId()"
       ></pc-person-campaign-facts>
 

@@ -9,6 +9,32 @@ import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema 
 export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
 export type DncChannel = (typeof DNC_CHANNELS)[number];
 
+/**
+ * Volunteer & staff standing (Campaigns §15) — first-class person status, not a
+ * tag. Global (tenant-wide), single-valued, and read by team-membership logic,
+ * so it is a structured concept. NULL/absent = "not a volunteer / not staff".
+ * Volunteer carries a recruiting pipeline (prospective → active → inactive →
+ * former); staff has no "prospective" — a person either is staff or has left.
+ */
+export const VOLUNTEER_STATUSES = ['prospective', 'active', 'inactive', 'former'] as const;
+export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
+
+export const VOLUNTEER_STATUS_LABELS: Record<VolunteerStatus, string> = {
+  prospective: 'Prospective',
+  active: 'Active',
+  inactive: 'Inactive',
+  former: 'Former',
+};
+
+export const STAFF_STATUSES = ['active', 'inactive', 'former'] as const;
+export type StaffStatus = (typeof STAFF_STATUSES)[number];
+
+export const STAFF_STATUS_LABELS: Record<StaffStatus, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  former: 'Former',
+};
+
 export const PersonsObj = z.object({
   id: z.string(),
   household_id: z.string(),
@@ -26,6 +52,8 @@ export const PersonsObj = z.object({
   instagram: z.string().nullable().optional(),
   assigned_to: z.string().nullable().optional(),
   preferred_contact: z.string().nullable().optional(),
+  volunteer_status: z.string().nullable().optional(),
+  staff_status: z.string().nullable().optional(),
 });
 
 export const UpdateHouseholdsObj = addressSchema.extend({
@@ -53,4 +81,6 @@ export const UpdatePersonsObj = z.object({
   preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
   do_not_contact: z.boolean().optional(),
   do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
+  volunteer_status: z.enum(VOLUNTEER_STATUSES).nullable().optional(),
+  staff_status: z.enum(STAFF_STATUSES).nullable().optional(),
 });

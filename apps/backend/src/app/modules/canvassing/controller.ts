@@ -913,9 +913,17 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
         }
       }
 
-      // "Wants to volunteer" → flag for the field organizer.
+      // "Wants to volunteer" → first-class volunteer standing (§15), a machine
+      // update, not a tag. Only fills a NULL status so an existing active/former
+      // classification is never clobbered.
       if (survey.wants_volunteer) {
-        await this.attachTagInTrx(trx, tenant_id, personId, 'Volunteer prospect', actor);
+        await trx
+          .updateTable('persons')
+          .set({ volunteer_status: 'prospective', updated_at: new Date(), updatedby_id: actor })
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', personId)
+          .where('volunteer_status', 'is', null)
+          .execute();
       }
     }
   }

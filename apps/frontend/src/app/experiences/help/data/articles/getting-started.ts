@@ -141,7 +141,6 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Your six draft forms** — volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The built-in tags** (volunteer, staff).',
           '**Anything you created yourself** while exploring — your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address.',
         ],
       },

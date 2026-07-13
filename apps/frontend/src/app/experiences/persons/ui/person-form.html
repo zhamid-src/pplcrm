@@ -260,7 +260,12 @@
         </pc-card>
 
         <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
-        <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        <pc-person-campaign-facts
+          [personId]="p.id"
+          [dncFlag]="!!p.do_not_contact"
+          [volunteerStatus]="p.volunteer_status ?? null"
+          [staffStatus]="p.staff_status ?? null"
+        ></pc-person-campaign-facts>
         } @else {
         <!-- New person: capture standing now; it is applied once the person is created (§15) -->
         <pc-person-standing-draft
@@ -269,6 +274,8 @@
           [(votingStatus)]="draftVoting"
           [(subscribe)]="draftSubscribe"
           [(doNotContact)]="draftDnc"
+          [(volunteerStatus)]="draftVolunteer"
+          [(staffStatus)]="draftStaff"
         ></pc-person-standing-draft>
         }
       </div>

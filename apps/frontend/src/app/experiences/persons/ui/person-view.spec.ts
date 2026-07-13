@@ -193,6 +193,23 @@ describe('PersonView', () => {
     expect(component['statusChip']()).toBe('Monthly donor');
   });
 
+  it('derives the Volunteer chip from volunteer_status, not a tag (§15)', async () => {
+    mockDonationsSvc.getHistory.mockResolvedValue([]);
+    mockDonationsSvc.getPersonPledges.mockResolvedValue([]);
+    fixture = TestBed.createComponent(PersonView);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 'p1');
+    fixture.detectChanges();
+    await new Promise((r) => setTimeout(r, 20));
+
+    component['person'].set({ volunteer_status: 'active' });
+    expect(component['statusChip']()).toBe('Volunteer');
+    component['person'].set({ volunteer_status: 'former' });
+    expect(component['statusChip']()).toBe('Former volunteer');
+    component['person'].set({ volunteer_status: null, staff_status: 'active' });
+    expect(component['statusChip']()).toBe('Staff');
+  });
+
   it('maps the preferred contact channel to a human label', () => {
     component['person'].set({ preferred_contact: 'mobile' });
     expect(component['preferredContactLabel']()).toBe('Mobile phone');

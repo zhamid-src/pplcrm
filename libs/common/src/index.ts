@@ -125,6 +125,10 @@ export {
   VOTING_STATUS_LABELS,
   FACT_SOURCES,
   DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
   InviteAuthUserObj,
   Verify2FAObj,
   PersonsObj,
@@ -292,7 +296,7 @@ export type {
   SubscriptionStatus,
   ConsentSource,
 } from './lib/schemas/campaigns.schema';
-export type { DncChannel } from './lib/schemas/persons.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
 
 export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 

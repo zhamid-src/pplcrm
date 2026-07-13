@@ -170,9 +170,16 @@ export class PersonView {
   protected readonly statusChip = computed<string | null>(() => {
     if (this.hasActivePledge()) return 'Monthly donor';
     if (this.donationHistory().length > 0) return 'Donor';
-    const tags = this.tags().map((t) => t.toLowerCase());
-    if (tags.includes('volunteer')) return 'Volunteer';
-    if (tags.includes('host')) return 'Host';
+    // Volunteer/staff standing is first-class person status now (§15), not a tag.
+    const volunteer = this.person()?.volunteer_status as string | null | undefined;
+    if (volunteer) return volunteer === 'former' ? 'Former volunteer' : 'Volunteer';
+    if (this.person()?.staff_status) return 'Staff';
+    if (
+      this.tags()
+        .map((t) => t.toLowerCase())
+        .includes('host')
+    )
+      return 'Host';
     return null;
   });
 

@@ -14,7 +14,10 @@ controller's `delete` throws). People/households/companies/tags are ONE shared t
 what varies per campaign is the FACTS about people and the operational domains. The dividing rule:
 **tags are freeform multi-valued human labels; anything with a fixed enum, a single value per
 person, machine updates, or send/knock logic is a structured concept** — that rule retired the
-supporter/non-supporter/undecided/subscriber/unsubscribed/do-not-contact/donor system tags.
+supporter/non-supporter/undecided/subscriber/unsubscribed/do-not-contact/donor system tags, and
+(2026-07-12) the last two holdouts: `volunteer`/`staff` became `persons.volunteer_status`
+(prospective/active/inactive/former) and `persons.staff_status` (active/inactive/former) — global
+person columns, NULL = "not one". No system tags remain; the `system-tags.ts` machinery was deleted.
 
 ## Tables
 

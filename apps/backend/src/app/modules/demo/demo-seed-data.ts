@@ -1,4 +1,4 @@
-import type { SupportLevel, VotingStatus } from '../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../libs/common/src';
 
 /**
  * The hand-curated demo dataset seeded for every new tenant (demo mode).
@@ -56,10 +56,13 @@ export interface DemoPersonDef {
   notes?: string;
   /** Staggers persons.created_at so the dashboard growth chart draws a real curve. */
   createdDaysAgo: number;
-  /** Tag names — demo tags or the system volunteer/vip tags. */
+  /** Freeform demo tag names. */
   tags?: string[];
   supportLevel?: SupportLevel;
   votingStatus?: VotingStatus;
+  /** First-class volunteer/staff standing (§15) — sets persons.volunteer_status / staff_status. */
+  volunteerStatus?: VolunteerStatus;
+  staffStatus?: StaffStatus;
   /** Seeds a campaign_subscriptions row (status subscribed, consent_source import). */
   subscribed?: boolean;
   doNotContact?: boolean;
@@ -562,7 +565,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     mobile: '613-555-0103',
     createdDaysAgo: 28,
     notes: 'Canvassed with us twice in the spring. Great on the doors.',
-    tags: ['volunteer'],
+    volunteerStatus: 'active',
     supportLevel: 'strong',
     votingStatus: 'voted_advance',
     subscribed: true,
@@ -724,7 +727,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     household: 'hh-java',
     email: 'mai.nguyen@example.com',
     createdDaysAgo: 20,
-    tags: ['volunteer'],
+    volunteerStatus: 'active',
     supportLevel: 'strong',
     subscribed: true,
   },
@@ -749,7 +752,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     email: 'jake.morrison@example.com',
     mobile: '613-555-0110',
     createdDaysAgo: 19,
-    tags: ['volunteer'],
+    volunteerStatus: 'active',
     supportLevel: 'strong',
     votingStatus: 'will_vote',
     subscribed: true,
@@ -924,7 +927,8 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     household: 'hh-sweetland',
     email: 'theo.lavoie@example.net',
     createdDaysAgo: 8,
-    tags: ['volunteer', 'student'],
+    tags: ['student'],
+    volunteerStatus: 'active',
   },
 
   // ── hh-marlborough ──────────────────────────────────────────────────────
@@ -938,7 +942,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     mobile: '343-555-0116',
     createdDaysAgo: 11,
     notes: 'Board member at the Riverkeepers Alliance. Introduced us to three other volunteers.',
-    tags: ['community leader', 'vip'],
+    tags: ['community leader'],
     supportLevel: 'strong',
     subscribed: true,
   },
@@ -1059,7 +1063,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     mobile: '343-555-0120',
     createdDaysAgo: 5,
     notes: 'Former riding association president — invaluable institutional memory.',
-    tags: ['vip'],
+    tags: ['community leader'],
     supportLevel: 'strong',
     subscribed: true,
   },
@@ -1082,7 +1086,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     company: 'co-bytown',
     email: 'jessica.lam@example.com',
     createdDaysAgo: 26,
-    tags: ['volunteer'],
+    volunteerStatus: 'active',
     supportLevel: 'strong',
     subscribed: true,
   },
@@ -1093,7 +1097,7 @@ export const DEMO_PERSONS: DemoPersonDef[] = [
     email: 'ryan.fitzgerald@example.com',
     mobile: '613-555-0122',
     createdDaysAgo: 21,
-    tags: ['volunteer'],
+    volunteerStatus: 'active',
     supportLevel: 'leaning',
   },
   {
@@ -1231,7 +1235,6 @@ export const DEMO_TAGS: DemoTagDef[] = [
   { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
   { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
   { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
-  { name: 'vip', description: 'High-priority relationship — handle personally.', color: '#facc15' },
 ];
 
 export const DEMO_TASKS: DemoTaskDef[] = [

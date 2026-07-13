@@ -83,4 +83,38 @@
     </label>
   </div>
   }
+
+  <!-- Global volunteer & staff standing (§15) — first-class person status, not campaign-scoped. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n>Volunteer &amp; staff</span>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Volunteer status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="volunteerStatus()"
+          (change)="onVolunteerChange($event)"
+        >
+          <option value="" i18n>Not a volunteer</option>
+          @for (status of volunteerStatuses; track status) {
+          <option [value]="status">{{ volunteerLabels[status] }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Staff status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="staffStatus()"
+          (change)="onStaffChange($event)"
+        >
+          <option value="" i18n>Not staff</option>
+          @for (status of staffStatuses; track status) {
+          <option [value]="status">{{ staffLabels[status] }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  </div>
 </pc-card>

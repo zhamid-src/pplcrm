@@ -315,7 +315,9 @@ export class TeamFormComponent implements OnInit {
 
   private async loadPeople() {
     try {
-      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
+      // Volunteers are first-class person status now (§15); 'former' is excluded
+      // from the eligible-to-add list — someone who quit shouldn't be re-added silently.
+      const res = await this.persons.getAll({ limit: 500, volunteerStatus: ['prospective', 'active', 'inactive'] });
       const items = (res?.rows ?? []).map((person: any) => ({
         id: String(person.id ?? ''),
         label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',

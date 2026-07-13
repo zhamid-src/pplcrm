@@ -199,7 +199,7 @@ describe('TeamsController', () => {
     await cleanTenant(db, tenantId);
   });
 
-  it('should create a team, auto-tag volunteers, and set the captain', async () => {
+  it('should create a team, auto-promote volunteers to active, and set the captain', async () => {
     const captainId = await createPerson(db, tenantId, campaignId, householdId, userId);
     const memberId = await createPerson(db, tenantId, campaignId, householdId, userId);
     const listId = await createList(db, tenantId, userId, campaignId);
@@ -218,14 +218,15 @@ describe('TeamsController', () => {
     expect(created.list_ids).toEqual([listId]);
     expect(created.lists[0]?.id).toBe(listId);
 
-    // Volunteer tag should now be attached to both people
-    const tagRows = await db
-      .selectFrom('map_peoples_tags')
-      .selectAll()
+    // Both people should now carry an active volunteer status (§15), not a tag.
+    const statusRows = await db
+      .selectFrom('persons')
+      .select(['id', 'volunteer_status'])
       .where('tenant_id', '=', tenantId)
-      .where('person_id', 'in', [captainId, memberId])
+      .where('id', 'in', [captainId, memberId])
       .execute();
-    expect(tagRows).toHaveLength(2);
+    expect(statusRows).toHaveLength(2);
+    expect(statusRows.every((r: { volunteer_status: string | null }) => r.volunteer_status === 'active')).toBe(true);
   });
 
   it('should reject creating a team with a volunteer id that does not belong to the tenant', async () => {
