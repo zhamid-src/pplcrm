@@ -83,8 +83,31 @@
   </div>
 </section>
 
-<!-- ======================= COMPANION APPS ======================= -->
+<!-- ===================== BEYOND THE BASICS ===================== -->
 <section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Beyond the basics</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Turn a list into momentum.</h2>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
+      @for (feature of growFeatures; track feature.title) {
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
+        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="feature.icon" [size]="20" />
+        </span>
+        <div>
+          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
+          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+        </div>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- ======================= COMPANION APPS ======================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap flex flex-wrap items-center justify-center gap-10 lg:gap-14">
     <div class="min-w-0 flex-1 basis-[360px]">
       <div class="eyebrow">Companion apps · iOS, Android and web</div>
@@ -142,7 +165,7 @@
 </section>
 
 <!-- ============================ PRICING ============================ -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <div class="flex flex-wrap items-baseline justify-between gap-4">
       <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair, simple pricing.</h2>
@@ -172,7 +195,7 @@
 </section>
 
 <!-- ========================== FAQ PREVIEW ========================== -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <h2 class="text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">Fair questions.</h2>
     <div class="mt-2.5 text-center">
@@ -195,8 +218,9 @@
     Your people are not our product.
   </h2>
   <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Export everything anytime. We never sell, share or rent your data. Delete means deleted. And your data stays in your
-    region — Canadian data in Canada, EU data in the EU.
+    Export everything anytime. We never sell, share or rent your data. Delete means deleted. Every unsubscribe and
+    do-not-contact is honored automatically, so you stay compliant without thinking about it. And your data stays in
+    your region — Canadian data in Canada, EU data in the EU.
   </p>
   <div class="mt-6">
     <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">

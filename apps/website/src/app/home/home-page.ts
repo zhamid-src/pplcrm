@@ -59,7 +59,7 @@ interface Door {
 const HEROES: Record<Audience, Hero> = {
   office: {
     h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates and a long memory. Casework that survives staff turnover and election cycles.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
     url: 'app.pplcrm.com/inbox',
     kind: 'inbox',
     img: 'assets/site-shots/01-shot.png',
@@ -124,7 +124,7 @@ export class HomePage {
     {
       icon: 'inbox',
       title: 'A shared inbox & tasks',
-      body: 'Every message gets an owner and a due date. Nobody writes to your office twice about the same pothole.',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
     },
     {
       icon: 'megaphone',
@@ -145,6 +145,29 @@ export class HomePage {
       icon: 'arrow-up-tray',
       title: 'Your spreadsheet, welcomed',
       body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
     },
   ];
 
