@@ -1,9 +1,9 @@
 ---
 name: pplcrm-page-layout-ux
-description: "How PeopleCRM detail/record pages compose (pc-detail-layout + pc-detail-header + pc-breadcrumbs + record-navigation.service) and the review checklist for shipping a page change. USE WHEN building or reviewing a detail/record view, adding breadcrumbs, wiring prev/next record navigation, placing the activity log, choosing AlertService vs confirm-dialog, or reviewing a page for UX consistency before commit. EXAMPLES: 'wire prev/next record navigation', 'where does pc-record-activities go', 'review this detail page before I ship it'."
+description: "How pplCRM detail/record pages compose (pc-detail-layout + pc-detail-header + pc-breadcrumbs + record-navigation.service) and the review checklist for shipping a page change. USE WHEN building or reviewing a detail/record view, adding breadcrumbs, wiring prev/next record navigation, placing the activity log, choosing AlertService vs confirm-dialog, or reviewing a page for UX consistency before commit. EXAMPLES: 'wire prev/next record navigation', 'where does pc-record-activities go', 'review this detail page before I ship it'."
 ---
 
-# PeopleCRM page layout & detail-page UX
+# pplCRM page layout & detail-page UX
 
 This is both a how-to and a **review checklist**. Every `*-view` detail page in this app is built
 from one shell (`pc-detail-layout`) and three collaborating pieces. Get the composition right and

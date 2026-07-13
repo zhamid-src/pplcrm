@@ -118,7 +118,7 @@
               (click)="editPerson()"
               i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
             >
-              No issues yet — add what they care about
+              No issues yet. Add what they care about
             </button>
             }
           </div>
@@ -369,11 +369,11 @@
             </div>
             @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
             <div class="text-xs text-base-content/60 px-1">
-              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }}.
               <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
                 Show all {{ donationHistory().length }}
               </button>
-              } @else { Showing all {{ donationHistory().length }} —
+              } @else { Showing all {{ donationHistory().length }}.
               <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
                 Show fewer
               </button>

@@ -1,6 +1,6 @@
 ---
 name: pplcrm-maps-geo
-description: How PeopleCRM does maps and geocoding — the single `<pc-map>` Google Maps primitive (placeholder-safe), the household geocoding transactional-outbox job, the ward/district/precinct GIS match, and the binding geocode-status chip contract (Located / Locating… / Address problem). USE WHEN adding a map to any page (household card, canvassing turfs, delivery routes), reading geocoded lat/lng or ward data, surfacing geocode status, wiring a geocoding/enrichment background job, or configuring the Google Maps API key. EXAMPLES: 'draw turf polygons on a map', 'show a household's pin', 'why is my map a grey placeholder in tests', 'add a background job that calls a Google API', 'what does geocoding_status mean'.
+description: How pplCRM does maps and geocoding — the single `<pc-map>` Google Maps primitive (placeholder-safe), the household geocoding transactional-outbox job, the ward/district/precinct GIS match, and the binding geocode-status chip contract (Located / Locating… / Address problem). USE WHEN adding a map to any page (household card, canvassing turfs, delivery routes), reading geocoded lat/lng or ward data, surfacing geocode status, wiring a geocoding/enrichment background job, or configuring the Google Maps API key. EXAMPLES: 'draw turf polygons on a map', 'show a household's pin', 'why is my map a grey placeholder in tests', 'add a background job that calls a Google API', 'what does geocoding_status mean'.
 ---
 
 # Maps & geocoding (§6 / §13 / §14)

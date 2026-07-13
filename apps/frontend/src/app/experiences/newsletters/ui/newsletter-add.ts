@@ -58,8 +58,8 @@ const TEMPLATE_OPTIONS: ReadonlyArray<{
 
 const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
 const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
-const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo — choose a plan, then exit demo mode';
-const SUBJECT_COACH = "Add a subject line — it's the one field every recipient sees.";
+const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
 const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
 const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
 const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
@@ -212,7 +212,7 @@ export class NewsletterAddComponent implements OnInit {
     return this.confirmDlg.confirm({
       title: 'Leave without saving?',
       message:
-        'Your changes to your draft newsletter — template, audience and copy — will be lost. Save it as a draft to keep working on it later.',
+        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
       variant: 'warning',
       confirmText: 'Discard draft',
       cancelText: 'Keep editing',
@@ -445,7 +445,7 @@ export class NewsletterAddComponent implements OnInit {
     try {
       await this.newslettersSvc.add(this.buildPayload('draft'));
       this.dirty.set(false);
-      this.alertSvc.showSuccess(`Saved draft "${subject}" — find it in Newsletters`);
+      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
       this.close();
     } catch (err) {
       this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
@@ -497,8 +497,8 @@ export class NewsletterAddComponent implements OnInit {
       this.dirty.set(false);
       this.alertSvc.showSuccess(
         scheduled
-          ? `Queued "${subject}" to ${this.peopleLabel(count)} — sending ${whenLabel}`
-          : `Queued "${subject}" to ${this.peopleLabel(count)} — sending now`,
+          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
+          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
       );
       this.close();
     } catch (err) {

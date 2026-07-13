@@ -51,7 +51,7 @@ const STATUS_VARIANT: Record<TurfStatus, PcMapVariant> = {
 };
 
 const STATUS_LABEL: Record<TurfStatus, string> = {
-  draft: 'Draft — unassigned',
+  draft: 'Draft (unassigned)',
   assigned: 'Sent to app',
   in_field: 'In field now',
   complete: 'Complete',
@@ -277,7 +277,7 @@ export class CanvassingPage implements OnInit {
     const url = companionUrl(`/t/${encodeURIComponent(token)}`);
     try {
       await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');
+      this.alerts.showSuccess('Personal link copied. Only the assigned volunteer can open it.');
     } catch {
       this.alerts.showSuccess(`Companion link: ${url}`);
     }
@@ -287,7 +287,7 @@ export class CanvassingPage implements OnInit {
     const end = this._loading.begin();
     try {
       const res = await this.svc.refreshFromList(t.id);
-      this.alerts.showSuccess(`Refreshed — ${res.added} added, ${res.removed} removed. Knock history kept.`);
+      this.alerts.showSuccess(`Refreshed. ${res.added} added, ${res.removed} removed. Knock history kept.`);
       await this.loadTurfs();
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to refresh turf.');
@@ -329,7 +329,7 @@ export class CanvassingPage implements OnInit {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      this.alerts.showSuccess('Report exported — doors, conversations and responses by team and by day (CSV).');
+      this.alerts.showSuccess('Report exported: doors, conversations and responses by team and by day (CSV).');
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to export report.');
     }

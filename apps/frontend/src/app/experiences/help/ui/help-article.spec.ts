@@ -22,7 +22,7 @@ describe('HelpArticlePage', () => {
   it('renders the article title, category eyebrow, and body', () => {
     const fixture = render('welcome');
     const text = fixture.nativeElement.textContent as string;
-    expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('Welcome to PeopleCRM');
+    expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('Welcome to pplCRM');
     expect(text).toContain('Getting started');
     expect(text).toContain('min read');
   });

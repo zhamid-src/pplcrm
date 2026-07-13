@@ -5,7 +5,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     id: 'profile',
     category: 'admin',
     title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts — plus a snapshot of your own activity.',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
     keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
     related: ['users-roles', 'settings', 'getting-around'],
     blocks: [
@@ -16,23 +16,23 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'photo', text: 'Profile photo' },
       {
         kind: 'p',
-        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
       },
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page: choose, per event, whether you are alerted by email and in-app — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
         tone: 'info',
         title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
       },
       { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
       {
         kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
       },
     ],
   },
@@ -46,35 +46,35 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
       },
       {
         kind: 'p',
-        text: 'The page opens with a one-line summary — how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip — **Active**, **Invited** (account created, not yet signed in), or **Deactivated** — plus an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
       },
       { kind: 'h2', id: 'user-page', text: 'The user page' },
       {
         kind: 'p',
-        text: 'Click a name to open the user’s page — everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role — it applies immediately, and locked roles say why — and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
       },
       { kind: 'h2', id: 'invite', text: 'Inviting someone' },
       {
         kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away — the dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
       },
       { kind: 'h2', id: 'roles', text: 'The roles' },
       {
         kind: 'list',
         items: [
-          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner** — everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
         ],
       },
       {
         kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
       },
       { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
       {
@@ -85,7 +85,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access — deactivated accounts keep their role.',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
       },
     ],
   },
@@ -110,37 +110,37 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
       },
       { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
       {
         kind: 'list',
         items: [
-          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
         ],
       },
       { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
       {
         kind: 'list',
         items: [
-          '**Organization** — your name, contact details, and mailing address.',
-          '**App** — how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer — volunteers still verify a code and need a one-time approval either way.',
-          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access** — default role for invitations and the MFA requirement.',
-          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance** — default theme and date format for the workspace.',
-          '**Integrations & API** — webhook keys and connected services.',
-          '**Billing** — your plan and payment details.',
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan and payment details.',
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
         title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
       },
       {
         kind: 'callout',
@@ -152,7 +152,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
       },
     ],
   },
@@ -161,7 +161,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     category: 'admin',
     title: 'Volunteer access approvals',
     summary:
-      'Companion links are personal — volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
     keywords: [
       'volunteer',
       'access',
@@ -178,23 +178,23 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links — no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link — after that, every current and future assignment just works.',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
       },
       { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
       {
         kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip — **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds — they never re-enter a code.',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
       },
       { kind: 'h2', id: 'revoke', text: 'Revoking access' },
       {
         kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later — they’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you — add a contact to their record and have them reopen the link.',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
       },
     ],
   },
@@ -202,18 +202,18 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     id: 'activity-log',
     category: 'admin',
     title: 'The activity log',
-    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
     keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
     related: ['users-roles', 'person-profile'],
     blocks: [
       {
         kind: 'p',
-        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
       },
       { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
       {
         kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch — a **call**, **door knock**, **email or note**, or **meeting** — with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
       },
       { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
       {
@@ -222,13 +222,13 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token — like a delivery volunteer following their link — are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
       },
     ],
   },
@@ -237,7 +237,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     category: 'admin',
     title: 'Campaigns and contexts',
     summary:
-      'One shared contact list, separate campaign workspaces — how the office and election campaigns coexist without mixing supporter data.',
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
     keywords: [
       'campaigns',
       'campaign',
@@ -253,22 +253,22 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Your workspace always has one permanent **office** context — the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it — supporter data, email consent, and outreach.',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
       },
       { kind: 'h2', id: 'switching', text: 'Switching contexts' },
       {
         kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in — click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
       },
       { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
       {
         kind: 'list',
         items: [
-          '**Support level** — Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status** — Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent** — subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries** — each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection** — each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
         ],
       },
       { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
@@ -276,8 +276,8 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation — consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign — data recorded there never bleeds into the office.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
           '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
         ],
       },
@@ -285,7 +285,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'info',
         title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either — archive them instead, so their history and attribution stay intact.',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
       },
     ],
   },

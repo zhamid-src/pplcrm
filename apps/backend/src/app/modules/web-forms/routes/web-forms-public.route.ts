@@ -950,7 +950,7 @@ const renderFormHtml = (
     </form>
 
     <div class="footer-note">
-      Powered by <a href="#" target="_blank">PeopleCRM</a>
+      Powered by <a href="#" target="_blank">pplCRM</a>
     </div>
   </div>
 </body>

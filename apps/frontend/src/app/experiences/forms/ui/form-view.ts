@@ -158,7 +158,7 @@ export class FormViewComponent {
 
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
-    return `<!-- PeopleCRM Embeddable Form -->
+    return `<!-- pplCRM Embeddable Form -->
 <form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${

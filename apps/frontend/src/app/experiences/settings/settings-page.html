@@ -8,7 +8,7 @@
         @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
       </h1>
       <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
         ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
       </p>
     </div>
@@ -109,8 +109,8 @@
           <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
             <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
             <p class="text-xs leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets —
-              some may immediately count as breached (or clear) on the dashboard.
+              Saving new service levels re-evaluates every currently open email and task against the updated targets.
+              Some may immediately count as breached (or clear) on the dashboard.
             </p>
           </div>
           } @if (section.config.id === 'integrations') {

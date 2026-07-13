@@ -131,7 +131,7 @@ export class EmailCreateTaskDialog {
       this.tasksSvc.triggerRefresh();
       // Toast repeats all three facts the user chose: title, owner, and due date (§3).
       this.alertSvc.showSuccess(
-        `Task “${name}” created — ${this.ownerFact(raw.assigned_to, raw.team_id)}, ${this.dueFact(raw.due_at)}.`,
+        `Task “${name}” created: ${this.ownerFact(raw.assigned_to, raw.team_id)}, ${this.dueFact(raw.due_at)}.`,
       );
       this.close();
     } catch (err) {

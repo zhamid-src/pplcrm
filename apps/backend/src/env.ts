@@ -54,7 +54,7 @@ const envSchema = z.object({
   TWILIO_FROM_NUMBER: z.string().optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
   // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
   // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
   // Dev default is 'localhost' so `<slug>.localhost` works.

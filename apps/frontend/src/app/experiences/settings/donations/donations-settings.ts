@@ -574,7 +574,7 @@ export class DonationsSettingsComponent implements OnInit {
       const { token } = await this.donationsSvc.regenerateWebhookToken();
       this.webhookToken.set(token);
       this.webhookConfigured.set(true);
-      this.alerts.showSuccess('Webhook token generated. Copy the URL now — it will not be shown again.');
+      this.alerts.showSuccess('Webhook token generated. Copy the URL now. It will not be shown again.');
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to generate webhook token');
     } finally {

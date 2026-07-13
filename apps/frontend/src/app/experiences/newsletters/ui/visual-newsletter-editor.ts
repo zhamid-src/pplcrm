@@ -204,7 +204,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
         { platform: 'instagram', url: 'https://instagram.com' },
       ];
     } else if (type === 'footer') {
-      newBlock.footerCompany = 'PeopleCRM Inc.';
+      newBlock.footerCompany = 'pplCRM Inc.';
       newBlock.footerAddress = '123 Main St, Suite 400, San Francisco, CA 94105';
       newBlock.footerUnsubscribeUrl = 'https://example.com/unsubscribe';
       styles.backgroundColor = '#f9fafb';

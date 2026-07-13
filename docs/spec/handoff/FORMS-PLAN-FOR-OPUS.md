@@ -1,7 +1,7 @@
 # Forms — Implementation Plan (repo `main` → North Star prototype)
 
 **For:** Opus implementing in `pplcrm-org/pplcrm`.
-**Prototype reference:** `PeopleCRM North Star.dc.html` → Forms screen (sidebar → CAMPAIGN → Forms). Open it and click around before writing code — every behavior described here is live in it, including edge states (drafts, archived, empty responses).
+**Prototype reference:** `pplCRM North Star.dc.html` → Forms screen (sidebar → CAMPAIGN → Forms). Open it and click around before writing code — every behavior described here is live in it, including edge states (drafts, archived, empty responses).
 **Companion docs:** `DIRECTION-FOR-OPUS.md` (overall gaps + UX principles), `UX-GUIDELINES.md` (idioms: toasts, chips, coach-don't-block validation).
 
 ---

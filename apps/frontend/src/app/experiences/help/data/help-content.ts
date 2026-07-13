@@ -21,7 +21,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
   {
     id: 'contacts',
     label: 'People & relationships',
-    blurb: 'People, households, companies, and teams — the heart of the CRM.',
+    blurb: 'People, households, companies, and teams: the heart of the CRM.',
     icon: 'identification',
   },
   {

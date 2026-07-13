@@ -141,7 +141,7 @@
                   [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
                 />
                 <p class="mt-1 text-[11px] text-base-content/50">
-                  If blank, users will see the PeopleCRM default success page.
+                  If blank, users will see the pplCRM default success page.
                 </p>
               </div>
 
@@ -219,7 +219,7 @@
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Add donors to Lists</label>
                 @if (!availableLists().length) {
-                <p class="text-xs text-base-content/50">No lists created yet — donors can still be tagged below.</p>
+                <p class="text-xs text-base-content/50">No lists created yet. Donors can still be tagged below.</p>
                 } @else {
                 <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
                   <option value="">Select a list to target</option>

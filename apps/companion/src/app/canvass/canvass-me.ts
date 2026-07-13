@@ -26,7 +26,7 @@ const CLOCK_TICK_MS = 30_000;
 
       <div class="flex flex-col gap-3 rounded-lg border border-base-300 bg-base-100 p-4">
         <p class="text-xs text-base-content/70">
-          Signed in through your assignment link — your organizer can revoke it. No voter data stays in this browser
+          Signed in through your assignment link. Your organizer can revoke it. No voter data stays in this browser
           after your shift.
         </p>
         <button type="button" class="btn btn-outline btn-error w-full" (click)="endShift()">
@@ -65,9 +65,7 @@ const CLOCK_TICK_MS = 30_000;
             }
           </ul>
         } @else {
-          <p class="mt-2 text-xs text-base-content/60">
-            No issues recorded yet — they appear as you log conversations.
-          </p>
+          <p class="mt-2 text-xs text-base-content/60">No issues recorded yet. They appear as you log conversations.</p>
         }
       </div>
 
@@ -167,14 +165,14 @@ export class CanvassMe {
       message:
         queued > 0
           ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
-          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+          : 'This clears results stored in this browser. Synced results are already in pplCRM.',
       variant: 'danger',
       confirmText: 'End shift',
       cancelText: 'Keep walking',
     });
     if (!confirmed) return;
     this.store.endShift();
-    this.alerts.showSuccess('Shift ended — reopen your link anytime');
+    this.alerts.showSuccess('Shift ended. Reopen your link anytime');
   }
 
   protected onWorkOffline(event: Event): void {

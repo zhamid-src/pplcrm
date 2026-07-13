@@ -159,13 +159,13 @@ export class NewslettersPage {
    */
   protected sendBlocker(row: NewsletterRow): string | null {
     if (this.isDemo()) {
-      return 'Sending is locked during the demo — choose a plan, then exit demo mode';
+      return 'Sending is locked during the demo. Choose a plan, then exit demo mode';
     }
     if (this.verifiedSenders().length === 0) {
       return 'Verify a sender address under Settings → Communications before sending';
     }
-    if (!row.has_audience) return 'This draft has no audience yet — pick lists or tags in the newsletter wizard';
-    if (!row.has_content) return 'This draft has no subject or content yet — finish it in the newsletter wizard';
+    if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
+    if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
     return null;
   }
 

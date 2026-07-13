@@ -4,7 +4,7 @@
     "build": { "cache": true, "dependsOn": ["^build"], "inputs": ["production", "^production"] },
     "test": {
       "executor": "nx:noop",
-      "dependsOn": ["frontend:test", "backend:test", "companion:test", "uxcommon:test"]
+      "dependsOn": ["frontend:test", "backend:test", "companion:test", "website:test", "uxcommon:test"]
     },
     "lint": {
       "cache": true,

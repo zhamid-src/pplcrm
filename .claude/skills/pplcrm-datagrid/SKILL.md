@@ -1,9 +1,9 @@
 ---
 name: pplcrm-datagrid
-description: "How PeopleCRM's custom DataGrid (pc-datagrid) works and how to build/extend a grid page: the AbstractAPIService DI contract, ColumnDef shape, server-side fetch options, inline editing with undo + cell flash, selection/bulk actions, the grid→detail record-navigation handoff, and the DI traps that break grid tests. USE WHEN adding a list/grid page for an entity, adding or changing grid columns, wiring inline editing or a custom cell renderer, changing toolbar actions (delete/export/import/add), debugging a grid that loads nothing, or writing tests that touch a grid. EXAMPLES: 'add a grid for the campaigns entity', 'make the status column editable', 'why does my grid test never call getAll'."
+description: "How pplCRM's custom DataGrid (pc-datagrid) works and how to build/extend a grid page: the AbstractAPIService DI contract, ColumnDef shape, server-side fetch options, inline editing with undo + cell flash, selection/bulk actions, the grid→detail record-navigation handoff, and the DI traps that break grid tests. USE WHEN adding a list/grid page for an entity, adding or changing grid columns, wiring inline editing or a custom cell renderer, changing toolbar actions (delete/export/import/add), debugging a grid that loads nothing, or writing tests that touch a grid. EXAMPLES: 'add a grid for the campaigns entity', 'make the status column editable', 'why does my grid test never call getAll'."
 ---
 
-# PeopleCRM DataGrid (`pc-datagrid`)
+# pplCRM DataGrid (`pc-datagrid`)
 
 The grid is a **house-built component**, not AG Grid — `ColumnDef` mimics a slice of AG Grid's
 API for familiarity, but only what `grid-defaults.ts` declares actually works. Everything lives

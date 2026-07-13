@@ -24,7 +24,7 @@ import { assertNotDemoMode } from '../demo/demo-guard';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
-const DEFAULT_FROM_NAME = 'PeopleCRM Team';
+const DEFAULT_FROM_NAME = 'pplCRM Team';
 const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
 
 export interface SendTestEmailInput {

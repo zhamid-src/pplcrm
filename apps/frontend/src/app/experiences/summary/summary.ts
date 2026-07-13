@@ -338,7 +338,7 @@ export class Summary implements OnInit {
       this.xAxisLabels.set(xLabels);
 
       if (announce) {
-        this.alertSvc.showSuccess('Stats reloaded — all figures current as of now');
+        this.alertSvc.showSuccess('Stats reloaded. All figures current as of now');
       }
     } catch {
       this.alertSvc.showError('Failed to load dashboard metrics');

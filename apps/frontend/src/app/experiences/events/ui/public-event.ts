@@ -172,7 +172,7 @@ const COUNTRY_OPTIONS = [
                 </div>
               } @else if (isFull()) {
                 <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
-                  This event is at full capacity — no spots are left.
+                  This event is at full capacity. No spots are left.
                 </div>
               } @else {
                 <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
@@ -235,7 +235,7 @@ const COUNTRY_OPTIONS = [
                 </form>
               }
 
-              <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+              <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
             </div>
           </div>
         }

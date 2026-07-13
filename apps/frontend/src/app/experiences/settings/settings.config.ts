@@ -47,7 +47,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'organization.name',
         label: 'Organization name',
         type: 'text',
-        placeholder: 'PeopleCRM',
+        placeholder: 'pplCRM',
         defaultValue: '',
       },
       {
@@ -85,7 +85,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         type: 'toggle',
         defaultValue: true,
         helper:
-          'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works — and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
+          'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works, and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
       },
     ],
   },
@@ -99,7 +99,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'communications.default_from_name',
         label: 'Default from name',
         type: 'text',
-        placeholder: 'PeopleCRM Team',
+        placeholder: 'pplCRM Team',
         defaultValue: '',
       },
       {
@@ -120,7 +120,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'communications.footer_disclaimer',
         label: 'Email footer disclaimer',
         type: 'textarea',
-        placeholder: 'Paid for by PeopleCRM Campaign…',
+        placeholder: 'Paid for by pplCRM Campaign…',
         defaultValue: '',
         helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
       },

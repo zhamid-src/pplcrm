@@ -57,7 +57,7 @@
       <td>
         @if (roleLockReason(row); as reason) {
         <span class="tooltip tooltip-right" [attr.data-tip]="reason">
-          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role — ' + reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role: ' + reason">
             <option>{{ roleLabel(row.role) }}</option>
           </select>
         </span>
@@ -111,7 +111,7 @@
     } }
 
     <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
-      Users are staff logins — volunteers live in
+      Users are staff logins. Volunteers live in
       <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
       and don't need an account.
     </div>

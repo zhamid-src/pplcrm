@@ -57,11 +57,11 @@ export class VolunteerAccessPage implements OnInit {
     this.busyId.set(row.id);
     try {
       await this.svc.approve(row.id);
-      this.alerts.showSuccess(`Approved ${this.displayName(row)} — their link works now`);
+      this.alerts.showSuccess(`Approved ${this.displayName(row)}. Their link works now`);
       this.flash(row.id);
       await this.refresh();
     } catch {
-      this.alerts.showError('Could not approve — try again');
+      this.alerts.showError('Could not approve. Try again');
     } finally {
       this.busyId.set(null);
     }
@@ -95,10 +95,10 @@ export class VolunteerAccessPage implements OnInit {
     this.busyId.set(row.id);
     try {
       await this.svc.revoke(row.id);
-      this.alerts.showSuccess(`Revoked ${this.displayName(row)} — their devices are signed out`);
+      this.alerts.showSuccess(`Revoked ${this.displayName(row)}. Their devices are signed out`);
       await this.refresh();
     } catch {
-      this.alerts.showError('Could not revoke — try again');
+      this.alerts.showError('Could not revoke. Try again');
     } finally {
       this.busyId.set(null);
     }
@@ -130,7 +130,7 @@ export class VolunteerAccessPage implements OnInit {
       this.rows.set(await this.svc.getAll());
       this.loaded.set(true);
     } catch {
-      this.alerts.showError('Could not load volunteers — refresh to try again');
+      this.alerts.showError('Could not load volunteers. Refresh to try again');
     } finally {
       end();
     }

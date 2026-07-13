@@ -63,17 +63,17 @@ describe('RecordDonationDialog', () => {
       amountCents: 5000,
       method: 'cash',
     });
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Saved — $50.00 from Jane Doe recorded and receipted');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Saved. $50.00 from Jane Doe recorded and receipted');
   });
 
   it('should show an error alert when the save fails', async () => {
-    mockDonationsSvc.recordDonation.mockRejectedValue(new Error('Choose who gave this gift — receipts need a name.'));
+    mockDonationsSvc.recordDonation.mockRejectedValue(new Error('Choose who gave this gift. Receipts need a name.'));
     component['selectDonor'](donor);
     component['amount'].set(50);
 
     await component['submit']();
 
-    expect(mockAlertSvc.showError).toHaveBeenCalledWith('Choose who gave this gift — receipts need a name.');
+    expect(mockAlertSvc.showError).toHaveBeenCalledWith('Choose who gave this gift. Receipts need a name.');
   });
 
   it('should search for donors and populate results', async () => {

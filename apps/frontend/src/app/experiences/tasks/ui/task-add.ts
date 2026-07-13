@@ -174,7 +174,7 @@ export class TaskAddComponent implements OnInit {
           : duePick === 'next_week'
             ? ', due next week'
             : '';
-    return `Task created — "${taskData.name}" ${assigneePart}${duePart}.`;
+    return `Task created: "${taskData.name}" ${assigneePart}${duePart}.`;
   }
 
   private userName(id: string): string {

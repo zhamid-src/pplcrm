@@ -1,6 +1,6 @@
-# 🚀 PeopleCRM Setup Guide
+# 🚀 pplCRM Setup Guide
 
-This guide covers setting up your local development environment for **PeopleCRM** from scratch.
+This guide covers setting up your local development environment for **pplCRM** from scratch.
 
 If you are a macOS user, you can alternately run the automated setup script:
 

@@ -95,7 +95,7 @@ export class DeliveriesRoutes implements OnInit {
         const ok = await this.confirm.confirm({
           title: 'Copy a fresh link?',
           message:
-            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it — the old link stops working, so anyone you already sent it to will need the new one.',
+            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it. The old link stops working, so anyone you already sent it to will need the new one.',
           variant: 'warning',
           confirmText: 'Regenerate & copy',
         });
@@ -107,9 +107,9 @@ export class DeliveriesRoutes implements OnInit {
       // expires_at is null when the workspace disables link expiry (Workspace → App).
       this.alerts.showSuccess(
         regenerate
-          ? 'Fresh link copied — the old link no longer works'
+          ? 'Fresh link copied. The old link no longer works'
           : res.expires_at
-            ? 'Link copied — valid 30 days'
+            ? 'Link copied (valid 30 days)'
             : 'Link copied',
       );
     } catch (err) {

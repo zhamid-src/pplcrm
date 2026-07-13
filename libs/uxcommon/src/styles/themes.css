@@ -1,5 +1,5 @@
 /*
- * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
  * palette, consumed by every app (apps/frontend, apps/companion). Import this
  * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
  * these values into an app-local theme block; change them here.

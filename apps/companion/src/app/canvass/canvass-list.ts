@@ -145,9 +145,9 @@ export class CanvassList {
     const filter = this.filter();
     switch (filter) {
       case 'remaining':
-        return 'Every door is attempted — nice work.';
+        return 'Every door is attempted. Nice work.';
       case 'visited':
-        return 'No doors visited yet — start with door 1.';
+        return 'No doors visited yet. Start with door 1.';
       case 'all':
         return 'There are no doors in this turf yet.';
       default: {

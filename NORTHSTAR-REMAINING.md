@@ -1,7 +1,7 @@
 # North Star — Remaining Work (Waves 3 & 4)
 
 **Self-contained handoff. You do not need prior session context.**
-Branch: `chore/db-schema-remediation`. Spec: `docs/spec/PeopleCRM Full Spec.pdf` (22 sections; PDF strings are **binding copy**).
+Branch: `chore/db-schema-remediation`. Spec: `docs/spec/pplCRM Full Spec.pdf` (22 sections; PDF strings are **binding copy**).
 
 ## How to work (read first, every task)
 
@@ -21,9 +21,11 @@ Wave 0 (IA reorg, `/workflows`→`/automations`, People/Households/Companies **g
 ## Wave 3 — completion & polish
 
 ### Track I — Newsletters §11 send pipeline (Opus; backend-heavy)
+
 Send handler lives at `apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts`.
 **Already done (verified):** from-name/from-email from settings, real per-recipient unsubscribe via SendGrid `<% unsubscribe %>` substitution tag, scheduled reschedule via `scheduleNextRun`, engagement-event aggregation.
 **Still broken / to fix — audit each:**
+
 - The send path emits `newsletter.html_content` **verbatim** (line ~129). So: **merge fields** (`{FirstName}` etc.) are **not** substituted per-recipient; confirm where/if `html_content` is rendered from the block-JSON and whether personalization is possible at send time.
 - **block-JSON in emails** — verify the stored content is real HTML, not the editor's block JSON, at send time.
 - **preheader / from overrides** on the newsletter record (vs. tenant defaults) — verify they're honored.
@@ -31,10 +33,12 @@ Send handler lives at `apps/backend/src/app/lib/jobs/handlers/newsletter.handler
 - List page: verify 5 stat cards + contextual row actions against the spec.
 
 ### Track J — Donations §12 (Sonnet)
+
 Donations + fundraising experiences exist. **No Record-donation dialog component was found** (`find … -ipath '*donation*' *dialog/modal*` → empty) — likely the biggest gap. Audit against Fig 15: header sentence, 4 stat cards, recent-gifts table with receipt chips, **Record-donation dialog** copy/validation.
 **Decision to make here:** donation-forms convergence — spec folds donations into a Forms donation-template; app currently keeps `/d/:slug` separate. Decide with the concrete tradeoff in front of you and record the outcome in the `pplcrm-forms` skill.
 
 ### Track K — Audit pack (Sonnet; verify-and-close deltas)
+
 - **§3 Inbox leftovers:** optimistic-apply + undo stack, list scroll restore, Trash Restore / "Delete forever", ⋯ menu contents, create-task toast repeating all three facts.
 - **§15 Teams:** `teams-grid.ts` is a plain grid (0 hits for card/next-shift/No-lead). Spec wants team **cards** with next-shift + lead line + **"No lead"** warning, volunteer table w/ role chips + 30D, boundary footer, Add-volunteer dialog.
 - **§18 Users:** seats sentence, inline role selects w/ self-lock, MFA column, contextual ⋯ (re-send/reactivate/deactivate), invite dialog copy.
@@ -48,15 +52,19 @@ Donations + fundraising experiences exist. **No Record-donation dialog component
 ## Wave 4 — mobile & acceptance
 
 ### Track L — Mobile §1.1 (Opus)
+
 Not started. Scope: **People + Inbox first.** ☰ drawer, one-pane inbox stack, burger grid toolbar, bottom sheets, 44px touch targets, inline disabled reasons (no silent dead buttons).
 
 ### Track M — §22 acceptance sweep (Sonnet; run last)
+
 10-point cross-cutting checklist on every changed surface: dark theme, `tabular-nums` on numbers, safe-primary danger dialogs, honest empty states, single-source-of-truth, activity-log coverage, motion rules, back-restores-state, Google-Maps-only. Then final Help Center integrity spec (`npx vitest run src/app/experiences/help` from `apps/frontend`) and update the `project-design-track` memory.
 
 ---
 
 ## Suggested order
+
 J and K are independent and can start immediately (Sonnet). I is independent backend work (Opus). L depends on nothing but is large; run it while 3 lands. M runs last, after everything merges.
 
 ## Verification (per track)
+
 `npx nx build frontend && npx nx build backend` · affected `nx test` · both lint gates · `local/no-unscoped-db-query` clean on backend · UI tracks: live in-browser check of the driven flow, dark theme included.

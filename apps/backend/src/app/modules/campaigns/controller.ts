@@ -105,7 +105,7 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
   public async archive(id: string, auth: IAuthKeyPayload) {
     const campaign = await this.getCampaignOrThrow(auth.tenant_id, id);
     if (campaign.kind === 'office') {
-      throw new BadRequestError('The office context cannot be archived — it is the permanent workspace.');
+      throw new BadRequestError('The office context cannot be archived. It is the permanent workspace.');
     }
     return this.update({
       tenant_id: auth.tenant_id,
@@ -323,11 +323,11 @@ export class CampaignsController extends BaseController<'campaigns', CampaignsRe
   }
 
   public override async delete(): Promise<never> {
-    throw new BadRequestError('Campaigns cannot be deleted — archive them instead.');
+    throw new BadRequestError('Campaigns cannot be deleted. Archive them instead.');
   }
 
   public override async deleteMany(): Promise<never> {
-    throw new BadRequestError('Campaigns cannot be deleted — archive them instead.');
+    throw new BadRequestError('Campaigns cannot be deleted. Archive them instead.');
   }
 
   private async getCampaignOrThrow(tenant_id: string, id: string) {

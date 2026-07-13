@@ -102,7 +102,7 @@ export class WorkflowsGridComponent implements OnInit {
   }
 
   protected statusTooltip(row: ListRow): string {
-    return row.status === 'active' ? 'Pause — stop new runs' : 'Resume — start running again';
+    return row.status === 'active' ? 'Pause: stop new runs' : 'Resume: start running again';
   }
 
   private patchRow(id: string, patch: Partial<ListRow>): void {

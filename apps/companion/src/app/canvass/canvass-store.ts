@@ -143,13 +143,13 @@ export class CanvassStore {
         return;
       }
       if (!res.ok) {
-        this.loadError.set('Could not load your turf — check your connection and try again.');
+        this.loadError.set('Could not load your turf. Check your connection and try again.');
         return;
       }
       this.payload.set((await res.json()) as CompanionTurfPayload);
       void this.flush();
     } catch {
-      this.loadError.set('Could not load your turf — check your connection and try again.');
+      this.loadError.set('Could not load your turf. Check your connection and try again.');
       if (this.queue().length > 0) this.syncStatus.set('offline');
     }
   }
@@ -348,7 +348,7 @@ export class CanvassStore {
         this.localOps.update((l) => l.filter((e) => e.op.op_id !== ack.op_id));
         if (entry.temp_person_id != null) this.dropOpsReferencing(entry.temp_person_id);
         if (this.lastAction()?.op_id === ack.op_id) this.lastAction.set(null);
-        this.alerts.showError(`Couldn't sync "${entry.label}" — ${ack.error ?? 'it was rejected'}`);
+        this.alerts.showError(`Couldn't sync "${entry.label}": ${ack.error ?? 'it was rejected'}`);
       } else if (entry.op.type === 'person_create' && entry.temp_person_id != null && ack.person_id != null) {
         this.swapTempId(entry.temp_person_id, ack.person_id);
       }

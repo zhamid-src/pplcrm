@@ -1,9 +1,9 @@
 ---
 name: pplcrm-design-principles
-description: "The app-wide UI/UX doctrine for PeopleCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors, fonts/type sizes/weights, or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'what color should this badge be', 'how should I word this error', 'should this button be disabled?', 'flash the row after save'."
+description: "The app-wide UI/UX doctrine for pplCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors, fonts/type sizes/weights, or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'what color should this badge be', 'how should I word this error', 'should this button be disabled?', 'flash the row after save'."
 ---
 
-# PeopleCRM design principles
+# pplCRM design principles
 
 The doctrine every UI decision in this app answers to. Written down so it survives any one
 developer or agent. The approved source design proposals are the two artifacts:
@@ -119,6 +119,23 @@ never bare verbs when a noun clarifies ("Save person" beats "Save" beats "SUBMIT
 state exactly what they will do, with numbers when acting on a set. Create actions are labeled
 **"New {noun}"** ("New person", "New campaign"), never "Add"/"Add person" — the datagrid toolbar
 derives this from `entityNoun`, so every grid config must set it.
+
+**Punctuation — the em-dash is not a default.** In user-facing copy (help articles, labels,
+toasts, dialog/empty-state/error text, placeholders, tooltips), do **not** reach for the em-dash
+(`—`) to join clauses. It reads as one long breathless thought; two clear sentences or a semicolon
+almost always read better. Rank your options in this order:
+
+1. **Two sentences** (a period, capitalize the next word) when the second clause can stand alone. This is the default fix and covers most cases.
+2. **A semicolon** when the clauses are tightly linked and a full stop feels too hard.
+3. **A colon** when a label introduces its explanation or a list ("Offline: 3 results queued").
+4. **A comma or parentheses** for a short non-essential aside; convert dash-bracketed asides ("X — aside — Y") to commas or parentheses.
+5. **Keep an em-dash only** when it is genuinely the best tool and every alternative reads worse (rare). Never keep one out of habit.
+
+Legitimate non-prose dashes stay: the standalone `—` empty-value glyph in a grid cell or
+interpolation, list-option separators between interpolated values, and en-dashes/hyphens in
+ranges or times (`4–8 pm`, `9–5`). This rule is about **prose that connects clauses**, not glyphs.
+Applies to the in-app Help Center too. (This skill's own dev-facing prose is exempt; the rule
+governs what ships to users.)
 
 **Button roles have one class string each** — main `btn-primary` (right-most, one per surface),
 cancel `btn-outline btn-accent`, secondary `btn-outline btn-secondary`, archive

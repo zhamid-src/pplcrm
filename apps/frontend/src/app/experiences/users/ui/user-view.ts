@@ -155,7 +155,7 @@ export class UserViewComponent {
       const since = userShortDate(user.deactivated_at);
       return {
         tone: 'ghost',
-        text: `Deactivated${since ? ` ${since}` : ''} — can't sign in`,
+        text: `Deactivated${since ? ` ${since}` : ''}. Can't sign in`,
         action: canAct ? 'reactivate' : null,
         actionLabel: 'Reactivate user',
       };
@@ -164,7 +164,7 @@ export class UserViewComponent {
       const when = userShortDate(user.deletion_scheduled_at);
       return {
         tone: 'ghost',
-        text: `Deletion scheduled${when ? ` for ${when}` : ''} — signing back in cancels it`,
+        text: `Deletion scheduled${when ? ` for ${when}` : ''}. Signing back in cancels it`,
         action: canAct ? 'reactivate' : null,
         actionLabel: 'Reactivate user',
       };
@@ -173,7 +173,7 @@ export class UserViewComponent {
       const sent = userShortDate(user.created_at);
       return {
         tone: 'warning',
-        text: `Invite sent${sent ? ` ${sent}` : ''} — hasn't signed in yet`,
+        text: `Invite sent${sent ? ` ${sent}` : ''}. Hasn't signed in yet`,
         action: canAct ? 'resend' : null,
         actionLabel: 'Resend invite',
       };
@@ -306,7 +306,7 @@ export class UserViewComponent {
       this.detail.update((d) => (d ? { ...d, role } : d));
       this.users.triggerRefresh();
       this.flashRole();
-      this.alerts.showSuccess(`Role updated — ${this.displayName()} is now ${authRoleLabel(role)}`);
+      this.alerts.showSuccess(`Role updated. ${this.displayName()} is now ${authRoleLabel(role)}`);
     } catch (err) {
       select.value = user.role ?? '';
       this.alerts.showError(getUserErrorMessage(err, 'Unable to update the role'));
@@ -358,7 +358,7 @@ export class UserViewComponent {
       await this.users.deactivate(this.id());
       this.detail.update((d) => (d ? { ...d, deactivated_at: new Date() } : d));
       this.users.triggerRefresh();
-      this.alerts.showSuccess(`${this.displayName()} deactivated — they can no longer sign in`);
+      this.alerts.showSuccess(`${this.displayName()} deactivated. They can no longer sign in`);
     } catch (err) {
       this.alerts.showError(getUserErrorMessage(err, 'Unable to deactivate user'));
     } finally {
@@ -373,7 +373,7 @@ export class UserViewComponent {
       await this.users.reactivate(this.id());
       this.detail.update((d) => (d ? { ...d, deactivated_at: null, deletion_scheduled_at: null } : d));
       this.users.triggerRefresh();
-      this.alerts.showSuccess(`${this.displayName()} reactivated — they can sign in again`);
+      this.alerts.showSuccess(`${this.displayName()} reactivated. They can sign in again`);
     } catch (err) {
       this.alerts.showError(getUserErrorMessage(err, 'Unable to reactivate user'));
     } finally {
@@ -386,7 +386,7 @@ export class UserViewComponent {
 
     const confirmed = await this.dialogs.confirm({
       title: 'Delete user',
-      message: `Delete ${this.displayName()}? Their sign-in is removed permanently — this cannot be undone. To keep their history but block access, deactivate instead.`,
+      message: `Delete ${this.displayName()}? Their sign-in is removed permanently. This cannot be undone. To keep their history but block access, deactivate instead.`,
       variant: 'danger',
       confirmText: 'Delete user',
     });

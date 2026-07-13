@@ -297,7 +297,7 @@ export class CanvassingController extends BaseController<'turfs', TurfsRepo> {
     const doors = await this.resolveUniverseDoors(auth, input.list_id);
     const plan = clusterTurfs(doors, input.doors_per_turf);
     if (plan.turfs.length === 0) {
-      throw new BadRequestError('No geocoded doors in that list yet — turfs are cut from located households.');
+      throw new BadRequestError('No geocoded doors in that list yet. Turfs are cut from located households.');
     }
 
     const repo = this.turfsRepo();

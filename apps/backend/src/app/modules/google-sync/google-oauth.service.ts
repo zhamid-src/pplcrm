@@ -176,7 +176,7 @@ export class GoogleOAuthService {
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
+      throw new Error(`Token refresh failed: ${errorText}. Tenant must reconnect their Google account`);
     }
 
     const data: any = await res.json();

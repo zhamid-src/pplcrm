@@ -688,7 +688,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
     if (!person) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift — receipts need a name.' });
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Choose who gave this gift. Receipts need a name.' });
     }
 
     return this.recordSuccessfulDonation(

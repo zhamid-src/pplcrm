@@ -1,6 +1,6 @@
-# PeopleCRM UX Guidelines — for agents and developers
+# pplCRM UX Guidelines — for agents and developers
 
-Canonical doctrine: the `pplcrm-design-principles` skill (§ references below point there). This document is the working distillation plus rulings made during the North Star prototype (`PeopleCRM North Star.dc.html` — open it with Design notes on; the pins are the annotated spec). When in doubt, re-read the doctrine; when the doctrine is silent, this document rules.
+Canonical doctrine: the `pplcrm-design-principles` skill (§ references below point there). This document is the working distillation plus rulings made during the North Star prototype (`pplCRM North Star.dc.html` — open it with Design notes on; the pins are the annotated spec). When in doubt, re-read the doctrine; when the doctrine is silent, this document rules.
 
 ## 0. Beauty is the trust signal (§0)
 

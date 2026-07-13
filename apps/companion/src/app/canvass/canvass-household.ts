@@ -43,7 +43,7 @@ import { initialsOf, personResultLabel, statusBadgeClass } from './canvass-ui';
             role="alert"
           >
             <pc-icon name="shield-exclamation" [size]="5"></pc-icon>
-            <p class="text-sm font-medium">Skip this door — it still counts toward your turf.</p>
+            <p class="text-sm font-medium">Skip this door. It still counts toward your turf.</p>
           </div>
         }
 
@@ -194,7 +194,7 @@ export class CanvassHousehold {
     const name = this.newName().trim();
     if (!h || !name) return;
     this.store.addPerson(h.id, name);
-    this.alerts.showSuccess('Added — will be created in PeopleCRM');
+    this.alerts.showSuccess('Added. Will be created in pplCRM');
     this.cancelAdd();
   }
 
@@ -232,7 +232,7 @@ export class CanvassHousehold {
       this.alerts.showSuccess(option?.toast ?? 'Marked');
       this.back();
     } else {
-      this.alerts.showSuccess('Cleared — door is back on your list');
+      this.alerts.showSuccess('Cleared. Door is back on your list');
     }
   }
 

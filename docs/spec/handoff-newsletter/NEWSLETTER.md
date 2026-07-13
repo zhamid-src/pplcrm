@@ -1,7 +1,7 @@
-# PeopleCRM — New Newsletter: Implementation Handoff
+# pplCRM — New Newsletter: Implementation Handoff
 
 **Scope:** the "New newsletter" creation flow only. This package is additive to the main handoff (`handoff/IMPLEMENTATION.md` + `UX-GUIDELINES.md`) — those rules apply verbatim here (tokens, copy grammar, motion, explained-disabled, Inter 400).
-**Source of truth:** the `nlnew` screen in `PeopleCRM North Star.dc.html` (Newsletters → "New newsletter"), Design notes ON — 4 pins annotate the decisions. Lift copy verbatim.
+**Source of truth:** the `nlnew` screen in `pplCRM North Star.dc.html` (Newsletters → "New newsletter"), Design notes ON — 4 pins annotate the decisions. Lift copy verbatim.
 **Real-code anchors:** `experiences/newsletters/ui/newsletter-add.{html,ts}`, `visual-newsletter-editor.*`, `newsletter-templates.ts`. The wizard keeps your existing 4-step architecture and template set — this is an evolution, not a rewrite.
 
 ---

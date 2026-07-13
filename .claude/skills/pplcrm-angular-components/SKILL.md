@@ -3,7 +3,7 @@ name: pplcrm-angular-components
 description: "Conventions for building component-internal state, forms, loading, and icons in the Angular 22 frontend (signals-only, the form() signal-forms helper, createLoadingGate, pc-icon). USE WHEN adding or editing a component under apps/frontend/src/app/**, wiring an add/edit form, gating a spinner on a tRPC call, or placing a pc-icon. EXAMPLES: 'why is my form always invalid', 'the spinner flickers on fast responses', 'what values can pc-icon name take'."
 ---
 
-# PeopleCRM Angular Component Conventions
+# pplCRM Angular Component Conventions
 
 Component-internal conventions only: state, forms, loading gates, icons. For page assembly
 (detail-layout, breadcrumbs, record nav, activity log placement) see `pplcrm-page-layout-ux`.

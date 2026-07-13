@@ -17,21 +17,21 @@ export const TRIGGER_CARDS: readonly TriggerCardMeta[] = [
     icon: 'user-plus',
     title: 'Manual enrollment',
     // Verbatim (mockup).
-    description: 'Runs only when you enroll someone yourself — from the grid, a person page or another automation.',
+    description: 'Runs only when you enroll someone yourself (from the grid, a person page or another automation).',
   },
   {
     type: 'web_form_submitted',
     icon: 'add-form',
     title: 'Form submitted',
     // Verbatim (mockup).
-    description: 'Runs when a public form comes in — signups, petitions, requests.',
+    description: 'Runs when a public form comes in: signups, petitions, requests.',
   },
   {
     type: 'contact_created',
     icon: 'add-users',
     title: 'Person created',
     // Verbatim (mockup).
-    description: 'A welcome series for every new contact, however they arrive — form, import or manual add.',
+    description: 'A welcome series for every new contact, however they arrive: form, import or manual add.',
   },
   {
     type: 'tag_added',
@@ -49,19 +49,19 @@ export const TRIGGER_CARDS: readonly TriggerCardMeta[] = [
     type: 'donation_recorded',
     icon: 'add-fundraising',
     title: 'Donation recorded',
-    description: 'Runs when a gift is recorded — one-time or the first of a recurring plan.',
+    description: 'Runs when a gift is recorded (one-time or the first of a recurring plan).',
   },
   {
     type: 'payment_event',
     icon: 'credit-card',
     title: 'Billing / payment event',
-    description: 'Runs on a Stripe webhook — a payment, a failure, a subscription change.',
+    description: 'Runs on a Stripe webhook: a payment, a failure, a subscription change.',
   },
   {
     type: 'volunteer_shift_status',
     icon: 'add-volunteer',
     title: 'Volunteer shift status',
-    description: 'Runs when a volunteer shift changes — signed up, attended or no-show.',
+    description: 'Runs when a volunteer shift changes: signed up, attended or no-show.',
   },
   {
     type: 'task_sla_breach',
@@ -79,13 +79,13 @@ export const TRIGGER_CARDS: readonly TriggerCardMeta[] = [
     type: 'new_unsubscriber',
     icon: 'x-circle',
     title: 'New unsubscriber',
-    description: 'Runs when someone opts out — a win-back or a quiet goodbye.',
+    description: 'Runs when someone opts out (a win-back or a quiet goodbye).',
   },
   {
     type: 'date_arrives',
     icon: 'file-calendar',
     title: 'Date arrives',
-    description: 'Runs when a date on the contact comes around — a renewal, a birthday, an anniversary.',
+    description: 'Runs when a date on the contact comes around: a renewal, a birthday, an anniversary.',
   },
 ] as const;
 

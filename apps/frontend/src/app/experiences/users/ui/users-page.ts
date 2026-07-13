@@ -105,10 +105,10 @@ export class UsersPageComponent implements OnInit {
   /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
   protected readonly inviteLockReason = computed<string | null>(() => {
     if (this.isDemo()) {
-      return 'Inviting teammates is locked during the demo — choose a plan, then exit demo mode';
+      return 'Inviting teammates is locked during the demo. Choose a plan, then exit demo mode';
     }
     if (this.seatsRemaining() === 0) {
-      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use — upgrade in Settings → Billing`;
+      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use. Upgrade in Settings → Billing`;
     }
     return null;
   });
@@ -197,7 +197,7 @@ export class UsersPageComponent implements OnInit {
       await this.users.update(row.id, { role });
       this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
       this.flashRow(row.id);
-      this.alerts.showSuccess(`Role updated — ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+      this.alerts.showSuccess(`Role updated. ${this.displayName(row)} is now ${this.roleLabel(role)}`);
     } catch (err) {
       select.value = row.role ?? '';
       const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
@@ -232,7 +232,7 @@ export class UsersPageComponent implements OnInit {
       this.seatUsage.set(seats);
       this.loaded.set(true);
     } catch {
-      this.alerts.showError('Unable to load users — try refreshing the page');
+      this.alerts.showError('Unable to load users. Try refreshing the page');
     } finally {
       end();
     }

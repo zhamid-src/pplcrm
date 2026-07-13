@@ -177,7 +177,7 @@
             <span>Merge</span>
             @if (grid.getCountRowSelected() !== 2) {
             <span class="text-base-content/50 text-[11px]"
-              >Select exactly 2 rows to merge — {{ grid.getCountRowSelected() }} selected</span
+              >Select exactly 2 rows to merge. {{ grid.getCountRowSelected() }} selected</span
             >
             }
           </span>
@@ -251,7 +251,7 @@
             <pc-icon name="arrow-down-tray" [size]="5" class="text-base-content/70 mt-0.5 shrink-0"></pc-icon>
             <span class="flex flex-col">
               <span class="text-base-content font-medium">{{ exportLabel() }}</span>
-              <span class="text-base-content/60 text-xs">Downloads as CSV — large sets land on the Exports page</span>
+              <span class="text-base-content/60 text-xs">Downloads as CSV. Large sets land on the Exports page</span>
             </span>
           </a>
         </li>

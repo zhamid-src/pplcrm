@@ -96,7 +96,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     const firstConfirm = await this.dialog.confirm({
       title: 'Delete Entire Organization?',
       message:
-        'This will permanently delete your entire organization — all users, contacts, emails, campaigns, imports, and every other piece of data. ' +
+        'This will permanently delete your entire organization: all users, contacts, emails, campaigns, imports, and every other piece of data. ' +
         'Every user in this account will lose access immediately.\n\n' +
         'If you only want to remove a single user, go to the Users page instead.',
       variant: 'danger',

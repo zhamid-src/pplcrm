@@ -1,7 +1,7 @@
-# PeopleCRM — Gap Direction (repo `main` → North Star prototype)
+# pplCRM — Gap Direction (repo `main` → North Star prototype)
 
 **For:** Opus 4.8 implementing in `pplcrm-org/pplcrm`.
-**Source of truth:** `PeopleCRM North Star.dc.html` (this design project) — when this doc and the prototype disagree, the prototype wins. Companion specs: `handoff/IMPLEMENTATION.md` (full behavior spec, copy strings verbatim) and `handoff/UX-GUIDELINES.md` (rules). This doc is only the **delta**: what the repo at commit `6459ae1` still gets wrong, audited file by file. Don't touch what isn't listed.
+**Source of truth:** `pplCRM North Star.dc.html` (this design project) — when this doc and the prototype disagree, the prototype wins. Companion specs: `handoff/IMPLEMENTATION.md` (full behavior spec, copy strings verbatim) and `handoff/UX-GUIDELINES.md` (rules). This doc is only the **delta**: what the repo at commit `6459ae1` still gets wrong, audited file by file. Don't touch what isn't listed.
 
 Work top to bottom — Phase 0 changes the look of every page and must land first.
 

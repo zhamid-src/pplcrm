@@ -1528,11 +1528,11 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
         await mailService.sendMail({
           to: owner.email,
           subject: 'Your account data has been permanently deleted',
-          text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
+          text: `Hi ${owner.first_name},\n\nAll data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using pplCRM.`,
           html: `<h2>Account Data Deleted</h2>
 <p>Hi ${owner.first_name},</p>
-<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
-<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
+<p>All data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
+<p>Thank you for using pplCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
         });
       }
     }
@@ -1907,7 +1907,7 @@ export async function handleSendNewsletter(
 
   const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
   const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+  const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
   const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
 
   // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
@@ -23084,7 +23084,7 @@ const renderFormHtml = (
     </form>
 
     <div class="footer-note">
-      Powered by <a href="#" target="_blank">PeopleCRM</a>
+      Powered by <a href="#" target="_blank">pplCRM</a>
     </div>
   </div>
 </body>
@@ -53648,7 +53648,7 @@ const envSchema = z.object({
   TWILIO_FROM_NUMBER: z.string().optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
   // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
   // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
   // Dev default is 'localhost' so `<slug>.localhost` works.
@@ -54484,7 +54484,7 @@ export class CanvassHousehold {
     const name = this.newName().trim();
     if (!h || !name) return;
     this.store.addPerson(h.id, name);
-    this.alerts.showSuccess('Added — will be created in PeopleCRM');
+    this.alerts.showSuccess('Added — will be created in pplCRM');
     this.cancelAdd();
   }
 
@@ -54596,7 +54596,7 @@ import { firstNameOf } from './canvass-ui';
 
         <div class="rounded-lg border border-base-300 bg-base-200/50 p-4 text-center">
           <p class="font-medium">Walking as {{ payload.canvasser_name }}</p>
-          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to PeopleCRM.</p>
+          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to pplCRM.</p>
         </div>
 
         <button type="button" class="btn btn-primary w-full" (click)="start()">Start walking</button>
@@ -55089,7 +55089,7 @@ export class CanvassMe {
       message:
         queued > 0
           ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
-          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+          : 'This clears results stored in this browser. Synced results are already in pplCRM.',
       variant: 'danger',
       confirmText: 'End shift',
       cancelText: 'Keep walking',
@@ -55893,7 +55893,7 @@ export class CanvassSurvey {
       notes: this.notes().trim() ? this.notes().trim() : null,
     });
     const syncing = this.store.online() && !this.store.workOffline();
-    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to pplCRM…' : 'Saved — will sync when back online');
     this.back();
   }
 
@@ -56159,7 +56159,7 @@ export function personResultLabel(result: CompanionPersonResult, support: KnockR
       </div>
       } } }
 
-      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by pplCRM</p>
     </div>
     } } }
   </div>
@@ -56726,7 +56726,7 @@ interface ImportMeta {
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>PeopleCRM companion</title>
+    <title>pplCRM companion</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
@@ -60199,7 +60199,7 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 
 ```css
 /*
- * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
  * palette, consumed by every app (apps/frontend, apps/companion). Import this
  * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
  * these values into an app-local theme block; change them here.
@@ -66415,7 +66415,7 @@ import { assertNotDemoMode } from '../demo/demo-guard';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
-const DEFAULT_FROM_NAME = 'PeopleCRM Team';
+const DEFAULT_FROM_NAME = 'pplCRM Team';
 const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
 
 export interface SendTestEmailInput {
@@ -68347,7 +68347,7 @@ export class CompanionAccessController {
           to: admin.email,
           subject: `${volunteerName} is waiting for companion app approval`,
           text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
-          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
+          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in pplCRM</a></div>`,
           tenant_id: link.tenant_id,
         },
         trx,
@@ -68376,7 +68376,7 @@ export class CompanionAccessController {
       .executeTakeFirst();
     const value = row?.value;
     if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
-    return 'PeopleCRM';
+    return 'pplCRM';
   }
 
   private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {
@@ -76527,7 +76527,7 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 
 ```css
 /*
- * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
  * palette, consumed by every app (apps/frontend, apps/companion). Import this
  * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
  * these values into an app-local theme block; change them here.
@@ -85468,7 +85468,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         html: `<h2>Account Deletion Cancelled</h2>
 <p>Hi ${ownerEmail.first_name},</p>
 <p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
-<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using PeopleCRM.</p>`,
+<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using pplCRM.</p>`,
       });
     }
 

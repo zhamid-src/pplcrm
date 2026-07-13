@@ -93,7 +93,7 @@ export class FundraisingFormComponent implements OnInit {
 
     const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
 
-    return `<!-- PeopleCRM Embeddable Donation Form -->
+    return `<!-- pplCRM Embeddable Donation Form -->
 <form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 

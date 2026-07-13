@@ -61,7 +61,7 @@ import { HouseholdsService } from '../services/households-service';
             >
               {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
             </button>
-            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household — no address, or one that can't be
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household: no address, or one that can't be
             matched to a door.
           </p>
         }

@@ -6,7 +6,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     category: 'data',
     title: 'Import from CSV',
     summary:
-      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps — matched, tagged, and deduplicated.',
+      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps. Matched, tagged, and deduplicated.',
     keywords: [
       'import',
       'csv',
@@ -24,15 +24,15 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars — either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars. Either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
         kind: 'list',
         items: [
-          'Use a CSV with a header row — column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
+          'Use a CSV with a header row. Column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
           'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
-          'For companies and tasks the wizard needs a mapped **name** column — rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
+          'For companies and tasks the wizard needs a mapped **name** column. Rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
           'Both UTF-8 and Excel-exported CSVs work as-is.',
         ],
       },
@@ -47,17 +47,17 @@ export const DATA_ARTICLES: HelpArticle[] = [
           {
             title: 'Map columns',
             detail:
-              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
+              'Each column gets a best-guess field match. Review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
           },
           {
             title: 'Review',
             detail:
-              'For people, duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
+              'For people, duplicates are matched by email, the same identity rule used everywhere in pplCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
           },
           {
             title: 'Import',
             detail:
-              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works — it lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
+              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works. It lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
           },
         ],
       },
@@ -82,24 +82,24 @@ export const DATA_ARTICLES: HelpArticle[] = [
     id: 'export',
     category: 'data',
     title: 'Export your data',
-    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
+    summary: 'Download any grid (or just your selection) as CSV, and collect finished exports from one page.',
     keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
     related: ['import', 'bulk-actions', 'filters'],
     blocks: [
       {
         kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it, filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
       },
       { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
       {
         kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready. The export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export. The CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
       },
       {
         kind: 'callout',
@@ -120,7 +120,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+        text: 'Duplicates creep in through imports, forms, and honest retyping. They split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
       },
       { kind: 'h2', id: 'review', text: 'Review and merge' },
       {
@@ -133,9 +133,9 @@ export const DATA_ARTICLES: HelpArticle[] = [
               'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
           },
           {
-            title: 'Merge into one — or Not duplicates',
+            title: 'Merge into one, or Not duplicates',
             detail:
-              'Merging fills blanks on the record you keep from the one you remove — it never overwrites a value that is already there — and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+              'Merging fills blanks on the record you keep from the one you remove (it never overwrites a value that is already there), and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
           },
         ],
       },
@@ -143,17 +143,17 @@ export const DATA_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'warning',
         title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+        text: 'The duplicate record is removed for good. The confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
       },
       {
         kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar. Same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
       },
     ],
   },

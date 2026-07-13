@@ -41,7 +41,7 @@ import { GettingStartedService } from './services/getting-started.service';
                   <span class="text-sm text-base-content/70"
                     >{{ step.label }}
                     @if (step.evidence) {
-                      — {{ step.evidence }}
+                      ({{ step.evidence }})
                     }
                   </span>
                 } @else if (step.id === nextStep()?.id) {

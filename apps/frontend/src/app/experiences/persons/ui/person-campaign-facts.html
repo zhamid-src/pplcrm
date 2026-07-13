@@ -19,7 +19,7 @@
         [disabled]="saving() || readonlyContext()"
         (change)="onSupportChange($event)"
       >
-        <option value="" i18n>Unknown — never asked</option>
+        <option value="" i18n>Unknown (never asked)</option>
         @for (level of supportLevels; track level) {
         <option [value]="level">{{ supportLabels[level] }}</option>
         }
@@ -159,7 +159,7 @@
       <div class="min-w-0 flex-1 space-y-0.5">
         <p class="text-xs font-semibold text-error" i18n>Do not contact</p>
         <p class="text-[11px] leading-snug text-base-content/70" i18n>
-          All outreach is suppressed — every channel, every campaign.
+          All outreach is suppressed. Every channel, every campaign.
         </p>
       </div>
       <button type="button" class="btn btn-ghost btn-xs shrink-0" [disabled]="saving()" (click)="toggleDnc()" i18n>

@@ -95,9 +95,9 @@ export class CampaignViewComponent {
       const confirmed = await this.dialogs.confirm({
         title: 'Copy email subscriptions?',
         message:
-          'Consent collected by one campaign or the office does not automatically extend to another. Copying subscription lists across contexts is your compliance call — confirm only if you are satisfied the consent carries over.',
+          'Consent collected by one campaign or the office does not automatically extend to another. Copying subscription lists across contexts is your compliance call. Confirm only if you are satisfied the consent carries over.',
         variant: 'danger',
-        confirmText: 'I understand — copy subscriptions',
+        confirmText: 'I understand, copy subscriptions',
       });
       if (!confirmed) return;
     }

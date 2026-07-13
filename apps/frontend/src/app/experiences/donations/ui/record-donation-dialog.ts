@@ -126,7 +126,7 @@ export class RecordDonationDialog {
         amountCents: Math.round(amt * 100),
         method: this.method(),
       });
-      this.alertSvc.showSuccess(`Saved — $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
+      this.alertSvc.showSuccess(`Saved. $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
       this.saved.emit();
       this.close();
     } catch (err) {

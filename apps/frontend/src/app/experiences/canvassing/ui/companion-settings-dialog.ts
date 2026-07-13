@@ -42,7 +42,7 @@ const MAX_ISSUES = 30;
                 </button>
               </span>
             } @empty {
-              <span class="text-xs text-base-content/50">No issues yet — canvassers see no issue chips.</span>
+              <span class="text-xs text-base-content/50">No issues yet. Canvassers see no issue chips.</span>
             }
           </div>
           <input
@@ -61,7 +61,7 @@ const MAX_ISSUES = 30;
           <span class="text-xs font-medium">Door script (shown collapsed at the top of the survey)</span>
           <textarea
             class="textarea textarea-bordered h-28 w-full text-xs"
-            placeholder="Hi, I'm {name} with {campaign} — do you have a minute to talk about the issues that matter to you?"
+            placeholder="Hi, I'm {name} with {campaign}. Do you have a minute to talk about the issues that matter to you?"
             [ngModel]="script()"
             (ngModelChange)="script.set($event)"
           ></textarea>
@@ -119,10 +119,10 @@ export class CompanionSettingsDialog implements OnInit {
         issues: this.issues(),
         script: this.script().trim() || null,
       });
-      this.alerts.showSuccess('Saved — Companions pick this up on their next sync');
+      this.alerts.showSuccess('Saved. Companions pick this up on their next sync');
       this.closed.emit();
     } catch {
-      this.alerts.showError('Could not save settings — try again');
+      this.alerts.showError('Could not save settings. Try again');
     } finally {
       this.saving.set(false);
     }

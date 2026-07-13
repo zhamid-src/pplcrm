@@ -95,7 +95,7 @@ const CUSTOM_SECTIONS: CustomSectionConfig[] = [
     mode: 'workspace',
     icon: 'user-circle',
     title: 'Account',
-    description: 'Manage your organization account — pause billing or permanently delete all data.',
+    description: 'Manage your organization account: pause billing or permanently delete all data.',
   },
 ];
 

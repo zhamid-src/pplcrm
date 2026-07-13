@@ -1,6 +1,6 @@
-# PeopleCRM — UX Sweep: Implementation Handoff
+# pplCRM — UX Sweep: Implementation Handoff
 
-**Additive to** `handoff/IMPLEMENTATION.md` + `UX-GUIDELINES.md` (rules apply verbatim) and `handoff-newsletter/NEWSLETTER.md`. Source of truth: `PeopleCRM North Star.dc.html` (current state).
+**Additive to** `handoff/IMPLEMENTATION.md` + `UX-GUIDELINES.md` (rules apply verbatim) and `handoff-newsletter/NEWSLETTER.md`. Source of truth: `pplCRM North Star.dc.html` (current state).
 
 ## 1. Navbar rework
 
@@ -20,7 +20,7 @@ Centered overlay (560px, top 14%, drop entrance), autofocused input, `esc` hint 
 ## 3. Global polish
 
 - **`:focus-visible` ring** (in the base stylesheet): `outline:2px solid var(--color-primary); outline-offset:2px` — every interactive element, keyboard only, both themes.
-- **Tab title carries state**: `document.title = "{Screen} — PeopleCRM"`, with live counts where they exist (`Inbox (12) — PeopleCRM`). Update on navigation and count changes.
+- **Tab title carries state**: `document.title = "{Screen} — pplCRM"`, with live counts where they exist (`Inbox (12) — pplCRM`). Update on navigation and count changes.
 - **Skeletons over spinners**: while a surface refreshes, values swap to layout-shaped pulsing blocks (see dashboard stat tiles during Reload: 64×24 rounded block, `flash 1.2s infinite`, base-content 8% tint) — behind the loading gate as always. Never a centered spinner for content that has a known shape.
 - **Optimistic mutations + undo (spec)**: assign/tag/close apply instantly with saved-flash feedback; extend the grid's undo-stack idiom to inbox assign and bulk tag. Undo tooltips name the change.
 - **Scroll & state restoration (spec)**: back means back — grid filters/page/scroll (already doctrine), plus inbox list scroll position and wizard step. Implement via the existing route-reuse strategy.

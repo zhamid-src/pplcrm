@@ -30,7 +30,7 @@
 
 ---
 
-# PeopleCRM Project Standards
+# pplCRM Project Standards
 
 ## 0. Skill Library — check here before re-deriving anything
 

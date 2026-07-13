@@ -3,7 +3,7 @@ name: pplcrm-forms
 description: "How the North Star 'living funnel' Forms experience works end-to-end — the web_forms lifecycle (draft/published/archived), the FormField model + normForm() email-identity invariant + creation templates, the three-mode forms-page (browse + New-form stepper + live edit), form_submissions, the tenant-subdomain public /f/:slug page, and why donation forms stay on a separate path (/d/:slug). USE WHEN editing anything under experiences/forms, the web-forms backend module, web_forms/form_submissions schema, the public form page, or reconciling forms with donations. EXAMPLES: 'add a field type to forms', 'why is the email field locked', 'the public /f/:slug page 404s', 'do donation forms show in the Forms page'."
 ---
 
-# PeopleCRM Forms (living-funnel model)
+# pplCRM Forms (living-funnel model)
 
 A form is a **living page with a lifecycle**, not a static field editor. Status is the single source
 of truth: `draft → published → archived` on `web_forms.status` (there is no boolean). The old

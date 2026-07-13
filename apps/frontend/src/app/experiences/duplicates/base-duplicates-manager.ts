@@ -55,7 +55,7 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
     const n = this.totalGroups();
     const noun = n === 1 ? 'duplicate' : 'duplicates';
     const lead = `${n.toLocaleString()} possible ${noun} waiting`;
-    const method = 'found by the nightly sweep — email match, or shared name at the same household or address';
+    const method = 'found by the nightly sweep: email match, or shared name at the same household or address';
     const sweptAt = this.lastSweepAt();
     const time = sweptAt
       ? new Date(sweptAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })

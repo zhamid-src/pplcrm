@@ -1,7 +1,7 @@
-# PeopleCRM North Star — Implementation Handoff
+# pplCRM North Star — Implementation Handoff
 
 **For:** the implementing agent (Opus 4.x) working in the real `pplcrm` Angular codebase.
-**Source of truth:** `PeopleCRM North Star.dc.html` in this project — a working prototype. Open it, toggle **Design notes** (navbar pill) and read the numbered pins on every screen: each pin cites the principle (§) from `pplcrm-design-principles` that the decision serves. When this doc and the prototype disagree, the prototype wins.
+**Source of truth:** `pplCRM North Star.dc.html` in this project — a working prototype. Open it, toggle **Design notes** (navbar pill) and read the numbered pins on every screen: each pin cites the principle (§) from `pplcrm-design-principles` that the decision serves. When this doc and the prototype disagree, the prototype wins.
 **Companion doc:** `handoff/UX-GUIDELINES.md` — the rules. Read it first; this doc is the _what_, that one is the _how_.
 
 Do NOT reinvent: every behavior below exists in the prototype with exact copy, states, and conditions. Lift copy strings verbatim. All colors are DaisyUI semantic tokens (both themes in `apps/frontend/src/styles.css`); the prototype's `--color-*` vars map 1:1.

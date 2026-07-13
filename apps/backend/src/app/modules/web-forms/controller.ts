@@ -941,9 +941,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       slug,
       submit_label: template.submitLabel,
       thanks_title: 'Thank you!',
-      thanks_body: 'Your response has been recorded — thanks for reaching out.',
+      thanks_body: 'Your response has been recorded. Thanks for reaching out.',
       confirm_subject: `Thanks for your ${payload.type}`,
-      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
+      confirm_body: 'Hi [First name],\n\nThanks for your submission. We’ve received it and will be in touch soon.',
       send_confirmation: true,
       send_alert: false,
       notify_team_on: false,
@@ -1057,7 +1057,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (existing.status !== 'draft' || count > 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
+        message: 'Only a draft with no responses can be deleted. Archive it instead; archiving is reversible.',
       });
     }
     return this.delete(auth.tenant_id, id, auth.user_id);

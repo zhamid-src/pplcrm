@@ -147,7 +147,7 @@ export const IMPORT_ENTITY_CONFIGS: Record<ImportEntityType, ImportEntityConfig>
     label: 'People',
     noun: 'people',
     icon: 'user-group',
-    description: 'Contacts with names, emails, phones and addresses — duplicates are matched by email.',
+    description: 'Contacts with names, emails, phones and addresses. Duplicates are matched by email.',
     subtitle: 'Headers in the first row · duplicates are matched by email · nothing is written until the last step',
     mappableFields: PERSONS_MAPPABLE_FIELDS,
     fieldLabels: {
@@ -208,7 +208,7 @@ export const IMPORT_ENTITY_CONFIGS: Record<ImportEntityType, ImportEntityConfig>
     label: 'Households',
     noun: 'households',
     icon: 'house-modern',
-    description: 'Addresses (doors) — each unique address becomes one household, ready for geocoding.',
+    description: 'Addresses (doors). Each unique address becomes one household, ready for geocoding.',
     subtitle: 'Headers in the first row · duplicates are matched by address · nothing is written until the last step',
     mappableFields: [
       'street_num',

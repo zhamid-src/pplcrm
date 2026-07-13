@@ -69,7 +69,7 @@
                 autocomplete="email"
               ></pc-input>
               <p class="mt-1 text-xs text-base-content/50">
-                Email is how they sign in — changing it sends a confirmation to the new address first.
+                Email is how they sign in. Changing it sends a confirmation to the new address first.
               </p>
             </div>
           </div>
@@ -167,7 +167,7 @@
             id="user-role"
             class="select select-bordered select-sm w-full"
             disabled
-            [attr.aria-label]="'Role — ' + reason"
+            [attr.aria-label]="'Role: ' + reason"
           >
             <option>{{ roleLabel() }}</option>
           </select>
@@ -185,7 +185,7 @@
             <option [value]="r" [selected]="r === detail()?.role">{{ roleLabelFor(r) }}</option>
             }
           </select>
-          <p class="mt-1 text-xs text-base-content/50">Applies immediately — no save needed.</p>
+          <p class="mt-1 text-xs text-base-content/50">Applies immediately. No save needed.</p>
           }
         </div>
 

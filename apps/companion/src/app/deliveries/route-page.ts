@@ -1,14 +1,17 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { PcMap } from '@uxcommon/components/map/map';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import type { PcMapMarker, PcMapVariant } from '@uxcommon/components/map/map-types';
 import { DELIVERY_SKIP_REASONS } from '@common';
 import { Icon } from '@icons/icon';
 
 import { CompanionGate } from '../gate/companion-gate';
 import { CompanionSessionService } from '../gate/companion-api';
+
+import type { PcIconNameType } from '@icons/icons.index';
 
 interface PublicStop {
   id: string;
@@ -32,8 +35,8 @@ interface PublicRouteData {
   stops: PublicStop[];
 }
 
-type PageState = 'loading' | 'ready' | 'notfound' | 'session-expired';
-type ViewMode = 'list' | 'map';
+type PageState = 'loading' | 'ready' | 'notfound' | 'session-expired' | 'ended';
+type ViewMode = 'list' | 'map' | 'me';
 
 /**
  * Deliveries companion (spec §4.4–4.5), served at /r/:token behind the
@@ -45,11 +48,13 @@ type ViewMode = 'list' | 'map';
 @Component({
   selector: 'pc-route-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CompanionGate, PcMap, StatusBadge, Icon, TabBar],
+  imports: [CompanionGate, PcMap, StatusBadge, Icon],
   templateUrl: './route-page.html',
 })
 export class RoutePage {
   private readonly session = inject(CompanionSessionService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   /** Route param — the capability token from /r/:token. */
   public readonly token = input.required<string>();
@@ -60,10 +65,23 @@ export class RoutePage {
   protected readonly data = signal<PublicRouteData | null>(null);
   protected readonly view = signal<ViewMode>('list');
 
-  protected readonly viewTabs: PcTabOption[] = [
-    { id: 'list', label: 'List' },
-    { id: 'map', label: 'Map' },
+  /** Bottom-nav sections — mirrors the Canvass Companion (List/Map/Me). */
+  protected readonly tabs: { id: ViewMode; label: string; icon: PcIconNameType }[] = [
+    { id: 'list', label: 'List', icon: 'queue-list' },
+    { id: 'map', label: 'Map', icon: 'map' },
+    { id: 'me', label: 'Me', icon: 'user-circle' },
   ];
+
+  /** Shift-summary counts for the Me tab, derived from the authoritative stops. */
+  protected readonly stats = computed<{ delivered: number; skipped: number; remaining: number; total: number }>(() => {
+    const stops = this.data()?.stops ?? [];
+    return {
+      delivered: stops.filter((s) => s.status === 'delivered').length,
+      skipped: stops.filter((s) => s.status === 'skipped').length,
+      remaining: stops.filter((s) => s.status === 'pending').length,
+      total: stops.length,
+    };
+  });
 
   protected readonly reasonPickerFor = signal<string | null>(null);
   protected readonly lastActioned = signal<string | null>(null);
@@ -89,8 +107,28 @@ export class RoutePage {
       }));
   });
 
-  protected setView(view: string): void {
-    if (view === 'list' || view === 'map') this.view.set(view);
+  protected openTab(tab: ViewMode): void {
+    this.view.set(tab);
+  }
+
+  /**
+   * "End shift on this device" — clears the verified device session so this
+   * phone no longer holds access, then drops to a friendly ended screen. There
+   * is no local queue to lose: every action posts immediately, so nothing about
+   * these households is left behind in the browser.
+   */
+  protected async endShift(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'End shift on this device?',
+      message: 'This signs this device out of the route. Your results are already with your organizer.',
+      variant: 'danger',
+      confirmText: 'End shift',
+      cancelText: 'Keep going',
+    });
+    if (!confirmed) return;
+    this.session.clearSession();
+    this.state.set('ended');
+    this.alerts.showSuccess('Shift ended. Reopen your link anytime');
   }
 
   protected statusChip(): { type: 'neutral' | 'warning' | 'success'; label: string } {

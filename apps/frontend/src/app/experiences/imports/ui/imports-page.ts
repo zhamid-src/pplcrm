@@ -316,7 +316,7 @@ export class ImportsPage {
   protected async deleteExportJob(job: DataExportRecordType) {
     const confirmed = await this.dialogs.confirm({
       title: 'Delete export',
-      message: `Delete "${job.file_name}"? This removes the file from the server — it cannot be undone.`,
+      message: `Delete "${job.file_name}"? This removes the file from the server. It cannot be undone.`,
       variant: 'danger',
     });
     if (!confirmed) return;

@@ -45,7 +45,7 @@ export function buildDeleteConfirmMessage(listName: string, value: unknown): str
   const { newsletters, forms, teams, total } = toConsumers(value);
   const name = listName.trim() || 'this list';
   if (total === 0) {
-    return `Delete ${name}? The people and households in it are not affected — only the list is removed.`;
+    return `Delete ${name}? The people and households in it are not affected. Only the list is removed.`;
   }
   const clauses: string[] = [];
   if (newsletters.length) clauses.push(`newsletters (${joinNames(newsletters)})`);

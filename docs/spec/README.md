@@ -1,6 +1,6 @@
 # Spec package — index
 
-Vendored source-of-truth documents for the PeopleCRM full-spec build-out. The
+Vendored source-of-truth documents for the pplCRM full-spec build-out. The
 implementation task breakdown (Fable 5, July 6 2026) dispatches tasks against
 these files. **Do not edit these documents to match the code** — they are the
 reference the code is measured against.
@@ -8,8 +8,8 @@ reference the code is measured against.
 ## Binding rulings
 
 1. **Prototype unavailable → PDF strings win.** The spec's stated source of
-   truth, `PeopleCRM North Star.dc.html`, is not on disk. Wherever the spec
-   says "the prototype wins," the quoted strings in `PeopleCRM Full Spec.pdf`
+   truth, `pplCRM North Star.dc.html`, is not on disk. Wherever the spec
+   says "the prototype wins," the quoted strings in `pplCRM Full Spec.pdf`
    are the binding copy instead. Companion markdown files fill in detail; when
    neither gives a string, follow `handoff/UX-GUIDELINES.md` copy grammar and
    flag it.
@@ -21,7 +21,7 @@ reference the code is measured against.
 
 | Path                               | Spec § it serves                       | Notes                                                                                                                                                                                                                                                |
 | ---------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PeopleCRM Full Spec.pdf`          | **all**                                | Master spec, July 5 2026. Quoted strings are binding copy.                                                                                                                                                                                           |
+| `pplCRM Full Spec.pdf`             | **all**                                | Master spec, July 5 2026. Quoted strings are binding copy.                                                                                                                                                                                           |
 | `handoff/UX-GUIDELINES.md`         | §1 (global idioms)                     | The idiom rulebook — copy grammar, house idioms. T2.1 companion.                                                                                                                                                                                     |
 | `handoff/IMPLEMENTATION.md`        | §2 dashboard, §3/§5 inbox, §2–4 people | Deep-dive implementation detail for the done/verify areas.                                                                                                                                                                                           |
 | `handoff/FORMS-PLAN-FOR-OPUS.md`   | §10 forms                              | Forms "living funnel" plan. T2.5 companion.                                                                                                                                                                                                          |

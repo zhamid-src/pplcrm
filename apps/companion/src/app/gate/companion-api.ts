@@ -55,7 +55,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     const message =
       payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
         ? (payload as { error: string }).error
-        : 'Something went wrong — try again.';
+        : 'Something went wrong. Try again.';
     throw new CompanionApiError(message, res.status);
   }
   return payload as T;

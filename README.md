@@ -1,6 +1,6 @@
-# 🧱 PeopleCRM
+# 🧱 pplCRM
 
-**PeopleCRM** is a full‑stack campaign CRM built with Nx, Angular, Fastify, and PostgreSQL. It supports user management, authentication, and session tracking while emphasizing performance and modularity.
+**pplCRM** is a full‑stack campaign CRM built with Nx, Angular, Fastify, and PostgreSQL. It supports user management, authentication, and session tracking while emphasizing performance and modularity.
 
 ---
 

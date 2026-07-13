@@ -5,7 +5,7 @@ set -e
 REPO_URL="https://github.com/pplcrm-org/pplcrm.git"
 PROJECT_DIR="pplcrm"
 
-#echo "📁 Cloning PeopleCRM repository..."
+#echo "📁 Cloning pplCRM repository..."
 #if [ -d "$PROJECT_DIR" ]; then
 #  echo "⚠️ Directory '$PROJECT_DIR' already exists. Skipping clone."
 #else

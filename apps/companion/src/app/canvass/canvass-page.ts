@@ -46,8 +46,8 @@ type TabId = 'list' | 'map' | 'me';
               class="sticky top-0 z-20 bg-warning px-4 py-2 text-center text-xs font-medium text-warning-content"
               role="status"
             >
-              Offline — {{ store.queue().length }} {{ store.queue().length === 1 ? 'result' : 'results' }} queued in
-              this browser
+              Offline: {{ store.queue().length }} {{ store.queue().length === 1 ? 'result' : 'results' }} queued in this
+              browser
             </div>
           }
           @switch (store.view().kind) {
@@ -69,6 +69,9 @@ type TabId = 'list' | 'map' | 'me';
             @case ('survey') {
               <pc-canvass-survey></pc-canvass-survey>
             }
+          }
+          @if (tabsVisible()) {
+            <p class="mt-auto px-4 pb-3 pt-4 text-center text-xs text-base-content/40">Powered by pplCRM</p>
           }
         </div>
 

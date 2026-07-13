@@ -108,7 +108,7 @@ describe('UserViewComponent (merged view + edit)', () => {
     await component['changeRole']({ target: select } as unknown as Event);
     expect(mockUsersSvc.update).toHaveBeenCalledWith('user-123', { role: 'admin' });
     expect(component['detail']()?.role).toBe('admin');
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Role updated — John Doe is now Admin');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Role updated. John Doe is now Admin');
     // Only one getById: the initial load. A role change must not clobber in-progress edits.
     expect(mockUsersSvc.getById).toHaveBeenCalledTimes(1);
   });

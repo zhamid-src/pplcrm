@@ -5,3 +5,5 @@
 .angular
 
 .nx/self-healing
+# Generated repomix codebase maps — not hand-formatted
+**/STRUCTURE.md

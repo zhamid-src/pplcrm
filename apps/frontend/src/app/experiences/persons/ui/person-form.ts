@@ -378,7 +378,7 @@ export class PersonForm implements OnInit {
     // NEW PERSON: just store the pending selection; it will be sent on save
     if (!id) {
       this.pendingHouseholdId.set(household_id);
-      this.alertSvc.showSuccess('Household selected — it will be saved when you add the person');
+      this.alertSvc.showSuccess('Household selected. It will be saved when you add the person');
       this.closeAssignDrawer();
       return;
     }
@@ -795,7 +795,7 @@ export class PersonForm implements OnInit {
       .update(id, data, { context: { skipErrorHandler: true } })
       .then(() => {
         // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
-        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
+        const detail = changed.length ? `: ${this.joinWithAnd(changed)} updated` : '';
         this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
         this.form().reset();
         this.personsSvc.triggerRefresh();

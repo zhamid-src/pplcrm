@@ -206,7 +206,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new BadRequestError('This user has already activated their account.');
     }
     if (authUser.deactivated_at) {
-      throw new BadRequestError('This account is deactivated — reactivate it before resending the invitation.');
+      throw new BadRequestError('This account is deactivated. Reactivate it before resending the invitation.');
     }
 
     const tempPassword = this.generateTempPassword();
@@ -436,7 +436,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         html: `<h2>Account Deletion Cancelled</h2>
 <p>Hi ${ownerEmail.first_name},</p>
 <p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
-<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using PeopleCRM.</p>`,
+<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using pplCRM.</p>`,
       });
     }
 
@@ -1101,7 +1101,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
         html: `<h2>Account Reactivated</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been successfully reactivated. Everything is back to normal — welcome back!</p>`,
+<p>Your account has been successfully reactivated. Everything is back to normal. Welcome back!</p>`,
       });
     }
 
@@ -1186,7 +1186,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
             html: `<h2>Account Scheduled for Deletion</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account — contacts, emails, campaigns, and everything else — will be permanently and irreversibly removed.</p>
+<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account (contacts, emails, campaigns, and everything else) will be permanently and irreversibly removed.</p>
 <p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
 <p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
 <p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,

@@ -12,45 +12,45 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Tags are free-form labels — **community-leader**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags — they are first-class status fields on the person; set them from the person’s standing card.)',
+        text: 'Tags are free-form labels (**community-leader**, **major-donor**, **lawn-sign**) that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags. They are first-class status fields on the person; set them from the person’s standing card.)',
       },
       { kind: 'h2', id: 'apply', text: 'Apply tags' },
       {
         kind: 'list',
         items: [
-          'On a profile — add or remove tags directly on the record.',
-          'In bulk — select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
-          'On import — tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
+          'On a profile: add or remove tags directly on the record.',
+          'In bulk: select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
+          'On import: tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
         ],
       },
       { kind: 'h2', id: 'use', text: 'Put them to work' },
       {
         kind: 'p',
-        text: 'Every grid has a tag filter and an issue filter — check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
+        text: 'Every grid has a tag filter and an issue filter. Check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
       },
       { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
       {
         kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary — how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary: how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
       },
       {
         kind: 'list',
         items: [
-          '**Rename** — updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
-          '**Merge into another tag/issue** ("Move everyone to…") — folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
-          '**Delete** — the confirmation names how many applications would be affected, so you never delete a label blind.',
-          'The PEOPLE / PEOPLE INTERESTED count on each row is a door — click it to open the People grid pre-filtered to that exact tag or issue.',
+          '**Rename** updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
+          '**Merge into another tag/issue** ("Move everyone to…") folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
+          '**Delete**: the confirmation names how many applications would be affected, so you never delete a label blind.',
+          'The PEOPLE / PEOPLE INTERESTED count on each row is a door. Click it to open the People grid pre-filtered to that exact tag or issue.',
         ],
       },
       {
         kind: 'p',
-        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about — not to describe who someone is, which is what tags are for.',
+        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about, not to describe who someone is, which is what tags are for.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people. Merge the stragglers into one instead of deleting and re-tagging.',
       },
     ],
   },
@@ -59,7 +59,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
     category: 'segmentation',
     title: 'Smart and static lists',
     summary:
-      'Lists are reusable audiences — smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+      'Lists are reusable audiences: smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
     keywords: [
       'list',
       'audience',
@@ -76,17 +76,17 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'A list is a saved group of people or households you can reuse anywhere — as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+        text: 'A list is a saved group of people or households you can reuse anywhere: as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
       },
       { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
       {
         kind: 'p',
-        text: 'A smart list is defined by rules in the query builder — “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+        text: 'A smart list is defined by rules in the query builder: “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
       },
       { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
       {
         kind: 'p',
-        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot — today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot. Today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
       },
       { kind: 'h2', id: 'create', text: 'Create a list' },
       {
@@ -103,17 +103,17 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
           },
           {
             title: 'Choose People or Households',
-            detail: 'A list targets one or the other — pick what you are grouping.',
+            detail: 'A list targets one or the other. Pick what you are grouping.',
           },
           {
             title: 'Build the rule',
             detail:
-              'Compose conditions in the query builder — match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
+              'Compose conditions in the query builder: match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
           },
           {
             title: 'Create it',
             detail:
-              'The button carries the scale it will act on — “Create smart list — 1,284 now” or “Create static list — snapshot 1,284”.',
+              'The button carries the scale it will act on: “Create smart list (1,284 now)” or “Create static list (snapshot 1,284)”.',
           },
         ],
       },
@@ -121,26 +121,26 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**List** — the name is a door: click it to open People or Households with that list applied as a removable filter chip.',
-          '**Type** — a Smart or Static chip.',
-          '**Of** — People or Households.',
-          '**Definition** — the rule written as a plain sentence.',
-          '**Members** — how many records are in the list right now.',
-          '**Last used in** — the most recent newsletter, form, or turf that used this list.',
-          '**Updated** — when the list last changed.',
+          '**List**: the name is a door. Click it to open People or Households with that list applied as a removable filter chip.',
+          '**Type**: a Smart or Static chip.',
+          '**Of**: People or Households.',
+          '**Definition**: the rule written as a plain sentence.',
+          '**Members**: how many records are in the list right now.',
+          '**Last used in**: the most recent newsletter, form, or turf that used this list.',
+          '**Updated**: when the list last changed.',
         ],
       },
       {
         kind: 'callout',
         tone: 'warning',
         title: 'Deleting a list names what it will affect',
-        text: 'If a list is in use, the delete confirmation names its consumers — the newsletters, forms, and turfs that reference it — so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
+        text: 'If a list is in use, the delete confirmation names its consumers (the newsletters, forms, and turfs that reference it), so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Lists are how good newsletters start',
-        text: 'A newsletter audience built on a smart list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
+        text: 'A newsletter audience built on a smart list is accurate on send day by definition. See [Create and send a newsletter](/help/newsletters).',
       },
     ],
   },

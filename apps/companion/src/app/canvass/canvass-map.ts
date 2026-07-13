@@ -54,7 +54,7 @@ export class CanvassMap {
     { label: 'Supporter', dotClass: 'bg-success' },
     { label: 'Undecided or mixed', dotClass: 'bg-warning' },
     { label: 'Refused or do not contact', dotClass: 'bg-error' },
-    { label: 'Canvassed — other', dotClass: 'bg-neutral' },
+    { label: 'Canvassed (other)', dotClass: 'bg-neutral' },
   ];
 
   protected readonly markers = computed<PcMapMarker[]>(() =>
@@ -79,8 +79,8 @@ export class CanvassMap {
   protected unmappedMessage(): string {
     const count = this.unmappedCount();
     return count === 1
-      ? `1 door isn't on the map yet — find it in the Turf list.`
-      : `${count} doors aren't on the map yet — find them in the Turf list.`;
+      ? `1 door isn't on the map yet. Find it in the Turf list.`
+      : `${count} doors aren't on the map yet. Find them in the Turf list.`;
   }
 
   protected openMarker(marker: PcMapMarker): void {

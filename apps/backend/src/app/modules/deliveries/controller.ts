@@ -231,7 +231,7 @@ export class DeliveriesController {
       const info = byId.get(u.requestId);
       const reasonText =
         u.reason === 'isolated'
-          ? `Isolated — the nearest other stop is ${u.nearestKm} km away`
+          ? `Isolated. The nearest other stop is ${u.nearestKm} km away`
           : `Too far to reach within an hour from this start (${u.nearestKm} km out)`;
       return { request_id: u.requestId, reason: u.reason, reason_text: reasonText, address: info?.address ?? '' };
     });
@@ -503,7 +503,7 @@ export class DeliveriesController {
         routeId,
         'update',
         'route_canceled',
-        `Route canceled — ${requestIds.length} undelivered stops returned to the pool`,
+        `Route canceled. ${requestIds.length} undelivered stops returned to the pool`,
       );
       return { id: routeId, status: 'canceled' as const, returned: requestIds.length };
     });
@@ -514,7 +514,7 @@ export class DeliveriesController {
     if (!route) throw new NotFoundError('Route not found');
     const status = String(route.status);
     if (status !== 'draft' && status !== 'assigned') {
-      throw new BadRequestError('Only draft or assigned routes can be deleted — cancel the route first.');
+      throw new BadRequestError('Only draft or assigned routes can be deleted. Cancel the route first.');
     }
     // Stops cascade via FK; requests free automatically once their pending stop is gone.
     await this.routesRepo.delete({ tenant_id: auth.tenant_id, id });
@@ -562,7 +562,7 @@ export class DeliveriesController {
         routeId,
         'update',
         'stop_removed',
-        'Stop removed — request returned to the pool',
+        'Stop removed. Request returned to the pool',
       );
       return this.readRouteProgress(trx, auth.tenant_id, routeId);
     });
@@ -603,7 +603,7 @@ export class DeliveriesController {
     // The companion access layer verifies the volunteer BEHIND the link, so a
     // link with nobody behind it can never pass the gate — refuse to mint one.
     if (route.volunteer_person_id == null) {
-      throw new BadRequestError('Assign a volunteer to this route first — the link is personal.');
+      throw new BadRequestError('Assign a volunteer to this route first. The link is personal.');
     }
     // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
     // The date is always STORED at mint time; the setting decides whether it counts.
@@ -934,7 +934,7 @@ export class DeliveriesController {
         routeId,
         'close',
         'route_completed',
-        'Route auto-completed — every stop handled',
+        'Route auto-completed: every stop handled',
       );
     } else {
       await trx

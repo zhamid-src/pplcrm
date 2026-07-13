@@ -27,7 +27,7 @@ import { firstNameOf } from './canvass-ui';
 
         <div class="rounded-lg border border-base-300 bg-base-200/50 p-4 text-center">
           <p class="font-medium">Walking as {{ payload.canvasser_name }}</p>
-          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to PeopleCRM.</p>
+          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to pplCRM.</p>
         </div>
 
         <button type="button" class="btn btn-primary w-full" (click)="start()">Start walking</button>

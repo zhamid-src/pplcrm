@@ -201,7 +201,7 @@ export class CompanyForm implements OnInit {
       }
       if (filled.length > 0) {
         this.payload.set(next);
-        this.alertSvc.showSuccess(`Filled in ${filled.join(', ')} from Google — review before saving`);
+        this.alertSvc.showSuccess(`Filled in ${filled.join(', ')} from Google. Review before saving`);
       }
     } catch (err) {
       // Best-effort only: never block adding a company on a Google lookup.

@@ -43,7 +43,7 @@
                 [tags]="tags"
                 type="tag"
                 [enableAutoComplete]="true"
-                placeholder="Add a tag — Enter"
+                placeholder="Add a tag (Enter)"
                 [readonly]="household()?.is_placeholder ?? false"
                 [canDelete]="!(household()?.is_placeholder ?? false)"
                 (tagAdded)="tagAdded($event)"
@@ -57,7 +57,7 @@
                 [tags]="issues"
                 type="issue"
                 [enableAutoComplete]="true"
-                placeholder="Add an issue — Enter"
+                placeholder="Add an issue (Enter)"
                 [readonly]="household()?.is_placeholder ?? false"
                 [canDelete]="!(household()?.is_placeholder ?? false)"
                 (tagAdded)="issueAdded($event)"
@@ -89,7 +89,7 @@
                 [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
               ></pc-address-autocomplete>
               <p class="pl-1 text-xs leading-snug text-base-content/55">
-                Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
+                Picking a suggestion fills every field below and geocodes the household. Ward, district and precinct
                 update automatically.
                 <span class="text-base-content/35">Powered by Google.</span>
               </p>
@@ -105,7 +105,7 @@
               </summary>
               <div class="mt-4 flex flex-col gap-3 border-l-2 border-base-300 pl-3">
                 <p class="text-xs leading-snug text-base-content/55">
-                  Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
+                  Manual edits are saved as typed. They geocode in the background, and the map pin appears once the
                   address verifies.
                 </p>
                 <pc-address-form-group [form]="form"></pc-address-form-group>
@@ -164,7 +164,7 @@
           </dl>
 
           <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            Electoral boundaries come from the geocoder — they refresh in the background after save.
+            Electoral boundaries come from the geocoder. They refresh in the background after save.
           </p>
         </pc-card>
         }

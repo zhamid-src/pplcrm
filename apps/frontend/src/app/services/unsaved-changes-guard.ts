@@ -47,7 +47,7 @@ export function injectUnsavedChanges<TModel extends Record<string, unknown>>(
       const fieldList = joinWithAnd(dirtyKeys().map(humanizeFieldKey));
       return dialogs.confirm({
         title: 'Leave without saving?',
-        message: `Your changes to ${recordName} — ${fieldList} — will be lost.`,
+        message: `Your changes to ${recordName} (${fieldList}) will be lost.`,
         variant: 'warning',
         confirmText: 'Discard changes',
         cancelText: 'Keep editing',

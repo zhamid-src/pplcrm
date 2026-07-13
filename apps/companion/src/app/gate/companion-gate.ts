@@ -73,7 +73,7 @@ type GateView = 'loading' | 'dead' | 'unassigned' | 'verify' | 'pending' | 'read
       @case ('pending') {
         <div class="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
           <span class="loading loading-ring loading-lg text-primary" aria-hidden="true"></span>
-          <h1 class="text-lg font-semibold">You're verified — waiting for approval</h1>
+          <h1 class="text-lg font-semibold">You're verified, waiting for approval</h1>
           <p class="text-base-content/70">
             {{ access()?.organizerName || 'Your organizer' }} has been notified. This page checks automatically; keep it
             open or come back later.
@@ -97,7 +97,7 @@ type GateView = 'loading' | 'dead' | 'unassigned' | 'verify' | 'pending' | 'read
             }
             <h1 class="text-lg font-semibold">
               @if (access()?.volunteerName) {
-                Hi {{ access()?.volunteerName }} — let's confirm it's you
+                Hi {{ access()?.volunteerName }}. Let's confirm it's you
               } @else {
                 Let's confirm it's you
               }
@@ -124,7 +124,7 @@ type GateView = 'loading' | 'dead' | 'unassigned' | 'verify' | 'pending' | 'read
               }
               @if ((access()?.contacts ?? []).length === 0) {
                 <p class="text-center text-base-content/70">
-                  There's no email or mobile number on file for you — ask your organizer to add one, then reopen this
+                  There's no email or mobile number on file for you. Ask your organizer to add one, then reopen this
                   link.
                 </p>
               }
@@ -237,7 +237,7 @@ export class CompanionGate implements OnInit {
         this.startPolling();
       }
     } catch (err: unknown) {
-      this.error.set(err instanceof CompanionApiError ? err.message : 'Something went wrong — try again.');
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Something went wrong. Try again.');
     } finally {
       this.confirming.set(false);
     }
@@ -262,7 +262,7 @@ export class CompanionGate implements OnInit {
       this.sentTo.set(masked);
       this.startCooldown();
     } catch (err: unknown) {
-      this.error.set(err instanceof CompanionApiError ? err.message : 'Could not send a code — try again.');
+      this.error.set(err instanceof CompanionApiError ? err.message : 'Could not send a code. Try again.');
     } finally {
       this.sending.set(false);
     }

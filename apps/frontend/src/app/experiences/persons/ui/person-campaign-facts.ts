@@ -106,7 +106,7 @@ export class PersonCampaignFacts {
     if (!sub) return { label: 'Never asked', tone: 'muted' };
     if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
     if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
-    if (this.suppressed()) return { label: 'Subscribed — address bouncing', tone: 'warn' };
+    if (this.suppressed()) return { label: 'Subscribed, address bouncing', tone: 'warn' };
     return { label: 'Subscribed', tone: 'ok' };
   });
 
@@ -183,7 +183,7 @@ export class PersonCampaignFacts {
       const confirmed = await this.dialogs.confirm({
         title: 'Mark as do-not-contact',
         message:
-          'This stops all outreach to this person — email, calls, and door knocks — in the office and every campaign. It is a global override, not a per-campaign preference.',
+          'This stops all outreach to this person (email, calls, and door knocks) in the office and every campaign. It is a global override, not a per-campaign preference.',
         variant: 'danger',
         confirmText: 'Stop all contact',
       });

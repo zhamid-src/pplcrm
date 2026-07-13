@@ -77,7 +77,7 @@
           }
         </div>
         <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
-          <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
+          <li>First row must have column headers. They drive the automatic mapping on the next step.</li>
           @if (config().supportsEmailReview) {
           <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
           } @if (config().reviewNote) {
@@ -150,9 +150,7 @@
       @if (mappedColumnCount() > 0 && missingRequiredFields().length > 0) {
       <div class="alert bg-warning/10 border border-warning/30 gap-2 text-sm text-base-content">
         <pc-icon name="exclamation-triangle" class="text-warning" [size]="5"></pc-icon>
-        <span
-          >Map a column to {{ missingRequiredFieldLabels() }} to continue — rows without one can't be imported.</span
-        >
+        <span>Map a column to {{ missingRequiredFieldLabels() }} to continue. Rows without one can't be imported.</span>
       </div>
       }
 
@@ -236,7 +234,7 @@
             <span class="text-sm">
               <span class="font-medium text-base-content">Merge into existing</span>
               <span class="block text-xs text-base-content/60">
-                Recommended — fills blank fields, never overwrites
+                Recommended: fills blank fields, never overwrites
               </span>
             </span>
           </label>
@@ -395,7 +393,7 @@
           }
         </ul>
         <p class="text-base-content/60">
-          The import runs in the background — once started you can navigate away, and it lands in import history and the
+          The import runs in the background. Once started you can navigate away, and it lands in import history and the
           Activity log.
         </p>
       </div>
@@ -415,7 +413,7 @@
         <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
         <p class="text-sm text-base-content/60">{{ runningHint() }}</p>
         <p class="text-sm text-base-content/60">
-          You can leave this page — the import keeps running in the background and its result lands in import history.
+          You can leave this page. The import keeps running in the background and its result lands in import history.
         </p>
         <button type="button" class="btn btn-ghost btn-sm gap-2 mt-2" (click)="backToHistory()">
           <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>

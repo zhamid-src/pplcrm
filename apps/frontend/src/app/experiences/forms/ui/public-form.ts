@@ -125,7 +125,7 @@ type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
               </button>
             </form>
 
-            <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+            <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
           </div>
         }
         @case ('thanks') {

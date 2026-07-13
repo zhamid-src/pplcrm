@@ -31,13 +31,13 @@ import { DemoService } from './services/demo.service';
           </div>
 
           <p class="text-sm text-base-content/80">
-            You’re exploring PeopleCRM with realistic sample data — people and households across Ottawa, companies,
-            tags, issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a
-            full report. Everything here is safe to open, edit, and delete.
+            You’re exploring pplCRM with realistic sample data: people and households across Ottawa, companies, tags,
+            issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a full
+            report. Everything here is safe to open, edit, and delete.
           </p>
           <p class="text-sm text-base-content/60">
             Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
-            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode — your six draft forms,
+            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
             the built-in tags, and anything you created yourself will be kept.
           </p>
 
@@ -86,7 +86,7 @@ export class DemoModeCard {
     try {
       await this.demoSvc.exitDemo();
       await this.auth.getCurrentUser();
-      this.alerts.showSuccess('Demo data removed — your workspace is ready for real contacts.');
+      this.alerts.showSuccess('Demo data removed. Your workspace is ready for real contacts.');
       this.exited.emit();
     } catch (err) {
       // The backend's refusal ("choose a plan first") is user-facing copy — show it.

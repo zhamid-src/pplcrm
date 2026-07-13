@@ -6,7 +6,7 @@ import { TitleStrategy } from '@angular/router';
 import type { ISidebarItem } from '../layout/sidebar/sidebar-items';
 import { SidebarItems } from '../layout/sidebar/sidebar-items';
 
-const APP_NAME = 'PeopleCRM';
+const APP_NAME = 'pplCRM';
 
 /**
  * Build a lookup from the first URL segment (e.g. `inbox`) to the friendly screen name the
@@ -42,7 +42,7 @@ function toTitleCase(segment: string): string {
 /**
  * Owns `document.title`. The base screen name is set by {@link AppTitleStrategy} on every
  * navigation; screens with a live count (Inbox, etc.) call {@link setCount} so the tab reads
- * `Inbox (12) — PeopleCRM`. Composing both in one place keeps the format in a single spot.
+ * `Inbox (12) — pplCRM`. Composing both in one place keeps the format in a single spot.
  */
 @Injectable({ providedIn: 'root' })
 export class TabTitleService {
@@ -66,7 +66,7 @@ export class TabTitleService {
     });
   }
 
-  /** Set the current screen name (the part before ` — PeopleCRM`). */
+  /** Set the current screen name (the part before ` — pplCRM`). */
   public setScreen(screen: string): void {
     this.screen.set(screen);
   }

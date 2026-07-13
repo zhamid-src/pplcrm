@@ -12,8 +12,8 @@
     <div class="flex items-center gap-3">
       <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
       <span class="text-xs text-base-content/80">
-        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
-        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
+        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days. Merge or
+        delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
       </span>
     </div>
     <button
@@ -41,7 +41,7 @@
         <div class="flex flex-col items-center gap-2">
           <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
           <p class="text-xs text-base-content/60">
-            {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
+            {{ showUnusedOnly() ? 'No unused tags. Nice and tidy.' : 'No tags yet.' }}
           </p>
           @if (showUnusedOnly()) {
           <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="showUnusedOnly.set(false)">
@@ -108,7 +108,7 @@
   </pc-table>
 
   <p class="text-xs text-base-content/50 px-1">
-    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
+    Renames and merges apply everywhere a tag is referenced (people, lists, automations and forms) in one pass.
   </p>
 </div>
 

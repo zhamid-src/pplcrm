@@ -1,9 +1,9 @@
 ---
 name: verify
-description: 'How to drive the running PeopleCRM app end-to-end for verification — launch/attach to the dev servers, sign in with a throwaway tenant via Playwright, seed data through the UI or dev DB, and the traps (two-step signin, email verification, Vite error overlay). USE WHEN verifying a frontend/backend change against the real running app, writing a Playwright drive, or needing an authenticated session on localhost.'
+description: 'How to drive the running pplCRM app end-to-end for verification — launch/attach to the dev servers, sign in with a throwaway tenant via Playwright, seed data through the UI or dev DB, and the traps (two-step signin, email verification, Vite error overlay). USE WHEN verifying a frontend/backend change against the real running app, writing a Playwright drive, or needing an authenticated session on localhost.'
 ---
 
-# Verifying PeopleCRM against the running app
+# Verifying pplCRM against the running app
 
 ## Servers
 

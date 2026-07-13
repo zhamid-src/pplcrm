@@ -70,7 +70,7 @@ export class FavouriteToggle {
   });
 
   protected readonly tooltip = computed(() => {
-    if (!this.pinnable()) return `Only main pages can be pinned — open ${this.itemName()} to pin it`;
+    if (!this.pinnable()) return `Only main pages can be pinned. Open ${this.itemName()} to pin it`;
     return this.favourite() ? `Unpin ${this.itemName()} from the sidebar` : `Pin ${this.itemName()} to the sidebar`;
   });
 
@@ -81,7 +81,7 @@ export class FavouriteToggle {
   protected onClick(): void {
     if (!this.pinnable()) {
       // Record page: narrate the reason instead of silently doing nothing.
-      this.alertSvc.showInfo(`Only main pages can be pinned — open ${this.itemName()} to pin it.`);
+      this.alertSvc.showInfo(`Only main pages can be pinned. Open ${this.itemName()} to pin it.`);
       return;
     }
     if (!this.currentItem?.route) return;

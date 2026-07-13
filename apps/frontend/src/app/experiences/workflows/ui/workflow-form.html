@@ -76,7 +76,7 @@
           <!-- Trigger card -->
           <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
             <div class="flex items-center justify-between">
-              <span class="pc-eyebrow">Trigger — when</span>
+              <span class="pc-eyebrow">Trigger: when</span>
               <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
             </div>
             <div class="mt-2 flex items-center gap-2">
@@ -206,7 +206,7 @@
           @if (steps().length === 0) {
           <div class="my-4 max-w-sm rounded-xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center">
             <p class="text-sm text-base-content/60">
-              No steps yet — use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
+              No steps yet. Use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
               mixed in any order.
             </p>
           </div>
@@ -264,7 +264,7 @@
                 </label>
                 <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
                   @if (payload().status === 'active') { Runs every time the trigger fires; nothing queues. } @else {
-                  Paused — nothing runs or queues until you resume it. }
+                  Paused. Nothing runs or queues until you resume it. }
                 </p>
               </div>
             </div>
@@ -281,9 +281,7 @@
                 (changed)="onConditionsChange()"
               ></pc-query-builder>
               @if (!hasConditions()) {
-              <p class="mt-2 text-[10px] text-base-content/50">
-                No conditions — everyone who hits the trigger enrolls.
-              </p>
+              <p class="mt-2 text-[10px] text-base-content/50">No conditions. Everyone who hits the trigger enrolls.</p>
               }
             </div>
           </section>
@@ -306,7 +304,7 @@
             <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Recent runs</h3>
             @if (runs().length === 0) {
             <p class="mt-3 text-[10px] text-base-content/50">
-              No runs yet — history appears here after the first trigger fires.
+              No runs yet. History appears here after the first trigger fires.
             </p>
             } @else {
             <ul class="mt-3 flex flex-col gap-2">
@@ -334,7 +332,7 @@
     <pc-tab-panel id="enrolled" [activeTab]="activeTab()">
       <div class="flex flex-col gap-4">
         <p class="text-xs text-base-content/60">
-          Enrollment is per contact — someone already in the sequence isn't enrolled twice by the same trigger.
+          Enrollment is per contact. Someone already in the sequence isn't enrolled twice by the same trigger.
         </p>
 
         @if (enrollments().length === 0) {
@@ -343,7 +341,7 @@
             <pc-icon name="user-group" [size]="5"></pc-icon>
           </div>
           <p class="mx-auto max-w-md text-sm text-base-content/60">
-            No one enrolled yet — Contacts appear here the first time the trigger fires. Save the automation active and
+            No one enrolled yet. Contacts appear here the first time the trigger fires. Save the automation active and
             it starts watching immediately.
           </p>
         </div>

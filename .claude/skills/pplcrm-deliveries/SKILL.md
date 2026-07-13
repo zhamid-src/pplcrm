@@ -1,6 +1,6 @@
 ---
 name: pplcrm-deliveries
-description: How PeopleCRM's Deliveries feature works (spec §14) — yard-sign delivery requests → pure-preview route planning → volunteer-driven routes, with the tokenized public volunteer page. Covers the three tables and their "routed is derived" invariant, the pure routing engine, the tRPC + public-token backend, the frontend surfaces, and the honest activity attribution. USE WHEN touching anything under modules/deliveries, experiences/deliveries, the routing engine (lib/routing), the delivery_* tables, the public /r/:token page, or the deliveries sidebar badge. EXAMPLES: 'add a field to delivery requests', 'why is a request still showing as routed', 'change how routes are estimated', 'the volunteer link 404s'.
+description: How pplCRM's Deliveries feature works (spec §14) — yard-sign delivery requests → pure-preview route planning → volunteer-driven routes, with the tokenized public volunteer page. Covers the three tables and their "routed is derived" invariant, the pure routing engine, the tRPC + public-token backend, the frontend surfaces, and the honest activity attribution. USE WHEN touching anything under modules/deliveries, experiences/deliveries, the routing engine (lib/routing), the delivery_* tables, the public /r/:token page, or the deliveries sidebar badge. EXAMPLES: 'add a field to delivery requests', 'why is a request still showing as routed', 'change how routes are estimated', 'the volunteer link 404s'.
 ---
 
 # Deliveries (§14)
@@ -103,7 +103,14 @@ Frontend page: **`apps/companion/src/app/deliveries/route-page.ts`** at `/r/:tok
 separate companion app (NOT apps/frontend — the old `experiences/deliveries/ui/public-route`
 page was deleted), wrapped in `<pc-companion-gate kind="route">`; relative `/api` fetches with
 `CompanionSessionService.headers()`, a fresh `op_id` per action, Undo on every terminal stop
-(including after reload / from the completed state), List/Map via `<pc-map>`. The staff
+(including after reload / from the completed state), List/Map via `<pc-map>`. It carries the
+**same fixed bottom nav as the Canvass Companion** — List / Map / **Me** (client-side `view`
+signal, nothing routable beyond the token). The **Me** tab shows org + route name, a
+provenance/end-shift card, and derived shift counts (delivered / remaining / couldn't-deliver /
+total). "End shift on this device" confirms, then `session.clearSession()` and drops to a new
+`'ended'` page state (deliveries has no local queue — every action posts immediately, so there's
+nothing to wipe but the device session). Both companion footers read **"Powered by pplCRM"**,
+pinned above the nav. The staff
 share-URL builder (`deliveries-route-detail.ts`) still emits `${origin}/r/${token}` — the
 companion app is path-routed on the same domain.
 

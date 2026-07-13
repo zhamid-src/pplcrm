@@ -276,14 +276,14 @@ export class ListForm implements OnInit {
   /** Verbatim §8 mode note beneath the live count — differs by list type. */
   protected readonly modeNote = computed<string>(() =>
     this.isDynamic()
-      ? 'this count keeps changing on its own — the rules re-run automatically as records change.'
-      : "the rules run once when you create the list. Today's matches are saved as fixed members — new matching people are NOT added later.",
+      ? 'this count keeps changing on its own; the rules re-run automatically as records change.'
+      : "the rules run once when you create the list. Today's matches are saved as fixed members. New matching people are NOT added later.",
   );
 
   /** Verbatim §8 create-button label — carries the scale it will act on. */
   protected readonly createLabel = computed<string>(() => {
     const n = this.formatCount(this.matchCount());
-    return this.isDynamic() ? `Create smart list — ${n} now` : `Create static list — snapshot ${n}`;
+    return this.isDynamic() ? `Create smart list (${n} now)` : `Create static list (snapshot ${n})`;
   });
 
   protected readonly rulesRoot = signal<QueryBuilderGroupNode>({

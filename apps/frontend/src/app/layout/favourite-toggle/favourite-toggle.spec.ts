@@ -62,7 +62,7 @@ describe('FavouriteToggle', () => {
 
     const button = fixture.debugElement.query(By.css('button'));
     expect(button).toBeTruthy();
-    expect(button.attributes['data-tip']).toBe('Only main pages can be pinned — open People to pin it');
+    expect(button.attributes['data-tip']).toBe('Only main pages can be pinned. Open People to pin it');
   });
 
   it('hides the toggle when no sidebar item matches the URL', () => {
@@ -93,7 +93,7 @@ describe('FavouriteToggle', () => {
     clickButton();
 
     expect(mockSidebarSvc.toggleFavourite).not.toHaveBeenCalled();
-    expect(mockAlertSvc.showInfo).toHaveBeenCalledWith('Only main pages can be pinned — open People to pin it.');
+    expect(mockAlertSvc.showInfo).toHaveBeenCalledWith('Only main pages can be pinned. Open People to pin it.');
   });
 
   it('normalizes trailing slashes and query strings when matching the current URL', () => {

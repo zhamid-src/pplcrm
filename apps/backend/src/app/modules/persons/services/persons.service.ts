@@ -795,7 +795,7 @@ export class PersonsService {
         ) {
           results.skipped += 1;
           if (skipReasons.length < SKIP_REASONS_CAP) {
-            skipReasons.push({ row: rowNumber, reason: 'Blank row — no importable fields' });
+            skipReasons.push({ row: rowNumber, reason: 'Blank row: no importable fields' });
           }
           continue;
         }
@@ -1024,7 +1024,7 @@ export class PersonsService {
                 skipReasons.push({
                   row: entry.rowNumber,
                   email: entry.sanitized.email,
-                  reason: 'Matches a person you already have — duplicate decision was Skip',
+                  reason: 'Matches a person you already have. Duplicate decision was Skip',
                 });
               }
             }

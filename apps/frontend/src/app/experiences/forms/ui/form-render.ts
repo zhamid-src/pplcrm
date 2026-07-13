@@ -89,7 +89,7 @@ import { FormDetail } from '../services/forms-service';
         </div>
       }
 
-      <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+      <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
     </div>
   `,
 })

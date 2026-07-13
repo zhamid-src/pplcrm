@@ -50,7 +50,7 @@ export class FullScreenService {
       // state will be updated by the fullscreenchange listener
     } catch (e) {
       console.error('Failed to enter fullscreen:', e);
-      this.alertSvc.showError('Could not enter full screen — your browser blocked the request.');
+      this.alertSvc.showError('Could not enter full screen. Your browser blocked the request.');
     }
   }
 

@@ -135,7 +135,7 @@ export class MsOAuthService {
     });
 
     if (!response?.accessToken) {
-      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
+      throw new Error('Token refresh failed. Tenant must reconnect their Microsoft account');
     }
 
     const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);

@@ -1,4 +1,4 @@
-# PeopleCRM Skill Library — Build Brief
+# pplCRM Skill Library — Build Brief
 
 Directions for the agents that will author and review the project skill library.
 **Do not skip the grounding step for any skill** — every fact, file path, and command in a

@@ -9,19 +9,19 @@
 
     <pc-select label="Role" [formField]="form.role">
       @if (currentUserRole() === 'owner') {
-      <option value="owner">Owner — full control of the workspace</option>
+      <option value="owner">Owner: full control of the workspace</option>
       }
-      <option value="admin">Admin — manage users and settings</option>
-      <option value="user">Editor — edit records, send, import</option>
-      <option value="viewer">Viewer — read-only access</option>
+      <option value="admin">Admin: manage users and settings</option>
+      <option value="user">Editor: edit records, send, import</option>
+      <option value="viewer">Viewer: read-only access</option>
     </pc-select>
 
     <p class="flex items-start gap-1.5 text-xs text-base-content/50">
       <pc-icon name="information-circle" [size]="4" class="mt-0.5 flex-shrink-0"></pc-icon>
       <span>
-        Invitations expire after 7 days and take a seat right away @if (seatUsage(); as usage) { —
+        Invitations expire after 7 days and take a seat right away.@if (seatUsage(); as usage) {
         <span class="tabular-nums">{{ seatsRemaining() }}</span> of
-        <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan}.
+        <span class="tabular-nums">{{ usage.seatLimit }}</span> seats remain on the {{ planLabel() }} plan.}
       </span>
     </p>
   </form>

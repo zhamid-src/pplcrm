@@ -19,7 +19,7 @@ export class TagAdminActions {
   public async rename(row: TagAdminRow, noun: 'tag' | 'issue'): Promise<TagAdminRow | null> {
     const newName = await this.dialogs.prompt({
       title: `Rename ${noun}`,
-      message: `Renames apply everywhere "${row.name}" is referenced — people, lists and forms — in one pass.`,
+      message: `Renames apply everywhere "${row.name}" is referenced (people, lists and forms) in one pass.`,
       defaultValue: row.name,
       inputPlaceholder: 'lowercase, short, reusable',
       confirmText: 'Rename',

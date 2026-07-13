@@ -4,7 +4,7 @@
     <p class="pc-eyebrow text-primary">Help center</p>
     <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
     <p class="mt-2 text-sm text-base-content/60">
-      Guides for every corner of PeopleCRM — search, or browse by topic below.
+      Guides for every corner of pplCRM. Search, or browse by topic below.
     </p>
 
     <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
@@ -13,7 +13,7 @@
         #searchBox
         type="search"
         class="grow text-[15px]"
-        placeholder="Search help — try “import”, “tags”, “newsletter”"
+        placeholder="Search help. Try “import”, “tags”, “newsletter”"
         aria-label="Search help articles"
         [value]="query()"
         (input)="onSearchInput($event)"
@@ -83,7 +83,7 @@
     <pc-icon name="magnifying-glass" [size]="10" class="text-base-content/20"></pc-icon>
     <p class="text-sm font-medium text-base-content/80">No articles match “{{ query().trim() }}”</p>
     <p class="text-xs leading-5 text-base-content/50">
-      Try fewer or different words — search covers titles, summaries, keywords, and the full article text.
+      Try fewer or different words. Search covers titles, summaries, keywords, and the full article text.
     </p>
     <button type="button" class="btn btn-primary btn-sm mt-1" (click)="clearSearch()">Clear search</button>
   </div>

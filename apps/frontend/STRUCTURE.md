@@ -6058,7 +6058,7 @@ export class FundraisingFormComponent implements OnInit {
 
     const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
 
-    return `<!-- PeopleCRM Embeddable Donation Form -->
+    return `<!-- pplCRM Embeddable Donation Form -->
 <form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 
@@ -9927,7 +9927,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'organization.name',
         label: 'Organization name',
         type: 'text',
-        placeholder: 'PeopleCRM',
+        placeholder: 'pplCRM',
         defaultValue: '',
       },
       {
@@ -9979,7 +9979,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'communications.default_from_name',
         label: 'Default from name',
         type: 'text',
-        placeholder: 'PeopleCRM Team',
+        placeholder: 'pplCRM Team',
         defaultValue: '',
       },
       {
@@ -10000,7 +10000,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         key: 'communications.footer_disclaimer',
         label: 'Email footer disclaimer',
         type: 'textarea',
-        placeholder: 'Paid for by PeopleCRM Campaign…',
+        placeholder: 'Paid for by pplCRM Campaign…',
         defaultValue: '',
         helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
       },
@@ -14704,7 +14704,7 @@ import { TitleStrategy } from '@angular/router';
 import type { ISidebarItem } from '../layout/sidebar/sidebar-items';
 import { SidebarItems } from '../layout/sidebar/sidebar-items';
 
-const APP_NAME = 'PeopleCRM';
+const APP_NAME = 'pplCRM';
 
 /**
  * Build a lookup from the first URL segment (e.g. `inbox`) to the friendly screen name the
@@ -14740,7 +14740,7 @@ function toTitleCase(segment: string): string {
 /**
  * Owns `document.title`. The base screen name is set by {@link AppTitleStrategy} on every
  * navigation; screens with a live count (Inbox, etc.) call {@link setCount} so the tab reads
- * `Inbox (12) — PeopleCRM`. Composing both in one place keeps the format in a single spot.
+ * `Inbox (12) — pplCRM`. Composing both in one place keeps the format in a single spot.
  */
 @Injectable({ providedIn: 'root' })
 export class TabTitleService {
@@ -14764,7 +14764,7 @@ export class TabTitleService {
     });
   }
 
-  /** Set the current screen name (the part before ` — PeopleCRM`). */
+  /** Set the current screen name (the part before ` — pplCRM`). */
   public setScreen(screen: string): void {
     this.screen.set(screen);
   }
@@ -23783,7 +23783,7 @@ export class CanvassHousehold {
     const name = this.newName().trim();
     if (!h || !name) return;
     this.store.addPerson(h.id, name);
-    this.alerts.showSuccess('Added — will be created in PeopleCRM');
+    this.alerts.showSuccess('Added — will be created in pplCRM');
     this.cancelAdd();
   }
 
@@ -23895,7 +23895,7 @@ import { firstNameOf } from './canvass-ui';
 
         <div class="rounded-lg border border-base-300 bg-base-200/50 p-4 text-center">
           <p class="font-medium">Walking as {{ payload.canvasser_name }}</p>
-          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to PeopleCRM.</p>
+          <p class="mt-1 text-xs text-base-content/70">Results save under your name and sync to pplCRM.</p>
         </div>
 
         <button type="button" class="btn btn-primary w-full" (click)="start()">Start walking</button>
@@ -24388,7 +24388,7 @@ export class CanvassMe {
       message:
         queued > 0
           ? `This clears results stored in this browser. ${queued} unsynced ${queued === 1 ? 'result' : 'results'} will be lost.`
-          : 'This clears results stored in this browser. Synced results are already in PeopleCRM.',
+          : 'This clears results stored in this browser. Synced results are already in pplCRM.',
       variant: 'danger',
       confirmText: 'End shift',
       cancelText: 'Keep walking',
@@ -25192,7 +25192,7 @@ export class CanvassSurvey {
       notes: this.notes().trim() ? this.notes().trim() : null,
     });
     const syncing = this.store.online() && !this.store.workOffline();
-    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to pplCRM…' : 'Saved — will sync when back online');
     this.back();
   }
 
@@ -25458,7 +25458,7 @@ export function personResultLabel(result: CompanionPersonResult, support: KnockR
       </div>
       } } }
 
-      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+      <p class="pb-6 pt-2 text-center text-xs text-base-content/40">Powered by pplCRM</p>
     </div>
     } } }
   </div>
@@ -26025,7 +26025,7 @@ interface ImportMeta {
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>PeopleCRM companion</title>
+    <title>pplCRM companion</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
@@ -26425,7 +26425,7 @@ export const environment = {
   }
 
   <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">Copyright © 2026 PeopleCRM</span>
+    <span class="text-neutral-400">Copyright © 2026 pplCRM</span>
   </div>
 </pc-auth-layout>
 ```
@@ -26568,7 +26568,7 @@ export const environment = {
   </div>
 
   <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">Copyright © 2026 PeopleCRM</span>
+    <span class="text-neutral-400">Copyright © 2026 pplCRM</span>
   </div>
 </pc-auth-layout>
 ```
@@ -31171,7 +31171,7 @@ import { FormDetail } from '../services/forms-service';
         </div>
       }
 
-      <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+      <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
     </div>
   `,
 })
@@ -31322,7 +31322,7 @@ type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
               </button>
             </form>
 
-            <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+            <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
           </div>
         }
         @case ('thanks') {
@@ -31805,7 +31805,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
     <p class="pc-eyebrow text-primary">Help center</p>
     <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
     <p class="mt-2 text-sm text-base-content/60">
-      Guides for every corner of PeopleCRM — search, or browse by topic below.
+      Guides for every corner of pplCRM — search, or browse by topic below.
     </p>
 
     <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
@@ -34641,7 +34641,7 @@ type PageState = 'loading' | 'open' | 'notfound';
               </div>
             }
 
-            <p class="mt-8 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+            <p class="mt-8 text-center text-xs text-base-content/40">Powered by pplCRM</p>
           </div>
         }
         @default {
@@ -41180,7 +41180,7 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 
 ```css
 /*
- * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
  * palette, consumed by every app (apps/frontend, apps/companion). Import this
  * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
  * these values into an app-local theme block; change them here.
@@ -43892,7 +43892,7 @@ const COUNTRY_OPTIONS = [
                 </form>
               }
 
-              <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+              <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
             </div>
           </div>
         }
@@ -44439,7 +44439,7 @@ export class FormViewComponent {
 
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
-    return `<!-- PeopleCRM Embeddable Form -->
+    return `<!-- pplCRM Embeddable Form -->
 <form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
@@ -44650,7 +44650,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
+        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
       },
       { kind: 'h2', id: 'deleting', text: 'Delete with care' },
       {
@@ -44808,7 +44808,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
       {
         kind: 'p',
-        text: 'While adding a company, tab out of the **Company Name** field and PeopleCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create** — nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create** — nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
       },
       {
         kind: 'p',
@@ -44876,13 +44876,13 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
     id: 'grid-basics',
     category: 'grids',
     title: 'Working in grids',
-    summary: 'Every list in PeopleCRM is the same powerful grid — learn it once and you know it everywhere.',
+    summary: 'Every list in pplCRM is the same powerful grid — learn it once and you know it everywhere.',
     keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
     related: ['filters', 'bulk-actions', 'import', 'export'],
     blocks: [
       {
         kind: 'p',
-        text: 'People, companies, tasks, donations — every collection in PeopleCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
+        text: 'People, companies, tasks, donations — every collection in pplCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
       },
       { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
       {
@@ -44946,7 +44946,7 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Filters narrow a grid to the rows you care about — and PeopleCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
+        text: 'Filters narrow a grid to the rows you care about — and pplCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
       },
       { kind: 'h2', id: 'quick-filters', text: 'Quick filters: the dashed pills' },
       {
@@ -47823,7 +47823,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
         { platform: 'instagram', url: 'https://instagram.com' },
       ];
     } else if (type === 'footer') {
-      newBlock.footerCompany = 'PeopleCRM Inc.';
+      newBlock.footerCompany = 'pplCRM Inc.';
       newBlock.footerAddress = '123 Main St, Suite 400, San Francisco, CA 94105';
       newBlock.footerUnsubscribeUrl = 'https://example.com/unsubscribe';
       styles.backgroundColor = '#f9fafb';
@@ -56265,7 +56265,7 @@ export class EmailClient {
                   [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
                 />
                 <p class="mt-1 text-[11px] text-base-content/50">
-                  If blank, users will see the PeopleCRM default success page.
+                  If blank, users will see the pplCRM default success page.
                 </p>
               </div>
 
@@ -56631,7 +56631,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     category: 'outreach',
     title: 'The shared inbox',
     summary:
-      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
     keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
     related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
     blocks: [
@@ -59368,7 +59368,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
           </p>
           } @else {
           <p class="text-xs text-base-content/60 mt-1">
-            You are currently on the free trial version of PeopleCRM. Upgrade below to unlock all capabilities.
+            You are currently on the free trial version of pplCRM. Upgrade below to unlock all capabilities.
           </p>
           }
         </div>
@@ -61413,7 +61413,7 @@ import { DemoService } from './services/demo.service';
           </div>
 
           <p class="text-sm text-base-content/80">
-            You’re exploring PeopleCRM with realistic sample data — people and households across Ottawa, companies,
+            You’re exploring pplCRM with realistic sample data — people and households across Ottawa, companies,
             tags, issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a
             full report. Everything here is safe to open, edit, and delete.
           </p>
@@ -71135,7 +71135,7 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 
 ```css
 /*
- * Shared DaisyUI theme tokens — the single source of truth for the PeopleCRM
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
  * palette, consumed by every app (apps/frontend, apps/companion). Import this
  * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
  * these values into an app-local theme block; change them here.
@@ -76789,7 +76789,7 @@ export const DATA_ARTICLES: HelpArticle[] = [
           {
             title: 'Review',
             detail:
-              'For people, duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
+              'For people, duplicates are matched by email — the same identity rule used everywhere in pplCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
           },
           {
             title: 'Import',
@@ -83218,14 +83218,14 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
   {
     id: 'welcome',
     category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
     keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
     related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+        text: 'pplCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
       },
       { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
       {
@@ -83293,7 +83293,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of PeopleCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
       },
       { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
       {
@@ -83511,7 +83511,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     id: 'shortcuts',
     category: 'getting-started',
     title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    summary: 'Every keyboard shortcut in pplCRM on one page — and the ? overlay that shows them anywhere.',
     keywords: [
       'keyboard',
       'shortcuts',
@@ -89366,7 +89366,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
       },
       { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
       {
@@ -93880,7 +93880,7 @@ export type {
 
   <p class="mb-2 text-xs text-base-content/60">
     @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the form.
-    } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    } @else { A plain HTML form posting straight to pplCRM. Reflects the form’s currently enabled fields. }
   </p>
 
   <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">

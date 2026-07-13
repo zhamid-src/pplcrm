@@ -41,7 +41,7 @@ const DEFAULT_TEMPLATE_CARD: TemplateCard = {
   type: 'signup',
   icon: 'user-plus',
   title: 'Signup',
-  description: 'Name, email, phone and availability — grow your volunteer roster.',
+  description: 'Name, email, phone and availability. Grow your volunteer roster.',
 };
 
 /** Step-1 cards of the New-form flow — same card idiom as the automation trigger picker. */
@@ -51,25 +51,25 @@ const TEMPLATE_CARDS: readonly TemplateCard[] = [
     type: 'pledge',
     icon: 'banknotes',
     title: 'Pledge',
-    description: 'Name, email and an amount — collect commitments to give.',
+    description: 'Name, email and an amount. Collect commitments to give.',
   },
   {
     type: 'rsvp',
     icon: 'ticket',
     title: 'RSVP',
-    description: 'Name, email and seats — count heads before an event.',
+    description: 'Name, email and seats. Count heads before an event.',
   },
   {
     type: 'request',
     icon: 'map-pin',
     title: 'Request',
-    description: 'Name, email, address and notes — take requests like yard signs.',
+    description: 'Name, email, address and notes. Take requests like yard signs.',
   },
   {
     type: 'survey',
     icon: 'chat-bubble-bottom-center-text',
     title: 'Survey',
-    description: 'Name, issues and an open answer — hear what people think.',
+    description: 'Name, issues and an open answer. Hear what people think.',
   },
 ];
 
@@ -77,21 +77,21 @@ const BUILDER_CARDS: readonly BuilderCard[] = [
   {
     icon: 'document-currency-dollar',
     title: 'Fundraising form',
-    description: 'A public giving page with preset amounts — donations create donor records.',
+    description: 'A public giving page with preset amounts. Donations create donor records.',
     cta: 'Create a fundraising form',
     route: '/donation-pages/add',
   },
   {
     icon: 'ticket',
     title: 'Event page',
-    description: 'An event with its own public page — RSVPs and attendance in one place.',
+    description: 'An event with its own public page. RSVPs and attendance in one place.',
     cta: 'Create an event page',
     route: '/events/pages/add',
   },
   {
     icon: 'add-schedule',
     title: 'Volunteer shift',
-    description: 'A signup slot with a time and place — hours land on volunteer profiles.',
+    description: 'A signup slot with a time and place. Hours land on volunteer profiles.',
     cta: 'Create a volunteer shift',
     route: '/events/shifts/add',
   },
@@ -259,21 +259,21 @@ export class FormsPageComponent implements OnInit {
   protected async publish(): Promise<void> {
     await this.runVerb(
       (id) => this.formsSvc.publish(id),
-      (f) => `Published “${f.name}” — the link now accepts responses.`,
+      (f) => `Published “${f.name}”. The link now accepts responses.`,
     );
   }
 
   protected async unpublish(): Promise<void> {
     await this.runVerb(
       (id) => this.formsSvc.unpublish(id),
-      (f) => `Unpublished “${f.name}” — the public link is paused.`,
+      (f) => `Unpublished “${f.name}”. The public link is paused.`,
     );
   }
 
   protected async archiveForm(): Promise<void> {
     await this.runVerb(
       (id) => this.formsSvc.archive(id),
-      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
+      (f) => `Archived “${f.name}”. The public link now shows a closed notice.`,
     );
     this.mode.set('browse');
   }
@@ -347,7 +347,7 @@ export class FormsPageComponent implements OnInit {
       this.mode.set('edit');
       this.tab.set('form');
       this.alerts.showSuccess(
-        `Draft created from the ${this.chosenTemplate().title} template — adjust its fields, then publish.`,
+        `Draft created from the ${this.chosenTemplate().title} template. Adjust its fields, then publish.`,
       );
     } catch {
       this.newFormError.set('Could not create the form. Please try again.');
@@ -386,7 +386,7 @@ export class FormsPageComponent implements OnInit {
     const form = this.selected();
     if (!form) return;
     if (key === 'email') {
-      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
+      this.alerts.showInfo('Email stays on every form. It’s how each response is matched to a person.');
       return;
     }
     const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
@@ -397,7 +397,7 @@ export class FormsPageComponent implements OnInit {
     const form = this.selected();
     if (!form) return;
     if (key === 'email') {
-      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
+      this.alerts.showInfo('Email is always required. A response can’t create a person without it.');
       return;
     }
     const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
@@ -475,7 +475,7 @@ export class FormsPageComponent implements OnInit {
     if (!form || !this.canDelete(form)) return;
     const ok = await this.confirm.confirm({
       title: `Delete “${form.name}”?`,
-      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
+      message: 'This draft has no responses. Deleting it can’t be undone; archiving is the reversible option.',
       variant: 'danger',
     });
     if (!ok) return;
@@ -504,7 +504,7 @@ export class FormsPageComponent implements OnInit {
       await navigator.clipboard.writeText(url);
       this.alerts.showSuccess('Public link copied to your clipboard.');
     } catch {
-      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
+      this.alerts.showError('Couldn’t copy the link. Copy it manually from the address bar.');
     }
   }
 
@@ -529,7 +529,7 @@ export class FormsPageComponent implements OnInit {
       await navigator.clipboard.writeText(this.embedCode());
       this.alerts.showSuccess('Embed code copied to your clipboard.');
     } catch {
-      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
+      this.alerts.showError('Couldn’t copy. Select the code and copy it manually.');
     }
   }
 

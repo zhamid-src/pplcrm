@@ -59,7 +59,7 @@
           }
         </div>
         <p class="text-sm font-light leading-relaxed text-base-content/65">
-          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
+          Runs as a background job. A Places text search finds the business, then place details fill website, phone,
           industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
         </p>
         <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
@@ -67,7 +67,7 @@
           type="button"
           class="btn btn-sm btn-outline btn-secondary mt-1 w-fit gap-2"
           [disabled]="enriching()"
-          [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+          [title]="'Queue a Google Places lookup: fills website, phone, industry and description where blank'"
           (click)="enrichCompany()"
         >
           <pc-icon name="arrow-path" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
@@ -102,7 +102,7 @@
           <div class="skeleton h-32 w-full"></div>
           }
           <p class="mt-3 border-t border-base-200 pt-3 text-xs text-base-content/40">
-            Grouped from the employer field — edit a person’s employer and they move companies.
+            Grouped from the employer field. Edit a person’s employer and they move companies.
           </p>
         </pc-tab-panel>
 
@@ -110,7 +110,7 @@
           @if (c.description) {
           <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ c.description }}</p>
           } @else {
-          <p class="text-sm italic text-base-content/40">No description recorded — Re-check Google to fill it in.</p>
+          <p class="text-sm italic text-base-content/40">No description recorded. Re-check Google to fill it in.</p>
           }
         </pc-tab-panel>
       </pc-tabs>

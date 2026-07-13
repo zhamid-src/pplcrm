@@ -86,7 +86,7 @@
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (volunteers().length === 0) {
             <p class="p-3 text-sm text-base-content/50">
-              No volunteers assigned yet — pick them from the list on the left.
+              No volunteers assigned yet. Pick them from the list on the left.
             </p>
             } @else {
             <ul class="divide-y divide-base-200">
@@ -131,7 +131,7 @@
           <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
           <div class="max-h-40 overflow-auto rounded border border-base-200">
             @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/50">No lists assigned yet — pick them from the list on the left.</p>
+            <p class="p-3 text-sm text-base-content/50">No lists assigned yet. Pick them from the list on the left.</p>
             } @else {
             <ul class="divide-y divide-base-200">
               @for (list of assignedLists(); track list.id) {

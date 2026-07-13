@@ -102,7 +102,7 @@ describe('ProfilePage', () => {
     expect(rows).toHaveLength(3);
     expect(rows.find((r) => r.key === 'emails')).toMatchObject({
       count: '4 conversations',
-      rest: 'assigned to you — 2 open · 2 closed',
+      rest: 'assigned to you, 2 open · 2 closed',
       link: '/inbox',
     });
     expect(rows.find((r) => r.key === 'contacts')).toMatchObject({ count: '10 contacts', link: '/people' });

@@ -93,7 +93,7 @@ export async function handleSendNewsletter(
 
   const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
   const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+  const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
   const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
 
   // Reply-to is only honored when it has been verified (mirrors settings save-time validation).

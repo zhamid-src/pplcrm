@@ -3,7 +3,7 @@ name: pplcrm-testing
 description: "Write and run Vitest unit tests in this repo, and understand why a spec can pass `nx lint` yet be rejected by the pre-commit hook. USE WHEN adding or editing a `*.spec.ts`, running project tests, mocking with `vi.spyOn`/`vi.fn`, or debugging a spec that lints clean under nx but fails on commit. EXAMPLES: 'my spec passes nx lint but the commit hook rejects it', 'how do I run just one test file', 'mock the mail service in a backend test'."
 ---
 
-# Testing in PeopleCRM (Vitest)
+# Testing in pplCRM (Vitest)
 
 ## The runner: Vitest is live, Jest is dead weight
 

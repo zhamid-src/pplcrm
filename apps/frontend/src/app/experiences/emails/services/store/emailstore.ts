@@ -237,8 +237,8 @@ export class EmailsStore {
       const inserted = result?.inserted ?? 0;
       this.alerts.showSuccess(
         inserted > 0
-          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
-          : 'Inbox synced — no new emails',
+          ? `Inbox synced. ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced. No new emails',
       );
       return result;
     } catch (e) {

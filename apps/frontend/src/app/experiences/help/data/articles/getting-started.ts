@@ -4,32 +4,32 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
   {
     id: 'welcome',
     category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
     keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
     related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
       },
       { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
       {
         kind: 'list',
         items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
-          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field** — [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
+          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
         title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
       },
       { kind: 'h2', id: 'first-steps', text: 'A good first session' },
       {
@@ -53,13 +53,13 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           {
             title: 'Send your first newsletter',
             detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
           },
         ],
       },
       {
         kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
       },
       {
         kind: 'callout',
@@ -79,30 +79,30 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of PeopleCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
       },
       { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
       {
         kind: 'list',
         items: [
-          '**60 people in 24 households** with real Ottawa street addresses — so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
           '**10 companies**, with several people linked to them.',
           '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
-          '**Canvassing turfs** cut across the wards — one complete, one being knocked right now, one just assigned, and one still a draft — with real door knocks so the field report and coverage map have something to show.',
-          '**Yard-sign deliveries** — sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
-          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in — their accounts exist so assignment and triage look real.',
-          '**Tasks** in every state — overdue, due this week, waiting, and done.',
-          '**A working inbox** — a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state: overdue, due this week, waiting, and done.',
+          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
           '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
           '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
-          '**A donations ledger** — recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
+          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
         title: 'Why draft forms show responses',
-        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link — see [Forms](/help/forms).',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
       },
       { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
       {
@@ -122,7 +122,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           {
             title: 'Choose a plan',
             detail:
-              'Exiting the demo requires an active subscription — pick one on the [Billing](/workspace/billing) page.',
+              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
           },
           { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
           {
@@ -140,9 +140,9 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          '**Your six draft forms** — volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The starter tags and issues** — the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
-          '**Anything you created yourself** while exploring — your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
+          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
+          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
         ],
       },
     ],
@@ -172,11 +172,11 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
       {
         kind: 'p',
-        text: 'Every page shows a breadcrumb trail in the top bar — the bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
+        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
       },
       {
         kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
       },
       {
         kind: 'callout',
@@ -187,17 +187,17 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
       {
         kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
       },
       { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
       {
         kind: 'list',
         items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'Collapse any section by clicking its heading (useful for areas you rarely use).',
           'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
           'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
           'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
         ],
       },
       { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
@@ -214,7 +214,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     id: 'search',
     category: 'getting-started',
     title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
     keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
     related: ['filters', 'shortcuts', 'grid-basics'],
     blocks: [
@@ -234,15 +234,15 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
       },
       {
         kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
       },
       {
         kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
       },
     ],
   },
@@ -257,39 +257,39 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
       },
       {
         kind: 'list',
         items: [
-          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
-          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
+          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
         ],
       },
       { kind: 'h2', id: 'sla', text: 'How SLA status works' },
       {
         kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
       },
       {
         kind: 'list',
         items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
+          '**On track**: no open items have exceeded their target.',
+          '**Warning**: the number of breached items has reached the warning threshold.',
+          '**Critical**: breaches have reached the critical threshold and need attention now.',
         ],
       },
       {
         kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels** — see [Settings and configuration](/help/settings).',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
       },
     ],
   },
@@ -297,7 +297,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     id: 'shortcuts',
     category: 'getting-started',
     title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
     keywords: [
       'keyboard',
       'shortcuts',
@@ -326,7 +326,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         rows: [
           { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
           { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
           { keys: ['?'], action: 'Show the shortcuts overlay' },
           { keys: ['Esc'], action: 'Close the open dialog or overlay' },
         ],

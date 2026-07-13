@@ -213,7 +213,7 @@
             <input
               class="input input-bordered input-sm w-full"
               [formField]="regularForm.previewText"
-              placeholder="Optional — shows after the subject in most inboxes"
+              placeholder="Optional. Shows after the subject in most inboxes"
               (input)="onFieldInput()"
             />
           </div>
@@ -252,7 +252,7 @@
             } @else {
             <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
               <p class="text-xs text-base-content/60">
-                No verified senders yet — a verified address stops your sends from bouncing or spoofing.
+                No verified senders yet. A verified address stops your sends from bouncing or spoofing.
               </p>
               <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
                 Verify a sender
@@ -299,7 +299,7 @@
                 <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
               </button>
               } @if (!includeListIds().length && !includeListSuggestions().length) {
-              <span class="text-xs text-base-content/50">No lists yet — create one to target contacts.</span>
+              <span class="text-xs text-base-content/50">No lists yet. Create one to target contacts.</span>
               }
             </div>
             }

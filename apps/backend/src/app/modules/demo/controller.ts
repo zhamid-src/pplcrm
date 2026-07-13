@@ -35,7 +35,7 @@ export class DemoController extends BaseController<'settings', SettingsRepo> {
 
     const placeholderHouseholdId = tenant?.placeholder_household_id;
     if (!placeholderHouseholdId) {
-      throw new InternalError('This workspace has no placeholder household — cannot exit demo mode.');
+      throw new InternalError('This workspace has no placeholder household. Cannot exit demo mode.');
     }
 
     await this.getRepo()
@@ -63,7 +63,7 @@ export class DemoController extends BaseController<'settings', SettingsRepo> {
     const raw: unknown = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
     const parsed = DemoSeedManifestObj.safeParse(raw);
     if (!parsed.success) {
-      throw new InternalError('The demo data record is malformed — please contact support.');
+      throw new InternalError('The demo data record is malformed. Please contact support.');
     }
     return parsed.data;
   }

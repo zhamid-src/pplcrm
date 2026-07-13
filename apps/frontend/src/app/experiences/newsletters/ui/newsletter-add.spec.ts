@@ -276,7 +276,7 @@ describe('NewsletterAddComponent', () => {
     await component['saveDraft']();
 
     expect(mockNewslettersSvc.add).toHaveBeenCalledWith(expect.objectContaining({ status: 'draft' }));
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Saved draft "Big News" — find it in Newsletters');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Saved draft "Big News". Find it in Newsletters');
     expect(mockRouter.navigate).toHaveBeenCalled();
   });
 

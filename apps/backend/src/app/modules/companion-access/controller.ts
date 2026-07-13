@@ -155,7 +155,7 @@ export class CompanionAccessController {
         await this.smsService.enqueueSms(
           {
             to: destination,
-            body: `${orgName} code: ${code} — expires in 10 minutes.`,
+            body: `${orgName} code: ${code}. Expires in 10 minutes.`,
             tenant_id: link.tenant_id,
           },
           trx,
@@ -187,11 +187,11 @@ export class CompanionAccessController {
       throw new BadRequestError('Request a new code first.');
     }
     if (volunteer.verify_code_expires_at < new Date()) {
-      throw new BadRequestError('That code has expired — request a new one.');
+      throw new BadRequestError('That code has expired. Request a new one.');
     }
     if (volunteer.verify_attempts >= CODE_MAX_ATTEMPTS) {
       await this.volunteersRepo.clearVerifyCode({ tenant_id: link.tenant_id, id: volunteer.id });
-      throw new BadRequestError('Too many attempts — request a new code.');
+      throw new BadRequestError('Too many attempts. Request a new code.');
     }
     if (hashToken(code) !== volunteer.verify_code_hash) {
       await this.volunteersRepo.bumpVerifyAttempts({ tenant_id: link.tenant_id, id: volunteer.id });
@@ -388,7 +388,7 @@ export class CompanionAccessController {
           to: admin.email,
           subject: `${volunteerName} is waiting for companion app approval`,
           text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
-          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
+          html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in pplCRM</a></div>`,
           tenant_id: link.tenant_id,
         },
         trx,
@@ -417,7 +417,7 @@ export class CompanionAccessController {
       .executeTakeFirst();
     const value = row?.value;
     if (typeof value === 'string' && value.trim()) return value.trim().replace(/^"|"$/g, '');
-    return 'PeopleCRM';
+    return 'pplCRM';
   }
 
   private async organizerFirstName(tenant_id: string, user_id: string): Promise<string | undefined> {

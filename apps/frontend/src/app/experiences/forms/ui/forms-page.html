@@ -89,11 +89,11 @@
     <!-- State banner -->
     @if (form.status === 'draft') {
     <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
-      Draft — only your team can see this preview. Publish to accept responses.
+      Draft: only your team can see this preview. Publish to accept responses.
     </div>
     } @else if (form.status === 'archived') {
     <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
-      Archived — the public link shows a closed notice. Restore to edit or publish again.
+      Archived: the public link shows a closed notice. Restore to edit or publish again.
     </div>
     }
 
@@ -138,10 +138,10 @@
         <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
         } @case ('published') {
         <p class="text-sm text-base-content/60">
-          Share the link to start collecting responses — each one becomes a person.
+          Share the link to start collecting responses. Each one becomes a person.
         </p>
         } @case ('archived') {
-        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
+        <p class="text-sm text-base-content/60">No responses yet. Anything collected stayed on people’s records.</p>
         } }
       </div>
       }
@@ -178,7 +178,7 @@
   @if (forms().length === 0) {
   <pc-empty-state
     icon="clipboard-document-list"
-    title="No forms yet — create one to start collecting signups, RSVPs and more."
+    title="No forms yet. Create one to start collecting signups, RSVPs and more."
   >
     <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
       <pc-icon name="add-form" [size]="4"></pc-icon>
@@ -242,7 +242,7 @@
       }
 
       <p class="mt-2 px-1 text-xs text-base-content/40">
-        Responses land in People with the form’s tag applied — no copy-paste step.
+        Responses land in People with the form’s tag applied. No copy-paste step.
       </p>
     </div>
 
@@ -382,7 +382,7 @@
         </span>
         }
         <span class="text-xs text-base-content/50"
-          >Starts as a draft with the template’s fields — publish when it’s ready.</span
+          >Starts as a draft with the template’s fields. Publish when it’s ready.</span
         >
       </label>
 
@@ -411,7 +411,7 @@
         <h2 class="text-xl font-semibold">{{ form.name }}</h2>
         <span class="badge badge-info badge-xs">Editing</span>
       </div>
-      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly — nothing to save.</p>
+      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly. Nothing to save.</p>
     </div>
     <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
       <pc-icon name="check-circle" [size]="4"></pc-icon>
@@ -597,7 +597,7 @@
         </p>
         } @else {
         <p class="text-xs text-base-content/60">
-          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
+          Forms with responses are archived, never deleted. Receipts and person timelines keep pointing at them.
         </p>
         }
         <div class="flex gap-2">
@@ -649,8 +649,8 @@
   </div>
 
   <p class="mb-2 text-xs text-base-content/60">
-    @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the form.
-    } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    @if (embedMode() === 'iframe') { Drops the hosted form into any page. Updates automatically when you edit the form.
+    } @else { A plain HTML form posting straight to pplCRM. Reflects the form’s currently enabled fields. }
   </p>
 
   <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">

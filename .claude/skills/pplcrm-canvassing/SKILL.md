@@ -1,6 +1,6 @@
 ---
 name: pplcrm-canvassing
-description: How PeopleCRM's Canvassing feature (§13) works end-to-end — the turfs/turf_households/turf_assignments/turf_knocks tables, the turf-cutting engine (clusters geocoded households into contiguous ward-bounded turfs), derived progress from knocks, the tokenised account-less Canvass Companion, and the field report. USE WHEN editing anything under modules/canvassing, experiences/canvassing, the turf/knock schema, the cutting engine, the Companion public route, or the field report. EXAMPLES 'add a knock outcome', 'why do turfs never cross a ward', 'how does the Companion token auth work', 'where does turf progress come from'.
+description: How pplCRM's Canvassing feature (§13) works end-to-end — the turfs/turf_households/turf_assignments/turf_knocks tables, the turf-cutting engine (clusters geocoded households into contiguous ward-bounded turfs), derived progress from knocks, the tokenised account-less Canvass Companion, and the field report. USE WHEN editing anything under modules/canvassing, experiences/canvassing, the turf/knock schema, the cutting engine, the Companion public route, or the field report. EXAMPLES 'add a knock outcome', 'why do turfs never cross a ward', 'how does the Companion token auth work', 'where does turf progress come from'.
 ---
 
 # Canvassing (§13)

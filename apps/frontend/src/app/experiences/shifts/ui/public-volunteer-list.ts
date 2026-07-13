@@ -46,7 +46,7 @@ type PageState = 'loading' | 'open' | 'notfound';
 
             <h1 class="mb-1 text-xl font-semibold text-base-content">Volunteer events</h1>
             <p class="mb-6 text-sm text-base-content/60">
-              Join us and make a difference — pick an upcoming event below.
+              Join us and make a difference. Pick an upcoming event below.
             </p>
 
             @if (events().length === 0) {
@@ -94,7 +94,7 @@ type PageState = 'loading' | 'open' | 'notfound';
               </div>
             }
 
-            <p class="mt-8 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+            <p class="mt-8 text-center text-xs text-base-content/40">Powered by pplCRM</p>
           </div>
         }
         @default {

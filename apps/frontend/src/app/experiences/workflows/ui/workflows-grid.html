@@ -17,8 +17,8 @@
     </div>
     <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
     <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
-      Automations run a sequence — waits, emails, tags, tasks and notifications — every time a trigger fires. Create
-      your first one to start.
+      Automations run a sequence (waits, emails, tags, tasks and notifications) every time a trigger fires. Create your
+      first one to start.
     </p>
     <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
   </div>
@@ -71,7 +71,7 @@
         @if (row.last_run_error) {
         <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
           <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
-          <span>Last run failed — {{ row.last_run_error }}</span>
+          <span>Last run failed: {{ row.last_run_error }}</span>
         </div>
         }
       </div>
@@ -81,7 +81,7 @@
 
   <!-- Footer (verbatim spec copy) --------------------------------------------->
   <p class="text-xs text-base-content/50">
-    Every run is written to the Activity log. Pausing stops new runs immediately — nothing queues while paused.
+    Every run is written to the Activity log. Pausing stops new runs immediately. Nothing queues while paused.
   </p>
   }
 </div>

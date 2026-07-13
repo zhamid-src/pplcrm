@@ -1,9 +1,9 @@
 ---
 name: pplcrm-schemas-validation
-description: "Write and wire the shared Zod schemas in libs/common that validate every tRPC input and drive frontend forms in PeopleCRM. USE WHEN adding or editing a *.schema.ts file, defining an AddXObj/UpdateXObj/XObj triad, reusing core.schema helpers, or deciding between .partial() and a hand-written Update variant. EXAMPLES: 'Add a Zod schema for the new invoices entity', 'Why is UpdateTeamObj hand-written instead of AddTeamObj.partial()?', 'What does nameSchema enforce?'."
+description: "Write and wire the shared Zod schemas in libs/common that validate every tRPC input and drive frontend forms in pplCRM. USE WHEN adding or editing a *.schema.ts file, defining an AddXObj/UpdateXObj/XObj triad, reusing core.schema helpers, or deciding between .partial() and a hand-written Update variant. EXAMPLES: 'Add a Zod schema for the new invoices entity', 'Why is UpdateTeamObj hand-written instead of AddTeamObj.partial()?', 'What does nameSchema enforce?'."
 ---
 
-# PeopleCRM: Shared Zod Schemas & Validation
+# pplCRM: Shared Zod Schemas & Validation
 
 One Zod object is the single source of truth for a payload across three layers: it validates the tRPC input on the backend, it derives the TypeScript type both sides import, and it validates the Angular signal form on the frontend. Get the schema right and all three follow. Schemas live in `libs/common/src/lib/schemas/*.schema.ts`; shared field helpers live in `libs/common/src/lib/schemas/core.schema.ts`.
 

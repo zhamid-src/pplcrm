@@ -74,10 +74,10 @@ export class ProfilePage implements OnInit {
   protected readonly roleWithAccess = computed(() => {
     const role = this.detail()?.role;
     const descriptions: Record<string, string> = {
-      owner: 'Owner — full access',
-      admin: 'Admin — users & workspace settings',
-      user: 'Editor — day-to-day work',
-      viewer: 'Viewer — read-only',
+      owner: 'Owner: full access',
+      admin: 'Admin: users & workspace settings',
+      user: 'Editor: day-to-day work',
+      viewer: 'Viewer: read-only',
     };
     return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
   });
@@ -122,10 +122,10 @@ export class ProfilePage implements OnInit {
       emails.total === 0
         ? 'assigned to you'
         : emails.open === emails.total
-          ? 'assigned to you — all open'
+          ? 'assigned to you, all open'
           : emails.open === 0
-            ? 'assigned to you — all closed'
-            : `assigned to you — ${emails.open} open · ${emails.closed} closed`;
+            ? 'assigned to you, all closed'
+            : `assigned to you, ${emails.open} open · ${emails.closed} closed`;
     return [
       {
         key: 'emails',

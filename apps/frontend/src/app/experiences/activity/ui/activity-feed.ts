@@ -148,7 +148,7 @@ export class ActivityFeed implements OnInit {
       });
 
       if (res && res.status === 'processing') {
-        this.alertSvc.showSuccess('Export queued — we’ll email you activity-log.csv once it’s ready.');
+        this.alertSvc.showSuccess('Export queued. We’ll email you activity-log.csv once it’s ready.');
       } else if (res && res.csv) {
         const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);

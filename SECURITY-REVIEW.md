@@ -1,8 +1,8 @@
-# PeopleCRM — Security, Correctness & Performance Review
+# pplCRM — Security, Correctness & Performance Review
 
 ## Context
 
-This is a full read-only review of the PeopleCRM backend (Fastify 5 + tRPC + Kysely/Postgres) and
+This is a full read-only review of the pplCRM backend (Fastify 5 + tRPC + Kysely/Postgres) and
 frontend (Angular 22 + signals). The goal is a reliable, secure, performant app — not token economy.
 Each finding below cites the exact file and line, states the concrete failure it produces, and gives a
 fix. Findings are grouped into phases by severity so they can be executed in order.

@@ -65,7 +65,7 @@ function escapeHtml(value: string): string {
 
       <!-- Footer explainer (verbatim §8): narrates what each list type does. -->
       <p class="text-xs leading-relaxed text-base-content/60">
-        Smart lists refresh themselves — membership updates automatically as people and households change. Static lists
+        Smart lists refresh themselves. Membership updates automatically as people and households change. Static lists
         run their rules once at creation and save a fixed snapshot; membership only changes when you edit it by hand.
         Opening a list shows it applied on the grid.
       </p>

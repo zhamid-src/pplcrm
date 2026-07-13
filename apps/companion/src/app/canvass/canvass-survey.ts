@@ -325,7 +325,7 @@ export class CanvassSurvey {
       notes: this.notes().trim() ? this.notes().trim() : null,
     });
     const syncing = this.store.online() && !this.store.workOffline();
-    this.alerts.showSuccess(syncing ? 'Saved · syncing to PeopleCRM…' : 'Saved — will sync when back online');
+    this.alerts.showSuccess(syncing ? 'Saved · syncing to pplCRM…' : 'Saved. Will sync when back online');
     this.back();
   }
 

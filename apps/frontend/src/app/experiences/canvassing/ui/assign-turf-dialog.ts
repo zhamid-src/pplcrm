@@ -56,7 +56,7 @@ interface PersonOption {
               }
             </ul>
           } @else if (query().trim().length > 1) {
-            <p class="text-xs text-base-content/60">No people match — check the spelling or add them first.</p>
+            <p class="text-xs text-base-content/60">No people match. Check the spelling or add them first.</p>
           }
         } @else {
           <div class="flex items-center justify-between rounded-box border border-base-300 p-3">
@@ -68,7 +68,7 @@ interface PersonOption {
           </div>
           @if (!selected()?.contact) {
             <p class="text-xs text-warning-content">
-              No email or mobile on file — add one to their person record or the verification step can't reach them.
+              No email or mobile on file. Add one to their person record or the verification step can't reach them.
             </p>
           }
         }

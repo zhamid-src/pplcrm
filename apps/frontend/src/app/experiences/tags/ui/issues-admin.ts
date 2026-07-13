@@ -47,7 +47,7 @@ export class IssuesAdmin implements OnInit {
     const issueCount = this.rows().length;
     return (
       `${issueCount.toLocaleString()} issue${issueCount === 1 ? '' : 's'} · ` +
-      `${this.peopleSharedCount().toLocaleString()} people shared what they care about — from forms, surveys and profile edits.`
+      `${this.peopleSharedCount().toLocaleString()} people shared what they care about, from forms, surveys and profile edits.`
     );
   });
 

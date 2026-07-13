@@ -326,7 +326,7 @@
       [title]="
         getCountRowSelected() === 2
           ? 'Merge 2 ' + entityNounPlural
-          : 'Select exactly 2 ' + entityNounPlural + ' to merge — ' + getCountRowSelected() + ' selected'
+          : 'Select exactly 2 ' + entityNounPlural + ' to merge. ' + getCountRowSelected() + ' selected'
       "
       (click)="doConfirmMerge()"
     >
@@ -340,7 +340,7 @@
       [title]="
         hasSingleSelection()
           ? 'Clone this ' + entityNoun
-          : 'Select exactly 1 ' + entityNoun + ' to clone — ' + getCountRowSelected() + ' selected'
+          : 'Select exactly 1 ' + entityNoun + ' to clone. ' + getCountRowSelected() + ' selected'
       "
       (click)="doClone()"
     >

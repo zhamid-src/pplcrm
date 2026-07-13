@@ -172,7 +172,7 @@ export class CompanyView {
     this.enriching.set(true);
     try {
       await this.companiesSvc.enrich(id, this.isEnriched());
-      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
+      this.alertSvc.showSuccess('Enrichment queued. Fields fill in the background.');
     } catch (err) {
       this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
     } finally {
@@ -184,7 +184,7 @@ export class CompanyView {
     if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete company',
-      message: 'Employees keep their person records — only the employer grouping clears.',
+      message: 'Employees keep their person records. Only the employer grouping clears.',
       variant: 'danger',
       confirmText: 'Delete company',
     });

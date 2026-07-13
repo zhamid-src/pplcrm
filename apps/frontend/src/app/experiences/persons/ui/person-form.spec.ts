@@ -286,7 +286,7 @@ describe('PersonForm', () => {
 
     expect(componentNew['pendingHouseholdId']()).toBe('h1');
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(
-      'Household selected — it will be saved when you add the person',
+      'Household selected. It will be saved when you add the person',
     );
     expect(mockPersonsSvc.update).not.toHaveBeenCalled();
   });

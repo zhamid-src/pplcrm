@@ -77,15 +77,15 @@
             <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
             <p class="text-base-content/80">
               {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
-              }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}) — hard bounces
-              joined the suppression list and future sends skip them automatically per the
+              }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}). Hard bounces joined
+              the suppression list and future sends skip them automatically per the
               <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
             </p>
           </div>
           } } } @else {
           <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
             <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">Nothing has been sent yet — delivery results will appear here.</p>
+            <p class="text-xs text-base-content/60">Nothing has been sent yet. Delivery results will appear here.</p>
           </div>
           }
         </section>
@@ -138,7 +138,7 @@
           } @else {
           <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
             <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
-            <p class="text-xs text-base-content/60">No bounces — every address accepted this send.</p>
+            <p class="text-xs text-base-content/60">No bounces. Every address accepted this send.</p>
           </div>
           }
         </section>
@@ -181,7 +181,7 @@
           <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
             <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
             <p class="text-xs text-base-content/60">
-              No hour-by-hour engagement to chart — opens and clicks appear here as they arrive.
+              No hour-by-hour engagement to chart. Opens and clicks appear here as they arrive.
             </p>
           </div>
           }
@@ -248,8 +248,8 @@
             }
           </div>
           <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-            The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest — this send is the solid
-            bar. Deltas compare against the send before it.
+            The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest. This send is the solid bar.
+            Deltas compare against the send before it.
           </p>
         </section>
         }
@@ -278,7 +278,7 @@
             </button>
           </span>
           <p class="mt-2 text-[10px] text-base-content/50">
-            A static snapshot — target the next send at the people who acted on this one.
+            A static snapshot. Target the next send at the people who acted on this one.
           </p>
 
           <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
@@ -361,13 +361,13 @@
             </span>
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">
-            @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now — lists may have
+            @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now. Lists may have
             changed since the send.
           </p>
           } @else {
           <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
             <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">No lists were targeted — the audience came from tag segments.</p>
+            <p class="text-xs text-base-content/60">No lists were targeted. The audience came from tag segments.</p>
           </div>
           }
         </section>
@@ -428,8 +428,8 @@
           </div>
           }
           <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-            Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1% — @if
-            (spamRateIsSafe()) { this send is well clear. } @else { this send is over that line — review the audience
+            Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1%. @if
+            (spamRateIsSafe()) { This send is well clear. } @else { This send is over that line. Review the audience
             before the next send. }
           </p>
           } @else {

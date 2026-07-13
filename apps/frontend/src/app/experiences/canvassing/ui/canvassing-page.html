@@ -32,7 +32,7 @@
       <div class="mb-2 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live — updates as knocks are logged</span>
+          <span class="badge badge-ghost badge-sm">Live: updates as knocks are logged</span>
         </div>
         <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
           Full field report →
@@ -69,7 +69,7 @@
             }
           </div>
           } @else {
-          <p class="text-sm text-base-content/50">No knocks logged yet today — outcomes appear as companions sync.</p>
+          <p class="text-sm text-base-content/50">No knocks logged yet today. Outcomes appear as companions sync.</p>
           }
         </div>
       </div>
@@ -173,9 +173,9 @@
       </table>
     </div>
     <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion — the Companion is a web app, so a
-      copied link does the same job for walk-up volunteers. Progress and conversations sync back live — knocks land on
-      the person, the household, and the Activity log.
+      Assigning a turf sends it to every member of its team's Canvass Companion. The Companion is a web app, so a copied
+      link does the same job for walk-up volunteers. Progress and conversations sync back live. Knocks land on the
+      person, the household, and the Activity log.
     </div>
   </section>
   } @else {
@@ -295,7 +295,7 @@
     </div>
     } } @if (r.doors === 0) {
     <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions — nothing is entered by
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions. Nothing is entered by
       hand.
     </div>
     } @else {
@@ -384,7 +384,7 @@
           </div>
           }
         </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best — schedule shifts 4–8 pm when you can.</p>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best. Schedule shifts 4–8 pm when you can.</p>
         } @else {
         <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
         }
@@ -409,7 +409,7 @@
     </div>
 
     <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions — nothing is entered by hand. Contact rate counts
+      Every number here flows in from synced Canvass Companions. Nothing is entered by hand. Contact rate counts
       conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
     </p>
     } }
