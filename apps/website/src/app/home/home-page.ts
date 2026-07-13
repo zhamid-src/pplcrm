@@ -65,7 +65,7 @@ const HEROES: Record<Audience, Hero> = {
     img: 'assets/site-shots/01-shot.png',
   },
   camp: {
-    h1: 'Built for the people who knock.',
+    h1: 'Built for the people who knock and win campaigns.',
     sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
     url: 'app.pplcrm.com/canvassing',
     kind: 'canvassing',
