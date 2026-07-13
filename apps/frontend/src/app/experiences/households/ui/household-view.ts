@@ -15,7 +15,9 @@ import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
+import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
@@ -43,6 +45,7 @@ type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: s
     PcMap,
     GeocodeChip,
     DatePipe,
+    YardSignStanding,
   ],
   templateUrl: './household-view.html',
 })
@@ -60,6 +63,7 @@ export class HouseholdView {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly dialogSvc = inject(ConfirmDialogService);
+  protected readonly campaignContext = inject(CampaignContextService);
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
@@ -69,6 +73,12 @@ export class HouseholdView {
 
   protected readonly peopleCount = signal(0);
   protected readonly lastCanvass = signal<LastCanvass>(null);
+
+  /** Real record id for child lookups — the route param may be a slug. */
+  protected readonly householdRecordId = computed(() => {
+    const h = this.household();
+    return h && !h.is_placeholder ? String(h.id) : null;
+  });
 
   // Tabbed right column (matches person view): Members is the default tab.
   protected readonly activeTab = signal<string>('members');

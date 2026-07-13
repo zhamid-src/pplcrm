@@ -6,6 +6,7 @@ import type {
   AddDeliveryRequestType,
   AssignVolunteerType,
   CommitDeliveriesType,
+  GetSignStatusType,
   IAuthKeyPayload,
   PlanDeliveriesType,
   ReorderStopType,
@@ -87,6 +88,12 @@ export class DeliveriesController {
     return this.requestsRepo.getReadyCount(tenant);
   }
 
+  /** Yard-sign standing for one household in one campaign context (household/person pages). */
+  public async getSignStatus(auth: IAuthKeyPayload, input: GetSignStatusType) {
+    const request = await this.requestsRepo.getSignStatus(auth.tenant_id, input.household_id, input.campaign_id);
+    return { request };
+  }
+
   public async addRequest(auth: IAuthKeyPayload, input: AddDeliveryRequestType) {
     // Guard: a household with an OPEN request (new/approved, incl. routed) can't have a second.
     const open = await this.requestsRepo.db
@@ -117,6 +124,7 @@ export class DeliveriesController {
       updatedby_id: auth.user_id,
     } as OperationDataType<'delivery_requests', 'insert'>;
     const created = await this.requestsRepo.add({ row });
+    await this.logRequestStanding(undefined, auth, [String(created.id)], 'recorded');
     return { id: String(created.id) };
   }
 
@@ -134,8 +142,10 @@ export class DeliveriesController {
   }
 
   public async setRequestStatus(auth: IAuthKeyPayload, input: SetDeliveryRequestStatusType) {
-    // A request sitting on an active (pending) stop can't be declined out from under a route.
-    if (input.status === 'declined') {
+    // A request sitting on an active (pending) stop can't be declined or reset out from under a
+    // route. Approved + pending stop is the normal on-route state, and 'delivered' flows THROUGH
+    // the stop below so route progress stays truthful.
+    if (input.status === 'declined' || input.status === 'new') {
       const onRoute = await this.requestsRepo.db
         .selectFrom('delivery_route_stops')
         .select(['id'])
@@ -147,13 +157,40 @@ export class DeliveriesController {
         throw new BadRequestError('Remove these requests from their route first, or cancel that route.');
       }
     }
-    await this.requestsRepo.db
-      .updateTable('delivery_requests')
-      .set({ status: input.status, updatedby_id: auth.user_id, updated_at: new Date() })
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', 'in', input.ids)
-      .execute();
-    return { updated: input.ids.length };
+    return this.requestsRepo.transaction().execute(async (trx) => {
+      let directIds = input.ids;
+      if (input.status === 'delivered') {
+        // Manual "the sign is in the ground" flip: requests on an active route deliver via their
+        // stop (staff-attributed), which also advances/auto-completes the route.
+        const pendingStops = await trx
+          .selectFrom('delivery_route_stops')
+          .select(['id', 'route_id', 'request_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('request_id', 'in', input.ids)
+          .where('status', '=', 'pending')
+          .execute();
+        for (const stop of pendingStops) {
+          await this.applyStopTransition(trx, auth, String(stop.route_id), String(stop.id), 'deliver', null, 'staff');
+        }
+        const handled = new Set(pendingStops.map((s) => String(s.request_id)));
+        directIds = input.ids.filter((id) => !handled.has(id));
+      }
+      if (directIds.length > 0) {
+        await trx
+          .updateTable('delivery_requests')
+          .set({
+            status: input.status,
+            ...(input.status === 'delivered' ? { skip_reason: null } : {}),
+            updatedby_id: auth.user_id,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', 'in', directIds)
+          .execute();
+      }
+      await this.logRequestStanding(trx, auth, input.ids, input.status);
+      return { updated: input.ids.length };
+    });
   }
 
   // ---- Planning -----------------------------------------------------------
@@ -1074,6 +1111,64 @@ export class DeliveriesController {
       link_expires_at: (expiresAt as Date | string | null) ?? null,
       stops,
     };
+  }
+
+  /**
+   * Yard-sign standing changes surface on the household's (and requester's) activity feed —
+   * the sign lives at the door, so that's where its history belongs (honest attribution, §22.7).
+   * Route-level history is logged separately by applyStopTransition/logRouteActivity.
+   */
+  private async logRequestStanding(
+    trx: Transaction<Models> | undefined,
+    auth: IAuthKeyPayload,
+    requestIds: string[],
+    status: 'recorded' | SetDeliveryRequestStatusType['status'],
+  ): Promise<void> {
+    const db = trx ?? this.requestsRepo.db;
+    const labels: Record<string, string> = {
+      recorded: 'Yard sign request recorded',
+      new: 'Yard sign request reopened',
+      approved: 'Yard sign request approved',
+      declined: 'Yard sign request declined',
+      delivered: 'Yard sign marked delivered',
+    };
+    const message = labels[status] ?? `Yard sign request ${status}`;
+    try {
+      const rows = await db
+        .selectFrom('delivery_requests')
+        .select(['id', 'household_id', 'person_id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', requestIds)
+        .execute();
+      for (const r of rows) {
+        const targets: Array<{ entity: string; entity_id: string }> = [
+          { entity: 'households', entity_id: String(r.household_id) },
+        ];
+        if (r.person_id != null) targets.push({ entity: 'persons', entity_id: String(r.person_id) });
+        for (const target of targets) {
+          await this.userActivity.log(
+            {
+              tenant_id: auth.tenant_id,
+              user_id: auth.user_id,
+              activity: status === 'recorded' ? 'create' : 'update',
+              entity: target.entity,
+              entity_id: target.entity_id,
+              quantity: 1,
+              metadata: {
+                action: 'yard_sign_status',
+                message,
+                entity_label: message,
+                request_id: String(r.id),
+                via: 'staff',
+              },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to log yard sign standing activity');
+    }
   }
 
   private async logRouteActivity(

@@ -14,6 +14,14 @@ export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
 export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
 
 export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
 export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
 export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
 export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
@@ -32,10 +40,17 @@ export const UpdateDeliveryRequestObj = z.object({
   notes: notesSchema,
 });
 
-// Bulk approve/decline from the selection bar (spec §4.1).
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
 export const SetDeliveryRequestStatusObj = z.object({
   ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(['approved', 'declined']),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
+});
+
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
 });
 
 // ---- Planning --------------------------------------------------------------
@@ -106,6 +121,7 @@ export const PublicStopActionObj = z.object({
 export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
 export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
 export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
 export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
 export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
 export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;

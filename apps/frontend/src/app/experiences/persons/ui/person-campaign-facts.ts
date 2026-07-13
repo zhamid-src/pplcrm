@@ -14,6 +14,7 @@ import type { SupportLevel, VotingStatus } from '../../../../../../../libs/commo
 
 import { CampaignContextService } from '../../../services/campaign-context.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
 import {
   CampaignsService,
   PersonCampaignFact,
@@ -29,12 +30,14 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
  */
 @Component({
   selector: 'pc-person-campaign-facts',
-  imports: [DatePipe, Icon, PcCard],
+  imports: [DatePipe, Icon, PcCard, YardSignStanding],
   templateUrl: './person-campaign-facts.html',
 })
 export class PersonCampaignFacts {
   readonly personId = input.required<string>();
   readonly dncFlag = input<boolean>(false);
+  /** The person's household (null = no address) — drives the yard-sign standing control. */
+  readonly householdId = input<string | null>(null);
 
   protected readonly context = inject(CampaignContextService);
   private readonly campaignsSvc = inject(CampaignsService);
