@@ -84,6 +84,12 @@ verification channel.
 - Verification codes and sessions store **hashes only**; if you ever need to show a
   token again, you can't — mint a new one.
 - Rate limiting is in-process (SECURITY-REVIEW §4.1 caveat applies).
+- `resolveLink`'s route branch enforces the delivery link's 30-day expiry only
+  while the Workspace → App policy allows (`app.volunteer_links_expire`, default
+  ON — `lib/volunteer-link-policy.ts`); keep it in lockstep with
+  `DeliveriesController.isTokenUsable` or the gate and the data endpoint will
+  disagree about whether a link is dead. Turf `expires_at` is unaffected
+  (per-assignment, staff-set).
 - Tests: fabricate an approved volunteer + session directly (see
   `mintApprovedSession` in `canvassing/controller.spec.ts`) instead of driving the
   whole verify journey; that journey is covered once in

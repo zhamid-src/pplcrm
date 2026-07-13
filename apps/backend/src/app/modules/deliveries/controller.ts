@@ -29,6 +29,7 @@ import {
   SHARE_TOKEN_TTL_DAYS,
 } from '../../lib/routing/route-constants';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
 import { logger } from '../../logger';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
@@ -402,7 +403,8 @@ export class DeliveriesController {
         .executeTakeFirst();
       if (v) volunteerName = `${v.first_name ?? ''} ${v.last_name ?? ''}`.trim() || null;
     }
-    return this.sanitizeRoute(route, stops, volunteerName);
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
+    return this.sanitizeRoute(route, stops, volunteerName, expiryEnforced);
   }
 
   public async updateRoute(auth: IAuthKeyPayload, id: string, input: UpdateDeliveryRouteType) {
@@ -603,14 +605,17 @@ export class DeliveriesController {
     if (route.volunteer_person_id == null) {
       throw new BadRequestError('Assign a volunteer to this route first — the link is personal.');
     }
+    // Whether the 30-day expiry is enforced is a live workspace policy (Workspace → App).
+    // The date is always STORED at mint time; the setting decides whether it counts.
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, auth.tenant_id);
     const active =
       route.share_token_hash != null &&
-      route.share_token_expires_at != null &&
-      new Date(route.share_token_expires_at) > new Date();
+      (!expiryEnforced ||
+        (route.share_token_expires_at != null && new Date(route.share_token_expires_at) > new Date()));
     if (active && !input.regenerate) {
       // A live link already exists; the raw token is never stored, so we can't return it. Tell the
-      // UI so it can offer copy-vs-regenerate.
-      return { status: 'exists' as const, expires_at: route.share_token_expires_at };
+      // UI so it can offer copy-vs-regenerate. expires_at is null when the workspace disables expiry.
+      return { status: 'exists' as const, expires_at: expiryEnforced ? route.share_token_expires_at : null };
     }
     const rawToken = randomBytes(32).toString('base64url');
     const hash = createHash('sha256').update(rawToken).digest('hex');
@@ -627,7 +632,7 @@ export class DeliveriesController {
       .where('id', '=', input.route_id)
       .execute();
     await this.logRouteActivity(undefined, auth, input.route_id, 'update', 'link_created', 'Volunteer link created');
-    return { status: 'minted' as const, token: rawToken, expires_at: expiresAt.toISOString() };
+    return { status: 'minted' as const, token: rawToken, expires_at: expiryEnforced ? expiresAt.toISOString() : null };
   }
 
   public async revokeShareLink(auth: IAuthKeyPayload, routeId: string) {
@@ -654,7 +659,9 @@ export class DeliveriesController {
    */
   public async getPublicRoute(rawToken: string, sessionToken: string | null) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!this.isTokenUsable(route)) return null;
+    if (!route) return null;
+    const expiryEnforced = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, expiryEnforced)) return null;
     await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const stops = await this.stopsRepo.getStopsForRoute(tenantId, String(route.id));
@@ -671,7 +678,9 @@ export class DeliveriesController {
     opId: string | null,
   ) {
     const route = await this.routesRepo.findByTokenHash(this.hashToken(rawToken));
-    if (!this.isTokenUsable(route)) return null;
+    if (!route) return null;
+    const enforceExpiry = await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id));
+    if (!this.isTokenUsable(route, enforceExpiry)) return null;
     await this.requireCompanionSession(route, sessionToken);
     const tenantId = String(route.tenant_id);
     const routeId = String(route.id);
@@ -1034,7 +1043,13 @@ export class DeliveriesController {
     };
   }
 
-  private isTokenUsable(route: { status?: unknown; share_token_expires_at?: unknown } | undefined): route is {
+  /** `enforceExpiry` is the live Workspace → App policy (volunteerLinksExpire) — when the
+   * workspace disables expiry, a link stays usable for the life of the route (until revoked
+   * or the route is canceled). */
+  private isTokenUsable(
+    route: { status?: unknown; share_token_expires_at?: unknown } | undefined,
+    enforceExpiry: boolean,
+  ): route is {
     id: string;
     tenant_id: string;
     createdby_id: string;
@@ -1044,6 +1059,7 @@ export class DeliveriesController {
     if (!route) return false;
     const status = String((route as Record<string, unknown>)['status']);
     if (status === 'canceled') return false;
+    if (!enforceExpiry) return true;
     const exp = (route as Record<string, unknown>)['share_token_expires_at'];
     if (!exp) return false;
     return new Date(String(exp)) > new Date();
@@ -1092,9 +1108,14 @@ export class DeliveriesController {
     route: Record<string, unknown>,
     stops: Awaited<ReturnType<DeliveryRouteStopsRepo['getStopsForRoute']>>,
     volunteerName: string | null,
+    expiryEnforced: boolean,
   ) {
-    const expiresAt = route['share_token_expires_at'];
-    const linkActive = route['share_token_hash'] != null && !!expiresAt && new Date(String(expiresAt)) > new Date();
+    // link_expires_at is a POLICY-shaped value: null when the workspace disables expiry, so the
+    // UI never shows a date that won't be enforced.
+    const expiresAt = expiryEnforced ? route['share_token_expires_at'] : null;
+    const linkActive =
+      route['share_token_hash'] != null &&
+      (!expiryEnforced || (!!expiresAt && new Date(String(expiresAt)) > new Date()));
     return {
       id: String(route['id']),
       name: String(route['name'] ?? ''),

@@ -4,6 +4,7 @@ import type { IAuthKeyPayload } from '@common';
 
 import { BaseRepository } from '../../lib/base.repo';
 import { generateToken, hashToken } from '../../lib/token-hash';
+import { CompanionAccessController } from '../companion-access/controller';
 import { DeliveriesController } from './controller';
 
 type Db = typeof BaseRepository.dbInstance;
@@ -194,7 +195,23 @@ async function mintApprovedSession(db: Db, tenantId: string, personId: string, c
   return raw;
 }
 
+/** Flip the Workspace → App link-expiry policy for the seeded tenant (absent row = ON). */
+async function setLinkExpiryPolicy(db: Db, tenantId: string, userId: string, expire: boolean): Promise<void> {
+  await db
+    .insertInto('settings')
+    .values({
+      tenant_id: tenantId,
+      key: 'app.volunteer_links_expire',
+      value: JSON.stringify(expire),
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .onConflict((oc) => oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(expire) }))
+    .execute();
+}
+
 async function cleanup(db: Db, tenantId: string): Promise<void> {
+  await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_ops').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_sessions').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('companion_volunteers').where('tenant_id', '=', tenantId).execute();
@@ -264,6 +281,67 @@ describe('DeliveriesController — public volunteer path', () => {
     // swallows it and we get the current authoritative payload back.
     const replay = await controller.publicStopAction(s.routeToken, String(a), 'defer', null, session, opX);
     expect(orderOf(replay)).toEqual([c, a, b]);
+  });
+
+  it('an expired link is dead by default, but the Workspace → App policy can turn expiry off', async () => {
+    const session = await mintApprovedSession(db, s.tenantId, s.volunteerPersonId, s.organizerId);
+    await db
+      .updateTable('delivery_routes')
+      .set({ share_token_expires_at: new Date(Date.now() - 1000) })
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .execute();
+
+    // Default (no setting row): the stored expiry is enforced on both enforcement points —
+    // the data endpoint AND the companion gate's resolveLink.
+    await expect(controller.getPublicRoute(s.routeToken, session)).resolves.toBeNull();
+    const gate = new CompanionAccessController();
+    expect((await gate.getAccess('route', s.routeToken, session)).state).toBe('dead');
+
+    // Workspace turns expiry off: the very same link comes back to life immediately.
+    await setLinkExpiryPolicy(db, s.tenantId, s.organizerId, false);
+    const payload = await controller.getPublicRoute(s.routeToken, session);
+    expect(payload?.stops).toHaveLength(3);
+    expect((await gate.getAccess('route', s.routeToken, session)).state).toBe('ready');
+
+    // Turning it back on re-applies the stored date just as immediately.
+    await setLinkExpiryPolicy(db, s.tenantId, s.organizerId, true);
+    await expect(controller.getPublicRoute(s.routeToken, session)).resolves.toBeNull();
+  });
+
+  it('mintShareLink and getRouteById reflect the workspace expiry policy', async () => {
+    // Policy ON (default): a fresh mint carries an expiry date.
+    const minted = await controller.mintShareLink(staffAuth, { route_id: s.routeId, regenerate: true });
+    expect(minted.status).toBe('minted');
+    if (minted.status === 'minted') expect(minted.expires_at).toEqual(expect.any(String));
+
+    // Policy OFF: an EXPIRED stored date no longer forces a regenerate — the link counts as
+    // active ('exists'), and no misleading date is reported anywhere.
+    await setLinkExpiryPolicy(db, s.tenantId, s.organizerId, false);
+    await db
+      .updateTable('delivery_routes')
+      .set({ share_token_expires_at: new Date(Date.now() - 1000) })
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .execute();
+    const existing = await controller.mintShareLink(staffAuth, { route_id: s.routeId });
+    expect(existing).toEqual({ status: 'exists', expires_at: null });
+
+    const detail = await controller.getRouteById(staffAuth, s.routeId);
+    expect(detail.link_active).toBe(true);
+    expect(detail.link_expires_at).toBeNull();
+
+    // And a mint under the disabled policy reports no expiry (the date is still stored as data).
+    const remint = await controller.mintShareLink(staffAuth, { route_id: s.routeId, regenerate: true });
+    expect(remint.status).toBe('minted');
+    if (remint.status === 'minted') expect(remint.expires_at).toBeNull();
+    const row = await db
+      .selectFrom('delivery_routes')
+      .select('share_token_expires_at')
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', s.routeId)
+      .executeTakeFirst();
+    expect(row?.share_token_expires_at).not.toBeNull();
   });
 
   it('mintShareLink refuses a route with no volunteer attached', async () => {

@@ -50,9 +50,11 @@
       </div>
       <div>
         <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer link</p>
-        @if (d.link_active) {
+        @if (d.link_active) { @if (d.link_expires_at) {
         <p class="text-success">Active — expires {{ d.link_expires_at | date: 'mediumDate' }}</p>
         } @else {
+        <p class="text-success">Active</p>
+        } } @else {
         <p class="text-base-content/50">No active link</p>
         }
       </div>
