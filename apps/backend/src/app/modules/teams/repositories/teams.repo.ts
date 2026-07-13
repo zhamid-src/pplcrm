@@ -7,8 +7,6 @@ import type { Models } from '../../../../../../../libs/common/src/lib/kysely.mod
 import type { SortModelType } from '../../../../../../../libs/common/src';
 
 export class TeamsRepo extends BaseRepository<'teams'> {
-  private readonly volunteerTag = 'volunteer';
-
   constructor() {
     super('teams');
   }
@@ -32,10 +30,11 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         .leftJoin('map_teams_persons', (join) =>
           join.onRef('map_teams_persons.team_id', '=', 'teams.id').on('map_teams_persons.tenant_id', '=', tenantId),
         )
-        .leftJoin('map_peoples_tags as mtp', (join) =>
-          join.onRef('mtp.person_id', '=', 'map_teams_persons.person_id').on('mtp.tenant_id', '=', tenantId),
+        .leftJoin('persons as volunteer_person', (join) =>
+          join
+            .onRef('volunteer_person.id', '=', 'map_teams_persons.person_id')
+            .on('volunteer_person.tenant_id', '=', tenantId),
         )
-        .leftJoin('tags as volunteer_tag', 'volunteer_tag.id', 'mtp.tag_id')
         .leftJoin('persons as captain', 'captain.id', 'teams.team_captain_id')
         .leftJoin('authusers as lead_user', 'lead_user.id', 'teams.team_lead_user_id')
         .where('teams.tenant_id', '=', tenantId)
@@ -75,7 +74,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'teams.updated_at',
         sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`.as('captain_name'),
         sql`COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')`.as('lead_user_name'),
-        sql<number>`COUNT(DISTINCT CASE WHEN LOWER(volunteer_tag.name) = ${this.volunteerTag} THEN map_teams_persons.person_id END)`.as(
+        sql<number>`COUNT(DISTINCT CASE WHEN volunteer_person.volunteer_status IS NOT NULL THEN map_teams_persons.person_id END)`.as(
           'volunteer_count',
         ),
       ])
@@ -95,7 +94,10 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         (options.sortModel ?? []).reduce((acc: any, sort: SortModelType) => {
           switch (sort.colId) {
             case 'volunteer_count':
-              return acc.orderBy(sql`COUNT(DISTINCT map_teams_persons.person_id)`, sort.sort);
+              return acc.orderBy(
+                sql`COUNT(DISTINCT CASE WHEN volunteer_person.volunteer_status IS NOT NULL THEN map_teams_persons.person_id END)`,
+                sort.sort,
+              );
             case 'team_captain_name':
               return acc.orderBy(sql`COALESCE(captain.first_name || ' ' || captain.last_name, '')`, sort.sort);
             case 'team_lead_user_name':
