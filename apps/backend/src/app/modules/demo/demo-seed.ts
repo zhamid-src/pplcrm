@@ -18,14 +18,13 @@ import {
   DEMO_DONATIONS,
   DEMO_EMAILS,
   DEMO_HOUSEHOLDS,
-  DEMO_ISSUES,
+  DEMO_ISSUE_ASSIGNMENTS,
   DEMO_LISTS,
   DEMO_NEWSLETTERS,
   DEMO_PERSONS,
   DEMO_PLEDGES,
   DEMO_STATE,
   DEMO_SUBMISSIONS,
-  DEMO_TAGS,
   DEMO_TASKS,
   DEMO_TEAM,
   DEMO_TURFS,
@@ -37,15 +36,21 @@ import type { DemoEngagementDef, DemoNewsletterDef } from './demo-seed-data';
 /**
  * Everything `seedDemoData` created, keyed by table — stored as a `settings`
  * row so exit-demo can delete exactly these rows (and nothing the user created
- * meanwhile). The starter web forms are deliberately NOT here: they survive
- * exiting demo mode.
+ * meanwhile). The starter web forms and the starter tag/issue vocabulary
+ * (auth/onboarding-seed.ts) are deliberately NOT here: they survive exiting
+ * demo mode.
  */
 export const DemoSeedManifestObj = z.object({
   version: z.literal(1),
   companies: z.array(z.string()),
   households: z.array(z.string()),
   persons: z.array(z.string()),
-  /** Demo tag AND demo issue ids — both live in the tags table. */
+  /**
+   * Legacy demo tag/issue ids. Tags and issues are starter vocabulary now
+   * (seeded by auth/onboarding-seed.ts, kept on exit), so new manifests leave
+   * this empty — it remains so manifests written before the change still
+   * delete their rows.
+   */
   tags: z.array(z.string()),
   tasks: z.array(z.string()),
   lists: z.array(z.string()),
@@ -227,23 +232,10 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
   await backfillMissingSlugs(trx, 'households', tenant_id);
   await backfillMissingSlugs(trx, 'companies', tenant_id);
 
-  // ── Tags (freeform labels only; volunteer/staff are first-class person status now, §15) ─
-  const tagRows = await trx
-    .insertInto('tags')
-    .values(
-      DEMO_TAGS.map((t) => ({
-        ...audit,
-        name: t.name,
-        description: t.description,
-        color: t.color,
-        deletable: true,
-        type: 'tag' as const,
-      })),
-    )
-    .returning('id')
-    .execute();
-  const demoTagIds = tagRows.map((t) => String(t.id));
-
+  // ── Tag/issue attachments — the vocabulary itself is starter data seeded by
+  //    seedStarterTags (auth/onboarding-seed.ts) before this runs, and it
+  //    survives exit-demo. The demo dataset only maps demo persons/households
+  //    onto it by name; those mappings die with the demo rows.
   const allTags = await trx.selectFrom('tags').select(['id', 'name']).where('tenant_id', '=', tenant_id).execute();
   const tagIdByName = new Map(allTags.map((t) => [t.name, String(t.id)]));
 
@@ -269,27 +261,12 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
     await trx.insertInto('map_households_tags').values(householdTagRows).execute();
   }
 
-  // ── Issues (tags with type 'issue') + person assignments ──────────────────
-  const issueRows = await trx
-    .insertInto('tags')
-    .values(
-      DEMO_ISSUES.map((issue) => ({
-        ...audit,
-        name: issue.name,
-        description: issue.description,
-        color: issue.color,
-        deletable: true,
-        type: 'issue' as const,
-      })),
-    )
-    .returning('id')
-    .execute();
-  demoTagIds.push(...issueRows.map((t) => String(t.id)));
-  const issueAssignmentRows = DEMO_ISSUES.flatMap((issue, i) =>
-    issue.people.flatMap((personKey) => {
+  // ── Issue assignments (starter issues live in the tags table, type 'issue') ─
+  const issueAssignmentRows = DEMO_ISSUE_ASSIGNMENTS.flatMap((assignment) =>
+    assignment.people.flatMap((personKey) => {
       const person_id = personIdByKey.get(personKey);
-      const tag_id = issueRows[i]?.id;
-      return person_id && tag_id ? [{ ...audit, person_id, tag_id: String(tag_id) }] : [];
+      const tag_id = tagIdByName.get(assignment.issue);
+      return person_id && tag_id ? [{ ...audit, person_id, tag_id }] : [];
     }),
   );
   if (issueAssignmentRows.length > 0) {
@@ -800,7 +777,7 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
     companies: [...companyIdByKey.values()],
     households: [...householdIdByKey.values()],
     persons: [...personIdByKey.values()],
-    tags: demoTagIds,
+    tags: [],
     tasks: taskRows.map((t) => String(t.id)),
     lists: listRows.map((l) => String(l.id)),
     teams: [String(team.id)],
@@ -1017,8 +994,10 @@ export async function deleteDemoData(params: DeleteParams, trx: Transaction<Mode
     await trx.deleteFrom('companies').where('tenant_id', '=', tenant_id).where('id', 'in', m.companies).execute();
   }
 
-  // System tags are deletable=false — the guard keeps them even if a manifest
-  // were ever to contain one by mistake.
+  // Tags/issues are starter vocabulary now and never enter new manifests
+  // (they survive exit-demo). This block handles legacy manifests that still
+  // list tag ids; the deletable guard keeps any protected tag even if a
+  // manifest were ever to contain one by mistake.
   if (m.tags.length > 0) {
     await trx
       .deleteFrom('tags')
