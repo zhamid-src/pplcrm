@@ -261,6 +261,15 @@
 
         <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
         <pc-person-campaign-facts [personId]="p.id" [dncFlag]="!!p.do_not_contact"></pc-person-campaign-facts>
+        } @else {
+        <!-- New person: capture standing now; it is applied once the person is created (§15) -->
+        <pc-person-standing-draft
+          [email]="payload().email"
+          [(supportLevel)]="draftSupport"
+          [(votingStatus)]="draftVoting"
+          [(subscribe)]="draftSubscribe"
+          [(doNotContact)]="draftDnc"
+        ></pc-person-standing-draft>
         }
       </div>
     </div>

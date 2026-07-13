@@ -7,6 +7,8 @@ import { HouseholdsService } from '../../households/services/households-service'
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { TagsService } from '../../tags/services/tags-service';
+import { CampaignsService } from '../../campaigns/services/campaigns-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
@@ -22,6 +24,7 @@ describe('PersonForm', () => {
   let mockHouseholdsSvc: any;
   let mockPersonsSvc: any;
   let mockTeamsSvc: any;
+  let mockCampaignsSvc: any;
   let mockRoute: any;
   let mockRouter: any;
 
@@ -70,6 +73,18 @@ describe('PersonForm', () => {
       getAllWithCounts: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
     };
 
+    mockCampaignsSvc = {
+      upsertPersonFact: vi.fn().mockResolvedValue(undefined),
+      setSubscription: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockCampaignContext = {
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      activeCampaignId: () => 'c1',
+      activeCampaign: () => ({ id: 'c1', name: 'Office' }),
+      isArchivedContext: () => false,
+    };
+
     mockRoute = {
       snapshot: {
         paramMap: {
@@ -90,6 +105,8 @@ describe('PersonForm', () => {
         { provide: TeamsService, useValue: mockTeamsSvc },
         { provide: CompaniesService, useValue: mockCompaniesSvc },
         { provide: TagsService, useValue: mockTagsSvc },
+        { provide: CampaignsService, useValue: mockCampaignsSvc },
+        { provide: CampaignContextService, useValue: mockCampaignContext },
         { provide: ActivatedRoute, useValue: mockRoute },
       ],
     }).compileComponents();
@@ -170,6 +187,66 @@ describe('PersonForm', () => {
     const addCallArg = mockPersonsSvc.add.mock.calls[0][0];
     expect(addCallArg.first_name).toBe('Jane');
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Added'));
+  });
+
+  it('should apply campaign standing after adding a new person', async () => {
+    mockRoute.snapshot.paramMap.get.mockReturnValue(null);
+    mockPersonsSvc.add.mockResolvedValueOnce({ id: 'new1', first_name: 'Jane', last_name: 'Smith' });
+    const fixtureNew = TestBed.createComponent(PersonForm);
+    const componentNew = fixtureNew.componentInstance;
+    fixtureNew.componentRef.setInput('mode', 'new');
+    fixtureNew.componentRef.setInput('id', null);
+
+    void componentNew.ngOnInit();
+    await new Promise((r) => setTimeout(r, 10));
+
+    componentNew['payload'].set({
+      ...componentNew['payload'](),
+      first_name: 'Jane',
+      last_name: 'Smith',
+      email: 'jane@example.com',
+    });
+    componentNew['draftSupport'].set('strong');
+    componentNew['draftVoting'].set('will_vote');
+    componentNew['draftSubscribe'].set(true);
+    componentNew['draftDnc'].set(true);
+
+    await componentNew.save();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // do_not_contact rides along in the add payload (it is a plain person field).
+    expect(mockPersonsSvc.add.mock.calls[0][0].do_not_contact).toBe(true);
+    // Campaign-scoped facts + subscription are applied once the id exists.
+    expect(mockCampaignsSvc.upsertPersonFact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        person_id: 'new1',
+        campaign_id: 'c1',
+        support_level: 'strong',
+        voting_status: 'will_vote',
+      }),
+    );
+    expect(mockCampaignsSvc.setSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({ person_id: 'new1', campaign_id: 'c1', status: 'subscribed' }),
+    );
+  });
+
+  it('should not touch campaign services when no standing is set on add', async () => {
+    mockRoute.snapshot.paramMap.get.mockReturnValue(null);
+    mockPersonsSvc.add.mockResolvedValueOnce({ id: 'new2', first_name: 'Ann' });
+    const fixtureNew = TestBed.createComponent(PersonForm);
+    const componentNew = fixtureNew.componentInstance;
+    fixtureNew.componentRef.setInput('mode', 'new');
+    fixtureNew.componentRef.setInput('id', null);
+
+    void componentNew.ngOnInit();
+    await new Promise((r) => setTimeout(r, 10));
+
+    componentNew['payload'].set({ ...componentNew['payload'](), first_name: 'Ann' });
+    await componentNew.save();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mockCampaignsSvc.upsertPersonFact).not.toHaveBeenCalled();
+    expect(mockCampaignsSvc.setSubscription).not.toHaveBeenCalled();
   });
 
   it('should remove household address with confirmation', async () => {

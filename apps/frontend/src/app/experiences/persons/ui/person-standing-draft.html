@@ -1,0 +1,86 @@
+<pc-card>
+  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
+
+  @if (activeCampaign(); as campaign) {
+  <p class="mb-3 text-[11px] text-base-content/50">
+    <ng-container i18n>In</ng-container>
+    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+    @if (readonlyContext()) {
+    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+    }
+  </p>
+
+  <div class="grid gap-3 sm:grid-cols-2">
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="supportLevel()"
+        [disabled]="readonlyContext()"
+        (change)="onSupportChange($event)"
+      >
+        <option value="" i18n>Unknown — never asked</option>
+        @for (level of supportLevels; track level) {
+        <option [value]="level">{{ supportLabels[level] }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="votingStatus()"
+        [disabled]="readonlyContext()"
+        (change)="onVotingChange($event)"
+      >
+        <option value="" i18n>Unknown</option>
+        @for (status of votingStatuses; track status) {
+        <option [value]="status">{{ votingLabels[status] }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  <!-- Email consent for the active context (§15). Consent needs an address to matter. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n>Email consent</span>
+    @if (hasEmail()) {
+    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="doNotContact() || readonlyContext()">
+      <input
+        type="checkbox"
+        class="checkbox checkbox-sm mt-0.5"
+        [checked]="subscribe()"
+        [disabled]="doNotContact() || readonlyContext()"
+        (change)="onSubscribeToggle($event)"
+      />
+      <span class="leading-snug">
+        <span class="font-medium text-base-content/80" i18n>Subscribe to campaign emails</span>
+        <span class="block text-[11px] text-base-content/50" i18n>Records express consent for this campaign.</span>
+      </span>
+    </label>
+    } @else {
+    <p class="text-[11px] italic text-base-content/45" i18n>Add an email address to enable subscription.</p>
+    }
+  </div>
+
+  <!-- Global do-not-contact override — a plain person field, saved with the person. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="readonlyContext()">
+      <input
+        type="checkbox"
+        class="checkbox checkbox-sm checkbox-error mt-0.5"
+        [checked]="doNotContact()"
+        [disabled]="readonlyContext()"
+        (change)="onDncToggle($event)"
+      />
+      <span class="leading-snug">
+        <span class="font-medium text-base-content/80" i18n>Do not contact</span>
+        <span class="block text-[11px] text-base-content/50" i18n>
+          Suppresses all outreach — every channel, every campaign.
+        </span>
+      </span>
+    </label>
+  </div>
+  }
+</pc-card>

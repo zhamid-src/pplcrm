@@ -24,6 +24,10 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         ],
       },
       {
+        kind: 'p',
+        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to — leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
+      },
+      {
         kind: 'callout',
         tone: 'tip',
         title: 'Have a spreadsheet?',
@@ -68,7 +72,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against — “Unknown” just means never asked), their **voting status** during an election, their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against — “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered — see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
       },
       {
         kind: 'p',
@@ -151,7 +155,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream.',
+        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in — set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
       },
       { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
       {

@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -28,6 +29,9 @@ import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { PersonCampaignFacts } from './person-campaign-facts';
+import { PersonStandingDraft } from './person-standing-draft';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { CampaignsService } from '../../campaigns/services/campaigns-service';
 
 @Component({
   selector: 'pc-person-form',
@@ -43,6 +47,7 @@ import { PersonCampaignFacts } from './person-campaign-facts';
     PcCard,
     DatePipe,
     PersonCampaignFacts,
+    PersonStandingDraft,
   ],
   templateUrl: './person-form.html',
 })
@@ -57,6 +62,8 @@ export class PersonForm implements OnInit {
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly campaignContext = inject(CampaignContextService);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   private _loading = createLoadingGate();
@@ -170,6 +177,15 @@ export class PersonForm implements OnInit {
   protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
+
+  // Campaign standing captured on the NEW-person form (§15). Support/voting/subscribe
+  // are campaign-scoped and can only be written once the person has an id, so they are
+  // applied after the add succeeds; do_not_contact is a plain person field folded into
+  // the add payload. Bound two-way to <pc-person-standing-draft>.
+  protected readonly draftSupport = signal<SupportLevel | ''>('');
+  protected readonly draftVoting = signal<VotingStatus | ''>('');
+  protected readonly draftSubscribe = signal(false);
+  protected readonly draftDnc = signal(false);
 
   // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
   protected readonly allTagNames = signal<string[]>([]);
@@ -582,18 +598,37 @@ export class PersonForm implements OnInit {
       data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
     }
 
+    // do_not_contact is a plain person field — save it with the person.
+    if (this.draftDnc()) {
+      data = { ...data, do_not_contact: true } as UpdatePersonsType;
+    }
+
+    // Snapshot the campaign-scoped standing NOW, before the success handler resets
+    // the draft signals — it is applied after the person id exists.
+    const standing = {
+      support: this.draftSupport(),
+      voting: this.draftVoting(),
+      subscribe: this.draftSubscribe(),
+      email: this.payload().email,
+    };
+
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
       .add(data, { context: { skipErrorHandler: true } })
-      .then(() => {
+      .then((created: unknown) => {
         this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
         this.personsSvc.triggerRefresh();
+        void this.applyStanding(created, standing);
         if (done) {
           done();
           this.pendingHouseholdId.set(null);
           this.tags.set([]);
           this.issues.set([]);
+          this.draftSupport.set('');
+          this.draftVoting.set('');
+          this.draftSubscribe.set(false);
+          this.draftDnc.set(false);
           this.form().reset();
         }
       })
@@ -605,6 +640,45 @@ export class PersonForm implements OnInit {
         }
       })
       .finally(() => end());
+  }
+
+  /**
+   * Apply the standing captured on the add form once the person exists (§15).
+   * Campaign-scoped writes are keyed to the active context; a failure here does
+   * not undo the person — it was already saved — so we surface a soft error.
+   */
+  private async applyStanding(
+    created: unknown,
+    standing: { support: SupportLevel | ''; voting: VotingStatus | ''; subscribe: boolean; email: string },
+  ): Promise<void> {
+    const personId = isRecord(created) && created['id'] != null ? String(created['id']) : null;
+    if (!personId) return;
+
+    const wantsFact = !!standing.support || !!standing.voting;
+    const wantsSubscription = standing.subscribe && !!standing.email.trim();
+    if (!wantsFact && !wantsSubscription) return;
+
+    try {
+      await this.campaignContext.ensureLoaded();
+      const campaign_id = this.campaignContext.activeCampaignId();
+      if (!campaign_id) return;
+
+      if (wantsFact) {
+        await this.campaignsSvc.upsertPersonFact({
+          campaign_id,
+          person_id: personId,
+          ...(standing.support ? { support_level: standing.support } : {}),
+          ...(standing.voting ? { voting_status: standing.voting } : {}),
+        });
+      }
+      if (wantsSubscription) {
+        await this.campaignsSvc.setSubscription({ campaign_id, person_id: personId, status: 'subscribed' });
+      }
+    } catch (err) {
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'The person was added, but their campaign standing could not be saved.'),
+      );
+    }
   }
 
   private isDuplicateEmailError(err: unknown): boolean {
