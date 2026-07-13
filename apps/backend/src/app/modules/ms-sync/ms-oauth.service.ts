@@ -6,6 +6,24 @@ import { decryptSecret, encryptSecret } from '../../lib/secret-crypto';
 
 export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Pull the first refresh-token secret out of a serialized MSAL token cache.
+ * Returns undefined when the cache has no usable RefreshToken entry, matching
+ * the previous `Object.values(...)[0]?.secret` behavior.
+ */
+function extractRefreshTokenSecret(parsedCache: unknown): string | undefined {
+  if (!isRecord(parsedCache)) return undefined;
+  const store = parsedCache['RefreshToken'];
+  if (!isRecord(store)) return undefined;
+  const first: unknown = Object.values(store)[0];
+  if (isRecord(first) && typeof first['secret'] === 'string') return first['secret'];
+  return undefined;
+}
+
 const MS_SCOPES = [
   'https://graph.microsoft.com/Mail.Read',
   'https://graph.microsoft.com/Mail.ReadWrite',
@@ -58,9 +76,8 @@ export class MsOAuthService {
 
     // Retrieve the refresh token from the MSAL cache
     const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
+    const parsedCache: unknown = JSON.parse(cache);
+    const refreshToken = extractRefreshTokenSecret(parsedCache) ?? '';
 
     // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
     await this.db.transaction().execute(async (trx) => {
@@ -142,9 +159,8 @@ export class MsOAuthService {
 
     // Retrieve fresh refresh token from cache
     const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
+    const parsedCache: unknown = JSON.parse(cache);
+    const newRefreshToken = extractRefreshTokenSecret(parsedCache) ?? row.refresh_token;
 
     await this.db
       .updateTable('ms_oauth_tokens')
@@ -181,9 +197,9 @@ export class MsOAuthService {
     return {
       connected: !!row,
       msEmail: row?.ms_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at) : null,
       lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at) : null,
     };
   }
 

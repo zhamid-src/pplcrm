@@ -66,7 +66,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
           if (personIds.length > 0) {
             await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
             await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
-            await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
+            await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id, ids: personIds }, trx);
           }
         } else {
           await this.personsRepo.clearFileIdForImport(
@@ -92,7 +92,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
               .where('tenant_id', '=', auth.tenant_id)
               .where('household_id', 'in', householdIds)
               .execute();
-            await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
+            await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id, ids: householdIds }, trx);
           }
         } else {
           await this.householdsRepo.clearFileIdForImport(
@@ -114,7 +114,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
               .where('tenant_id', '=', auth.tenant_id)
               .where('company_id', 'in', companyIds)
               .execute();
-            await this.companiesRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: companyIds as any }, trx);
+            await this.companiesRepo.deleteMany({ tenant_id: auth.tenant_id, ids: companyIds }, trx);
           }
         } else {
           await this.companiesRepo.clearFileIdForImport(
@@ -142,7 +142,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
               .where('tenant_id', '=', auth.tenant_id)
               .where('task_id', 'in', taskIds)
               .execute();
-            await this.tasksRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: taskIds as any }, trx);
+            await this.tasksRepo.deleteMany({ tenant_id: auth.tenant_id, ids: taskIds }, trx);
           }
         } else {
           await this.tasksRepo.clearFileIdForImport(
@@ -151,7 +151,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
           );
         }
 
-        await this.getRepo().delete({ tenant_id: auth.tenant_id as any, id: stats.id as any }, trx);
+        await this.getRepo().delete({ tenant_id: auth.tenant_id, id: stats.id }, trx);
       });
 
     return { deleted: true, contactsRemoved: wantsPeopleDeletion };

@@ -1,4 +1,4 @@
-import type { Transaction } from 'kysely';
+import type { Transaction, Selectable } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
 import { TaskSubtasksRepo } from './repositories/task-subtasks.repo';
@@ -31,8 +31,14 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return subtask;
   }
 
-  public override async update(input: { tenant_id: string; id: string; row: any }) {
-    const subtaskBefore = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'task_subtasks', 'update'>;
+  }) {
+    const subtaskBefore = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
+      | Selectable<Models['task_subtasks']>
+      | undefined;
     const result = await super.update(input);
     if (result && subtaskBefore) {
       const actorId = input.row.updatedby_id || subtaskBefore.updatedby_id || '';
@@ -55,7 +61,7 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return result;
   }
 
-  public updateSubtask(input: { tenant_id: string; id: string; row: any }) {
+  public updateSubtask(input: { tenant_id: string; id: string; row: OperationDataType<'task_subtasks', 'update'> }) {
     return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
   }
 }

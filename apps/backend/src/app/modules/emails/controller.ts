@@ -9,7 +9,8 @@ import { EmailRepo } from './repositories/email.repo';
 import { BaseController } from '../../lib/base.controller';
 import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import type { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
 import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
@@ -94,7 +95,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
       if (user_id) {
         try {
-          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as any;
+          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as
+            | Selectable<Models['emails']>
+            | undefined;
           if (email) {
             const subject = email.subject || '(No Subject)';
             const notificationsRepo = new NotificationsRepo();
@@ -265,11 +268,13 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public async getEmailBody(tenant_id: string, value: string) {
     try {
-      const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
+      const email = (await this.bodiesRepo.getOneBy('email_id', { tenant_id, value })) as
+        | Selectable<Models['email_bodies']>
+        | undefined;
       if (email) {
         return {
           ...email,
-          body_html: sanitizeHtml((email as any).body_html),
+          body_html: sanitizeHtml(email.body_html),
         };
       }
 
@@ -279,7 +284,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         return {
           email_id: value,
           body_html: sanitizeHtml(draft.body_html),
-          body_delta: (draft as any).body_delta ?? null,
+          body_delta: draft.body_delta ?? null,
         } as any;
 
       throw new NotFoundError('Failed to fetch email body');
@@ -303,7 +308,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         download_url: signedEmailAttachmentUrl(String(id), String(a['id']), tenant_id),
       }));
       if (emailWithHeaders) {
-        let person: any = null;
+        let person: Record<string, unknown> | null = null;
         if (emailWithHeaders.from_email) {
           const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
           const matchedPerson = await this.getRepo()
@@ -377,7 +382,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     try {
       if (folder_id === ALL_FOLDERS.DRAFTS) {
         const drafts = await this.draftsRepo.listByUser(tenant_id, campaign_id, user_id, limit, offset);
-        return drafts.map((d: any) => ({
+        return drafts.map((d) => ({
           id: d.id,
           folder_id,
           from_email: '',
@@ -419,7 +424,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         this.draftsRepo.countByUser(tenant_id, campaign_id, user_id),
       ]);
 
-      return folders.map((folder: any) => ({
+      return folders.map((folder) => ({
         ...folder,
         email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
       }));
@@ -561,7 +566,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           email_id,
           is_read,
         })
-        .onConflict((oc: any) =>
+        .onConflict((oc) =>
           oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
             is_read,
           }),

@@ -1,7 +1,9 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import crypto from 'crypto';
 import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import type { Insertable, Kysely, Transaction } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
 import { authenticateRest } from '../../../lib/rest-auth';
 import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
@@ -71,9 +73,20 @@ function buildRawMime(options: {
 
 const storageService = new StorageService();
 
+/** A file already uploaded to storage, ready to be persisted as an email attachment. */
+interface UploadedEmailFile {
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
+  sha256_hex: string;
+  cid: string | null;
+  is_inline: boolean;
+}
+
 let _oauthSvc: MsOAuthService | null = null;
 
-function getOAuthService(db: any) {
+function getOAuthService(db: Kysely<Models>) {
   if (!_oauthSvc) {
     _oauthSvc = new MsOAuthService(db, {
       clientId: env.msClientId ?? '',
@@ -86,7 +99,7 @@ function getOAuthService(db: any) {
 }
 
 export async function saveLocalEmail(
-  db: any,
+  db: Kysely<Models>,
   tenantId: string,
   campaignId: string,
   userId: string,
@@ -97,10 +110,10 @@ export async function saveLocalEmail(
   bccList: string[],
   subject: string,
   html: string,
-  uploadedFiles: any[],
+  uploadedFiles: UploadedEmailFile[],
   previewKey: string,
 ) {
-  return db.transaction().execute(async (trx: any) => {
+  return db.transaction().execute(async (trx: Transaction<Models>) => {
     // 1. Insert into emails table (Outbox)
     const createdEmail = await trx
       .insertInto('emails')
@@ -137,8 +150,7 @@ export async function saveLocalEmail(
       .execute();
 
     // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
+    for (const [i, uFile] of uploadedFiles.entries()) {
       let fileId: string;
 
       // Persist (or reuse, via sha256 dedup) the file row, then link the
@@ -205,7 +217,7 @@ export async function saveLocalEmail(
       .execute();
 
     // 5. Insert recipients
-    const recipientRows: any[] = [];
+    const recipientRows: Insertable<Models['email_recipients']>[] = [];
     toList.forEach((emailAddr: string, idx: number) => {
       recipientRows.push({
         tenant_id: tenantId,
@@ -253,7 +265,7 @@ export async function saveLocalEmail(
 
 const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
+  fastify.post('/send', async (req: FastifyRequest, reply) => {
     // Mutating endpoint: enforce session revocation and block read-only viewers.
     const authResult = await authenticateRest(req, { requireWrite: true });
     if (!authResult.ok) {
@@ -262,7 +274,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
     const tenantId = authResult.auth.tenant_id;
     const userId = authResult.auth.user_id;
-    const db = (BaseRepository as any)['_db'];
+    const db = BaseRepository.dbInstance;
 
     // Retrieve sender user details
     const user = await db
@@ -281,11 +293,11 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
     // Parse multipart request parts
     const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
+    const fields: Record<string, string> = {};
+    const files: Array<{ filename: string; fieldname: string; mimetype: string; buffer: Buffer }> = [];
 
     for await (const part of parts) {
-      if (part.file) {
+      if (part.type === 'file') {
         const buffer = await part.toBuffer();
         files.push({
           filename: part.filename,
@@ -294,7 +306,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           buffer,
         });
       } else {
-        fields[part.fieldname] = part.value;
+        fields[part.fieldname] = String(part.value);
       }
     }
 
@@ -313,15 +325,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const html = sanitizeHtml(fields.html || '');
 
     // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
+    const uploadedFiles: UploadedEmailFile[] = [];
 
     for (const file of files) {
       const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
@@ -420,7 +424,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             authProvider: (done) => done(null, accessToken),
           });
 
-          const msDraftMessage: any = {
+          const msDraftMessage = {
             subject: subject,
             body: {
               contentType: 'html',
@@ -487,7 +491,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           // Trigger background sync to get folders/Sent items synchronized
           const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, campaignId, userId).catch((err: any) => {
+          syncSvc.syncTenant(tenantId, campaignId, userId).catch((err: unknown) => {
             fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
           });
 
@@ -559,7 +563,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             throw new Error(`Gmail API send failed: ${errText}`);
           }
 
-          const gmailData: any = await gmailRes.json();
+          const gmailData = (await gmailRes.json()) as { id?: string };
           const googleMsgId = gmailData.id;
 
           await db
@@ -578,7 +582,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .executeTakeFirstOrThrow();
 
           const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, campaignId, userId).catch((err: any) => {
+          googleSyncSvc.syncTenant(tenantId, campaignId, userId).catch((err: unknown) => {
             fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
           });
 
@@ -618,118 +622,124 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
   });
 
   // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    const { id, attachmentId } = req.params;
+  fastify.get<{ Params: { id: string; attachmentId: string }; Querystring: { st?: string } }>(
+    '/:id/attachments/:attachmentId',
+    async (req, reply) => {
+      const { id, attachmentId } = req.params;
 
-    // Auth: a short-lived token scoped to this one email (embeddable link, no
-    // session JWT in the URL) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
+      // Auth: a short-lived token scoped to this one email (embeddable link, no
+      // session JWT in the URL) or the app's Authorization header (session-gated).
+      let tenantId: string;
+      if (req.query.st) {
+        try {
+          tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+        } catch (_err) {
+          return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+        }
+      } else {
+        const authResult = await authenticateRest(req);
+        if (!authResult.ok) {
+          return reply.status(authResult.status).send({ error: authResult.error });
+        }
+        tenantId = authResult.auth.tenant_id;
+      }
+      const db = BaseRepository.dbInstance;
+
+      const attachment = await db
+        .selectFrom('email_attachments')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', attachmentId)
+        .where('email_id', '=', id)
+        .executeTakeFirst();
+
+      if (!attachment || !attachment.file_id) {
+        return reply.status(404).send({ error: 'Attachment not found' });
+      }
+
+      const file = await db
+        .selectFrom('files')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', attachment.file_id)
+        .executeTakeFirst();
+
+      if (!file) {
+        return reply.status(404).send({ error: 'File not found' });
+      }
+
       try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+        const buffer = await storageService.download(file.storage_key);
+        reply.type(file.mime_type || 'application/octet-stream');
+        reply.header('Content-Disposition', attachmentDisposition(file.filename));
+        return reply.send(buffer);
       } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+        fastify.log.error(_err);
+        return reply.status(500).send({ error: 'Failed to download attachment' });
       }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
+    },
+  );
 
   // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    const { id, cid } = req.params;
+  fastify.get<{ Params: { id: string; cid: string }; Querystring: { st?: string } }>(
+    '/:id/attachments/cid/:cid',
+    async (req, reply) => {
+      const { id, cid } = req.params;
 
-    // Auth: a short-lived token scoped to this one email (for inline <img> in the
-    // rendered body) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
+      // Auth: a short-lived token scoped to this one email (for inline <img> in the
+      // rendered body) or the app's Authorization header (session-gated).
+      let tenantId: string;
+      if (req.query.st) {
+        try {
+          tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+        } catch (_err) {
+          return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+        }
+      } else {
+        const authResult = await authenticateRest(req);
+        if (!authResult.ok) {
+          return reply.status(authResult.status).send({ error: authResult.error });
+        }
+        tenantId = authResult.auth.tenant_id;
+      }
+      const db = BaseRepository.dbInstance;
+
+      const attachment = await db
+        .selectFrom('email_attachments')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', id)
+        .where('cid', '=', cid)
+        .where('is_inline', '=', true)
+        .executeTakeFirst();
+
+      if (!attachment || !attachment.file_id) {
+        return reply.status(404).send({ error: 'Inline attachment not found' });
+      }
+
+      const file = await db
+        .selectFrom('files')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', attachment.file_id)
+        .executeTakeFirst();
+
+      if (!file) {
+        return reply.status(404).send({ error: 'File not found' });
+      }
+
       try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+        const buffer = await storageService.download(file.storage_key);
+        reply.type(file.mime_type || 'application/octet-stream');
+        // Private: inline attachments are tenant-scoped and token-gated.
+        reply.header('Cache-Control', 'private, max-age=31536000');
+        return reply.send(buffer);
       } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+        fastify.log.error(_err);
+        return reply.status(500).send({ error: 'Failed to load inline image' });
       }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
+    },
+  );
 
   done();
 };

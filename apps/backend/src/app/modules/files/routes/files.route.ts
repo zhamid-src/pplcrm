@@ -1,4 +1,4 @@
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
 import { authenticateRest } from '../../../lib/rest-auth';
@@ -7,8 +7,13 @@ import { attachmentDisposition } from '../../../lib/download-headers';
 
 const storageService = new StorageService();
 
+interface FileDownloadRoute {
+  Params: { id: string };
+  Querystring: { st?: string };
+}
+
 const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.get('/download/:id', async (req: any, reply) => {
+  fastify.get('/download/:id', async (req: FastifyRequest<FileDownloadRoute>, reply) => {
     const { id } = req.params;
 
     // Authenticate via the Authorization header (app-initiated downloads) or
@@ -36,7 +41,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.status(401).send({ error: 'Unauthorized: Missing token' });
     }
 
-    const db = (BaseRepository as any)['_db'];
+    const db = BaseRepository.dbInstance;
 
     const file = await db
       .selectFrom('files')

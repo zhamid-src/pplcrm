@@ -195,7 +195,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return super.exportCsv(input, auth);
   }
 
-  public async buildRecipientQuery(tenant_id: string, newsletter: any): Promise<any> {
+  public async buildRecipientQuery(tenant_id: string, newsletter: Record<string, unknown>): Promise<any> {
     let includeTags: string[] = [];
     let excludeTags: string[] = [];
 
@@ -204,7 +204,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .db.selectFrom('map_newsletters_lists')
       .select(['list_id', 'mode'])
       .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', String(newsletter.id))
+      .where('newsletter_id', '=', String(newsletter['id']))
       .execute();
     const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
     const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
@@ -223,7 +223,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       return value; // already parsed object from jsonb column
     };
 
-    const segmentsObj = parseJsonField(newsletter.segments);
+    const segmentsObj = parseJsonField(newsletter['segments']);
     if (Array.isArray(segmentsObj)) {
       includeTags = segmentsObj as string[];
     } else if (segmentsObj && typeof segmentsObj === 'object') {
@@ -238,7 +238,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     }
 
     const db = this.getRepo().db;
-    const campaignId = String(newsletter.campaign_id);
+    const campaignId = String(newsletter['campaign_id']);
     let query = db
       .selectFrom('persons')
       .where('persons.tenant_id', '=', tenant_id)
@@ -345,11 +345,11 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
     // Sending is locked during the demo test drive (no plan yet, no sender identity).
     await assertNotDemoMode(this.getRepo().db, tenant_id);
-    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
     if (!newsletter) {
       throw new NotFoundError('Newsletter not found');
     }
-    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
+    if (newsletter['status'] === 'sent' || newsletter['status'] === 'queuing' || newsletter['status'] === 'sending') {
       throw new BadRequestError('Newsletter has already been sent or is currently sending');
     }
 
@@ -360,7 +360,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const countResult = await baseQuery
       .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
       .executeTakeFirst();
-    const totalRecipients = Number((countResult as any)?.count || 0);
+    const totalRecipients = Number(countResult?.count || 0);
 
     if (totalRecipients === 0) {
       throw new BadRequestError('No recipients found for the selected lists or tags');

@@ -14,7 +14,7 @@ import { PersonsController } from '../persons/controller';
 import { ListsRepo } from './repositories/lists.repo';
 import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
 import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { OperationDataType, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import { logger } from '../../logger';
 
@@ -233,7 +233,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         status: 'refreshing',
         updatedby_id: auth.user_id,
         updated_at: new Date(),
-      } as any,
+      },
     });
 
     // Queue background job
@@ -282,7 +282,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           status: 'idle',
           updated_at: new Date(),
           updatedby_id: user_id,
-        } as any,
+        },
       });
       return list;
     }
@@ -343,7 +343,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           last_refreshed_at: new Date(),
           updated_at: new Date(),
           updatedby_id: user_id,
-        } as any,
+        },
       });
 
       return updated;
@@ -356,7 +356,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           status: 'failed',
           updated_at: new Date(),
           updatedby_id: user_id,
-        } as any,
+        },
       });
       throw error;
     }
@@ -575,7 +575,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           status: 'refreshing',
           updatedby_id: auth.user_id,
           updated_at: new Date(),
-        } as any,
+        },
       });
 
       await this.getRepo()
@@ -611,7 +611,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       .where('list_id', '=', idToDelete)
       .execute();
 
-    return super.delete(tenant_id as any, idToDelete, userId);
+    return super.delete(tenant_id as TypeTenantId<'lists'>, idToDelete, userId);
   }
 
   public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
@@ -629,7 +629,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       .where('list_id', 'in', idsToDelete)
       .execute();
 
-    return super.deleteMany(tenant_id as any, idsToDelete);
+    return super.deleteMany(tenant_id as TypeTenantId<'lists'>, idsToDelete);
   }
 
   public override async getOneById(input: { tenant_id: string; id: string }) {

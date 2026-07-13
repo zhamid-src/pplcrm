@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { env } from '../../../env';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
@@ -287,7 +288,7 @@ The PplCRM Team`;
   }
 }
 
-export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
+export async function checkAllUsageLimits(db: Kysely<Models>): Promise<void> {
   const tenants = await db.selectFrom('tenants').select('id').execute();
   for (const tenant of tenants) {
     try {
@@ -298,7 +299,7 @@ export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
   }
 }
 
-export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<void> {
+export async function queueUsageLimitCheck(tenantId: string, db: Kysely<Models>): Promise<void> {
   // Check if there is already a pending limits check job for this tenant
   const existing = await db
     .selectFrom('background_jobs')

@@ -5,4 +5,3 @@ export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
     super('task_subtasks');
   }
 }
-

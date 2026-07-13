@@ -1,4 +1,5 @@
 import type { Kysely, Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { logger } from '../../logger';
@@ -189,7 +190,9 @@ export class TransactionalEmailService {
     }
   }
 
-  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+  public async enqueueMail(options: SendMailOptions, trx?: Transaction<Models> | Kysely<Models>): Promise<void> {
+    // NOTE: `as any` retained deliberately — the insert passes a `BigInt` tenant_id
+    // that the Kysely model types as `string | null`; a typed handle would reject it.
     const dbClient = (trx || BaseRepository.dbInstance) as any;
     await dbClient
       .insertInto('background_jobs')

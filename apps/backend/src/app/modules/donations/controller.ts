@@ -11,7 +11,7 @@ import { SettingsRepo } from '../settings/repositories/settings.repo';
 import { hashToken } from '../../lib/token-hash';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
-import type { Selectable } from 'kysely';
+import type { Selectable, Updateable } from 'kysely';
 import { logger } from '../../logger';
 
 // The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
@@ -94,7 +94,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         campaign_id: campaignId,
         name: payload.name,
         start_date: payload.start_date,
-        end_date: payload.end_date ? (payload.end_date as any) : null,
+        end_date: payload.end_date ? payload.end_date : null,
         limit_amount: payload.limit_amount,
         is_active: true,
         createdby_id: userId,
@@ -116,7 +116,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       is_active?: boolean;
     },
   ) {
-    const set: any = { updatedby_id: userId, updated_at: new Date() };
+    const set: Updateable<Models['donation_periods']> = { updatedby_id: userId, updated_at: new Date() };
     if (payload.name !== undefined) set.name = payload.name;
     if (payload.start_date !== undefined) set.start_date = payload.start_date;
     if ('end_date' in payload) set.end_date = payload.end_date ?? null;

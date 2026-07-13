@@ -6,7 +6,7 @@ import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {
   private get db() {
-    return (BaseRepository as any)['_db'];
+    return BaseRepository.dbInstance;
   }
 
   public async getStats(auth: IAuthKeyPayload) {
@@ -81,8 +81,8 @@ export class DashboardController {
       .execute();
     const commentMap = new Map<string, number>(
       earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+        .filter((c) => c.email_id && c.earliest_comment_at)
+        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
     // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
@@ -320,13 +320,13 @@ export class DashboardController {
       .selectFrom('persons')
       .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
       .where('tenant_id', '=', tenant_id)
-      .where('created_at', '>=', sql`now() - interval '30 days'`)
+      .where('created_at', '>=', sql<Date>`now() - interval '30 days'`)
       .groupBy(sql`date_trunc('day', created_at)`)
       .orderBy(sql`date_trunc('day', created_at)`, 'asc')
       .execute();
 
-    const contactsGrowth = growthRows.map((r: any) => ({
-      date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
+    const contactsGrowth = growthRows.map((r) => ({
+      date: r.day ? (new Date(r.day).toISOString().split('T')[0] ?? '') : '',
       count: Number(r.count || 0),
     }));
 
@@ -377,10 +377,10 @@ export class DashboardController {
       .orderBy('start_time', 'asc')
       .limit(3)
       .execute();
-    const upcomingEvents = upcomingRows.map((e: any) => ({
+    const upcomingEvents = upcomingRows.map((e) => ({
       id: String(e.id),
       name: e.name,
-      start_time: e.start_time,
+      start_time: new Date(e.start_time).toISOString(),
       capacity: e.capacity == null ? null : Number(e.capacity),
       location_address: e.location_address ?? null,
     }));
@@ -510,8 +510,8 @@ export class DashboardController {
       .execute();
     const commentMap = new Map<string, number>(
       earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+        .filter((c) => c.email_id && c.earliest_comment_at)
+        .map((c) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
     // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).

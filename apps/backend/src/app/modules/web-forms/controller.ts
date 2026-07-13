@@ -10,7 +10,7 @@ import { FORM_TEMPLATES, fieldsForTemplate, normForm, slugifyRecordName } from '
 import { BaseController } from '../../lib/base.controller';
 import { uniqueSlug } from '../../lib/slug';
 import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
@@ -28,6 +28,10 @@ import { logger } from '../../logger';
 const ipSubmissionTimestamps = new Map<string, number[]>();
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
   private readonly campaignsRepo = new CampaignsRepo();
@@ -89,7 +93,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
 
-    const row: any = {
+    const row: OperationDataType<'web_forms', 'update'> = {
       updatedby_id: auth.user_id,
       updated_at: new Date(),
     };
@@ -105,8 +109,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
     if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
 
-    const rawPayload = payload as any;
-    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+    const rawPayload = payload as Record<string, unknown>;
+    if (rawPayload['form_type'] !== undefined && rawPayload['form_type'] !== existing.form_type) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'Form type cannot be changed after the form has been created.',
@@ -728,14 +732,19 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
     const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
 
-    let payload: any;
+    let payload: unknown;
     try {
       payload = await verifier(token);
     } catch {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
     }
 
-    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+    if (
+      !isRecord(payload) ||
+      payload['purpose'] !== 'confirm-subscription' ||
+      !payload['tenant_id'] ||
+      !payload['person_id']
+    ) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
     }
 
@@ -745,8 +754,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     await this.getRepo()
       .db.updateTable('campaign_subscriptions')
       .set({ status: 'subscribed', consent_at: sql`now()`, updated_at: sql`now()` })
-      .where('tenant_id', '=', String(payload.tenant_id))
-      .where('person_id', '=', String(payload.person_id))
+      .where('tenant_id', '=', String(payload['tenant_id']))
+      .where('person_id', '=', String(payload['person_id']))
       .where('status', '=', 'pending')
       .execute();
 
@@ -961,7 +970,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
     }
 
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    const row: OperationDataType<'web_forms', 'update'> = { updatedby_id: auth.user_id, updated_at: new Date() };
     // Slug intentionally stays stable across renames — a published link must never break.
     if (patch.name !== undefined) row['name'] = patch.name;
     if (patch.description !== undefined) row['description'] = patch.description;
@@ -979,7 +988,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       row['fields'] = JSON.stringify(normForm(patch.fields));
     }
 
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row });
     if (patch.target_lists !== undefined) {
       await this.syncTargetLists(auth, id, patch.target_lists ?? []);
     }
@@ -1100,7 +1109,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     const updated = await this.update({
       tenant_id: auth.tenant_id,
       id,
-      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
+      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() },
     });
     return this.normalizeForm(updated);
   }

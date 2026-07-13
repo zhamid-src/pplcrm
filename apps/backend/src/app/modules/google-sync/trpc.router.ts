@@ -14,7 +14,7 @@ let _syncSvc: GoogleSyncService | null = null;
 
 function getServices() {
   if (!_oauthSvc || !_syncSvc) {
-    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
+    const db = BaseRepository.dbInstance; // reuse the shared Kysely instance
     _oauthSvc = new GoogleOAuthService(db, {
       clientId: env.googleClientId ?? '',
       clientSecret: env.googleClientSecret ?? '',
@@ -50,7 +50,7 @@ function getAuthUrl() {
 function getConnectionStatus() {
   return authProcedure.input(campaignInput).query(async ({ ctx, input }) => {
     const { oauthSvc } = getServices();
-    const db = (BaseRepository as any)['_db'];
+    const db = BaseRepository.dbInstance;
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id, input.campaignId);
 
     const activeJob = await db
@@ -71,7 +71,7 @@ function getConnectionStatus() {
 
 function syncNow() {
   return authProcedure.input(campaignInput).mutation(async ({ ctx, input }) => {
-    const db = (BaseRepository as any)['_db'];
+    const db = BaseRepository.dbInstance;
 
     const existing = await db
       .selectFrom('background_jobs')

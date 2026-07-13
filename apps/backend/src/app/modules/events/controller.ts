@@ -341,7 +341,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         .where('event_id', '=', payload.event_id)
         .where('status', '!=', 'cancelled')
         .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+      if (Number(countRow?.cnt || 0) >= event.capacity) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
       }
     }
@@ -363,7 +363,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .where('ticket_type_id', '=', payload.ticket_type_id)
           .where('status', '!=', 'cancelled')
           .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+        if (Number(ticketCountRow?.cnt || 0) >= ticketType.capacity) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
         }
       }
@@ -629,7 +629,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             .where('event_id', '=', String(event.id))
             .where('status', '!=', 'cancelled')
             .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+          if (Number(countRow?.cnt || 0) >= event.capacity) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
           }
         }
@@ -722,7 +722,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .insertInto('event_registrations')
           .values({
             tenant_id: tenantId,
-            event_id: String(event.id) as any,
+            event_id: String(event.id),
             person_id: personId,
             ticket_type_id: null,
             status: 'registered',
@@ -734,7 +734,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .executeTakeFirstOrThrow();
 
         // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
+        if (event.send_registration_confirmation !== false) {
           try {
             await trx
               .insertInto('background_jobs')
@@ -757,7 +757,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         }
 
         // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
+        if (event.send_reminder !== false) {
           try {
             const startMs = new Date(event.start_time).getTime();
             const nowMs = Date.now();

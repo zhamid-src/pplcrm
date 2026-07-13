@@ -11,9 +11,7 @@ describe('NotificationsController', () => {
 
   it('should call getLatestForUser with correct parameters', async () => {
     const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
-    const mockNotifs = [
-      { id: '1', title: 'Test' }
-    ];
+    const mockNotifs = [{ id: '1', title: 'Test' }];
     const spy = vi.spyOn((controller as any).repo, 'getLatestForUser').mockResolvedValue(mockNotifs as any);
 
     const result = await controller.getLatest(auth);

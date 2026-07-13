@@ -2,7 +2,12 @@ import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
 import { CompaniesEnrichmentService, type CompanyLookupResult } from './services/companies-enrichment.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
 import { slugifyRecordName } from '../../../../../../libs/common/src';
 import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
@@ -10,6 +15,17 @@ import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
 import { logger } from '../../logger';
+
+/** The writable company fields accepted by the legacy add/update helpers (mirrors CompanyInputObj). */
+interface CompanyWriteFields {
+  name: string;
+  description?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  industry?: string | null;
+  notes?: string | null;
+}
 
 export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
   constructor() {
@@ -45,11 +61,11 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
     const company = (await super.getOneById(input)) as any;
     if (company) {
-      let enrichment: any = {};
+      let enrichment: Record<string, unknown> = {};
       if (company.enrichment) {
         enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
       }
-      if (!enrichment || !enrichment.google_enriched) {
+      if (!enrichment || !enrichment['google_enriched']) {
         await this.getRepo()
           .db.insertInto('background_jobs')
           .values({
@@ -128,7 +144,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     return this.getRepo().nameExists(auth.tenant_id, name, excludeId);
   }
 
-  public addCompany(payload: any, auth: IAuthKeyPayload) {
+  public addCompany(payload: CompanyWriteFields, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,
       description: payload.description ?? null,
@@ -144,7 +160,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     return this.add(row);
   }
 
-  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
+  public updateCompany(id: string, row: Partial<CompanyWriteFields>, auth: IAuthKeyPayload) {
     const rowWithUpdatedBy = {
       ...row,
       updatedby_id: auth.user_id,
@@ -218,7 +234,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       status: 'pending',
       metadata: null,
       processed_at: now,
-    } as any;
+    } as unknown as OperationDataType<'data_imports', 'insert'>;
 
     const savedImport = await this.importsRepo.add({ row: importRow });
     if (!savedImport || !savedImport.id) {
@@ -236,7 +252,10 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
     } catch (err) {
       logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to store import payload on server storage',
@@ -267,7 +286,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
         metadata: JSON.stringify({ storage_key: storageKey }),
         source_file_key: sourceFileKey,
         source_file_size: sourceFileSize,
-      } as any,
+      } as unknown as OperationDataType<'data_imports', 'update'>,
     });
 
     await this.importsRepo.db
@@ -297,10 +316,16 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       import_id: importRecordId,
       tenant_id: auth.tenant_id,
       status: 'pending',
-    } as any;
+    };
   }
 
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
     const results = { inserted: 0, errors: 0, skipped: 0 };
     const errorMessages: string[] = [];
 
@@ -309,9 +334,9 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       const chunk = rows.slice(i, i + chunkSize);
 
       // 1. Filter valid rows upfront
-      const validRows: any[] = [];
+      const validRows: Record<string, string>[] = [];
       for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
+        if (!raw['name'] || !raw['name'].trim()) {
           results.skipped += 1;
         } else {
           validRows.push(raw);
@@ -325,19 +350,19 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
             tenant_id,
             createdby_id: user_id,
             updatedby_id: user_id,
-            name: raw.name.trim(),
-            description: raw.description ?? null,
-            website: raw.website ?? null,
-            email: raw.email ?? null,
-            phone: raw.phone ?? null,
-            industry: raw.industry ?? null,
-            notes: raw.notes ?? null,
+            name: (raw['name'] ?? '').trim(),
+            description: raw['description'] ?? null,
+            website: raw['website'] ?? null,
+            email: raw['email'] ?? null,
+            phone: raw['phone'] ?? null,
+            industry: raw['industry'] ?? null,
+            notes: raw['notes'] ?? null,
             file_id: import_id,
           }));
           await this.getRepo()
             .transaction()
             .execute(async (trx) => {
-              await (trx as any).insertInto('companies').values(companyRows).execute();
+              await trx.insertInto('companies').values(companyRows).execute();
             });
           results.inserted += validRows.length;
         } catch (err) {
@@ -355,7 +380,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
           skipped_count: skipped + results.skipped,
           updatedby_id: user_id,
           updated_at: new Date(),
-        } as any,
+        } as unknown as OperationDataType<'data_imports', 'update'>,
       });
     }
 

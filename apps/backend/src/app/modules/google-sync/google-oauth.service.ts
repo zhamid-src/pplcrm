@@ -1,8 +1,12 @@
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Insertable, Kysely } from 'kysely';
+import type { GoogleOauthTokens, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { decryptSecret, encryptSecret } from '../../lib/secret-crypto';
 
 export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -54,10 +58,12 @@ export class GoogleOAuthService {
       throw new Error(`Failed to acquire token from Google: ${errorText}`);
     }
 
-    const data: any = await res.json();
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token; // Google only returns this on initial consent
-    const expiresIn = data.expires_in ?? 3600;
+    const data: unknown = await res.json();
+    const tokenData = isRecord(data) ? data : {};
+    const accessToken = typeof tokenData['access_token'] === 'string' ? tokenData['access_token'] : '';
+    // Google only returns a refresh token on initial consent
+    const refreshToken = typeof tokenData['refresh_token'] === 'string' ? tokenData['refresh_token'] : '';
+    const expiresIn = typeof tokenData['expires_in'] === 'number' ? tokenData['expires_in'] : 3600;
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
     // Fetch user profile to get Google email
@@ -67,21 +73,11 @@ export class GoogleOAuthService {
 
     let googleEmail: string | null = null;
     if (profileRes.ok) {
-      const profile: any = await profileRes.json();
-      googleEmail = profile.email ?? null;
+      const profile: unknown = await profileRes.json();
+      googleEmail = isRecord(profile) && typeof profile['email'] === 'string' ? profile['email'] : null;
     }
 
-    const insertObj: any = {
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      user_id: connectedBy,
-      access_token: accessToken,
-      expires_at: expiresAt,
-      google_email: googleEmail,
-      delta_link: NEEDS_FULL_SYNC,
-      synced_at: null,
-    };
-
+    let refreshTokenPlain: string;
     if (!refreshToken) {
       // If we don't have refresh token in this callback, try keeping the existing one
       const existing = await this.db
@@ -92,19 +88,28 @@ export class GoogleOAuthService {
         .executeTakeFirst();
       // Reuse the stored refresh token; decrypt it to plaintext so it is
       // re-encrypted uniformly below (avoids double-encryption).
-      insertObj.refresh_token = existing?.refresh_token ? decryptSecret(existing.refresh_token) : '';
+      refreshTokenPlain = existing?.refresh_token ? decryptSecret(existing.refresh_token) : '';
     } else {
-      insertObj.refresh_token = refreshToken;
+      refreshTokenPlain = refreshToken;
     }
 
-    if (!insertObj.refresh_token) {
+    if (!refreshTokenPlain) {
       throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
     }
 
     // Encrypt the mailbox tokens at the DB write boundary (both the insert values
     // and the onConflict update below read these fields).
-    insertObj.access_token = encryptSecret(insertObj.access_token);
-    insertObj.refresh_token = encryptSecret(insertObj.refresh_token);
+    const insertObj: Insertable<GoogleOauthTokens> = {
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      user_id: connectedBy,
+      access_token: encryptSecret(accessToken),
+      refresh_token: encryptSecret(refreshTokenPlain),
+      expires_at: expiresAt,
+      google_email: googleEmail,
+      delta_link: NEEDS_FULL_SYNC,
+      synced_at: null,
+    };
 
     // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
     await this.db.transaction().execute(async (trx) => {
@@ -179,11 +184,13 @@ export class GoogleOAuthService {
       throw new Error(`Token refresh failed: ${errorText}. Tenant must reconnect their Google account`);
     }
 
-    const data: any = await res.json();
-    const newAccessToken = data.access_token;
-    const newExpiresIn = data.expires_in ?? 3600;
+    const data: unknown = await res.json();
+    const tokenData = isRecord(data) ? data : {};
+    const newAccessToken = typeof tokenData['access_token'] === 'string' ? tokenData['access_token'] : '';
+    const newExpiresIn = typeof tokenData['expires_in'] === 'number' ? tokenData['expires_in'] : 3600;
     const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
-    const newRefreshToken = data.refresh_token ?? row.refresh_token;
+    const newRefreshToken =
+      typeof tokenData['refresh_token'] === 'string' ? tokenData['refresh_token'] : row.refresh_token;
 
     await this.db
       .updateTable('google_oauth_tokens')
@@ -220,9 +227,9 @@ export class GoogleOAuthService {
     return {
       connected: !!row,
       googleEmail: row?.google_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at) : null,
       lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at) : null,
     };
   }
 

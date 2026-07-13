@@ -29,6 +29,39 @@ export interface LinkBrandingData {
   };
 }
 
+interface SgDnsRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid?: boolean;
+}
+
+interface SgDomainAuthResponse {
+  id: number;
+  domain: string;
+  subdomain: string;
+  dns?: {
+    mail_cname?: SgDnsRecord;
+    dkim1?: SgDnsRecord;
+    dkim2?: SgDnsRecord;
+  };
+}
+
+interface SgLinkBrandingResponse {
+  id: number;
+  domain: string;
+  subdomain: string;
+  valid?: boolean;
+  dns?: {
+    domain?: SgDnsRecord;
+  };
+}
+
+interface SgValidateResponse {
+  valid?: boolean;
+  validation_results?: Record<string, { valid?: boolean } | undefined>;
+}
+
 export class SendGridWhitelabelService {
   private isValidApiKey(apiKey?: string): boolean {
     if (!apiKey) return false;
@@ -37,11 +70,11 @@ export class SendGridWhitelabelService {
     return trimmed.length > 20 && trimmed.startsWith('SG.');
   }
 
-  private async request<T = any>(
+  private async request<T = unknown>(
     path: string,
     options: {
       method: string;
-      body?: any;
+      body?: unknown;
       apiKey?: string;
       subuser?: string;
     },
@@ -107,7 +140,7 @@ export class SendGridWhitelabelService {
     }
 
     try {
-      const res = await this.request<any>('/whitelabel/domains', {
+      const res = await this.request<SgDomainAuthResponse>('/whitelabel/domains', {
         method: 'POST',
         apiKey,
         subuser,
@@ -159,7 +192,7 @@ export class SendGridWhitelabelService {
     }
 
     try {
-      const res = await this.request<any>('/whitelabel/links', {
+      const res = await this.request<SgLinkBrandingResponse>('/whitelabel/links', {
         method: 'POST',
         apiKey,
         subuser,
@@ -205,7 +238,7 @@ export class SendGridWhitelabelService {
     }
 
     try {
-      const res = await this.request<any>(`/whitelabel/domains/${id}/validate`, {
+      const res = await this.request<SgValidateResponse>(`/whitelabel/domains/${id}/validate`, {
         method: 'POST',
         apiKey,
         subuser,
@@ -244,7 +277,7 @@ export class SendGridWhitelabelService {
     }
 
     try {
-      const res = await this.request<any>(`/whitelabel/links/${id}/validate`, {
+      const res = await this.request<SgValidateResponse>(`/whitelabel/links/${id}/validate`, {
         method: 'POST',
         apiKey,
         subuser,

@@ -149,8 +149,8 @@ export class HouseholdsController extends BaseController<'households', Household
     // Attempt fingerprint recompute in a separate, non-fatal step
     if (affectsAddress) {
       try {
-        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
-        const merged = { ...current, ...(input.row as any) };
+        const current = await this.getOneById({ tenant_id: input.tenant_id, id: input.id });
+        const merged = { ...current, ...input.row };
 
         let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
         let district = null;
@@ -176,7 +176,7 @@ export class HouseholdsController extends BaseController<'households', Household
           (candidate) => this.getRepo().slugExists(input.tenant_id, candidate, input.id),
         );
 
-        const fpRow: any = {
+        const fpRow: Record<string, unknown> = {
           slug,
           address_fp_street: fingerprintStreet({
             street_num: merged.street_num,

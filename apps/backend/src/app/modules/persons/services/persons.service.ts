@@ -620,7 +620,7 @@ export class PersonsService {
       status: 'pending',
       metadata: null,
       processed_at: now,
-    } as any;
+    } as OperationDataType<'data_imports', 'insert'>;
 
     const savedImport = await this.importsRepo.add({ row: importRow });
     if (!savedImport || !savedImport.id) {
@@ -669,7 +669,7 @@ export class PersonsService {
         metadata: JSON.stringify({ storage_key: storageKey }),
         source_file_key: sourceFileKey,
         source_file_size: sourceFileSize,
-      } as any,
+      },
     });
 
     await this.importsRepo.db
@@ -847,7 +847,7 @@ export class PersonsService {
             households_created: results.households_created,
             updatedby_id: user_id,
             updated_at: new Date(),
-          } as any,
+          },
         });
         continue;
       }
@@ -1155,10 +1155,10 @@ export class PersonsService {
           );
           if (tagMapRows.length > 0) {
             // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
-            await (trx as any)
+            await trx
               .insertInto('map_peoples_tags')
               .values(tagMapRows)
-              .onConflict((oc: any) => oc.doNothing())
+              .onConflict((oc) => oc.doNothing())
               .execute();
           }
 
@@ -1230,7 +1230,7 @@ export class PersonsService {
           households_created: results.households_created,
           updatedby_id: user_id,
           updated_at: new Date(),
-        } as any,
+        },
       });
     }
 
@@ -1272,7 +1272,7 @@ export class PersonsService {
           skip_reasons: JSON.stringify(skipReasons),
           updatedby_id: user_id,
           updated_at: new Date(),
-        } as any,
+        },
       });
     } catch (err) {
       logger.error({ err }, 'Failed to persist final import stats');

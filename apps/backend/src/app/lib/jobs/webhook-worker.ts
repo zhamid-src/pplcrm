@@ -1,4 +1,6 @@
 import { Client } from 'pg';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../env';
 import { BillingController } from '../../modules/billing/controller';
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
@@ -145,8 +147,8 @@ export class WebhookEventWorker {
     const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
     // Try to find and lock a webhook event using SKIP LOCKED
-    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
-      const pendingEvent = (await trx
+    const eventRecord = await this.db.transaction().execute(async (trx: Transaction<Models>) => {
+      const pendingEvent = await trx
         .selectFrom('webhook_events')
         .selectAll()
         .where('status', '=', 'pending')
@@ -155,7 +157,7 @@ export class WebhookEventWorker {
         .limit(1)
         .forUpdate()
         .skipLocked()
-        .executeTakeFirst()) as any;
+        .executeTakeFirst();
 
       if (!pendingEvent) return null;
 
@@ -273,11 +275,11 @@ export class WebhookEventWorker {
         const invoiceId = String(stripeObj.id);
         const amountPaidCents = Number(stripeObj.amount_paid || 0);
 
-        const pledge = (await this.db
+        const pledge = await this.db
           .selectFrom('donation_pledges')
           .selectAll()
           .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst()) as any;
+          .executeTakeFirst();
 
         if (pledge && amountPaidCents > 0) {
           // Avoid duplicate recording (invoice id as session id key)

@@ -4,6 +4,7 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import type {
   ExportCsvInputType,
   ExportCsvResponseType,
+  getAllOptionsType,
   IAuthKeyPayload,
   InteractionType,
 } from '../../../../../../libs/common/src';
@@ -75,7 +76,7 @@ export class ActivityController extends BaseController<'user_activity', UserActi
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
     }
 
-    const options = (input?.options ?? {}) as any;
+    const options: NonNullable<getAllOptionsType> = input?.options ?? {};
     // Remove pagination options to export all matching records
     const { startRow: _startRow, endRow: _endRow, ...restOptions } = options;
 
@@ -104,7 +105,7 @@ export class ActivityController extends BaseController<'user_activity', UserActi
       columns,
     });
 
-    const exportId = String((exportRecord as any).id);
+    const exportId = String(exportRecord.id);
 
     await this.getRepo()
       .db.insertInto('background_jobs')
@@ -130,6 +131,6 @@ export class ActivityController extends BaseController<'user_activity', UserActi
 
     return {
       status: 'processing',
-    } as any;
+    };
   }
 }

@@ -1,8 +1,9 @@
 import { BaseController } from '../../lib/base.controller';
 import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { AddVolunteerShiftType, UpdateVolunteerShiftType } from '../../../../../../libs/common/src';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
+import type { Transaction, UpdateObject } from 'kysely';
 import { sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { publicOrgName } from '../../lib/public-tenant';
@@ -27,6 +28,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
+  // payload is the pre-coercion wire shape (start_time/end_time arrive as ISO
+  // strings from the tRPC boundary, not Date); typing it to the parsed DTO would
+  // reject those. Left loose at this coercion boundary — see events/controller.
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
     const existing = await this.getRepo()
       .db.selectFrom('volunteer_events')
@@ -86,6 +90,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return { unique: !existing };
   }
 
+  // Loose at the coercion boundary, same as addEvent above.
   public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
     if (payload.slug) {
       const existing = await this.getRepo()
@@ -202,7 +207,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     });
   }
 
-  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
+  public async signupVolunteer(payload: AddVolunteerShiftType, auth: IAuthKeyPayload) {
     const result = await this.getRepo().signupVolunteer({
       tenant_id: auth.tenant_id,
       event_id: payload.event_id,
@@ -302,7 +307,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     return result;
   }
 
-  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
+  public async updateShift(id: string, payload: UpdateVolunteerShiftType, auth: IAuthKeyPayload) {
     const result = await this.getRepo().updateShift({
       tenant_id: auth.tenant_id,
       id,
@@ -688,7 +693,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
         if (existing) {
           personId = String(existing.id);
-          const updateRow: any = {
+          const updateRow: UpdateObject<Models, 'persons'> = {
             updatedby_id: creatorId,
             updated_at: sql`now()`,
           };

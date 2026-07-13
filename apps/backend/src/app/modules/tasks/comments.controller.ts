@@ -18,7 +18,7 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
   public override async add(row: OperationDataType<'task_comments', 'insert'>, trx?: Transaction<Models>) {
     const comment = await super.add(row, trx);
     if (comment && row.comment && row.task_id && row.tenant_id) {
-      const actorId = row.createdby_id || (row as any).author_id || '';
+      const actorId = row.createdby_id || row.author_id || '';
       if (actorId) {
         await this.userActivity.log(
           {

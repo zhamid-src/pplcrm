@@ -1,4 +1,5 @@
 import { sql } from 'kysely';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { PersonsRepo } from '../repositories/persons.repo';
 import { DuplicatesRepo } from '../../duplicates/repositories/duplicates.repo';
 
@@ -104,7 +105,7 @@ export class DuplicateMaintenanceService {
       }
     }
 
-    const inserts: any[] = [];
+    const inserts: OperationDataType<'potential_duplicates', 'insert'>[] = [];
 
     // Email duplicates
     for (const group of duplicateEmails) {

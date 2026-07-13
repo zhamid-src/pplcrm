@@ -104,7 +104,7 @@ export class BillingController {
       await tenantsRepo.update({
         tenant_id: auth.tenant_id,
         id: auth.tenant_id,
-        row: { stripe_customer_id: stripeCustomerId } as any,
+        row: { stripe_customer_id: stripeCustomerId },
       });
     }
 
@@ -229,7 +229,7 @@ export class BillingController {
               subscription_plan: planName,
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
-            } as any,
+            },
           });
           logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
           try {
@@ -248,7 +248,7 @@ export class BillingController {
 
         // Search Kysely database for the tenant with matching customer id
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1' as any,
+          tenant_id: '1',
           value: customerId,
         })) as any;
 
@@ -266,7 +266,7 @@ export class BillingController {
               subscription_plan: planName,
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
-            } as any,
+            },
           });
           logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
           try {
@@ -286,7 +286,7 @@ export class BillingController {
         const customerId = subscription.customer as string;
 
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1' as any,
+          tenant_id: '1',
           value: customerId,
         })) as any;
 
@@ -298,7 +298,7 @@ export class BillingController {
               subscription_status: 'canceled',
               subscription_plan: 'free',
               subscription_ends_at: new Date().toISOString(),
-            } as any,
+            },
           });
           logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
           try {
@@ -317,7 +317,7 @@ export class BillingController {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1' as any,
+          tenant_id: '1',
           value: customerId,
         })) as any;
 
@@ -388,7 +388,7 @@ export class BillingController {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1' as any,
+          tenant_id: '1',
           value: customerId,
         })) as any;
 
@@ -452,7 +452,7 @@ export class BillingController {
         subscription_plan: plan,
         subscription_status: 'active',
         subscription_ends_at: expiry.toISOString(),
-      } as any,
+      },
     });
 
     try {
@@ -477,7 +477,7 @@ export class BillingController {
         subscription_plan: 'free',
         subscription_status: 'inactive',
         subscription_ends_at: null,
-      } as any,
+      },
     });
 
     try {

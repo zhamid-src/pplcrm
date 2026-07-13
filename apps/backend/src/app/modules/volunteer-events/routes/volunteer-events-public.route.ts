@@ -1,4 +1,4 @@
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { TRPCError } from '@trpc/server';
 
 import { VolunteerEventsController } from '../controller';
@@ -33,7 +33,7 @@ function getStatusFromError(err: unknown): number {
  */
 const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Upcoming public volunteer events for the tenant's /volunteer listing page.
-  fastify.get('/org', async (req: any, reply) => {
+  fastify.get('/org', async (req: FastifyRequest, reply) => {
     try {
       const tenant = await resolveTenantFromRequest(req);
       if (!tenant) {
@@ -48,7 +48,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
   });
 
   // Volunteer-event config for the /v/:slug SPA page: event details + live signup count.
-  fastify.get('/v/:slug', async (req: any, reply) => {
+  fastify.get('/v/:slug', async (req: FastifyRequest<{ Params: { slug: string } }>, reply) => {
     const { slug } = req.params;
     try {
       const tenant = await resolveTenantFromRequest(req);
@@ -65,30 +65,33 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
   });
 
   // Volunteer signup from the SPA page (JSON body).
-  fastify.post('/signup/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
+  fastify.post(
+    '/signup/:slug',
+    async (req: FastifyRequest<{ Params: { slug: string }; Body: Record<string, string> }>, reply) => {
+      const { slug } = req.params;
+      // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+      // read the raw header, which a client can spoof to defeat rate limiting.
+      const clientIp = req.ip;
 
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
+      try {
+        const tenant = await resolveTenantFromRequest(req);
+        if (!tenant) {
+          return reply.status(404).send({ error: 'Event not found.' });
+        }
+        await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
+        return reply.status(200).send({ success: true });
+      } catch (err) {
+        fastify.log.error(err);
+        const status = getStatusFromError(err);
+        // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
+        const message =
+          status < 500 && err instanceof Error && err.message
+            ? err.message
+            : 'An unexpected error occurred during signup.';
+        return reply.status(status).send({ error: message });
       }
-      await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
-      return reply.status(200).send({ success: true });
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
-      const message =
-        status < 500 && err instanceof Error && err.message
-          ? err.message
-          : 'An unexpected error occurred during signup.';
-      return reply.status(status).send({ error: message });
-    }
-  });
+    },
+  );
 
   done();
 };

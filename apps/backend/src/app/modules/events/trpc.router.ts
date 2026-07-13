@@ -49,9 +49,7 @@ export const EventsRouter = router({
     .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
     .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
 
-  deleteTicketType: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
+  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
 
   // Registrations
   getRegistrationsForEvent: authProcedure
@@ -77,7 +75,5 @@ export const EventsRouter = router({
     .input(idSchema)
     .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
 
-  getStatsForPerson: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
+  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
 });

@@ -94,7 +94,7 @@ export class PasskeyController {
       rpName,
       rpID,
       userName: user.email,
-      userDisplayName: [user.first_name, (user as any).last_name].filter(Boolean).join(' '),
+      userDisplayName: [user.first_name, user.last_name].filter(Boolean).join(' '),
       attestationType: 'none',
       excludeCredentials: existingPasskeys.map((pk) => ({
         id: pk.credential_id,
@@ -174,7 +174,7 @@ export class PasskeyController {
 
     await this.db
       .updateTable('passkeys')
-      .set({ counter: verification.authenticationInfo.newCounter as any })
+      .set({ counter: verification.authenticationInfo.newCounter })
       .where('credential_id', '=', passkey.credential_id)
       .where('tenant_id', '=', passkey.tenant_id)
       .execute();

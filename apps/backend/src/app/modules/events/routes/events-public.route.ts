@@ -33,7 +33,7 @@ function getStatusFromError(err: unknown): number {
  */
 const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Event config for the SPA page: event details + tickets + live capacity.
-  fastify.get('/e/:slug', async (req: any, reply) => {
+  fastify.get<{ Params: { slug: string } }>('/e/:slug', async (req, reply) => {
     const { slug } = req.params;
     try {
       const tenant = await resolveTenantFromRequest(req);
@@ -51,7 +51,7 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   });
 
   // RSVP submission from the SPA page (JSON body).
-  fastify.post('/rsvp/:slug', async (req: any, reply) => {
+  fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/rsvp/:slug', async (req, reply) => {
     const { slug } = req.params;
     // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
     // read the raw header, which a client can spoof to defeat rate limiting.

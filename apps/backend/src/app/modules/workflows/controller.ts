@@ -218,7 +218,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
             next_run_at: nextRunAt.toISOString(),
           },
         },
-        typeof (t as any).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
+        typeof (t as { transaction?: unknown }).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
       );
 
       return {
@@ -321,7 +321,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
 
     if (triggerEventId) {
       query = query.where((eb) =>
-        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId as any)]),
+        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId)]),
       );
     } else {
       query = query.where('trigger_event_id', 'is', null);
@@ -355,7 +355,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         continue;
       }
       try {
-        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
+        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx);
       } catch (err) {
         // Safe check in case they're already enrolled
         if (err instanceof Error && err.message.includes('already enrolled')) {

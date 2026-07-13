@@ -2,6 +2,7 @@ import { BaseController } from '../../lib/base.controller';
 import { FilesRepo } from './repositories/files.repo';
 import { StorageService } from '../../lib/storage.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { getAllOptionsType } from '../../../../../../libs/common/src';
 import { logger } from '../../logger';
 import { getPlanLimits } from '../billing/usage-limits';
 
@@ -14,7 +15,10 @@ export class FilesController extends BaseController<'files', FilesRepo> {
     super(new FilesRepo());
   }
 
-  public async getAllFiles(auth: IAuthKeyPayload, options?: any) {
+  public async getAllFiles(
+    auth: IAuthKeyPayload,
+    options?: NonNullable<getAllOptionsType> & { entityType?: string; entityId?: string },
+  ) {
     return this.getAllWithCounts(auth.tenant_id, options);
   }
 
@@ -91,7 +95,7 @@ export class FilesController extends BaseController<'files', FilesRepo> {
     if (!file) return false;
 
     // Delete from DB
-    const deleted = await super.delete(tenant_id as any, id, userId);
+    const deleted = await super.delete(tenant_id, id, userId);
 
     // Delete from Azure Storage
     if (deleted && file.storage_key) {

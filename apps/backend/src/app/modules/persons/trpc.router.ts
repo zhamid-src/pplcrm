@@ -159,7 +159,7 @@ function getTags() {
 function update() {
   return authProcedure
     .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data, ctx.auth));
 }
 
 function removeHousehold() {

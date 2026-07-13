@@ -1,4 +1,4 @@
-import type { Kysely } from 'kysely';
+import type { Kysely, Updateable } from 'kysely';
 import { sql } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
@@ -93,11 +93,11 @@ export class CompaniesEnrichmentService {
 
     // Check if already enriched. A user-triggered "Re-check Google" (force)
     // re-runs the lookup; the first-load auto-queue does not.
-    let currentEnrichment: any = {};
+    let currentEnrichment: Record<string, unknown> = {};
     if (company.enrichment) {
       currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
     }
-    if (!force && currentEnrichment?.google_enriched) {
+    if (!force && currentEnrichment?.['google_enriched']) {
       logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
       return;
     }
@@ -117,7 +117,7 @@ export class CompaniesEnrichmentService {
       place_details: lookup,
     };
 
-    const updatePayload: any = {
+    const updatePayload: Updateable<Models['companies']> = {
       enrichment: JSON.stringify(updatedEnrichment),
       updated_at: new Date(),
     };

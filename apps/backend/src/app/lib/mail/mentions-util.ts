@@ -1,9 +1,11 @@
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
 import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
 
 export async function processMentions(
-  db: any,
+  db: Kysely<Models>,
   tenantId: string,
   commentText: string,
   commentLink: string,

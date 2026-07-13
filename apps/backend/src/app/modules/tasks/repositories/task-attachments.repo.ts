@@ -5,4 +5,3 @@ export class TaskAttachmentsRepo extends BaseRepository<'task_attachments'> {
     super('task_attachments');
   }
 }
-

@@ -23,7 +23,7 @@ export class NotificationsController extends BaseController<'notifications', Not
     return this.update({
       tenant_id: auth.tenant_id,
       id,
-      row: { read: true } as any,
+      row: { read: true },
     });
   }
 }

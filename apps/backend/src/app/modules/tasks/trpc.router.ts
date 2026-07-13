@@ -8,6 +8,7 @@ import {
 } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { authProcedure, router } from '../../../trpc';
 import { TasksController } from './controller';
 import { TaskCommentsController } from './comments.controller';
@@ -105,7 +106,7 @@ export const TasksRouter = router({
         filename: input.filename,
         url: input.url,
         content_type: input.content_type,
-        size_bytes: (input.size_bytes as any) ?? null,
+        size_bytes: input.size_bytes ?? null,
         createdby_id: ctx.auth.user_id,
         updatedby_id: ctx.auth.user_id,
       }),
@@ -123,14 +124,14 @@ export const TasksRouter = router({
       }),
     )
     .mutation(({ input, ctx }) =>
-      (new TaskSubtasksController() as any).add({
+      new TaskSubtasksController().add({
         tenant_id: ctx.auth.tenant_id,
         task_id: input.task_id,
         name: input.name,
         status: 'todo',
         createdby_id: ctx.auth.user_id,
         updatedby_id: ctx.auth.user_id,
-      }),
+      } as OperationDataType<'task_subtasks', 'insert'>),
     ),
   updateSubtask: authProcedure
     .input(
@@ -147,7 +148,7 @@ export const TasksRouter = router({
       new TaskSubtasksController().updateSubtask({
         tenant_id: ctx.auth.tenant_id,
         id: input.id,
-        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as any,
+        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as OperationDataType<'task_subtasks', 'update'>,
       }),
     ),
 });

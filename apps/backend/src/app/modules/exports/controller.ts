@@ -44,7 +44,7 @@ export class ExportsController {
       columns,
     });
 
-    const exportId = String((exportRecord as any).id);
+    const exportId = String(exportRecord.id);
 
     await this.repo.db
       .insertInto('background_jobs')
@@ -75,8 +75,8 @@ export class ExportsController {
       status: 'pending' as const,
       row_count: null,
       error: null,
-      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
-      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      created_at: exportRecord.created_at?.toISOString?.() ?? new Date().toISOString(),
+      updated_at: exportRecord.updated_at?.toISOString?.() ?? new Date().toISOString(),
       downloadable: false,
       createdBy: {
         id: auth.user_id,
@@ -99,14 +99,14 @@ export class ExportsController {
     });
 
     return {
-      id: String((exportRecord as any).id),
+      id: String(exportRecord.id),
       entity: input.entity,
       file_name: input.fileName,
       status: 'completed' as const,
       row_count: input.rowCount,
       error: null,
-      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
-      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      created_at: exportRecord.created_at?.toISOString?.() ?? new Date().toISOString(),
+      updated_at: exportRecord.updated_at?.toISOString?.() ?? new Date().toISOString(),
       downloadable: false,
       createdBy: {
         id: auth.user_id,
@@ -118,7 +118,7 @@ export class ExportsController {
 
   public async list(auth: IAuthKeyPayload) {
     const rows = await this.repo.list(auth.tenant_id);
-    return rows.map((r: any) => {
+    return rows.map((r) => {
       const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
       return {
         id: String(r.id),
@@ -155,12 +155,12 @@ export class ExportsController {
 
     await this.repo.delete(id, auth.tenant_id);
 
-    if ((row as any).storage_key) {
+    if (row.storage_key) {
       try {
         const storageService = new StorageService();
-        await storageService.delete((row as any).storage_key);
+        await storageService.delete(row.storage_key);
       } catch (err) {
-        logger.error({ err }, `Failed to delete storage file ${(row as any).storage_key}`);
+        logger.error({ err }, `Failed to delete storage file ${row.storage_key}`);
       }
     }
 

@@ -1,5 +1,5 @@
 import { createPublicKey, createVerify } from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
 import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
 import { env } from '../../../../env';
@@ -75,8 +75,24 @@ function verifySendGridSignature(rawBody: string, signature?: string, timestamp?
   }
 }
 
+/** Shape of a single SendGrid Event Webhook payload entry (all fields optional — inbound/untrusted). */
+interface SendGridEvent {
+  newsletter_id?: string;
+  tenant_id?: string;
+  sg_event_id?: string;
+  sg_message_id?: string;
+  event?: string;
+  email?: string;
+  url?: string;
+  ip?: string;
+  useragent?: string;
+  reason?: string;
+  type?: string;
+  timestamp?: number;
+}
+
 const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req: any, reply) => {
+  fastify.post('/webhook', async (req: FastifyRequest, reply) => {
     // req.body is the raw string (see content-type parser in fastify.server.ts)
     const rawBody = typeof req.body === 'string' ? req.body : '';
     const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
@@ -86,14 +102,14 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       return reply.code(401).send({ error: 'Unauthorized' });
     }
 
-    let parsedBody: any;
+    let parsedBody: unknown;
     try {
       parsedBody = JSON.parse(rawBody);
     } catch {
       return reply.code(400).send({ error: 'Invalid payload' });
     }
 
-    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
+    const events: SendGridEvent[] = Array.isArray(parsedBody) ? parsedBody : [parsedBody as SendGridEvent];
 
     try {
       const processedNewsletters = new Set<string>();
@@ -135,7 +151,7 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
               reason,
               bounce_type: bounceType,
               timestamp,
-              created_at: new Date() as any,
+              created_at: new Date(),
             })
             .onConflict((oc) => oc.column('sg_event_id').doNothing())
             .execute();
@@ -214,7 +230,7 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
               last_engagement_at: stats?.last_engagement || null,
               open_rate: openRate,
               click_rate: clickRate,
-              top_links: JSON.stringify(topLinks) as any,
+              top_links: JSON.stringify(topLinks),
               updated_at: new Date(),
             })
             .where('id', '=', newsletterId)

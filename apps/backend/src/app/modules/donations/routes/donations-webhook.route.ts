@@ -89,7 +89,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
           payload: JSON.stringify(event),
           status: 'pending',
         })
-        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+        .onConflict((oc) => oc.column('stripe_event_id').doNothing())
         .execute();
 
       return reply.code(200).send({ received: true });

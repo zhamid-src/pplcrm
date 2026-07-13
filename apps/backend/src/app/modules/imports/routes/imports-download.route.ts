@@ -1,4 +1,4 @@
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { ImportsRepo } from '../repositories/imports.repo';
 import { authenticateRest } from '../../../lib/rest-auth';
@@ -15,7 +15,7 @@ const importsRepo = new ImportsRepo();
  * — session tokens never travel in the query string.
  */
 const importsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.get('/download/:id/source', async (req: any, reply) => {
+  fastify.get('/download/:id/source', async (req: FastifyRequest, reply) => {
     const authResult = await authenticateRest(req);
     if (!authResult.ok) {
       return reply.status(authResult.status).send({ error: authResult.error });
@@ -42,7 +42,7 @@ const importsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
     }
   });
 
-  fastify.get('/download/:id/skipped', async (req: any, reply) => {
+  fastify.get('/download/:id/skipped', async (req: FastifyRequest, reply) => {
     const authResult = await authenticateRest(req);
     if (!authResult.ok) {
       return reply.status(authResult.status).send({ error: authResult.error });

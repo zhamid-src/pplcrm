@@ -5,4 +5,3 @@ export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
     super('task_comments');
   }
 }
-

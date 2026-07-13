@@ -430,7 +430,18 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Register form URL-encoded parser
   fastify.register(formBody);
 
-  fastify.get('/success', async (req: any, reply) => {
+  fastify.get<{
+    Querystring: {
+      checkout_session_id?: string;
+      is_mock?: string;
+      person_id?: string;
+      amount_cents?: string;
+      province?: string;
+      country?: string;
+      tenant_id?: string;
+      user_id?: string;
+    };
+  }>('/success', async (req, reply) => {
     const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
     // Mock-donation confirmation is a local/dev convenience only. This endpoint is
     // unauthenticated and every parameter (tenant_id, person_id, amount) is
@@ -462,7 +473,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
   // header. Published forms return their render config; unpublished/archived slugs return a "closed"
   // status; unknown tenant/slug 404s.
-  fastify.get('/f/:slug', async (req: any, reply) => {
+  fastify.get<{ Params: { slug: string } }>('/f/:slug', async (req, reply) => {
     const { slug } = req.params;
     try {
       const tenant = await resolveTenantFromRequest(req);
@@ -480,7 +491,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Server-rendered public donation page. Donation forms deliberately stay off the /f/:slug SPA
   // page (they carry the amount field + Stripe checkout); the lookup is tenant-scoped by slug like
   // every other public surface.
-  fastify.get('/d/:slug', async (req: any, reply) => {
+  fastify.get<{ Params: { slug: string } }>('/d/:slug', async (req, reply) => {
     const { slug } = req.params;
     try {
       const tenant = await resolveTenantFromRequest(req);
@@ -512,7 +523,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     }
   });
 
-  fastify.post('/submit/:slug', async (req: any, reply) => {
+  fastify.post<{ Params: { slug: string }; Body: Record<string, string> }>('/submit/:slug', async (req, reply) => {
     const { slug } = req.params;
     // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
     // read the raw header, which a client can spoof to defeat rate limiting.

@@ -5,8 +5,7 @@ import { DashboardController } from './controller';
 const dashboard = new DashboardController();
 
 export const DashboardRouter = router({
-  getStats: authProcedure
-    .query(({ ctx }) => dashboard.getStats(ctx.auth)),
+  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
 
   getBreachedEmails: authProcedure
     .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
