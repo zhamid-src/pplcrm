@@ -25,7 +25,6 @@ function isCanonicalPublicId(value: unknown): boolean {
   return true;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function createTestSeed(db: any) {
   const tenantId = rand();
   const userId = rand();
@@ -88,7 +87,6 @@ async function createTestSeed(db: any) {
   return { tenantId, userId, campaignId, householdId };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function cleanTenant(db: any, tenantId: string) {
   await db
     .updateTable('tenants')
@@ -165,7 +163,6 @@ describe('person public_id generation', () => {
 describe('person public_id end-to-end against the real DB', () => {
   const service = new PersonsService();
   const controller = new PersonsController();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = (BaseRepository as any)._db;
   let tenantId: string;
   let userId: string;
@@ -283,7 +280,6 @@ describe('person public_id end-to-end against the real DB', () => {
   });
 });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function currentCampaign(db: any, tenantId: string): Promise<string> {
   const row = await db.selectFrom('campaigns').select('id').where('tenant_id', '=', tenantId).executeTakeFirstOrThrow();
   return String(row.id);
