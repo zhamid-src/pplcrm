@@ -11,6 +11,8 @@ import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
+import { DeliveriesNav } from './deliveries-nav';
+
 import { DeliveriesRequestsService, type DeliveryRequestRow } from '../services/deliveries-requests-service';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
@@ -31,7 +33,7 @@ const STATUS_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-requests',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, TabBar, Table],
+  imports: [EmptyState, RouterLink, GeocodeChip, StatusBadge, Icon, DatePipe, TabBar, Table, DeliveriesNav],
   templateUrl: './deliveries-requests.html',
 })
 export class DeliveriesRequests implements OnInit {

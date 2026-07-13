@@ -100,8 +100,16 @@ requests grid needs status tabs + counts, geocode readiness chips (`<pc-geocode-
 approve/decline, and the always-enabled "Plan routes · N ready" primary, which the generic grid
 doesn't provide. Pages: `deliveries-requests` (`/deliveries`), `deliveries-plan` (`/deliveries/plan`),
 `deliveries-routes` (`/deliveries/routes`), `deliveries-route-detail` (`/deliveries/routes/:id`).
-"Open in Google Maps" builds a `maps/dir/?api=1&origin=…&waypoints=…&destination=…` URL from stop
-coords. Sidebar: **Deliveries** in FIELD (`sidebar-items.ts`, icon `map-pin`) with a live
+The sidebar has a single **Deliveries** entry (→ `/deliveries`), so the two list pages carry a
+shared **`deliveries-nav.ts`** (`pc-deliveries-nav`) segmented switcher in their header — a DaisyUI
+`join` of two `routerLink`s whose active segment is driven by `routerLinkActive` (no JS state) —
+because otherwise the routes list is only reachable by opening a single route from the requests
+grid's Route column. The **routes list rows** carry the same inline affordances as the route detail:
+an inline dashed **Assign** button in the Volunteer cell when unassigned, and a trailing `⋯`
+overflow (assign/change volunteer via the shared `assign-volunteer-dialog.ts`, copy volunteer link,
+cancel route, delete route) — mirrors the canvassing turf table. "Open in Google Maps" builds a
+`maps/dir/?api=1&origin=…&waypoints=…&destination=…` URL from stop coords (route detail only — the
+list row has no stop coords). Sidebar: **Deliveries** in FIELD (`sidebar-items.ts`, icon `map-pin`) with a live
 ready-count badge wired in `sidebar.ts` (`deliveries.getReadyCount`, mirrors the Tasks/Duplicates
 badge pattern). Help article: `experiences/help/data/articles/engagement.ts` (id `deliveries`); the
 known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
@@ -113,8 +121,14 @@ known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
   fail and type aliases satisfy.
 - `est_minutes/est_km/leg_minutes` are `double precision` (not `numeric`) so node-pg returns JS
   numbers, not strings.
+- Volunteer assignment IS wired: the route-detail header (`deliveries-route-detail`) has an
+  **Assign / Change** control next to Volunteer that opens `assign-volunteer-dialog.ts` (a debounced
+  `personsSvc.getAllWithAddress` picker, same idiom as the "Record donation" donor search). The dialog
+  emits the picked person (or `null` for **Remove volunteer**); the page calls `svc.assignVolunteer`
+  and reloads. When unassigned, the primary action is "Assign a volunteer to share" (opens the picker)
+  instead of "Copy volunteer link", since `mintShareLink` refuses without a volunteer.
 - Deferred (not yet built): web-form `yard_sign` intake branch, and the manual "Add request"
-  household-picker dialog (backend `addRequest` + the volunteer-assignment picker exist; wire the UI).
+  household-picker dialog (backend `addRequest` exists; wire the UI).
 
 ## Campaigns (§15) — requests and routes belong to a context
 

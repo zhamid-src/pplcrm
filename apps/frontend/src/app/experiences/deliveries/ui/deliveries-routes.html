@@ -1,13 +1,14 @@
 <div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
   <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
-  <div class="flex flex-wrap items-end justify-end gap-3">
+  <div class="flex flex-wrap items-center justify-end gap-3">
     <h1 class="sr-only">Routes</h1>
+    <pc-deliveries-nav class="mr-auto" />
     <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
       <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
     </a>
   </div>
 
-  <pc-table [loading]="loading.visible()" [columns]="7">
+  <pc-table [loading]="loading.visible()" [columns]="8">
     <ng-container pcTableHead>
       <th>Name</th>
       <th>Status</th>
@@ -16,11 +17,12 @@
       <th>Volunteer</th>
       <th>Scheduled</th>
       <th>Created</th>
+      <th></th>
     </ng-container>
 
     @if (loaded() && rows().length === 0) {
     <tr>
-      <td colspan="7" class="px-6">
+      <td colspan="8" class="px-6">
         <pc-empty-state
           icon="map-pin"
           [bordered]="false"
@@ -50,7 +52,7 @@
           >{{ row.volunteer_name || 'Volunteer' }}</a
         >
         } @else {
-        <span class="text-base-content/40">Unassigned</span>
+        <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="openAssign(row)">Assign</button>
         }
       </td>
       <td class="whitespace-nowrap tabular-nums text-base-content/60">
@@ -59,7 +61,28 @@
       <td class="whitespace-nowrap tabular-nums text-base-content/60">
         {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
       </td>
+      <td class="text-right">
+        <div class="dropdown dropdown-end">
+          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
+            <pc-icon name="ellipsis-vertical" [size]="4" />
+          </button>
+          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
+            @if (row.volunteer_person_id) {
+            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
+            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
+            } @else {
+            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
+            } @if (canCancel(row.status)) {
+            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
+            } @if (canDelete(row.status)) {
+            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
+            }
+          </ul>
+        </div>
+      </td>
     </tr>
     } }
   </pc-table>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
 </div>

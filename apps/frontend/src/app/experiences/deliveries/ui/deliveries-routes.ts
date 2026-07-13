@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -9,8 +9,14 @@ import type { PcStatusType } from '@uxcommon/components/status-badge/status-badg
 import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AssignVolunteerDialog } from './assign-volunteer-dialog';
+import { DeliveriesNav } from './deliveries-nav';
+
 import { DeliveriesRoutesService, type DeliveryRouteRow } from '../services/deliveries-routes-service';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
 
 const ROUTE_TONE: Record<string, PcStatusType> = {
   draft: 'neutral',
@@ -24,16 +30,21 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-routes',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, RouterLink, StatusBadge, Icon, DatePipe, Table],
+  imports: [EmptyState, RouterLink, StatusBadge, Icon, DatePipe, Table, DeliveriesNav, AssignVolunteerDialog],
   templateUrl: './deliveries-routes.html',
 })
 export class DeliveriesRoutes implements OnInit {
   private readonly svc = inject(DeliveriesRoutesService);
   private readonly alerts = inject(AlertService);
+  private readonly confirm = inject(ConfirmDialogService);
+  private readonly assignDlg = viewChild.required<AssignVolunteerDialog>('assignDlg');
   protected readonly loading = createLoadingGate();
 
   protected readonly rows = signal<DeliveryRouteRow[]>([]);
   protected readonly loaded = signal(false);
+
+  /** The route the open picker is acting on — the dialog itself is route-agnostic. */
+  private readonly assigningRouteId = signal<string | null>(null);
 
   public ngOnInit(): void {
     void this.reload();
@@ -45,6 +56,81 @@ export class DeliveriesRoutes implements OnInit {
 
   protected label(status: string): string {
     return status === 'in_progress' ? 'in progress' : status;
+  }
+
+  /** Cancel is meaningless once a route is already canceled or completed. */
+  protected canCancel(status: string): boolean {
+    return status !== 'canceled' && status !== 'completed';
+  }
+
+  /** Delete only while nothing has happened yet (mirrors the route-detail rule). */
+  protected canDelete(status: string): boolean {
+    return status === 'draft' || status === 'assigned';
+  }
+
+  protected openAssign(row: DeliveryRouteRow): void {
+    this.assigningRouteId.set(row.id);
+    this.assignDlg().open(row.volunteer_person_id != null);
+  }
+
+  protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
+    const routeId = this.assigningRouteId();
+    if (!routeId) return;
+    try {
+      await this.svc.assignVolunteer(routeId, person?.id ?? null);
+      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
+    }
+  }
+
+  protected async copyLink(row: DeliveryRouteRow): Promise<void> {
+    try {
+      const res = await this.svc.mintShareLink(row.id);
+      if (res.status === 'exists') {
+        this.alerts.showInfo('A live link already exists. Open the route to regenerate it.');
+        return;
+      }
+      const url = `${window.location.origin}/r/${res.token}`;
+      await navigator.clipboard.writeText(url).catch(() => undefined);
+      this.alerts.showSuccess('Link copied — valid 30 days');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
+    }
+  }
+
+  protected async cancelRoute(row: DeliveryRouteRow): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Cancel this route?',
+      message: 'Its undelivered stops return to the planning pool. Delivered stops keep their record.',
+      variant: 'danger',
+      confirmText: 'Cancel route',
+    });
+    if (!ok) return;
+    try {
+      await this.svc.setStatus(row.id, 'canceled');
+      this.alerts.showSuccess('Route canceled');
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not cancel the route');
+    }
+  }
+
+  protected async deleteRoute(row: DeliveryRouteRow): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Delete this route?',
+      message: 'This removes the route. Its stops return to the planning pool.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.svc.delete(row.id);
+      this.alerts.showSuccess('Route deleted');
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not delete the route');
+    }
   }
 
   protected stopsLabel(row: DeliveryRouteRow): string {

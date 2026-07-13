@@ -27,13 +27,18 @@
     <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
       <div>
         <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer</p>
-        @if (d.volunteer_person_id) {
-        <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
-          >{{ d.volunteer_name || 'Volunteer' }}</a
-        >
-        } @else {
-        <p class="text-base-content/50">Unassigned</p>
-        }
+        <div class="flex items-center gap-1.5">
+          @if (d.volunteer_person_id) {
+          <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
+            >{{ d.volunteer_name || 'Volunteer' }}</a
+          >
+          <button type="button" class="link text-xs text-base-content/50" (click)="openAssign()">Change</button>
+          } @else {
+          <button type="button" class="btn btn-ghost btn-xs -ml-2 gap-1 text-primary" (click)="openAssign()">
+            <pc-icon name="user-plus" [size]="4"></pc-icon> Assign
+          </button>
+          }
+        </div>
       </div>
       <div>
         <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Scheduled for</p>
@@ -55,9 +60,15 @@
 
     <!-- Actions -->
     <div class="flex flex-wrap items-center gap-2 pt-1">
+      @if (d.volunteer_person_id) {
       <button type="button" class="btn btn-primary btn-sm" (click)="copyLink()">
         <pc-icon name="paper-airplane" [size]="4"></pc-icon> Copy volunteer link
       </button>
+      } @else {
+      <button type="button" class="btn btn-primary btn-sm" (click)="openAssign()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon> Assign a volunteer to share
+      </button>
+      }
       <button type="button" class="btn btn-ghost btn-sm" (click)="openInGoogleMaps()">
         <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
       </button>
@@ -166,6 +177,8 @@
 
   <!-- Mandatory activity feed -->
   <pc-record-activities [entity]="'delivery_routes'" [entityId]="id()"></pc-record-activities>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
 </div>
 } @else {
 <div class="flex min-h-[40vh] items-center justify-center">

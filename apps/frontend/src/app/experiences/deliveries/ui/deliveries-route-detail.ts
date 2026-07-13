@@ -1,5 +1,15 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -13,7 +23,10 @@ import type { DeliverySkipReason } from '@common';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 
+import { AssignVolunteerDialog } from './assign-volunteer-dialog';
 import { DeliveriesRoutesService, type DeliveryRouteDetail } from '../services/deliveries-routes-service';
+
+type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
 
 const ROUTE_TONE: Record<string, PcStatusType> = {
   draft: 'neutral',
@@ -27,11 +40,13 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-route-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities],
+  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities, AssignVolunteerDialog],
   templateUrl: './deliveries-route-detail.html',
 })
 export class DeliveriesRouteDetail {
   public readonly id = input.required<string>();
+
+  private readonly assignDlg = viewChild.required<AssignVolunteerDialog>('assignDlg');
 
   private readonly svc = inject(DeliveriesRoutesService);
   private readonly alerts = inject(AlertService);
@@ -112,6 +127,20 @@ export class DeliveriesRouteDetail {
       await this.load();
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not rename route');
+    }
+  }
+
+  protected openAssign(): void {
+    this.assignDlg().open(this.detail()?.volunteer_person_id != null);
+  }
+
+  protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
+    try {
+      await this.svc.assignVolunteer(this.id(), person?.id ?? null);
+      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
     }
   }
 
