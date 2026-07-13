@@ -67,4 +67,20 @@ module.exports = [
       ],
     },
   },
+
+  /* ── Relax `no-explicit-any` for non-production code ────────────────────────
+   *
+   * `any` in production logic is a real smell we're driving to zero, but two
+   * file classes are intentionally exempt:
+   *   - _migrations/**  DDL history; already applied, append-only, never re-run.
+   *                     Typing pg/Kysely migration builders adds no runtime safety.
+   *   - *.spec.ts       Test doubles/mocks where `any` is the pragmatic shape for
+   *                     a stub; typing them buys nothing and obscures intent.
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/_migrations/**/*.ts', '**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
 ];

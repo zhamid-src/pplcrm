@@ -15,7 +15,7 @@ export class DashboardController {
     // Fetch SLA settings
     const settingsRepo = new SettingsRepo();
     const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
       acc[row.key] = row.value;
       return acc;
     }, {});
@@ -464,7 +464,7 @@ export class DashboardController {
     // Fetch SLA settings
     const settingsRepo = new SettingsRepo();
     const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
       acc[row.key] = row.value;
       return acc;
     }, {});
@@ -618,7 +618,7 @@ export class DashboardController {
     // Fetch SLA settings
     const settingsRepo = new SettingsRepo();
     const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
       acc[row.key] = row.value;
       return acc;
     }, {});

@@ -74,7 +74,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       if (actor != null && tenant != null) {
         const resultObj = result as Record<string, unknown> | undefined;
         const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
-        const metadata: Record<string, any> = resultId ? { id: resultId } : {};
+        const metadata: Record<string, unknown> = resultId ? { id: resultId } : {};
         if (resultObj) {
           const tableName = String(this.repo.getTableName());
           metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
@@ -203,7 +203,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
       const rowObj = input.row as Record<string, unknown>;
       const actor = rowObj['updatedby_id'];
       if (actor != null) {
-        const metadata: Record<string, any> = { id: input.id };
+        const metadata: Record<string, unknown> = { id: input.id };
         const resultObj = result as Record<string, unknown> | undefined;
         if (original && resultObj) {
           const skipKeys = [
@@ -219,7 +219,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
             'password_reset_code',
             'password_reset_code_created_at',
           ];
-          const changes: Record<string, any> = {};
+          const changes: Record<string, unknown> = {};
           for (const key of Object.keys(rowObj)) {
             if (skipKeys.includes(key)) continue;
             const oldVal = original[key];
@@ -354,7 +354,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     // Shared safety net for override paths (persons/households/etc.) that fetch rows themselves:
     // never build an oversized CSV string inline — steer them to the background export too.
     assertInlineExportWithinCap(rows.length);
-    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, any>>, columns) : '';
+    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, unknown>>, columns) : '';
     return {
       csv,
       columns,
