@@ -1,0 +1,68 @@
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Documentation</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      Guides for every corner of pplCRM.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Plain-language how-tos for the whole product — from your first import to cutting turf and sending a newsletter.
+      Browse by topic below.
+    </p>
+  </div>
+</section>
+
+<!-- Category grid -->
+<div class="px-5 pb-6 pt-8 sm:px-8">
+  <div class="site-wrap grid gap-4 sm:grid-cols-2">
+    @for (section of sections; track section.category.id) {
+    <section class="rounded-2xl border border-line bg-base-100 p-5 shadow-sm">
+      <div class="flex items-center gap-3">
+        <div class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <pc-site-icon [name]="section.icon" [size]="20" />
+        </div>
+        <div class="min-w-0">
+          <h2 class="truncate text-base font-semibold text-base-content">{{ section.category.label }}</h2>
+          <p class="text-xs tabular-nums text-base-content/50">
+            {{ section.articles.length }} {{ section.articles.length === 1 ? 'article' : 'articles' }}
+          </p>
+        </div>
+      </div>
+      <p class="mt-3 text-sm leading-6 text-base-content/60">{{ section.category.blurb }}</p>
+      <ul class="mt-3 space-y-0.5">
+        @for (article of section.articles; track article.id) {
+        <li>
+          <a
+            [routerLink]="['/docs', article.id]"
+            class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <span class="truncate">{{ article.title }}</span>
+            <pc-site-icon
+              name="chevron-right"
+              [size]="16"
+              class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
+            />
+          </a>
+        </li>
+        }
+      </ul>
+    </section>
+    }
+  </div>
+</div>
+
+<!-- CTA band -->
+<section class="mt-8 bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Read it, then try it on sample data.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />

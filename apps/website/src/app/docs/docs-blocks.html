@@ -1,0 +1,81 @@
+<div class="space-y-5">
+  @for (block of blocks(); track $index) { @switch (block.kind) { @case ('p') {
+  <p class="text-[15px] leading-7 text-base-content/80">
+    <pc-docs-rich-text [text]="block.text" />
+  </p>
+  } @case ('h2') {
+  <h2 [id]="block.id" class="scroll-mt-24 pt-4 text-lg font-semibold tracking-tight text-base-content first:pt-0">
+    <pc-docs-rich-text [text]="block.text" />
+  </h2>
+  } @case ('list') { @if (block.ordered) {
+  <ol class="list-decimal space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-base-content/40">
+    @for (item of block.items; track $index) {
+    <li><pc-docs-rich-text [text]="item" /></li>
+    }
+  </ol>
+  } @else {
+  <ul class="list-disc space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-primary/60">
+    @for (item of block.items; track $index) {
+    <li><pc-docs-rich-text [text]="item" /></li>
+    }
+  </ul>
+  } } @case ('steps') {
+  <ol class="space-y-4">
+    @for (step of block.items; track $index; let i = $index) {
+    <li class="flex items-start gap-3">
+      <span
+        class="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-xs font-semibold tabular-nums text-primary"
+        aria-hidden="true"
+        >{{ i + 1 }}</span
+      >
+      <span class="min-w-0">
+        <span class="block text-[15px] font-medium leading-6 text-base-content">
+          <pc-docs-rich-text [text]="step.title" />
+        </span>
+        @if (step.detail) {
+        <span class="block text-sm leading-6 text-base-content/70">
+          <pc-docs-rich-text [text]="step.detail" />
+        </span>
+        }
+      </span>
+    </li>
+    }
+  </ol>
+  } @case ('callout') {
+  <div
+    role="note"
+    class="alert alert-soft items-start"
+    [class.alert-info]="block.tone === 'info'"
+    [class.alert-success]="block.tone === 'tip'"
+    [class.alert-warning]="block.tone === 'warning'"
+  >
+    <pc-site-icon class="mt-0.5" [name]="calloutIcon(block.tone)" [size]="20" />
+    <div class="min-w-0">
+      <div class="text-sm font-semibold">{{ block.title }}</div>
+      <div class="text-sm leading-6 opacity-90">
+        <pc-docs-rich-text [text]="block.text" />
+      </div>
+    </div>
+  </div>
+  } @case ('keys') {
+  <div class="overflow-x-auto rounded-xl border border-line">
+    <table class="table table-sm">
+      <tbody>
+        @for (row of block.rows; track $index) {
+        <tr class="border-base-200">
+          <td class="w-40 whitespace-nowrap">
+            @for (key of row.keys; track $index; let last = $last) {
+            <kbd class="kbd kbd-sm">{{ key }}</kbd>@if (!last) {
+            <span class="px-0.5 text-base-content/40">+</span>
+            } }
+          </td>
+          <td class="text-sm text-base-content/80">
+            <pc-docs-rich-text [text]="row.action" />
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  } } }
+</div>

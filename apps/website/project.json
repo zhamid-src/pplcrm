@@ -6,10 +6,23 @@
   "sourceRoot": "apps/website/src",
   "tags": [],
   "targets": {
+    "generate-docs": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/apps/website/tools/generate-help-static.ts",
+        "{workspaceRoot}/libs/common/src/lib/help/**/*.ts"
+      ],
+      "outputs": ["{workspaceRoot}/apps/website/src/generated"],
+      "options": {
+        "command": "tsx --tsconfig tsconfig.base.json apps/website/tools/generate-help-static.ts"
+      }
+    },
     "build": {
       "executor": "@angular/build:application",
       "outputs": ["{options.outputPath}"],
       "defaultConfiguration": "production",
+      "dependsOn": ["generate-docs"],
       "options": {
         "outputPath": "dist/apps/website",
         "index": "apps/website/src/index.html",
@@ -20,6 +33,11 @@
         "tsConfig": "apps/website/tsconfig.app.json",
         "assets": [
           "apps/website/src/favicon.ico",
+          {
+            "glob": "**/*",
+            "input": "apps/website/src/generated",
+            "output": "."
+          },
           {
             "glob": "_redirects",
             "input": "apps/website/src",

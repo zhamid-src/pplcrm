@@ -101,8 +101,8 @@ export class SiteFooter {
     {
       heading: 'Resources',
       links: [
+        { label: 'Help center', path: '/docs' },
         { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Documentation', path: '/soon', qp: { pageTitle: 'Documentation' } },
         { label: 'Import guide', path: '/soon', qp: { pageTitle: 'Import guide' } },
         { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
       ],

@@ -44,6 +44,19 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
   },
   {
+    path: 'docs',
+    pathMatch: 'full',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
+  },
+  {
+    // Per-article title/meta/canonical are set inside the component from the
+    // resolved article (see DocsArticle).
+    path: 'docs/:id',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
+  },
+  {
     // Generic stub for footer links whose real page doesn't exist yet; the
     // heading comes from a ?pageTitle= query param (bound via component input).
     path: 'soon',

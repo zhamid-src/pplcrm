@@ -1,0 +1,96 @@
+<pc-site-header variant="solid" />
+
+@if (article(); as article) {
+<article class="px-5 py-10 sm:px-8">
+  <div class="mx-auto max-w-[760px]">
+    <!-- Breadcrumb -->
+    <nav class="flex flex-wrap items-center gap-1.5 text-[13px] text-base-content/50" aria-label="Breadcrumb">
+      <a routerLink="/docs" class="hover:text-primary">Docs</a>
+      <span aria-hidden="true">/</span>
+      @if (category(); as category) {
+      <span class="text-base-content/70">{{ category.label }}</span>
+      }
+    </nav>
+
+    <!-- Header -->
+    <header class="mt-4">
+      <h1 class="text-[clamp(1.75rem,4vw,2.25rem)] font-bold tracking-[-0.02em] text-base-content">
+        {{ article.title }}
+      </h1>
+      <p class="mt-3 text-[16px] leading-relaxed text-base-content/60">{{ article.summary }}</p>
+      <p class="mt-3 text-xs uppercase tracking-wide tabular-nums text-base-content/45">{{ minutes() }} min read</p>
+    </header>
+
+    <!-- Body -->
+    <div class="mt-8 border-t border-line pt-8">
+      <pc-docs-blocks [blocks]="article.blocks" />
+    </div>
+
+    <!-- Related -->
+    @if (related().length > 0) {
+    <section class="mt-12 border-t border-line pt-8">
+      <div class="eyebrow">Related</div>
+      <ul class="mt-3 space-y-0.5">
+        @for (rel of related(); track rel.id) {
+        <li>
+          <a
+            [routerLink]="['/docs', rel.id]"
+            class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
+          >
+            <span class="truncate">{{ rel.title }}</span>
+            <pc-site-icon
+              name="chevron-right"
+              [size]="16"
+              class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
+            />
+          </a>
+        </li>
+        }
+      </ul>
+    </section>
+    }
+
+    <!-- Prev / next in category -->
+    @if (neighbors().prev || neighbors().next) {
+    <nav class="mt-10 grid gap-3 border-t border-line pt-8 sm:grid-cols-2" aria-label="More in this topic">
+      @if (neighbors().prev; as prev) {
+      <a
+        [routerLink]="['/docs', prev.id]"
+        class="flex items-center gap-2.5 rounded-xl border border-line p-4 transition-colors hover:border-primary/40 hover:bg-base-200"
+      >
+        <pc-site-icon name="chevron-left" [size]="18" class="flex-none text-base-content/40" />
+        <span class="min-w-0">
+          <span class="block text-[11px] uppercase tracking-wide text-base-content/45">Previous</span>
+          <span class="block truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
+        </span>
+      </a>
+      } @else {
+      <span></span>
+      } @if (neighbors().next; as next) {
+      <a
+        [routerLink]="['/docs', next.id]"
+        class="flex items-center justify-end gap-2.5 rounded-xl border border-line p-4 text-right transition-colors hover:border-primary/40 hover:bg-base-200"
+      >
+        <span class="min-w-0">
+          <span class="block text-[11px] uppercase tracking-wide text-base-content/45">Next</span>
+          <span class="block truncate text-sm font-medium text-base-content">{{ next.title }}</span>
+        </span>
+        <pc-site-icon name="chevron-right" [size]="18" class="flex-none text-base-content/40" />
+      </a>
+      }
+    </nav>
+    }
+
+    <!-- CTA -->
+    <div class="mt-12 rounded-2xl border border-line bg-base-200 p-6 text-center">
+      <p class="text-[15px] font-semibold text-base-content">Try this on sample data.</p>
+      <p class="mx-auto mt-1.5 max-w-[420px] text-sm leading-relaxed text-base-content/60">
+        Every feature in the docs is live in the free demo workspace — no card, nothing to lose.
+      </p>
+      <a [href]="signupUrl" class="btn btn-primary mt-4 rounded-field px-6 text-[14px] font-semibold"> Start free </a>
+    </div>
+  </div>
+</article>
+}
+
+<pc-site-footer />
