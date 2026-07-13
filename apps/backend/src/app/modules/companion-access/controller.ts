@@ -19,6 +19,7 @@ import { SmsService } from '../../lib/sms/sms.service';
 import { maskEmail, maskPhone, normalizeE164 } from '../../lib/sms/phone';
 import { generateToken, hashToken } from '../../lib/token-hash';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { volunteerLinksExpire } from '../../lib/volunteer-link-policy';
 import { env } from '../../../env';
 import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
 import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
@@ -333,12 +334,15 @@ export class CompanionAccessController {
     }
 
     // kind === 'route' — mirrors DeliveriesController.isTokenUsable (uniform
-    // dead-link semantics: canceled, missing expiry, or past expiry all fail).
+    // dead-link semantics: canceled always fails; missing/past expiry fails only
+    // while the workspace enforces link expiry — a live policy, Workspace → App).
     const route = await this.routesRepo.findByTokenHash(hashToken(token));
     if (!route) return null;
     if (String(route.status) === 'canceled') return null;
-    const exp = route.share_token_expires_at;
-    if (!exp || new Date(String(exp)) <= new Date()) return null;
+    if (await volunteerLinksExpire(this.routesRepo.db, String(route.tenant_id))) {
+      const exp = route.share_token_expires_at;
+      if (!exp || new Date(String(exp)) <= new Date()) return null;
+    }
     return {
       tenant_id: String(route.tenant_id),
       volunteer_person_id: route.volunteer_person_id == null ? null : String(route.volunteer_person_id),

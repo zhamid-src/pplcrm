@@ -126,6 +126,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Organization** — your name, contact details, and mailing address.',
+          '**App** — how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer — volunteers still verify a code and need a one-time approval either way.',
           '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
           '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
           '**Teams & access** — default role for invitations and the MFA requirement.',

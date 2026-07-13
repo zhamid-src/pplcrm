@@ -22,7 +22,14 @@ in `libs/common/src/lib/kysely.models.ts`.
 - **`delivery_routes`** — `status: draft | assigned | in_progress | completed | canceled` (American
   one-L "canceled", per spec). Carries `start_lat/lng`, `est_minutes/est_km`, a `params` jsonb
   snapshot, and the share link as **`share_token_hash` (sha256 hex) only** — the raw token is returned
-  to staff once and never stored.
+  to staff once and never stored. **Link expiry is a live workspace policy, not row state**: the
+  30-day `share_token_expires_at` is always _stored_ at mint time but only _enforced_ while the
+  Workspace → App toggle (`settings` key `app.volunteer_links_expire`, default ON) says so — see
+  `lib/volunteer-link-policy.ts` (`volunteerLinksExpire()`), read live at every enforcement point
+  (`mintShareLink` active-check, `isTokenUsable`, `sanitizeRoute`, and the companion gate's
+  `resolveLink` route branch). Flipping the toggle instantly revives/re-expires existing links; when
+  expiry is off the API reports no date (`link_expires_at` / mint `expires_at` come back null) so
+  the UI never shows a date that isn't enforced.
 - **`delivery_route_stops`** — `status: pending | delivered | skipped`, `seq` (1-based),
   `leg_minutes`, `reason`, `acted_via: volunteer_link | staff`.
 

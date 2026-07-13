@@ -104,8 +104,13 @@ export class DeliveriesRoutes implements OnInit {
       }
       const url = companionUrl(`/r/${res.token}`);
       await navigator.clipboard.writeText(url).catch(() => undefined);
+      // expires_at is null when the workspace disables link expiry (Workspace → App).
       this.alerts.showSuccess(
-        regenerate ? 'Fresh link copied — the old link no longer works' : 'Link copied — valid 30 days',
+        regenerate
+          ? 'Fresh link copied — the old link no longer works'
+          : res.expires_at
+            ? 'Link copied — valid 30 days'
+            : 'Link copied',
       );
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');

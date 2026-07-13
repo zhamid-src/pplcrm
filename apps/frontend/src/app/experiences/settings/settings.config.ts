@@ -74,6 +74,22 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     ],
   },
   {
+    id: 'app',
+    title: 'App',
+    description: 'How the volunteer-facing apps and shared links behave for your organization.',
+    icon: 'wrench-screwdriver',
+    fields: [
+      {
+        key: 'app.volunteer_links_expire',
+        label: 'Volunteer route links expire after 30 days',
+        type: 'toggle',
+        defaultValue: true,
+        helper:
+          'Links expire for security: if a route link is forwarded on or turns up on a lost phone months later, it no longer works — and volunteers aren’t confused by stale routes reappearing. Anyone opening a link still verifies a one-time code and needs your one-time approval, so turning expiry off is safe if your deliveries run longer than 30 days and you’re tired of re-sending links. Existing links follow whatever this is set to right now, and you can always revoke a single route’s link from its ⋯ menu.',
+      },
+    ],
+  },
+  {
     id: 'communications',
     title: 'Communications',
     description: 'Email delivery, inbox routing, and compliance copy.',
