@@ -18,6 +18,7 @@ import {
   type InFieldToday,
   type TurfListItem,
 } from '../services/canvassing-service';
+import { companionUrl } from '../../../shared/public-pages';
 import { AssignTurfDialog } from './assign-turf-dialog';
 import { CompanionSettingsDialog } from './companion-settings-dialog';
 import { CutTurfsDialog } from './cut-turfs-dialog';
@@ -273,7 +274,7 @@ export class CanvassingPage implements OnInit {
   }
 
   private async copyCompanionLink(token: string): Promise<void> {
-    const url = `${location.origin}/t/${encodeURIComponent(token)}`;
+    const url = companionUrl(`/t/${encodeURIComponent(token)}`);
     try {
       await navigator.clipboard.writeText(url);
       this.alerts.showSuccess('Personal link copied — only the assigned volunteer can open it.');

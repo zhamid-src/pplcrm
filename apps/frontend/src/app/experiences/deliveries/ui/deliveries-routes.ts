@@ -10,6 +10,7 @@ import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
 
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { companionUrl } from '../../../shared/public-pages';
 import { AssignVolunteerDialog } from './assign-volunteer-dialog';
 import { DeliveriesNav } from './deliveries-nav';
 
@@ -85,16 +86,27 @@ export class DeliveriesRoutes implements OnInit {
     }
   }
 
-  protected async copyLink(row: DeliveryRouteRow): Promise<void> {
+  protected async copyLink(row: DeliveryRouteRow, regenerate = false): Promise<void> {
     try {
-      const res = await this.svc.mintShareLink(row.id);
+      const res = await this.svc.mintShareLink(row.id, regenerate);
       if (res.status === 'exists') {
-        this.alerts.showInfo('A live link already exists. Open the route to regenerate it.');
+        // The raw token is never stored, so the existing link can't be shown again — the only way
+        // to hand the user a copyable link is to mint a fresh one, which retires the old one.
+        const ok = await this.confirm.confirm({
+          title: 'Copy a fresh link?',
+          message:
+            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it — the old link stops working, so anyone you already sent it to will need the new one.',
+          variant: 'warning',
+          confirmText: 'Regenerate & copy',
+        });
+        if (ok) await this.copyLink(row, true);
         return;
       }
-      const url = `${window.location.origin}/r/${res.token}`;
+      const url = companionUrl(`/r/${res.token}`);
       await navigator.clipboard.writeText(url).catch(() => undefined);
-      this.alerts.showSuccess('Link copied — valid 30 days');
+      this.alerts.showSuccess(
+        regenerate ? 'Fresh link copied — the old link no longer works' : 'Link copied — valid 30 days',
+      );
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
     }

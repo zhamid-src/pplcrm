@@ -46,3 +46,13 @@ export function publicPageUrl(tenantSlug: string | null | undefined, path: strin
   }
   return `${window.location.origin}/${path}`;
 }
+
+/**
+ * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
+ * production the companion apps are path-routed on the CRM's own domain, so we use the current
+ * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —
+ * otherwise a copied link would point back at the CRM host and 404. `path` must start with a slash.
+ */
+export function companionUrl(path: string): string {
+  return `${environment.companionOrigin || window.location.origin}${path}`;
+}

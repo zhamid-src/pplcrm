@@ -7,27 +7,37 @@
 export type PcIconNameType = keyof typeof icons;
 
 export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
+  let cached = _cache.get(name);
+  if (!cached) {
+    cached = resolveIconSvg(name);
+    _cache.set(name, cached);
   }
-  return _cache.get(name)!;
+  return cached;
+}
+
+async function resolveIconSvg(name: PcIconNameType): Promise<string> {
+  const svg = await fetchSvg(icons[name]);
+  if (svg != null) return svg;
+  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
+  if (name !== UNKNOWN) {
+    const fallback = await loadIconSvg(UNKNOWN);
+    if (fallback) return fallback;
+  }
+  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
+  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
+  return '';
+}
+
+/** Fetch an icon and return its text only if it is actually an SVG, else null. */
+async function fetchSvg(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.trimStart().startsWith('<svg') ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 const UNKNOWN: PcIconNameType = 'unknown';

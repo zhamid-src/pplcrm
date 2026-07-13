@@ -3,4 +3,5 @@ export const environment = {
   apiUrl: 'http://localhost:3000',
   googleMapsApiKey: '',
   publicBaseDomain: 'localhost',
+  companionOrigin: 'http://localhost:4300',
 };

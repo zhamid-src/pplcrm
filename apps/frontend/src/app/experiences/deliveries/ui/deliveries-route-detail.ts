@@ -18,6 +18,7 @@ import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { companionUrl } from '../../../shared/public-pages';
 import { DELIVERY_SKIP_REASONS } from '@common';
 import type { DeliverySkipReason } from '@common';
 import { Icon } from '@icons/icon';
@@ -148,12 +149,23 @@ export class DeliveriesRouteDetail {
     try {
       const res = await this.svc.mintShareLink(this.id(), regenerate);
       if (res.status === 'exists') {
-        this.alerts.showInfo('A live link already exists. Regenerate it to get a fresh copy.');
+        // The raw token is never stored, so the existing link can't be shown again — the only way
+        // to hand the user a copyable link is to mint a fresh one, which retires the old one.
+        const ok = await this.confirm.confirm({
+          title: 'Copy a fresh link?',
+          message:
+            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it — the old link stops working, so anyone you already sent it to will need the new one.',
+          variant: 'warning',
+          confirmText: 'Regenerate & copy',
+        });
+        if (ok) await this.copyLink(true);
         return;
       }
-      const url = `${window.location.origin}/r/${res.token}`;
+      const url = companionUrl(`/r/${res.token}`);
       await navigator.clipboard.writeText(url).catch(() => undefined);
-      this.alerts.showSuccess('Link copied — valid 30 days');
+      this.alerts.showSuccess(
+        regenerate ? 'Fresh link copied — the old link no longer works' : 'Link copied — valid 30 days',
+      );
       await this.load();
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
