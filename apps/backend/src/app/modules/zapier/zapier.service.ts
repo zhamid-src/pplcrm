@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../lib/base.repo';
 import { hashToken } from '../../lib/token-hash';
 import { logger } from '../../logger';
@@ -33,7 +35,7 @@ function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
 export { pickPersonFields };
 
 export async function queueZapierTrigger(
-  db: any,
+  db: Kysely<Models>,
   tenant_id: string,
   event_type: ZapierEventType,
   data: Record<string, unknown>,

@@ -1,8 +1,10 @@
-import type { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import { ZapierService } from './zapier.service';
 import { PersonsService } from '../persons/services/persons.service';
 import type { IAuthKeyPayload } from '@common';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../logger';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import { TooManyRequestsError } from '../../errors/app-errors';
@@ -34,7 +36,7 @@ const tagActionSchema = z.object({
   tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50),
 });
 
-async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload | null> {
+async function resolveAuth(tenantId: string, db: Kysely<Models>): Promise<IAuthKeyPayload | null> {
   const owner = await db
     .selectFrom('authusers')
     .select(['id', 'first_name', 'last_name', 'role'])
@@ -58,7 +60,7 @@ async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload |
   } as IAuthKeyPayload;
 }
 
-async function extractTenantId(req: any): Promise<string | null> {
+async function extractTenantId(req: FastifyRequest): Promise<string | null> {
   const authHeader = req.headers['authorization'] as string | undefined;
   if (!authHeader?.startsWith('Bearer ')) return null;
   const apiKey = authHeader.slice(7).trim();
@@ -93,8 +95,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     const { email, ...fields } = parsed.data;
 
     try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const db = (await import('../../lib/base.repo')).BaseRepository.dbInstance;
       const auth = await resolveAuth(tenantId, db);
       if (!auth) {
         return reply.code(500).send({ error: 'Tenant has no admin user configured' });
@@ -108,10 +109,10 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .executeTakeFirst();
 
       if (existing) {
-        const result = await personsService.updatePerson(String(existing.id), { email, ...fields } as any, auth);
+        const result = await personsService.updatePerson(String(existing.id), { email, ...fields }, auth);
         return reply.code(200).send({ action: 'updated', person: result });
       } else {
-        const result = await personsService.addPerson({ email, ...fields } as any, auth);
+        const result = await personsService.addPerson({ email, ...fields }, auth);
         return reply.code(201).send({ action: 'created', person: result });
       }
     } catch (err) {
@@ -134,8 +135,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     const { email, tag_name } = parsed.data;
 
     try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const db = (await import('../../lib/base.repo')).BaseRepository.dbInstance;
       const auth = await resolveAuth(tenantId, db);
       if (!auth) {
         return reply.code(500).send({ error: 'Tenant has no admin user configured' });
@@ -174,8 +174,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     const { email, tag_name } = parsed.data;
 
     try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const db = (await import('../../lib/base.repo')).BaseRepository.dbInstance;
       const auth = await resolveAuth(tenantId, db);
       if (!auth) {
         return reply.code(500).send({ error: 'Tenant has no admin user configured' });
