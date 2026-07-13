@@ -248,6 +248,180 @@ export const LogInteractionObj = z.object({
 export type LogInteractionType = z.infer<typeof LogInteractionObj>;
 ```
 
+## File: libs/common/src/lib/schemas/auth.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { emailSchema, nameSchema } from './core.schema';
+
+export const InviteAuthUserObj = z.object({
+  email: emailSchema,
+  first_name: nameSchema('First name'),
+  last_name: nameSchema('Last name').nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+});
+
+export const NotificationPreferencesObj = z.object({
+  mention_in_comment: z.boolean().default(true),
+  mention_in_comment_in_app: z.boolean().default(true),
+  task_assigned: z.boolean().default(true),
+  task_assigned_in_app: z.boolean().default(true),
+  task_due: z.boolean().default(true),
+  task_due_in_app: z.boolean().default(true),
+  person_assigned: z.boolean().default(true),
+  person_assigned_in_app: z.boolean().default(true),
+  export_ready: z.boolean().default(true),
+  export_ready_in_app: z.boolean().default(true),
+  import_summary: z.boolean().default(true),
+  import_summary_in_app: z.boolean().default(true),
+});
+
+/**
+ * Shape of the profiles.preferences jsonb column (formerly the untyped
+ * profiles.json grab-bag). Only `notifications` is written today; unknown
+ * keys from older rows are preserved rather than rejected.
+ */
+export const ProfilePreferencesObj = z
+  .object({
+    notifications: NotificationPreferencesObj.partial().optional(),
+    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
+    active_campaign_id: z.string().optional(),
+  })
+  .catchall(z.unknown());
+
+export const UpdateAuthUserObj = z.object({
+  email: emailSchema.optional(),
+  first_name: nameSchema('First name').optional(),
+  last_name: nameSchema('Last name').nullable().optional(),
+  role: z.string().max(100).nullable().optional(),
+  verified: z.boolean().optional(),
+  two_factor_enabled: z.boolean().optional(),
+  notification_preferences: NotificationPreferencesObj.optional(),
+});
+
+export const Verify2FAObj = z.object({
+  email: emailSchema,
+  code: z.string().length(6),
+  rememberMe: z.boolean().optional(),
+});
+```
+
+## File: libs/common/src/lib/schemas/campaigns.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { descriptionSchema, idSchema, nameSchema, notesSchema } from './core.schema';
+
+/**
+ * Campaigns §15 — a campaign is a *context*: the permanent constituency office
+ * ('office') or a time-bounded election run ('election'). Several can be active at
+ * once; users pick the one they're working in via the header switcher. Archived
+ * campaigns are read-only history.
+ */
+export const CAMPAIGN_KINDS = ['office', 'election'] as const;
+export type CampaignKind = (typeof CAMPAIGN_KINDS)[number];
+
+export const CAMPAIGN_STATUSES = ['active', 'archived'] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/** Plain calendar date (campaigns.startdate/enddate are Postgres `date` columns). */
+const campaignDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+  .nullable()
+  .optional();
+
+export const AddCampaignObj = z.object({
+  name: nameSchema('Name', 100),
+  description: descriptionSchema(1000),
+  notes: notesSchema,
+  kind: z.enum(CAMPAIGN_KINDS).default('election'),
+  startdate: campaignDateSchema,
+  enddate: campaignDateSchema,
+});
+
+export const UpdateCampaignObj = z.object({
+  name: nameSchema('Name', 100).optional(),
+  description: descriptionSchema(1000),
+  notes: notesSchema,
+  startdate: campaignDateSchema,
+  enddate: campaignDateSchema,
+});
+
+/**
+ * Campaign-scoped person facts (Campaigns §15) — structured concepts, not tags.
+ * One row per (campaign, person); a missing row / NULL field is "Unknown".
+ * UI copy: Neutral = engaged but indifferent; Undecided = engaged, hasn't
+ * decided; Unknown = never asked.
+ */
+export const SUPPORT_LEVELS = ['strong', 'leaning', 'neutral', 'leaning_against', 'against', 'undecided'] as const;
+export type SupportLevel = (typeof SUPPORT_LEVELS)[number];
+
+export const SUPPORT_LEVEL_LABELS: Record<SupportLevel, string> = {
+  strong: 'Strong',
+  leaning: 'Leaning',
+  neutral: 'Neutral',
+  leaning_against: 'Leaning against',
+  against: 'Against',
+  undecided: 'Undecided',
+};
+
+/** GOTV voting status. Advance voters are struck from later call/knock lists. */
+export const VOTING_STATUSES = ['will_vote', 'voted_advance', 'voted_eday', 'not_voting', 'ineligible'] as const;
+export type VotingStatus = (typeof VOTING_STATUSES)[number];
+
+export const VOTING_STATUS_LABELS: Record<VotingStatus, string> = {
+  will_vote: 'Will vote',
+  voted_advance: 'Voted — advance',
+  voted_eday: 'Voted — election day',
+  not_voting: 'Not voting',
+  ineligible: 'Ineligible',
+};
+
+export const FACT_SOURCES = ['manual', 'canvass', 'form', 'import', 'carryover'] as const;
+export type FactSource = (typeof FACT_SOURCES)[number];
+
+/** Upsert one person's facts in one campaign. Omitted field = leave unchanged; explicit null = back to Unknown. */
+export const UpsertCampaignPersonFactObj = z.object({
+  campaign_id: idSchema,
+  person_id: idSchema,
+  support_level: z.enum(SUPPORT_LEVELS).nullable().optional(),
+  voting_status: z.enum(VOTING_STATUSES).nullable().optional(),
+});
+
+/**
+ * Per-campaign email consent (§15, layer 1 of 3). 'pending' is double opt-in
+ * awaiting confirmation. Layers 2 & 3 (address suppressions, person DNC) are
+ * global and live elsewhere; sendable = subscribed ∧ not suppressed ∧ not DNC.
+ */
+export const SUBSCRIPTION_STATUSES = ['subscribed', 'pending', 'unsubscribed'] as const;
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+export const CONSENT_SOURCES = ['form', 'import', 'manual', 'copied'] as const;
+export type ConsentSource = (typeof CONSENT_SOURCES)[number];
+
+/** Staff-set subscription change; 'pending' is machine-only (double opt-in flow). */
+export const SetCampaignSubscriptionObj = z.object({
+  campaign_id: idSchema,
+  person_id: idSchema,
+  status: z.enum(['subscribed', 'unsubscribed']),
+});
+
+/**
+ * Carry-over (§15): seed a campaign from a prior one. Support levels copy as a
+ * starting assumption (source='carryover'); voting status NEVER copies (it is
+ * election-specific by definition); subscriptions copy only when the caller has
+ * explicitly confirmed the compliance warning (consent_source='copied',
+ * original consent_at preserved).
+ */
+export const CarryOverCampaignObj = z.object({
+  source_campaign_id: idSchema,
+  target_campaign_id: idSchema,
+  copy_support: z.boolean().default(true),
+  copy_subscriptions: z.boolean().default(false),
+});
+```
+
 ## File: libs/common/src/lib/schemas/companies.schema.ts
 
 ```typescript
@@ -322,6 +496,376 @@ export const AddConnectionObj = z.object({
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 ```
 
+## File: libs/common/src/lib/schemas/core.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
+```
+
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
+
+```typescript
+import { z } from 'zod';
+
+import { idSchema, notesSchema } from './core.schema';
+
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
+
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
+
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
+
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
+});
+
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
+});
+
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
+});
+
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
+
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+```
+
+## File: libs/common/src/lib/schemas/donations.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { idSchema } from './core.schema';
+
+/**
+ * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
+ * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
+ * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
+ */
+export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
+export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
+  card: 'Card',
+  check: 'Check',
+  cash: 'Cash',
+  bank_transfer: 'Bank transfer',
+};
+
+export const donationMethodSchema = z.enum(DONATION_METHODS);
+export type DonationMethod = z.infer<typeof donationMethodSchema>;
+
+export const RecordDonationObj = z.object({
+  personId: idSchema,
+  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
+  method: donationMethodSchema,
+  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+});
+export type RecordDonationType = z.infer<typeof RecordDonationObj>;
+```
+
 ## File: libs/common/src/lib/schemas/emails.schema.ts
 
 ```typescript
@@ -385,6 +929,290 @@ export const EmailObj = z.object({
   is_read: z.boolean().optional(),
   sender_first_name: z.string().nullish(),
   sender_last_name: z.string().nullish(),
+});
+```
+
+## File: libs/common/src/lib/schemas/events.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
+
+const slugSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(
+    /^(?=.*[a-z])[a-z0-9-]+$/,
+    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
+  );
+
+export const AddEventObj = z.object({
+  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Event name', 200),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'Start date & time is required' }),
+  ),
+  end_time: z.preprocess(
+    (val) => (val === '' || val === null ? undefined : val),
+    z.coerce.date({ error: 'End date & time is required' }),
+  ),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema,
+  is_published: z.boolean().default(false).optional(),
+  send_reminder: z.boolean().default(true).optional(),
+  send_registration_confirmation: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const EventObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  location_address: z.string().nullable().optional(),
+  start_time: z.coerce.date(),
+  end_time: z.coerce.date(),
+  capacity: z.number().nullable().optional(),
+  contact_email: z.string().nullable().optional(),
+  contact_phone: z.string().nullable().optional(),
+  slug: z.string(),
+  is_published: z.boolean(),
+  send_reminder: z.boolean(),
+  send_registration_confirmation: z.boolean(),
+});
+
+export const UpdateEventObj = z.object({
+  name: nameSchema('Event name', 200).optional(),
+  description: descriptionSchema(2000),
+  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
+  start_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'Start date & time is required' }),
+    )
+    .optional(),
+  end_time: z
+    .preprocess(
+      (val) => (val === '' || val === null ? undefined : val),
+      z.coerce.date({ error: 'End date & time is required' }),
+    )
+    .optional(),
+  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
+  contact_email: z.string().trim().max(255).nullable().optional(),
+  contact_phone: z.string().trim().max(50).nullable().optional(),
+  slug: slugSchema.optional(),
+  is_published: z.boolean().optional(),
+  send_reminder: z.boolean().optional(),
+  send_registration_confirmation: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
+});
+
+export const AddTicketTypeObj = z.object({
+  event_id: idSchema,
+  name: nameSchema('Ticket type name', 100),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).default(0).optional(),
+});
+
+export const TicketTypeObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  price_cents: z.number(),
+  capacity: z.number().nullable().optional(),
+  sort_order: z.number(),
+});
+
+export const UpdateTicketTypeObj = z.object({
+  name: nameSchema('Ticket type name', 100).optional(),
+  description: descriptionSchema(500),
+  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
+  capacity: z.number().int().positive().nullable().optional(),
+  sort_order: z.number().int().min(0).optional(),
+});
+
+const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
+
+export const AddRegistrationObj = z.object({
+  event_id: idSchema,
+  person_id: idSchema,
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.default('registered').optional(),
+  notes: notesSchema,
+});
+
+export const RegistrationObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  event_id: z.string(),
+  person_id: z.string(),
+  ticket_type_id: z.string().nullable().optional(),
+  status: registrationStatusEnum,
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const UpdateRegistrationObj = z.object({
+  ticket_type_id: idSchema.nullable().optional(),
+  status: registrationStatusEnum.optional(),
+  checked_in_at: z.coerce.date().nullable().optional(),
+  notes: notesSchema,
+});
+```
+
+## File: libs/common/src/lib/schemas/lists.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
+
+export const AddListObj = z.object({
+  /** Campaigns §15 — the context this segment belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('List name', 100),
+  description: descriptionSchema(1000),
+  object: z.enum(['people', 'households']),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  member_ids: z.array(idSchema).optional(),
+});
+
+export const ListsObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  object: z.enum(['people', 'households']),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
+});
+
+export const UpdateListObj = z.object({
+  name: nameSchema('List name', 100).optional(),
+  description: descriptionSchema(1000).optional(),
+  object: z.enum(['people', 'households']).optional(),
+  is_dynamic: z.boolean().optional(),
+  definition: z
+    .lazy(() => getAllOptions)
+    .nullable()
+    .optional(),
+  last_refreshed_at: z.coerce.date().nullable().optional(),
+  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
+});
+
+export const ImportListItemObj = z.object({
+  id: idSchema,
+  fileName: z.string(),
+  source: z.string(),
+  tagName: z.string().nullable(),
+  tagMissing: z.boolean(),
+  createdAt: z.coerce.date(),
+  processedAt: z.coerce.date(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable(),
+  insertedCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  mergedCount: z.number().int().nonnegative(),
+  tagsApplied: z.array(z.string()),
+  rowCount: z.number().int().nonnegative(),
+  householdsCreated: z.number().int().nonnegative(),
+  contactCount: z.number().int().nonnegative(),
+  householdCount: z.number().int().nonnegative(),
+  companyCount: z.number().int().nonnegative(),
+  taskCount: z.number().int().nonnegative(),
+  status: z.string(),
+  errorMessage: z.string().nullable().optional(),
+  canDeleteContacts: z.boolean(),
+  /** File size in bytes, when the original upload is still retained (90 days, spec §17). */
+  sourceFileSize: z.number().int().nonnegative().nullable(),
+  canDownloadSource: z.boolean(),
+  canDownloadSkipped: z.boolean(),
+});
+```
+
+## File: libs/common/src/lib/schemas/persons.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
+
+/**
+ * Do-not-contact channels (Campaigns §15). The flag lives on the person — it is a
+ * global compliance override, never a per-campaign preference. A null/absent
+ * channel list means "no contact on any channel".
+ */
+export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
+export type DncChannel = (typeof DNC_CHANNELS)[number];
+
+export const PersonsObj = z.object({
+  id: z.string(),
+  household_id: z.string(),
+  email: z.string(),
+  email2: z.string(),
+  first_name: z.string(),
+  middle_names: z.string(),
+  last_name: z.string(),
+  home_phone: z.string(),
+  mobile: z.string(),
+  notes: z.string(),
+  linkedin: z.string().nullable().optional(),
+  twitter: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
+  instagram: z.string().nullable().optional(),
+  assigned_to: z.string().nullable().optional(),
+  preferred_contact: z.string().nullable().optional(),
+});
+
+export const UpdateHouseholdsObj = addressSchema.extend({
+  home_phone: phoneSchema('Home phone'),
+  notes: notesSchema,
+});
+
+export const UpdatePersonsObj = z.object({
+  campaign_id: idSchema.optional(),
+  household_id: idSchema.optional(),
+  company_id: idSchema.or(z.literal('')).nullable().optional(),
+  email: nullableEmailSchema,
+  email2: nullableEmailSchema,
+  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
+  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
+  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
+  home_phone: phoneSchema('Home phone'),
+  mobile: phoneSchema('Mobile phone'),
+  notes: notesSchema,
+  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
+  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
+  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
+  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
+  do_not_contact: z.boolean().optional(),
+  do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
 });
 ```
 
@@ -669,6 +1497,285 @@ export const UpdateVolunteerShiftObj = z.object({
   status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).optional(),
   hours_worked: z.number().min(0).max(24).nullable().optional(),
   notes: notesSchema,
+});
+```
+
+## File: libs/common/src/lib/schemas/web-forms.schema.ts
+
+```typescript
+import { z } from 'zod';
+import { idSchema, nameSchema, descriptionSchema } from './core.schema';
+
+export const AddWebFormObj = z.object({
+  name: nameSchema('Web Form name', 100),
+  description: descriptionSchema(500),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
+  target_tags: z.array(z.string()).nullable().optional(),
+  target_lists: z.array(z.string()).nullable().optional(),
+  fields: z.array(z.string()).nullable().optional(),
+  // Legacy donation/standard add path. 'active' is accepted for back-compat and mapped to
+  // 'published' by the controller; the lifecycle statuses pass through unchanged.
+  status: z.enum(['active', 'draft', 'published', 'archived']).default('active').optional(),
+  send_confirmation: z.boolean().default(true).optional(),
+  send_alert: z.boolean().default(true).optional(),
+  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
+});
+
+export const UpdateWebFormObj = z.object({
+  name: nameSchema('Web Form name', 100).optional(),
+  description: descriptionSchema(500).optional(),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
+  target_tags: z.array(z.string()).nullable().optional(),
+  target_lists: z.array(z.string()).nullable().optional(),
+  fields: z.array(z.string()).nullable().optional(),
+  status: z.enum(['active', 'draft', 'published', 'archived']).optional(),
+  send_confirmation: z.boolean().optional(),
+  send_alert: z.boolean().optional(),
+});
+
+export const WebFormsObj = z.object({
+  id: z.string().uuid(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  redirect_url: z.string().nullable(),
+  target_tags: z.array(z.string()).nullable(),
+  target_lists: z.array(z.string()).nullable(),
+  fields: z.array(z.string()).nullable().optional(),
+  status: z.enum(['draft', 'published', 'archived']),
+  send_confirmation: z.boolean().default(true),
+  send_alert: z.boolean().default(true),
+  form_type: z.string(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+  created_at: z.union([z.date(), z.string()]),
+  updated_at: z.union([z.date(), z.string()]),
+});
+
+// ---------------------------------------------------------------------------
+// North Star "living funnel" lifecycle (new Forms experience).
+//
+// The five template types are creation presets + a display chip. Donation forms
+// (form_type IN donation/recurring_donation) keep the legacy string[] `fields`
+// shape and the old add/update path — they are NOT part of this model.
+// ---------------------------------------------------------------------------
+
+export const FORM_TYPES = ['signup', 'pledge', 'rsvp', 'request', 'survey'] as const;
+export type FormType = (typeof FORM_TYPES)[number];
+export const FormTypeEnum = z.enum(FORM_TYPES);
+
+export const FORM_STATUSES = ['draft', 'published', 'archived'] as const;
+export type FormStatus = (typeof FORM_STATUSES)[number];
+
+/** A single configurable field on a form. Stored as JSON in `web_forms.fields`. */
+export const FormFieldObj = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(['text', 'area', 'select', 'checks']),
+  options: z.array(z.string()).optional(),
+  placeholder: z.string().optional(),
+  help: z.string().optional(),
+  on: z.boolean(),
+  required: z.boolean(),
+});
+export type FormField = z.infer<typeof FormFieldObj>;
+
+/** Email is the identity key: always present, always on, always required, never editable. */
+export const FORM_EMAIL_FIELD: FormField = {
+  key: 'email',
+  label: 'Email',
+  type: 'text',
+  placeholder: 'you@example.org',
+  on: true,
+  required: true,
+};
+
+const NAME_FIELD: FormField = {
+  key: 'full_name',
+  label: 'Full name',
+  type: 'text',
+  placeholder: 'Jordan Blake',
+  on: true,
+  required: true,
+};
+
+/**
+ * Standard optional fields every form can turn on without schema work. `normForm` appends any of
+ * these that a form's own field list doesn't already define, all `on: false`.
+ */
+export const FORM_STANDARD_CATALOG: FormField[] = [
+  { key: 'mobile', label: 'Mobile phone', type: 'text', placeholder: '(555) 000-0000', on: false, required: false },
+  { key: 'street1', label: 'Street address', type: 'text', on: false, required: false },
+  { key: 'city', label: 'City', type: 'text', on: false, required: false },
+  { key: 'zip', label: 'ZIP code', type: 'text', on: false, required: false },
+];
+
+/** Creation templates — all start from name + email, then add type-specific fields. */
+export const FORM_TEMPLATES: Record<FormType, { submitLabel: string; description: string; fields: FormField[] }> = {
+  signup: {
+    submitLabel: 'Sign me up',
+    description: 'Join the team — tell us how you can help and we’ll be in touch.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      {
+        key: 'mobile',
+        label: 'Mobile phone',
+        type: 'text',
+        placeholder: '(555) 000-0000',
+        help: 'Only used for shift reminders',
+        on: true,
+        required: false,
+      },
+      {
+        key: 'availability',
+        label: 'When can you help?',
+        type: 'checks',
+        options: ['Weekday evenings', 'Weekend canvasses', 'Phone banking', 'Event day'],
+        on: true,
+        required: false,
+      },
+      {
+        key: 'notes',
+        label: 'Anything we should know?',
+        type: 'area',
+        placeholder: 'Languages, accessibility, interests…',
+        on: true,
+        required: false,
+      },
+    ],
+  },
+  pledge: {
+    submitLabel: 'Make my pledge',
+    description: 'Pledge your support — every contribution helps.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'amount', label: 'Pledge amount', type: 'text', placeholder: 'E.g. 50', on: true, required: true },
+    ],
+  },
+  rsvp: {
+    submitLabel: 'Reserve my spot',
+    description: 'Let us know you’re coming.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'seats', label: 'How many seats?', type: 'text', placeholder: 'E.g. 2', on: true, required: true },
+    ],
+  },
+  request: {
+    submitLabel: 'Send request',
+    description: 'Tell us what you need and where.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'street1', label: 'Street address', type: 'text', on: true, required: true },
+      { key: 'city', label: 'City', type: 'text', on: true, required: false },
+      { key: 'zip', label: 'ZIP code', type: 'text', on: true, required: false },
+      { key: 'notes', label: 'Notes', type: 'area', placeholder: 'How can we help?', on: true, required: false },
+    ],
+  },
+  survey: {
+    submitLabel: 'Submit',
+    description: 'Your answers help shape our priorities.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      {
+        key: 'issues',
+        label: 'Which issues matter most?',
+        type: 'checks',
+        options: ['Housing', 'Transit', 'Safety', 'Parks', 'Schools'],
+        on: true,
+        required: false,
+      },
+      {
+        key: 'open',
+        label: 'Anything else?',
+        type: 'area',
+        placeholder: 'Share your thoughts…',
+        on: true,
+        required: false,
+      },
+    ],
+  },
+};
+
+/**
+ * Coerces a form's stored `fields` JSON into a well-formed FormField[]: keeps only object-shaped
+ * fields (silently drops legacy string[] entries from donation forms), guarantees the name + email
+ * identity fields exist, enforces the email invariant (always on + required), and appends any
+ * standard-catalog fields the form hasn't defined. This is the single source of truth both the API
+ * and the editor use so the preview always matches what will be saved.
+ */
+export function normForm(rawFields: unknown): FormField[] {
+  const source = Array.isArray(rawFields) ? rawFields : [];
+  const fields: FormField[] = [];
+  for (const raw of source) {
+    const parsed = FormFieldObj.safeParse(raw);
+    if (parsed.success) fields.push(parsed.data);
+  }
+
+  if (!fields.some((f) => f.key === NAME_FIELD.key)) {
+    fields.unshift({ ...NAME_FIELD });
+  }
+
+  const emailIndex = fields.findIndex((f) => f.key === FORM_EMAIL_FIELD.key);
+  if (emailIndex === -1) {
+    // Slot email right after the name field.
+    fields.splice(1, 0, { ...FORM_EMAIL_FIELD });
+  } else {
+    const current = fields[emailIndex];
+    if (current) {
+      fields[emailIndex] = { ...current, on: true, required: true };
+    }
+  }
+
+  for (const catalog of FORM_STANDARD_CATALOG) {
+    if (!fields.some((f) => f.key === catalog.key)) {
+      fields.push({ ...catalog });
+    }
+  }
+
+  return fields;
+}
+
+/** Build the initial field list for a newly created form of the given template type. */
+export function fieldsForTemplate(type: FormType): FormField[] {
+  return normForm(FORM_TEMPLATES[type].fields.map((f) => ({ ...f })));
+}
+
+export const CreateFormObj = z.object({
+  name: nameSchema('Form name', 100),
+  type: FormTypeEnum,
+  /** Campaigns §15 — the context this form collects consent for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+});
+
+/** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
+export const UpdateFormObj = z.object({
+  name: nameSchema('Form name', 100).optional(),
+  description: descriptionSchema(2000).optional(),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
+  submit_label: z.string().trim().max(60).optional(),
+  thanks_title: z.string().trim().max(120).optional(),
+  thanks_body: z.string().trim().max(2000).optional(),
+  confirm_email_on: z.boolean().optional(),
+  confirm_subject: z.string().trim().max(200).optional(),
+  confirm_body: z.string().trim().max(5000).optional(),
+  notify_team_on: z.boolean().optional(),
+  fields: z.array(FormFieldObj).optional(),
+  target_tags: z.array(z.string()).optional(),
+  target_lists: z.array(z.string()).optional(),
+});
+
+/** One row in the Responses tab. */
+export const FormSubmissionObj = z.object({
+  id: z.string(),
+  person_id: z.string(),
+  person_name: z.string().nullable(),
+  answers: z.record(z.string(), z.unknown()),
+  created_at: z.union([z.date(), z.string()]),
 });
 ```
 
@@ -1505,6 +2612,111 @@ import { Input as PcInput } from '../input/input';
 export class AddressFormGroup {
   public form = input.required<any>();
 }
+```
+
+## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
+
+```typescript
+import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
+import { debounce } from '../../../../common/src';
+
+@Component({
+  selector: 'pc-autocomplete',
+  template: ` <div
+      class="input w-full flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5 cursor-text"
+      (click)="focusInput()"
+    >
+      <ng-content></ng-content>
+      <input
+        #inputEl
+        type="text"
+        class="grow basis-0 min-w-0 border-none bg-transparent p-0 focus:outline-none"
+        [placeholder]="placeholder()"
+        (keyup)="onKey($event)"
+        (keydown)="onKeyDown($event)"
+        (input)="onInput($event)"
+        (focus)="showAutoCompleteList()"
+        (blur)="hideAutoCompleteList()"
+      />
+    </div>
+    @if (matches().length && !hideAutoComplete()) {
+      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
+        @for (match of matches(); track match) {
+          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
+            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
+          </li>
+        }
+      </ul>
+    }`,
+})
+export class AutoComplete {
+  protected readonly matches = signal<string[]>([]);
+
+  protected hideAutoComplete = signal(true);
+
+  public readonly valueChange = output<string>();
+
+  /** Emitted when Backspace is pressed while the text field is empty — lets the host pop the last chip. */
+  public readonly backspaceEmpty = output<void>();
+
+  public filterSvc = input<TFILTER | null>(null);
+  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
+
+  public placeholder = input('');
+
+  private readonly debouncedFilter = debounce(async (key: string) => {
+    const filterSvc = this.filterSvc();
+    if (!filterSvc || !key?.length) {
+      this.matches.set([]);
+      return;
+    }
+    const matches = await filterSvc.filter(key);
+    this.matches.set(matches);
+  }, 250);
+
+  protected onInput(event: Event) {
+    const target = event.target as HTMLInputElement;
+    this.debouncedFilter(target.value || '');
+  }
+
+  protected hideAutoCompleteList() {
+    setTimeout(() => this.hideAutoComplete.set(true), 200);
+  }
+
+  protected onKey(event: KeyboardEvent) {
+    const target = event.target as HTMLInputElement;
+    if (event.key === 'Enter' || event.key === ',') {
+      this.reset(target.value);
+    }
+  }
+
+  protected onKeyDown(event: KeyboardEvent) {
+    const target = event.target as HTMLInputElement;
+    if (event.key === 'Backspace' && target.value.length === 0) {
+      this.backspaceEmpty.emit();
+    }
+  }
+
+  protected focusInput() {
+    this.inputRef()?.nativeElement.focus();
+  }
+
+  protected reset(key: string) {
+    this.valueChange.emit(key);
+    this.matches.set([]);
+    if (this.inputRef()?.nativeElement) {
+      this.inputRef().nativeElement.value = '';
+    }
+  }
+
+  protected showAutoCompleteList() {
+    this.hideAutoComplete.set(false);
+  }
+}
+
+type TFILTER = {
+  filter: (arg0: string) => Promise<string[]>;
+};
 ```
 
 ## File: libs/uxcommon/src/components/card/card.ts
@@ -2536,94 +3748,6 @@ export class SideDrawer {
 }
 ```
 
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'xs') cls += 'badge-xs ';
-    else if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'md') cls += 'badge-md ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-```
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-```
-
 ## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
 
 ```typescript
@@ -2898,53 +4022,6 @@ export class Toggle {
   public label = input<string>();
   public formField = input.required<any>();
 }
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-
-```html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="onPromptInput($event)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
 ```
 
 ## File: libs/uxcommon/src/components/confirm-dialog.service.ts
@@ -4015,178 +5092,269 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: libs/common/src/lib/schemas/auth.schema.ts
+## File: libs/common/src/lib/schemas/canvassing.schema.ts
 
 ```typescript
 import { z } from 'zod';
-import { emailSchema, nameSchema } from './core.schema';
 
-export const InviteAuthUserObj = z.object({
-  email: emailSchema,
-  first_name: nameSchema('First name'),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-});
-
-export const NotificationPreferencesObj = z.object({
-  mention_in_comment: z.boolean().default(true),
-  mention_in_comment_in_app: z.boolean().default(true),
-  task_assigned: z.boolean().default(true),
-  task_assigned_in_app: z.boolean().default(true),
-  task_due: z.boolean().default(true),
-  task_due_in_app: z.boolean().default(true),
-  person_assigned: z.boolean().default(true),
-  person_assigned_in_app: z.boolean().default(true),
-  export_ready: z.boolean().default(true),
-  export_ready_in_app: z.boolean().default(true),
-  import_summary: z.boolean().default(true),
-  import_summary_in_app: z.boolean().default(true),
-});
+import { idSchema, nameSchema, notesSchema } from './core.schema';
 
 /**
- * Shape of the profiles.preferences jsonb column (formerly the untyped
- * profiles.json grab-bag). Only `notifications` is written today; unknown
- * keys from older rows are preserved rather than rejected.
+ * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
+ * they drive both Zod validation and exhaustive discriminated-union switches on
+ * the frontend and in the controller.
  */
-export const ProfilePreferencesObj = z
-  .object({
-    notifications: NotificationPreferencesObj.partial().optional(),
-    /** Campaigns §15 — the context (campaign id) this user is working in; per-user, cross-device. */
-    active_campaign_id: z.string().optional(),
-  })
-  .catchall(z.unknown());
 
-export const UpdateAuthUserObj = z.object({
-  email: emailSchema.optional(),
-  first_name: nameSchema('First name').optional(),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  verified: z.boolean().optional(),
-  two_factor_enabled: z.boolean().optional(),
-  notification_preferences: NotificationPreferencesObj.optional(),
-});
-
-export const Verify2FAObj = z.object({
-  email: emailSchema,
-  code: z.string().length(6),
-  rememberMe: z.boolean().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/campaigns.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { descriptionSchema, idSchema, nameSchema, notesSchema } from './core.schema';
+/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
+export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
+export type TurfStatus = (typeof TURF_STATUSES)[number];
 
 /**
- * Campaigns §15 — a campaign is a *context*: the permanent constituency office
- * ('office') or a time-bounded election run ('election'). Several can be active at
- * once; users pick the one they're working in via the header switcher. Archived
- * campaigns are read-only history.
+ * What happened at the door. "attempted" = any knock except `cleared`;
+ * "conversation" = a talk. `moved` is a person-level no-conversation code;
+ * `cleared` is the append-only "door outcome toggled off" marker — the latest
+ * outcome knock wins, and `cleared` means the door is back on the list.
  */
-export const CAMPAIGN_KINDS = ['office', 'election'] as const;
-export type CampaignKind = (typeof CAMPAIGN_KINDS)[number];
-
-export const CAMPAIGN_STATUSES = ['active', 'archived'] as const;
-export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
-
-/** Plain calendar date (campaigns.startdate/enddate are Postgres `date` columns). */
-const campaignDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
-  .nullable()
-  .optional();
-
-export const AddCampaignObj = z.object({
-  name: nameSchema('Name', 100),
-  description: descriptionSchema(1000),
-  notes: notesSchema,
-  kind: z.enum(CAMPAIGN_KINDS).default('election'),
-  startdate: campaignDateSchema,
-  enddate: campaignDateSchema,
-});
-
-export const UpdateCampaignObj = z.object({
-  name: nameSchema('Name', 100).optional(),
-  description: descriptionSchema(1000),
-  notes: notesSchema,
-  startdate: campaignDateSchema,
-  enddate: campaignDateSchema,
-});
+export const KNOCK_OUTCOMES = [
+  'conversation',
+  'no_answer',
+  'not_home',
+  'moved',
+  'refused',
+  'inaccessible',
+  'cleared',
+] as const;
+export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
 
 /**
- * Campaign-scoped person facts (Campaigns §15) — structured concepts, not tags.
- * One row per (campaign, person); a missing row / NULL field is "Unknown".
- * UI copy: Neutral = engaged but indifferent; Undecided = engaged, hasn't
- * decided; Unknown = never asked.
+ * The voter's stance, when a conversation happened — the spec §3.5 five-option
+ * support scale. `not_voting`/`already_voted` feed `voting_status` rather than
+ * `support_level` on campaign_person_facts.
  */
-export const SUPPORT_LEVELS = ['strong', 'leaning', 'neutral', 'leaning_against', 'against', 'undecided'] as const;
-export type SupportLevel = (typeof SUPPORT_LEVELS)[number];
+export const KNOCK_RESPONSES = ['supporter', 'undecided', 'non_supporter', 'not_voting', 'already_voted'] as const;
+export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
 
-export const SUPPORT_LEVEL_LABELS: Record<SupportLevel, string> = {
-  strong: 'Strong',
-  leaning: 'Leaning',
-  neutral: 'Neutral',
-  leaning_against: 'Leaning against',
-  against: 'Against',
+/** Survey labels for the five support options (sentence case, spec §3.5). */
+export const KNOCK_RESPONSE_LABELS: Record<KnockResponse, string> = {
+  supporter: 'Supporter',
   undecided: 'Undecided',
-};
-
-/** GOTV voting status. Advance voters are struck from later call/knock lists. */
-export const VOTING_STATUSES = ['will_vote', 'voted_advance', 'voted_eday', 'not_voting', 'ineligible'] as const;
-export type VotingStatus = (typeof VOTING_STATUSES)[number];
-
-export const VOTING_STATUS_LABELS: Record<VotingStatus, string> = {
-  will_vote: 'Will vote',
-  voted_advance: 'Voted — advance',
-  voted_eday: 'Voted — election day',
+  non_supporter: 'Non-supporter',
   not_voting: 'Not voting',
-  ineligible: 'Ineligible',
+  already_voted: 'Already voted',
 };
 
-export const FACT_SOURCES = ['manual', 'canvass', 'form', 'import', 'carryover'] as const;
-export type FactSource = (typeof FACT_SOURCES)[number];
+/** Doors-per-turf presets from the Cut-new-turfs dialog. */
+export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
 
-/** Upsert one person's facts in one campaign. Omitted field = leave unchanged; explicit null = back to Unknown. */
-export const UpsertCampaignPersonFactObj = z.object({
-  campaign_id: idSchema,
-  person_id: idSchema,
-  support_level: z.enum(SUPPORT_LEVELS).nullable().optional(),
-  voting_status: z.enum(VOTING_STATUSES).nullable().optional(),
+export const turfStatusSchema = z.enum(TURF_STATUSES);
+export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
+export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
+
+export const AddTurfObj = z.object({
+  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Name', 120),
+  list_id: idSchema.nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateTurfObj = z.object({
+  name: nameSchema('Name', 120).optional(),
+  status: turfStatusSchema.optional(),
+  notes: notesSchema,
+});
+
+/** Preview and Cut share this input; preview never writes. */
+export const CutTurfsObj = z.object({
+  list_id: idSchema,
+  doors_per_turf: z.number().int().min(5).max(500),
+});
+
+export const AssignTurfObj = z.object({
+  turf_id: idSchema,
+  team_id: idSchema.nullable().optional(),
+  /**
+   * The person this Companion link belongs to. Required: the companion access
+   * layer verifies the holder against this person's email/mobile on file, so
+   * an assignment without a person produces a link nobody can open.
+   */
+  volunteer_person_id: idSchema,
+});
+
+export const FieldReportRangeObj = z.object({
+  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
+  from: z.string().datetime().nullable().optional(),
+  to: z.string().datetime().nullable().optional(),
 });
 
 /**
- * Per-campaign email consent (§15, layer 1 of 3). 'pending' is double opt-in
- * awaiting confirmation. Layers 2 & 3 (address suppressions, person DNC) are
- * global and live elsewhere; sendable = subscribed ∧ not suppressed ∧ not DNC.
+ * Companion knock payload. Arrives over the tokenised public route (no account),
+ * so the token authorises the turf and `client_knock_id` de-dupes offline
+ * re-sends. Parsed from `unknown` at the REST boundary.
  */
-export const SUBSCRIPTION_STATUSES = ['subscribed', 'pending', 'unsubscribed'] as const;
-export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
-
-export const CONSENT_SOURCES = ['form', 'import', 'manual', 'copied'] as const;
-export type ConsentSource = (typeof CONSENT_SOURCES)[number];
-
-/** Staff-set subscription change; 'pending' is machine-only (double opt-in flow). */
-export const SetCampaignSubscriptionObj = z.object({
-  campaign_id: idSchema,
-  person_id: idSchema,
-  status: z.enum(['subscribed', 'unsubscribed']),
+export const LogKnockObj = z.object({
+  token: z.string().min(10).max(200),
+  client_knock_id: z.string().min(1).max(200),
+  household_id: idSchema,
+  person_id: idSchema.nullable().optional(),
+  outcome: knockOutcomeSchema,
+  response: knockResponseSchema.nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  canvasser_name: z.string().trim().max(120).nullable().optional(),
+  knocked_at: z.string().datetime().nullable().optional(),
 });
+
+export function isTurfStatus(v: unknown): v is TurfStatus {
+  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
+}
+
+export function isKnockOutcome(v: unknown): v is KnockOutcome {
+  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
+// Companion batched results (spec §3.5/§5) — POST /api/canvass/t/:token/results
+// ---------------------------------------------------------------------------
 
 /**
- * Carry-over (§15): seed a campaign from a prior one. Support levels copy as a
- * starting assumption (source='carryover'); voting status NEVER copies (it is
- * election-specific by definition); subscriptions copy only when the caller has
- * explicitly confirmed the compliance warning (consent_source='copied',
- * original consent_at preserved).
+ * A full survey (spec §3.5). `person_id` null = the anonymous household-level
+ * survey. `support` is the one required field — EXCEPT that toggling
+ * "Do not contact" alone is saveable, which the refine below encodes.
  */
-export const CarryOverCampaignObj = z.object({
-  source_campaign_id: idSchema,
-  target_campaign_id: idSchema,
-  copy_support: z.boolean().default(true),
-  copy_subscriptions: z.boolean().default(false),
+export const CompanionSurveyObj = z
+  .object({
+    household_id: idSchema,
+    person_id: idSchema.nullable().optional(),
+    support: knockResponseSchema.nullable().optional(),
+    issues: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+    wants_volunteer: z.boolean().default(false),
+    wants_yard_sign: z.boolean().default(false),
+    set_dnc: z.boolean().default(false),
+    contact_phone: z.string().trim().max(40).nullable().optional(),
+    contact_email: z.string().trim().email().max(200).nullable().optional(),
+    subscribe: z.boolean().default(false),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((v) => v.support != null || v.set_dnc, { message: 'Pick a support level to save' });
+
+/** One-tap no-conversation codes for a person (spec §3.5). */
+export const CompanionPersonResultObj = z.object({
+  household_id: idSchema,
+  person_id: idSchema,
+  result: z.enum(['not_home', 'moved', 'refused']),
 });
+
+/** Door-level outcome (spec §3.4 quick actions). */
+export const CompanionDoorOutcomeObj = z.object({
+  household_id: idSchema,
+  outcome: z.enum(['no_answer', 'inaccessible', 'refused']),
+});
+
+export const CompanionClearOutcomeObj = z.object({
+  household_id: idSchema,
+});
+
+/** "+ Add someone at this door" (spec §3.4). */
+export const CompanionPersonCreateObj = z.object({
+  household_id: idSchema,
+  name: z.string().trim().min(1).max(120),
+});
+
+const companionOpBase = {
+  /** Client-generated UUID — the idempotency key (companion_ops ledger). */
+  op_id: z.string().min(8).max(100),
+  /** On-device timestamp so offline results keep their true door time. */
+  recorded_at: z.string().datetime().nullable().optional(),
+};
+
+export const CompanionOpObj = z.discriminatedUnion('type', [
+  z.object({ ...companionOpBase, type: z.literal('survey'), payload: CompanionSurveyObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_result'), payload: CompanionPersonResultObj }),
+  z.object({ ...companionOpBase, type: z.literal('door_outcome'), payload: CompanionDoorOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('clear_outcome'), payload: CompanionClearOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_create'), payload: CompanionPersonCreateObj }),
+]);
+
+export const CompanionResultsObj = z.object({
+  ops: z.array(CompanionOpObj).min(1).max(200),
+});
+
+export type CompanionSurveyType = z.infer<typeof CompanionSurveyObj>;
+export type CompanionOpType = z.infer<typeof CompanionOpObj>;
+export type CompanionResultsType = z.infer<typeof CompanionResultsObj>;
+
+/** Per-op server acknowledgement — `duplicate` means "already applied, treat as success". */
+export interface CompanionOpAck {
+  op_id: string;
+  status: 'applied' | 'duplicate' | 'rejected';
+  error?: string;
+  /** For person_create: the real id to swap in for the client's temp person. */
+  person_id?: string;
+}
+
+// ------------------------------------------------------------------------
+// Companion GET payload (spec §3, §5) — shared by backend + apps/companion.
+// Payload minimization is an acceptance criterion: names, walk data and prior
+// door RESULTS only — never emails, phones, donation history, or notes.
+// ------------------------------------------------------------------------
+
+/** Pre-fill for re-editing a surveyed person/door. Deliberately excludes notes + contact info. */
+export interface CompanionSurveyPrefill {
+  support: KnockResponse | null;
+  issues: string[];
+  wants_volunteer: boolean;
+  wants_yard_sign: boolean;
+  set_dnc: boolean;
+  subscribe: boolean;
+}
+
+export type CompanionPersonResult = 'canvassed' | 'not_home' | 'moved' | 'refused';
+
+export interface CompanionPerson {
+  id: string;
+  name: string;
+  /** Suppressed from all outreach — card renders dimmed and non-interactive. */
+  dnc: boolean;
+  result: CompanionPersonResult | null;
+  survey: CompanionSurveyPrefill | null;
+}
+
+export type CompanionDoorOutcome = 'no_answer' | 'inaccessible' | 'refused';
+
+export interface CompanionHousehold {
+  id: string;
+  walk_order: number;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  /** Whole-door do-not-contact (every resident is DNC) — skip, but it still counts. */
+  dnc: boolean;
+  door_outcome: CompanionDoorOutcome | null;
+  /** The anonymous household-level survey, when one was recorded. */
+  hh_survey: CompanionSurveyPrefill | null;
+  people: CompanionPerson[];
+}
+
+export interface CompanionTurfPayload {
+  campaign_name: string;
+  turf_name: string;
+  /** Whose name results save under — the assignment's volunteer. */
+  canvasser_name: string;
+  /** Collapsible door script (campaign-configured; empty string = none). */
+  script: string;
+  /** Issue-chip vocabulary (campaign-configured). */
+  issues: string[];
+  expires_at: string | null;
+  households: CompanionHousehold[];
+}
+
+/** Staff-configured survey vocabulary (campaigns.canvass_issues/script). */
+export const UpdateCompanionSettingsObj = z.object({
+  campaign_id: idSchema.optional(),
+  issues: z.array(z.string().trim().min(1).max(80)).max(30),
+  script: z.string().trim().max(4000).nullable(),
+});
+export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
 ```
 
 ## File: libs/common/src/lib/schemas/companion-access.schema.ts
@@ -4288,923 +5456,6 @@ export interface CompanionVolunteerRow {
   approved_by_name: string | null;
   created_at: string;
 }
-```
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
-    campaignId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const exportEntitySchema = z.enum([
-  'persons',
-  'households',
-  'companies',
-  'tags',
-  'issues',
-  'tasks',
-  'lists',
-  'newsletters',
-  'teams',
-  'users',
-  'volunteer',
-  'forms',
-  'workflows',
-]);
-
-export const queueExportInput = z.object({
-  entity: exportEntitySchema,
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
- * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
- * so the resulting record is not re-downloadable. */
-export const logInstantExportInput = z.object({
-  entity: exportEntitySchema,
-  fileName: z.string(),
-  rowCount: z.number().int().nonnegative(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  downloadable: z.boolean(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-```
-
-## File: libs/common/src/lib/schemas/deliveries.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema, notesSchema } from './core.schema';
-
-// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
-// the spec's strings win, including the American spelling "canceled" for route status.
-export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
-export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
-export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
-export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
-
-// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
-// reason — it keeps the stop pending and moves it to the end of the route.
-export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
-
-export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
-export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
-export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
-export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
-export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
-
-// ---- Requests --------------------------------------------------------------
-export const AddDeliveryRequestObj = z.object({
-  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  household_id: idSchema,
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateDeliveryRequestObj = z.object({
-  notes: notesSchema,
-});
-
-// Bulk approve/decline from the selection bar (spec §4.1).
-export const SetDeliveryRequestStatusObj = z.object({
-  ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(['approved', 'declined']),
-});
-
-// ---- Planning --------------------------------------------------------------
-// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
-// return trip). Preview is pure — it writes nothing.
-export const PlanDeliveriesObj = z.object({
-  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
-  drivers: z.number().int().min(1).max(50).nullable().optional(),
-  service_minutes: z.number().min(0).max(60).nullable().optional(),
-  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
-  include_return_leg: z.boolean().nullable().optional(),
-});
-
-export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
-  routes: z
-    .array(
-      z.object({
-        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
-      }),
-    )
-    .min(1, 'Nothing to commit'),
-});
-
-// ---- Routes ----------------------------------------------------------------
-export const UpdateDeliveryRouteObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
-  scheduled_for: z.string().datetime().nullable().optional(),
-});
-
-export const AssignVolunteerObj = z.object({
-  route_id: idSchema,
-  person_id: idSchema.nullable(),
-});
-
-export const SetDeliveryRouteStatusObj = z.object({
-  route_id: idSchema,
-  status: z.enum(['in_progress', 'completed', 'canceled']),
-});
-
-export const ReorderStopObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  direction: z.enum(['up', 'down']),
-});
-
-// Staff act on a stop from the route detail page. Same transitions as the public path.
-export const StopActionObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  action: z.enum(['deliver', 'skip', 'remove']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export const RouteIdObj = z.object({ route_id: idSchema });
-
-export const MintShareLinkObj = z.object({
-  route_id: idSchema,
-  regenerate: z.boolean().optional(),
-});
-
-// ---- Public volunteer path (token is the only credential) ------------------
-// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
-export const PublicStopActionObj = z.object({
-  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
-export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
-export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
-export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
-export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
-export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
-export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
-export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
-export type ReorderStopType = z.infer<typeof ReorderStopObj>;
-export type StopActionType = z.infer<typeof StopActionObj>;
-export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
-export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
-```
-
-## File: libs/common/src/lib/schemas/donations.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema } from './core.schema';
-
-/**
- * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
- * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
- * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
- */
-export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
-export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
-  card: 'Card',
-  check: 'Check',
-  cash: 'Cash',
-  bank_transfer: 'Bank transfer',
-};
-
-export const donationMethodSchema = z.enum(DONATION_METHODS);
-export type DonationMethod = z.infer<typeof donationMethodSchema>;
-
-export const RecordDonationObj = z.object({
-  personId: idSchema,
-  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
-  method: donationMethodSchema,
-  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-});
-export type RecordDonationType = z.infer<typeof RecordDonationObj>;
-```
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  /** Campaigns §15 — the context this event belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/schemas/lists.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddListObj = z.object({
-  /** Campaigns §15 — the context this segment belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('List name', 100),
-  description: descriptionSchema(1000),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  member_ids: z.array(idSchema).optional(),
-});
-
-export const ListsObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const UpdateListObj = z.object({
-  name: nameSchema('List name', 100).optional(),
-  description: descriptionSchema(1000).optional(),
-  object: z.enum(['people', 'households']).optional(),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const ImportListItemObj = z.object({
-  id: idSchema,
-  fileName: z.string(),
-  source: z.string(),
-  tagName: z.string().nullable(),
-  tagMissing: z.boolean(),
-  createdAt: z.coerce.date(),
-  processedAt: z.coerce.date(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
-  insertedCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  mergedCount: z.number().int().nonnegative(),
-  tagsApplied: z.array(z.string()),
-  rowCount: z.number().int().nonnegative(),
-  householdsCreated: z.number().int().nonnegative(),
-  contactCount: z.number().int().nonnegative(),
-  householdCount: z.number().int().nonnegative(),
-  companyCount: z.number().int().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  status: z.string(),
-  errorMessage: z.string().nullable().optional(),
-  canDeleteContacts: z.boolean(),
-  /** File size in bytes, when the original upload is still retained (90 days, spec §17). */
-  sourceFileSize: z.number().int().nonnegative().nullable(),
-  canDownloadSource: z.boolean(),
-  canDownloadSkipped: z.boolean(),
-});
-```
-
-## File: libs/common/src/lib/schemas/persons.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-/**
- * Do-not-contact channels (Campaigns §15). The flag lives on the person — it is a
- * global compliance override, never a per-campaign preference. A null/absent
- * channel list means "no contact on any channel".
- */
-export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
-export type DncChannel = (typeof DNC_CHANNELS)[number];
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-  preferred_contact: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
-  do_not_contact: z.boolean().optional(),
-  do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/web-forms.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema, nameSchema, descriptionSchema } from './core.schema';
-
-export const AddWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100),
-  description: descriptionSchema(500),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  // Legacy donation/standard add path. 'active' is accepted for back-compat and mapped to
-  // 'published' by the controller; the lifecycle statuses pass through unchanged.
-  status: z.enum(['active', 'draft', 'published', 'archived']).default('active').optional(),
-  send_confirmation: z.boolean().default(true).optional(),
-  send_alert: z.boolean().default(true).optional(),
-  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
-});
-
-export const UpdateWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100).optional(),
-  description: descriptionSchema(500).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'draft', 'published', 'archived']).optional(),
-  send_confirmation: z.boolean().optional(),
-  send_alert: z.boolean().optional(),
-});
-
-export const WebFormsObj = z.object({
-  id: z.string().uuid(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  redirect_url: z.string().nullable(),
-  target_tags: z.array(z.string()).nullable(),
-  target_lists: z.array(z.string()).nullable(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['draft', 'published', 'archived']),
-  send_confirmation: z.boolean().default(true),
-  send_alert: z.boolean().default(true),
-  form_type: z.string(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.union([z.date(), z.string()]),
-  updated_at: z.union([z.date(), z.string()]),
-});
-
-// ---------------------------------------------------------------------------
-// North Star "living funnel" lifecycle (new Forms experience).
-//
-// The five template types are creation presets + a display chip. Donation forms
-// (form_type IN donation/recurring_donation) keep the legacy string[] `fields`
-// shape and the old add/update path — they are NOT part of this model.
-// ---------------------------------------------------------------------------
-
-export const FORM_TYPES = ['signup', 'pledge', 'rsvp', 'request', 'survey'] as const;
-export type FormType = (typeof FORM_TYPES)[number];
-export const FormTypeEnum = z.enum(FORM_TYPES);
-
-export const FORM_STATUSES = ['draft', 'published', 'archived'] as const;
-export type FormStatus = (typeof FORM_STATUSES)[number];
-
-/** A single configurable field on a form. Stored as JSON in `web_forms.fields`. */
-export const FormFieldObj = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  type: z.enum(['text', 'area', 'select', 'checks']),
-  options: z.array(z.string()).optional(),
-  placeholder: z.string().optional(),
-  help: z.string().optional(),
-  on: z.boolean(),
-  required: z.boolean(),
-});
-export type FormField = z.infer<typeof FormFieldObj>;
-
-/** Email is the identity key: always present, always on, always required, never editable. */
-export const FORM_EMAIL_FIELD: FormField = {
-  key: 'email',
-  label: 'Email',
-  type: 'text',
-  placeholder: 'you@example.org',
-  on: true,
-  required: true,
-};
-
-const NAME_FIELD: FormField = {
-  key: 'full_name',
-  label: 'Full name',
-  type: 'text',
-  placeholder: 'Jordan Blake',
-  on: true,
-  required: true,
-};
-
-/**
- * Standard optional fields every form can turn on without schema work. `normForm` appends any of
- * these that a form's own field list doesn't already define, all `on: false`.
- */
-export const FORM_STANDARD_CATALOG: FormField[] = [
-  { key: 'mobile', label: 'Mobile phone', type: 'text', placeholder: '(555) 000-0000', on: false, required: false },
-  { key: 'street1', label: 'Street address', type: 'text', on: false, required: false },
-  { key: 'city', label: 'City', type: 'text', on: false, required: false },
-  { key: 'zip', label: 'ZIP code', type: 'text', on: false, required: false },
-];
-
-/** Creation templates — all start from name + email, then add type-specific fields. */
-export const FORM_TEMPLATES: Record<FormType, { submitLabel: string; description: string; fields: FormField[] }> = {
-  signup: {
-    submitLabel: 'Sign me up',
-    description: 'Join the team — tell us how you can help and we’ll be in touch.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'mobile',
-        label: 'Mobile phone',
-        type: 'text',
-        placeholder: '(555) 000-0000',
-        help: 'Only used for shift reminders',
-        on: true,
-        required: false,
-      },
-      {
-        key: 'availability',
-        label: 'When can you help?',
-        type: 'checks',
-        options: ['Weekday evenings', 'Weekend canvasses', 'Phone banking', 'Event day'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'notes',
-        label: 'Anything we should know?',
-        type: 'area',
-        placeholder: 'Languages, accessibility, interests…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-  pledge: {
-    submitLabel: 'Make my pledge',
-    description: 'Pledge your support — every contribution helps.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'amount', label: 'Pledge amount', type: 'text', placeholder: 'E.g. 50', on: true, required: true },
-    ],
-  },
-  rsvp: {
-    submitLabel: 'Reserve my spot',
-    description: 'Let us know you’re coming.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'seats', label: 'How many seats?', type: 'text', placeholder: 'E.g. 2', on: true, required: true },
-    ],
-  },
-  request: {
-    submitLabel: 'Send request',
-    description: 'Tell us what you need and where.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'street1', label: 'Street address', type: 'text', on: true, required: true },
-      { key: 'city', label: 'City', type: 'text', on: true, required: false },
-      { key: 'zip', label: 'ZIP code', type: 'text', on: true, required: false },
-      { key: 'notes', label: 'Notes', type: 'area', placeholder: 'How can we help?', on: true, required: false },
-    ],
-  },
-  survey: {
-    submitLabel: 'Submit',
-    description: 'Your answers help shape our priorities.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'issues',
-        label: 'Which issues matter most?',
-        type: 'checks',
-        options: ['Housing', 'Transit', 'Safety', 'Parks', 'Schools'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'open',
-        label: 'Anything else?',
-        type: 'area',
-        placeholder: 'Share your thoughts…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-};
-
-/**
- * Coerces a form's stored `fields` JSON into a well-formed FormField[]: keeps only object-shaped
- * fields (silently drops legacy string[] entries from donation forms), guarantees the name + email
- * identity fields exist, enforces the email invariant (always on + required), and appends any
- * standard-catalog fields the form hasn't defined. This is the single source of truth both the API
- * and the editor use so the preview always matches what will be saved.
- */
-export function normForm(rawFields: unknown): FormField[] {
-  const source = Array.isArray(rawFields) ? rawFields : [];
-  const fields: FormField[] = [];
-  for (const raw of source) {
-    const parsed = FormFieldObj.safeParse(raw);
-    if (parsed.success) fields.push(parsed.data);
-  }
-
-  if (!fields.some((f) => f.key === NAME_FIELD.key)) {
-    fields.unshift({ ...NAME_FIELD });
-  }
-
-  const emailIndex = fields.findIndex((f) => f.key === FORM_EMAIL_FIELD.key);
-  if (emailIndex === -1) {
-    // Slot email right after the name field.
-    fields.splice(1, 0, { ...FORM_EMAIL_FIELD });
-  } else {
-    const current = fields[emailIndex];
-    if (current) {
-      fields[emailIndex] = { ...current, on: true, required: true };
-    }
-  }
-
-  for (const catalog of FORM_STANDARD_CATALOG) {
-    if (!fields.some((f) => f.key === catalog.key)) {
-      fields.push({ ...catalog });
-    }
-  }
-
-  return fields;
-}
-
-/** Build the initial field list for a newly created form of the given template type. */
-export function fieldsForTemplate(type: FormType): FormField[] {
-  return normForm(FORM_TEMPLATES[type].fields.map((f) => ({ ...f })));
-}
-
-export const CreateFormObj = z.object({
-  name: nameSchema('Form name', 100),
-  type: FormTypeEnum,
-  /** Campaigns §15 — the context this form collects consent for; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-});
-
-/** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
-export const UpdateFormObj = z.object({
-  name: nameSchema('Form name', 100).optional(),
-  description: descriptionSchema(2000).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  submit_label: z.string().trim().max(60).optional(),
-  thanks_title: z.string().trim().max(120).optional(),
-  thanks_body: z.string().trim().max(2000).optional(),
-  confirm_email_on: z.boolean().optional(),
-  confirm_subject: z.string().trim().max(200).optional(),
-  confirm_body: z.string().trim().max(5000).optional(),
-  notify_team_on: z.boolean().optional(),
-  fields: z.array(FormFieldObj).optional(),
-  target_tags: z.array(z.string()).optional(),
-  target_lists: z.array(z.string()).optional(),
-});
-
-/** One row in the Responses tab. */
-export const FormSubmissionObj = z.object({
-  id: z.string(),
-  person_id: z.string(),
-  person_name: z.string().nullable(),
-  answers: z.record(z.string(), z.unknown()),
-  created_at: z.union([z.date(), z.string()]),
-});
 ```
 
 ## File: libs/common/src/lib/emails.ts
@@ -5387,6 +5638,277 @@ export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Fo
 export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
   Record<Folder['id'], Folder>
 >;
+```
+
+## File: libs/common/src/lib/models.ts
+
+```typescript
+import type { z } from 'zod';
+
+import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
+  EmailDraftObj,
+  PersonsObj,
+  SettingsEntryObj,
+  SettingsObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  ListsObj,
+  UpdateMarketingEmailObj,
+  UpdateListObj,
+  UpdateTaskObj,
+  UpdateTeamObj,
+  TasksObj,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  sortModelItem,
+  InviteAuthUserObj,
+  ProfilePreferencesObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+} from './schema';
+
+export interface INow {
+  now: string;
+}
+
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
+
+export type SortModelType = z.infer<typeof sortModelItem>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
+
+export type AddTaskType = z.infer<typeof AddTaskObj>;
+export type TasksType = z.infer<typeof TasksObj>;
+export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
+export type DataExportRecordType = z.infer<typeof dataExportRecord>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
+
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
+```
+
+## File: libs/common/src/lib/schema.ts
+
+```typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
 ```
 
 ## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
@@ -5619,233 +6141,6 @@ export class AlertService {
 }
 
 export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
-  [class.absolute]="!isPositionRelative()"
-  [class.left-0]="!isPositionRelative()"
-  [class.top-4]="isPositionTop()"
-  [class.bottom-4]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-  <div
-    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
-    (click)="dismiss(alert.id)"
-  >
-    <span
-      aria-hidden="true"
-      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
-    ></span>
-    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
-    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
-      {{ alert.text }}
-    </div>
-    @if (alert.count() > 1) {
-    <span
-      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
-    >
-      ×{{ alert.count() }}
-    </span>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    // Service list is newest-first; render newest nearest the pinned edge
-    // (bottom of the stack when pinned bottom — spec §2).
-    return this.isPositionBottom() ? list.slice().reverse() : list;
-  });
-
-  protected dismiss(id: string): void {
-    this.alertSvc.dismiss(id);
-  }
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type?: ALERTTYPE): PcIconNameType {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'exclamation-circle'
-          : 'information-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-
-  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
-  protected barToneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'bg-success'
-      : type === 'warning'
-        ? 'bg-warning'
-        : type === 'error'
-          ? 'bg-error'
-          : 'bg-info';
-  }
-
-  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
-  protected toneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'text-success'
-      : type === 'warning'
-        ? 'text-warning'
-        : type === 'error'
-          ? 'text-error'
-          : 'text-info';
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-
-```typescript
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '../../../../common/src';
-
-@Component({
-  selector: 'pc-autocomplete',
-  template: ` <div
-      class="input w-full flex h-auto min-h-10 flex-wrap items-center gap-1.5 py-1.5 cursor-text"
-      (click)="focusInput()"
-    >
-      <ng-content></ng-content>
-      <input
-        #inputEl
-        type="text"
-        class="grow basis-0 min-w-0 border-none bg-transparent p-0 focus:outline-none"
-        [placeholder]="placeholder()"
-        (keyup)="onKey($event)"
-        (keydown)="onKeyDown($event)"
-        (input)="onInput($event)"
-        (focus)="showAutoCompleteList()"
-        (blur)="hideAutoCompleteList()"
-      />
-    </div>
-    @if (matches().length && !hideAutoComplete()) {
-      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-        @for (match of matches(); track match) {
-          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
-            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
-          </li>
-        }
-      </ul>
-    }`,
-})
-export class AutoComplete {
-  protected readonly matches = signal<string[]>([]);
-
-  protected hideAutoComplete = signal(true);
-
-  public readonly valueChange = output<string>();
-
-  /** Emitted when Backspace is pressed while the text field is empty — lets the host pop the last chip. */
-  public readonly backspaceEmpty = output<void>();
-
-  public filterSvc = input<TFILTER | null>(null);
-  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
-
-  public placeholder = input('');
-
-  private readonly debouncedFilter = debounce(async (key: string) => {
-    const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      this.matches.set([]);
-      return;
-    }
-    const matches = await filterSvc.filter(key);
-    this.matches.set(matches);
-  }, 250);
-
-  protected onInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    this.debouncedFilter(target.value || '');
-  }
-
-  protected hideAutoCompleteList() {
-    setTimeout(() => this.hideAutoComplete.set(true), 200);
-  }
-
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Enter' || event.key === ',') {
-      this.reset(target.value);
-    }
-  }
-
-  protected onKeyDown(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Backspace' && target.value.length === 0) {
-      this.backspaceEmpty.emit();
-    }
-  }
-
-  protected focusInput() {
-    this.inputRef()?.nativeElement.focus();
-  }
-
-  protected reset(key: string) {
-    this.valueChange.emit(key);
-    this.matches.set([]);
-    if (this.inputRef()?.nativeElement) {
-      this.inputRef().nativeElement.value = '';
-    }
-  }
-
-  protected showAutoCompleteList() {
-    this.hideAutoComplete.set(false);
-  }
-}
-
-type TFILTER = {
-  filter: (arg0: string) => Promise<string[]>;
-};
 ```
 
 ## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
@@ -6134,6 +6429,226 @@ export function autoMapPersonsHeader(header: string): string {
 }
 ```
 
+## File: libs/uxcommon/src/components/detail-item/detail-item.ts
+
+```typescript
+import { Component, inject, input, output } from '@angular/core';
+import { AlertService } from '../alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-detail-item',
+  imports: [Icon],
+  template: `
+    <div class="flex flex-col gap-1 mb-4">
+      <span class="pc-eyebrow">
+        {{ label() }}
+      </span>
+      <div class="flex items-center gap-2">
+        @if (icon()) {
+          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
+        }
+        @if (value() && link()) {
+          <button
+            type="button"
+            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            (click)="linkClicked.emit()"
+          >
+            {{ value() }}
+          </button>
+        } @else {
+          <span class="text-sm font-medium text-base-content break-words">
+            @if (value()) {
+              {{ value() }}
+            } @else {
+              <span class="italic text-base-content/30">Not provided</span>
+            }
+          </span>
+        }
+        @if (value() && copyable()) {
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
+            [attr.data-tip]="'Copy ' + label()"
+            (click)="copyToClipboard($event)"
+          >
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+          </button>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailItem {
+  public label = input.required<string>();
+  public value = input<string | null | undefined>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public copyable = input<boolean>(false);
+  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
+  public link = input<boolean>(false);
+  public readonly linkClicked = output<void>();
+
+  private readonly alertSvc = inject(AlertService);
+
+  protected copyToClipboard(event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const val = this.value();
+    if (!val) return;
+
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${this.label()}`);
+      });
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { DetailHeader } from '../detail-header/detail-header';
+
+@Component({
+  selector: 'pc-detail-layout',
+  imports: [Icon, DetailHeader],
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+  },
+  template: `
+    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
+      <div class="flex w-full max-w-7xl flex-col gap-6">
+        <!-- Header -->
+        <pc-detail-header
+          [title]="title()"
+          [subtitle]="subtitle()"
+          [crumbs]="crumbs()"
+          [eyebrow]="eyebrow()"
+          [statusChip]="statusChip()"
+          [icon]="icon()"
+          [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
+          [isLoading]="isLoading()"
+          [disabled]="disabled()"
+          [showActions]="showActions()"
+          [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
+          [deleteText]="deleteText()"
+          [btn1Text]="btn1Text()"
+          [btn1Icon]="btn1Icon()"
+          [positionLabel]="positionLabel()"
+          [hasPrev]="hasPrev()"
+          [hasNext]="hasNext()"
+          [prevLabel]="prevLabel()"
+          [nextLabel]="nextLabel()"
+          (save)="save.emit($event)"
+          (delete)="delete.emit()"
+          (prevRecord)="prevRecord.emit()"
+          (nextRecord)="nextRecord.emit()"
+        >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
+          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
+          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
+          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
+        </pc-detail-header>
+
+        <!-- Body/Content Area -->
+        @if (isLoading()) {
+          <div class="flex justify-center items-center py-20">
+            <progress class="progress w-56"></progress>
+          </div>
+        } @else if (error()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ error() }}</span>
+          </div>
+        } @else if (!hasRecord()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ notFoundText() }}</span>
+          </div>
+        } @else {
+          <!-- Main Content Slot -->
+          <ng-content></ng-content>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailLayout {
+  public title = input.required<string>();
+  public subtitle = input<string | null | undefined>();
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title (§3). */
+  public statusChip = input<string | null>(null);
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public error = input<string | null | undefined>();
+  public hasRecord = input<boolean>(true);
+  public notFoundText = input<string>('Record not found or failed to load.');
+
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
+  public deleteText = input<string>('Delete');
+  public btn1Text = input<string>('Edit');
+  public btn1Icon = input<PcIconNameType>('pencil-square');
+  public disabled = input<boolean>(false);
+
+  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  public readonly save = output<any>();
+  public readonly delete = output<void>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (!this.positionLabel()) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isEditableTarget(event.target)) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'j' && this.hasNext()) {
+      event.preventDefault();
+      this.nextRecord.emit();
+    } else if (key === 'k' && this.hasPrev()) {
+      event.preventDefault();
+      this.prevRecord.emit();
+    }
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+```
+
 ## File: libs/uxcommon/src/components/empty-state/empty-state.ts
 
 ```typescript
@@ -6215,6 +6730,175 @@ export class EmptyState {
   </div>
   }
 </div>
+```
+
+## File: libs/uxcommon/src/components/form-actions/form-actions.html
+
+```html
+<div class="flex gap-2 justify-center">
+  <button
+    type="button"
+    class="btn btn-primary gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn1Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else {
+    <pc-icon [name]="btn1Icon()" [size]="4" />
+    } {{ btn1Text() }}
+  </button>
+
+  @if (showDelete()) {
+  <button
+    type="button"
+    class="btn btn-error btn-outline gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleDeleteClicked()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="trash" [size]="4" />
+    {{ deleteText() }}
+  </button>
+  } @if (buttonsToShow() === 'three' && !showDelete()) {
+  <button
+    type="button"
+    class="btn btn-primary"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn2Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else { {{ btn2Text() }} }
+  </button>
+  } @if (showCancel()) {
+  <button
+    type="button"
+    class="btn btn-outline btn-accent gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="cancel()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="x-mark" [size]="4" />
+    Cancel
+  </button>
+  }
+</div>
+```
+
+## File: libs/uxcommon/src/components/form-actions/form-actions.ts
+
+```typescript
+import { Component, inject, input, output } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * Minimal structural view of a signal-forms root (the object returned by
+ * `form()` from '@angular/forms/signals'): calling it yields the root field
+ * state. Kept structural so this shared control does not depend on the
+ * experimental signal-forms types directly.
+ */
+export type SignalFormRoot = () => {
+  dirty(): boolean;
+  invalid(): boolean;
+  reset(): void;
+};
+
+@Component({
+  selector: 'pc-form-actions',
+  imports: [Icon],
+  templateUrl: './form-actions.html',
+})
+export class FormActions {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  private stay = false;
+
+  public signalForm = input<SignalFormRoot>();
+
+  public disabled = input<boolean>(false);
+
+  /**
+   * §4 "Save never disables": when true, the primary button stays enabled
+   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
+   * consuming form is expected to guide on click (markAsTouched + focus the
+   * first invalid field) rather than block via a dead button.
+   */
+  public saveAlwaysEnabled = input<boolean>(false);
+
+  public showDelete = input<boolean>(false);
+
+  /** Whether to render the Cancel button. Read/detail views turn this off — a
+   * read view has no edit to cancel; the header's action is a navigation "Edit". */
+  public showCancel = input<boolean>(true);
+
+  public deleteText = input<string>('Delete');
+
+  public readonly deleteClicked = output<void>();
+
+  public readonly btn1Clicked = output<() => void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+
+  public btn1Text = input<string>('Save');
+
+  public btn2Text = input<string>('Save & add more');
+
+  public buttonsToShow = input<'two' | 'three'>('three');
+
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
+
+  public isLoading = input.required<boolean>();
+
+  protected get isSaveDisabled(): boolean {
+    if (this.isLoading()) return true;
+    if (this.disabled()) return true;
+    // Save never disables on validity/dirtiness — the form guides on click.
+    if (this.saveAlwaysEnabled()) return false;
+    const sigF = this.signalForm();
+    if (sigF) {
+      return sigF().invalid() || !sigF().dirty();
+    }
+    // No form at all: plain button bar (e.g. list-view) — never gate Save.
+    return false;
+  }
+
+  public cancel(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  public handleDeleteClicked(): void {
+    this.deleteClicked.emit();
+  }
+
+  public handleBtn1Clicked(): void {
+    this.stay = false;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public handleBtn2Clicked(): void {
+    this.stay = true;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public stayOrCancel = (): void => {
+    if (this.stay) {
+      this.signalForm()?.().reset();
+    } else {
+      this.cancel();
+    }
+  };
+}
 ```
 
 ## File: libs/uxcommon/src/components/grid-header/grid-header.ts
@@ -6301,212 +6985,6 @@ export class GridHeaderComponent {
     this.descToggled.set(!this.descriptionOpen());
   }
 }
-```
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-
-```typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  mailbox: 'assets/icons/mailbox.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  message: 'assets/icons/message.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  route: 'assets/icons/route.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
 ```
 
 ## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
@@ -6680,6 +7158,94 @@ export class StatCard {
   public valueColorClass = input<string>('text-base-content');
   public iconBgClass = input<string>('bg-base-200/50');
   public iconColorClass = input<string>('text-base-content/70');
+}
+```
+
+## File: libs/uxcommon/src/components/status-badge/status-badge.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+
+export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
+
+@Component({
+  selector: 'pc-status-badge',
+  template: `
+    <span class="badge font-semibold uppercase" [class]="badgeClass()">
+      <ng-content></ng-content>
+    </span>
+  `,
+})
+export class StatusBadge {
+  public type = input<PcStatusType>('ghost');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
+
+  protected badgeClass = computed(() => {
+    const t = this.type();
+    let cls = '';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
+    else if (this.size() === 'lg') cls += 'badge-lg ';
+
+    switch (t) {
+      case 'success':
+        return cls + 'badge-success text-success-content';
+      case 'warning':
+        return cls + 'badge-warning text-warning-content';
+      case 'error':
+        return cls + 'badge-error text-error-content';
+      case 'info':
+        return cls + 'badge-info text-info-content';
+      case 'neutral':
+        return cls + 'badge-neutral text-neutral-content';
+      default:
+        return cls + 'badge-ghost';
+    }
+  });
+}
+```
+
+## File: libs/uxcommon/src/components/swap/swap.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-swap',
+  imports: [Icon],
+  template: `<label
+    class="swap ml-auto flex-none cursor-pointer p-2"
+    [class.swap-flip]="animation() === 'flip'"
+    [class.swap-rotate]="animation() === 'rotate'"
+    [class.swap-active]="checked()"
+    (click)="emitClick($event)"
+  >
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
+
+    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
+  </label> `,
+})
+export class Swap {
+  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
+  public readonly click = output<void>();
+
+  public animation = input<'flip' | 'rotate'>('rotate');
+
+  public checked = input<boolean>(false);
+  public hoverIcon = input<PcIconNameType | null>(null);
+  public size = input(6);
+
+  public swapOffIcon = input.required<PcIconNameType>();
+
+  public swapOnIcon = input.required<PcIconNameType>();
+
+  public emitClick(event: Event) {
+    event.stopPropagation();
+    this.click.emit();
+  }
 }
 ```
 
@@ -6956,6 +7522,53 @@ export class UserAvatarComponent {
     return n[0]!.toUpperCase();
   });
 }
+```
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.html
+
+```html
+<dialog #dlg class="modal">
+  @if (state()) {
+  <div class="modal-box">
+    <div class="flex items-center gap-2">
+      <pc-icon [name]="icon()" class="text-xl" />
+      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
+    </div>
+
+    @if (state()!.message) {
+    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
+    } @if (state()!.type === 'prompt') {
+    <input
+      [placeholder]="state()!.inputPlaceholder || ''"
+      class="input input-bordered w-full mb-4"
+      [value]="promptValue()"
+      (input)="onPromptInput($event)"
+    />
+    } @if (state()!.type === 'choose') {
+    <div class="flex flex-col gap-2 w-full mt-4">
+      @for (choice of state()!.choices; track choice.label) {
+      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
+        {{ choice.label }}
+      </button>
+      } @if (showCancel()) {
+      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+    </div>
+    } @else {
+    <div class="flex justify-end gap-2">
+      @if (showCancel()) {
+      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
+    </div>
+    }
+  </div>
+
+  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
+    <button>close</button>
+  </form>
+  }
+</dialog>
 ```
 
 ## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
@@ -7279,1062 +7892,6 @@ export function createRequestGuard(): RequestGuard {
 }
 ````
 
-## File: libs/common/src/lib/schemas/canvassing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema, nameSchema, notesSchema } from './core.schema';
-
-/**
- * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
- * they drive both Zod validation and exhaustive discriminated-union switches on
- * the frontend and in the controller.
- */
-
-/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
-export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
-export type TurfStatus = (typeof TURF_STATUSES)[number];
-
-/**
- * What happened at the door. "attempted" = any knock except `cleared`;
- * "conversation" = a talk. `moved` is a person-level no-conversation code;
- * `cleared` is the append-only "door outcome toggled off" marker — the latest
- * outcome knock wins, and `cleared` means the door is back on the list.
- */
-export const KNOCK_OUTCOMES = [
-  'conversation',
-  'no_answer',
-  'not_home',
-  'moved',
-  'refused',
-  'inaccessible',
-  'cleared',
-] as const;
-export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
-
-/**
- * The voter's stance, when a conversation happened — the spec §3.5 five-option
- * support scale. `not_voting`/`already_voted` feed `voting_status` rather than
- * `support_level` on campaign_person_facts.
- */
-export const KNOCK_RESPONSES = ['supporter', 'undecided', 'non_supporter', 'not_voting', 'already_voted'] as const;
-export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
-
-/** Survey labels for the five support options (sentence case, spec §3.5). */
-export const KNOCK_RESPONSE_LABELS: Record<KnockResponse, string> = {
-  supporter: 'Supporter',
-  undecided: 'Undecided',
-  non_supporter: 'Non-supporter',
-  not_voting: 'Not voting',
-  already_voted: 'Already voted',
-};
-
-/** Doors-per-turf presets from the Cut-new-turfs dialog. */
-export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
-
-export const turfStatusSchema = z.enum(TURF_STATUSES);
-export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
-export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
-
-export const AddTurfObj = z.object({
-  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Name', 120),
-  list_id: idSchema.nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateTurfObj = z.object({
-  name: nameSchema('Name', 120).optional(),
-  status: turfStatusSchema.optional(),
-  notes: notesSchema,
-});
-
-/** Preview and Cut share this input; preview never writes. */
-export const CutTurfsObj = z.object({
-  list_id: idSchema,
-  doors_per_turf: z.number().int().min(5).max(500),
-});
-
-export const AssignTurfObj = z.object({
-  turf_id: idSchema,
-  team_id: idSchema.nullable().optional(),
-  /**
-   * The person this Companion link belongs to. Required: the companion access
-   * layer verifies the holder against this person's email/mobile on file, so
-   * an assignment without a person produces a link nobody can open.
-   */
-  volunteer_person_id: idSchema,
-});
-
-export const FieldReportRangeObj = z.object({
-  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
-  from: z.string().datetime().nullable().optional(),
-  to: z.string().datetime().nullable().optional(),
-});
-
-/**
- * Companion knock payload. Arrives over the tokenised public route (no account),
- * so the token authorises the turf and `client_knock_id` de-dupes offline
- * re-sends. Parsed from `unknown` at the REST boundary.
- */
-export const LogKnockObj = z.object({
-  token: z.string().min(10).max(200),
-  client_knock_id: z.string().min(1).max(200),
-  household_id: idSchema,
-  person_id: idSchema.nullable().optional(),
-  outcome: knockOutcomeSchema,
-  response: knockResponseSchema.nullable().optional(),
-  notes: z.string().trim().max(2000).nullable().optional(),
-  canvasser_name: z.string().trim().max(120).nullable().optional(),
-  knocked_at: z.string().datetime().nullable().optional(),
-});
-
-export function isTurfStatus(v: unknown): v is TurfStatus {
-  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
-}
-
-export function isKnockOutcome(v: unknown): v is KnockOutcome {
-  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
-}
-
-// ---------------------------------------------------------------------------
-// Companion batched results (spec §3.5/§5) — POST /api/canvass/t/:token/results
-// ---------------------------------------------------------------------------
-
-/**
- * A full survey (spec §3.5). `person_id` null = the anonymous household-level
- * survey. `support` is the one required field — EXCEPT that toggling
- * "Do not contact" alone is saveable, which the refine below encodes.
- */
-export const CompanionSurveyObj = z
-  .object({
-    household_id: idSchema,
-    person_id: idSchema.nullable().optional(),
-    support: knockResponseSchema.nullable().optional(),
-    issues: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
-    wants_volunteer: z.boolean().default(false),
-    wants_yard_sign: z.boolean().default(false),
-    set_dnc: z.boolean().default(false),
-    contact_phone: z.string().trim().max(40).nullable().optional(),
-    contact_email: z.string().trim().email().max(200).nullable().optional(),
-    subscribe: z.boolean().default(false),
-    notes: z.string().trim().max(2000).nullable().optional(),
-  })
-  .refine((v) => v.support != null || v.set_dnc, { message: 'Pick a support level to save' });
-
-/** One-tap no-conversation codes for a person (spec §3.5). */
-export const CompanionPersonResultObj = z.object({
-  household_id: idSchema,
-  person_id: idSchema,
-  result: z.enum(['not_home', 'moved', 'refused']),
-});
-
-/** Door-level outcome (spec §3.4 quick actions). */
-export const CompanionDoorOutcomeObj = z.object({
-  household_id: idSchema,
-  outcome: z.enum(['no_answer', 'inaccessible', 'refused']),
-});
-
-export const CompanionClearOutcomeObj = z.object({
-  household_id: idSchema,
-});
-
-/** "+ Add someone at this door" (spec §3.4). */
-export const CompanionPersonCreateObj = z.object({
-  household_id: idSchema,
-  name: z.string().trim().min(1).max(120),
-});
-
-const companionOpBase = {
-  /** Client-generated UUID — the idempotency key (companion_ops ledger). */
-  op_id: z.string().min(8).max(100),
-  /** On-device timestamp so offline results keep their true door time. */
-  recorded_at: z.string().datetime().nullable().optional(),
-};
-
-export const CompanionOpObj = z.discriminatedUnion('type', [
-  z.object({ ...companionOpBase, type: z.literal('survey'), payload: CompanionSurveyObj }),
-  z.object({ ...companionOpBase, type: z.literal('person_result'), payload: CompanionPersonResultObj }),
-  z.object({ ...companionOpBase, type: z.literal('door_outcome'), payload: CompanionDoorOutcomeObj }),
-  z.object({ ...companionOpBase, type: z.literal('clear_outcome'), payload: CompanionClearOutcomeObj }),
-  z.object({ ...companionOpBase, type: z.literal('person_create'), payload: CompanionPersonCreateObj }),
-]);
-
-export const CompanionResultsObj = z.object({
-  ops: z.array(CompanionOpObj).min(1).max(200),
-});
-
-export type CompanionSurveyType = z.infer<typeof CompanionSurveyObj>;
-export type CompanionOpType = z.infer<typeof CompanionOpObj>;
-export type CompanionResultsType = z.infer<typeof CompanionResultsObj>;
-
-/** Per-op server acknowledgement — `duplicate` means "already applied, treat as success". */
-export interface CompanionOpAck {
-  op_id: string;
-  status: 'applied' | 'duplicate' | 'rejected';
-  error?: string;
-  /** For person_create: the real id to swap in for the client's temp person. */
-  person_id?: string;
-}
-
-// ------------------------------------------------------------------------
-// Companion GET payload (spec §3, §5) — shared by backend + apps/companion.
-// Payload minimization is an acceptance criterion: names, walk data and prior
-// door RESULTS only — never emails, phones, donation history, or notes.
-// ------------------------------------------------------------------------
-
-/** Pre-fill for re-editing a surveyed person/door. Deliberately excludes notes + contact info. */
-export interface CompanionSurveyPrefill {
-  support: KnockResponse | null;
-  issues: string[];
-  wants_volunteer: boolean;
-  wants_yard_sign: boolean;
-  set_dnc: boolean;
-  subscribe: boolean;
-}
-
-export type CompanionPersonResult = 'canvassed' | 'not_home' | 'moved' | 'refused';
-
-export interface CompanionPerson {
-  id: string;
-  name: string;
-  /** Suppressed from all outreach — card renders dimmed and non-interactive. */
-  dnc: boolean;
-  result: CompanionPersonResult | null;
-  survey: CompanionSurveyPrefill | null;
-}
-
-export type CompanionDoorOutcome = 'no_answer' | 'inaccessible' | 'refused';
-
-export interface CompanionHousehold {
-  id: string;
-  walk_order: number;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  /** Whole-door do-not-contact (every resident is DNC) — skip, but it still counts. */
-  dnc: boolean;
-  door_outcome: CompanionDoorOutcome | null;
-  /** The anonymous household-level survey, when one was recorded. */
-  hh_survey: CompanionSurveyPrefill | null;
-  people: CompanionPerson[];
-}
-
-export interface CompanionTurfPayload {
-  campaign_name: string;
-  turf_name: string;
-  /** Whose name results save under — the assignment's volunteer. */
-  canvasser_name: string;
-  /** Collapsible door script (campaign-configured; empty string = none). */
-  script: string;
-  /** Issue-chip vocabulary (campaign-configured). */
-  issues: string[];
-  expires_at: string | null;
-  households: CompanionHousehold[];
-}
-
-/** Staff-configured survey vocabulary (campaigns.canvass_issues/script). */
-export const UpdateCompanionSettingsObj = z.object({
-  campaign_id: idSchema.optional(),
-  issues: z.array(z.string().trim().min(1).max(80)).max(30),
-  script: z.string().trim().max(4000).nullable(),
-});
-export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
-```
-
-## File: libs/common/src/lib/models.ts
-
-```typescript
-import type { z } from 'zod';
-
-import type {
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  NewsletterReportObj,
-  NewsletterReportBounceObj,
-  NewsletterReportEngagedObj,
-  NewsletterReportLinkObj,
-  NewsletterReportPreviousSendObj,
-  CreateClickersListResultObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
-
-export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
-
-export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
-
-export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
-
-export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
-
-export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddCampaignType = z.infer<typeof AddCampaignObj>;
-
-export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
-
-export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
-
-export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
-
-export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type AddTurfType = z.infer<typeof AddTurfObj>;
-
-export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
-
-export type CutTurfsType = z.infer<typeof CutTurfsObj>;
-
-export type AssignTurfType = z.infer<typeof AssignTurfObj>;
-
-export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
-
-export type LogKnockType = z.infer<typeof LogKnockObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-```
-
-## File: libs/common/src/lib/schema.ts
-
-```typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-```
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-
-```typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="pc-eyebrow">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
-
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [avatarText]="avatarText()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [showCancel]="showCancel()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
-        >
-          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
-
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** A read/detail view has no edit to cancel — the header action is a navigation
-   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
-  public showCancel = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
-    }
-  }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-
-```typescript
-import { Component, inject, input, output } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-/**
- * Minimal structural view of a signal-forms root (the object returned by
- * `form()` from '@angular/forms/signals'): calling it yields the root field
- * state. Kept structural so this shared control does not depend on the
- * experimental signal-forms types directly.
- */
-export type SignalFormRoot = () => {
-  dirty(): boolean;
-  invalid(): boolean;
-  reset(): void;
-};
-
-@Component({
-  selector: 'pc-form-actions',
-  imports: [Icon],
-  templateUrl: './form-actions.html',
-})
-export class FormActions {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-
-  private stay = false;
-
-  public signalForm = input<SignalFormRoot>();
-
-  public disabled = input<boolean>(false);
-
-  /**
-   * §4 "Save never disables": when true, the primary button stays enabled
-   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
-   * consuming form is expected to guide on click (markAsTouched + focus the
-   * first invalid field) rather than block via a dead button.
-   */
-  public saveAlwaysEnabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  /** Whether to render the Cancel button. Read/detail views turn this off — a
-   * read view has no edit to cancel; the header's action is a navigation "Edit". */
-  public showCancel = input<boolean>(true);
-
-  public deleteText = input<string>('Delete');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('Save');
-
-  public btn2Text = input<string>('Save & add more');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
-  public size = input<'xs' | 'sm'>('sm');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    // Save never disables on validity/dirtiness — the form guides on click.
-    if (this.saveAlwaysEnabled()) return false;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    // No form at all: plain button bar (e.g. list-view) — never gate Save.
-    return false;
-  }
-
-  public cancel(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked(): void {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked(): void {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked(): void {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public stayOrCancel = (): void => {
-    if (this.stay) {
-      this.signalForm()?.().reset();
-    } else {
-      this.cancel();
-    }
-  };
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-
-```typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
-    // affirmative confirms (info/success/neutral) are the surface's main action.
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-      default:
-        return 'btn-primary';
-    }
-  });
-
-  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
-  // (danger variants by default, or any explicit emphasizeCancel), style the safe
-  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
-  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
-  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-        return 'btn-primary';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onPromptInput(event: Event): void {
-    this.promptValue.set((event.target as HTMLInputElement).value);
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
-```
-
-## File: libs/uxcommon/src/index.ts
-
-```typescript
-export * from './loading-gate';
-export * from './request-guard';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/table/table';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-export * from './components/map/map';
-export * from './components/map/map-types';
-export * from './components/geocode-chip/geocode-chip';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-```
-
 ## File: libs/common/src/lib/schemas/marketing.schema.ts
 
 ```typescript
@@ -8514,6 +8071,395 @@ export const CreateClickersListResultObj = z.object({
 });
 ```
 
+## File: libs/uxcommon/src/components/alerts/alerts.html
+
+```html
+<div
+  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
+  [class.absolute]="!isPositionRelative()"
+  [class.left-0]="!isPositionRelative()"
+  [class.top-4]="isPositionTop()"
+  [class.bottom-4]="isPositionBottom()"
+>
+  @for (alert of alerts(); track alert.id) {
+  <div
+    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
+    role="alert"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
+    (click)="dismiss(alert.id)"
+  >
+    <span
+      aria-hidden="true"
+      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
+    ></span>
+    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
+    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
+      {{ alert.text }}
+    </div>
+    @if (alert.count() > 1) {
+    <span
+      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
+    >
+      ×{{ alert.count() }}
+    </span>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: libs/uxcommon/src/components/alerts/alerts.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+import { ALERTTYPE, AlertService } from './alert-service';
+
+@Component({
+  selector: 'pc-alerts',
+  imports: [Icon, AnimateIfDirective],
+  templateUrl: './alerts.html',
+})
+export class Alerts {
+  protected alertSvc = inject(AlertService);
+
+  public position = input<'top' | 'bottom' | 'relative'>('bottom');
+
+  protected readonly alerts = computed(() => {
+    const list = this.alertSvc.alertList();
+    // Service list is newest-first; render newest nearest the pinned edge
+    // (bottom of the stack when pinned bottom — spec §2).
+    return this.isPositionBottom() ? list.slice().reverse() : list;
+  });
+
+  protected dismiss(id: string): void {
+    this.alertSvc.dismiss(id);
+  }
+
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
+  }
+
+  protected icon(type?: ALERTTYPE): PcIconNameType {
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'exclamation-circle'
+          : 'information-circle';
+  }
+
+  protected isPositionBottom() {
+    return this.position() === 'bottom';
+  }
+
+  protected isPositionRelative() {
+    return this.position() === 'relative';
+  }
+
+  protected isPositionTop() {
+    return this.position() === 'top';
+  }
+
+  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
+  protected barToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success'
+      : type === 'warning'
+        ? 'bg-warning'
+        : type === 'error'
+          ? 'bg-error'
+          : 'bg-info';
+  }
+
+  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
+  protected toneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'text-success'
+      : type === 'warning'
+        ? 'text-warning'
+        : type === 'error'
+          ? 'text-error'
+          : 'text-info';
+  }
+}
+```
+
+## File: libs/uxcommon/src/components/icons/icons.index.ts
+
+```typescript
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
+
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  let cached = _cache.get(name);
+  if (!cached) {
+    cached = resolveIconSvg(name);
+    _cache.set(name, cached);
+  }
+  return cached;
+}
+
+async function resolveIconSvg(name: PcIconNameType): Promise<string> {
+  const svg = await fetchSvg(icons[name]);
+  if (svg != null) return svg;
+  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
+  if (name !== UNKNOWN) {
+    const fallback = await loadIconSvg(UNKNOWN);
+    if (fallback) return fallback;
+  }
+  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
+  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
+  return '';
+}
+
+/** Fetch an icon and return its text only if it is actually an SVG, else null. */
+async function fetchSvg(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.trimStart().startsWith('<svg') ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+const UNKNOWN: PcIconNameType = 'unknown';
+
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
+
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  loading: 'assets/icons/loading.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
+```
+
+## File: libs/uxcommon/src/index.ts
+
+```typescript
+export * from './loading-gate';
+export * from './request-guard';
+
+// Components
+export * from './components/alerts/alert-service';
+export * from './components/alerts/alerts';
+export * from './components/icons/icon';
+export * from './components/icons/icons.index';
+export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
+export * from './components/user-avatar/user-avatar';
+export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/table/table';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
+export * from './components/detail-item/detail-item';
+export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
+
+// Directives
+export * from './directives/animate-if.directive';
+export * from './directives/spin-on-click.directive';
+
+// Pipes
+export * from './pipes/file-icon.pipe';
+export * from './pipes/filesize.pipe';
+export * from './pipes/sanitize-html.pipe';
+export * from './pipes/svg-html-pipe';
+export * from './pipes/timeago.pipe';
+```
+
 ## File: libs/common/src/lib/auth.ts
 
 ```typescript
@@ -8664,64 +8610,342 @@ export const signUpInputObj = z.object({
 });
 ```
 
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
+## File: libs/uxcommon/src/components/detail-header/detail-header.ts
 
-```html
-<div class="flex gap-2 justify-center">
-  <button
-    type="button"
-    class="btn btn-primary gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleBtn1Clicked()"
-    [disabled]="isSaveDisabled"
-  >
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
+```typescript
+import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
 
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button
-    type="button"
-    class="btn btn-primary"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleBtn2Clicked()"
-    [disabled]="isSaveDisabled"
-  >
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
-  } @if (showCancel()) {
-  <button
-    type="button"
-    class="btn btn-outline btn-accent gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="cancel()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
+import { FormActions } from '../form-actions/form-actions';
+
+@Component({
+  selector: 'pc-detail-header',
+  imports: [Icon, FormActions],
+  template: `
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 items-center gap-3">
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
+            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
+          }
+          <div class="min-w-0">
+            @if (eyebrow()) {
+              <p class="pc-eyebrow">{{ eyebrow() }}</p>
+            }
+            <div class="flex min-w-0 items-center gap-2">
+              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+              @if (statusChip()) {
+                <span
+                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
+                  >{{ statusChip() }}</span
+                >
+              }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
+            </div>
+            @if (dirtyFieldCount() > 0) {
+              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
+                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
+              </p>
+            } @else if (subtitle()) {
+              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle btn-ghost btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
+          <ng-content select="[pc-actions-prefix]"></ng-content>
+          @if (showActions()) {
+            <pc-form-actions
+              size="sm"
+              [isLoading]="isLoading()"
+              [signalForm]="form()"
+              [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
+              [buttonsToShow]="formActionsButtons()"
+              [btn1Text]="btn1Text()"
+              [btn1Icon]="btn1Icon()"
+              [showDelete]="false"
+              [showCancel]="showCancel()"
+              (btn1Clicked)="save.emit($event)"
+            ></pc-form-actions>
+          }
+          <ng-content select="[pc-actions-suffix]"></ng-content>
+          @if (showDelete()) {
+            <div class="dropdown dropdown-end">
+              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
+                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
+              </button>
+              <ul
+                tabindex="0"
+                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+              >
+                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                <ng-content select="[pc-overflow-extra]"></ng-content>
+                <li>
+                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                    <pc-icon name="trash" [size]="4"></pc-icon>
+                    {{ deleteText() }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class DetailHeader {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  public readonly delete = output<void>();
+  public readonly save = output<any>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+  public btn1Text = input<string>('Save');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public deleteText = input<string>('Delete');
+  public disabled = input<boolean>(false);
+  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
+  public saveAlwaysEnabled = input<boolean>(false);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
+  public statusChip = input<string | null>(null);
+  public form = input<any>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
+  public subtitle = input<string | null | undefined>();
+  public title = input.required<string>();
+
+  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
+  public dirtyFieldCount = input<number>(0);
+
+  // Delete moved to the overflow menu. Suppressing the third button whenever
+  // Delete is offered preserves the layout form-actions previously produced
+  // when it rendered the Delete button inline.
+  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
+    this.showDelete() ? 'two' : this.buttonsToShow(),
+  );
+
+  constructor() {
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: this.prevLabel(),
+        nextLabel: this.nextLabel(),
+        onPrev: () => this.prevRecord.emit(),
+        onNext: () => this.nextRecord.emit(),
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
   }
-</div>
+}
+```
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.ts
+
+```typescript
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
+
+@Component({
+  selector: 'pc-dialog-host',
+  imports: [Icon],
+  templateUrl: './confirm-dialog-host.html',
+})
+export class ConfirmDialogHost {
+  private readonly svc = inject(ConfirmDialogService);
+
+  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
+
+  private readonly stateSignal = this.svc.stateSignal;
+  private readonly openSignal = this.svc.isOpenSignal;
+  public state = this.stateSignal;
+  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
+  // default to emphasizing the cancel/keep button unless a caller opts out, and
+  // only when a cancel button is actually shown.
+  public readonly effectiveEmphasizeCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    const explicit = st.emphasizeCancel;
+    const wants = explicit ?? st.variant === 'danger';
+    return wants && this.showCancel();
+  });
+  public confirmBtnClass = computed(() => {
+    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
+    if (this.effectiveEmphasizeCancel()) {
+      switch (v) {
+        case 'danger':
+          return 'btn-ghost text-error';
+        case 'warning':
+          return 'btn-ghost text-warning';
+        case 'info':
+          return 'btn-ghost text-info';
+        case 'success':
+          return 'btn-ghost text-success';
+        default:
+          return 'btn-ghost';
+      }
+    }
+    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
+    // affirmative confirms (info/success/neutral) are the surface's main action.
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+      default:
+        return 'btn-primary';
+    }
+  });
+
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
+
+  public choiceBtnClass(v?: DialogVariant): string {
+    if (!v) return '';
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+        return 'btn-primary';
+      default:
+        return '';
+    }
+  }
+
+  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
+  public showCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    if (st.type === 'choose') {
+      return !!st.cancelText;
+    }
+    return !!st.cancelText && st.type !== 'alert';
+  });
+
+  constructor() {
+    effect(() => {
+      const open = this.openSignal();
+      const dlg = this.dlgRef()?.nativeElement;
+      if (!dlg) return;
+
+      if (open) {
+        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
+        if (!dlg.open) {
+          try {
+            dlg.showModal();
+          } catch {}
+        }
+      } else if (dlg.open) {
+        try {
+          dlg.close();
+        } catch {}
+      }
+    });
+  }
+
+  public onPromptInput(event: Event): void {
+    this.promptValue.set((event.target as HTMLInputElement).value);
+  }
+
+  public onBackdrop(): void {
+    const st = this.state();
+    if (st?.allowBackdropClose) this.svc.cancel();
+  }
+
+  public onCancel(): void {
+    this.svc.cancel();
+  }
+
+  public onConfirm(): void {
+    const st = this.state();
+    if (!st) return;
+    if (st.type === 'prompt') this.svc.ok(this.promptValue());
+    else if (st.type === 'alert') this.svc.ok();
+    else this.svc.ok(true);
+  }
+
+  public onChoice(value: unknown): void {
+    this.svc.ok(value);
+  }
+}
 ```
 
 ## File: libs/common/src/index.ts
@@ -8977,7 +9201,9 @@ export {
   RouteIdObj,
   MintShareLinkObj,
   PublicStopActionObj,
+  GetSignStatusObj,
   DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
   DELIVERY_ROUTE_STATUSES,
   DELIVERY_STOP_STATUSES,
   DELIVERY_SOURCES,
@@ -9062,6 +9288,7 @@ export type {
   StopActionType,
   MintShareLinkType,
   PublicStopActionType,
+  GetSignStatusType,
   DeliveryRequestStatus,
   DeliveryRouteStatus,
   DeliveryStopStatus,
@@ -9093,204 +9320,6 @@ export type {
   JSendStatus,
   JSendErrorInterface as JSendError,
 } from './lib/jsend';
-```
-
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-
-```typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (avatarText()) {
-            <span
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
-              aria-hidden="true"
-              >{{ avatarText() }}</span
-            >
-          } @else if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="pc-eyebrow">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
-              <ng-content select="[pc-title-suffix]"></ng-content>
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
-               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
-          @if (positionLabel()) {
-            <div class="mr-1 flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                class="btn btn-circle btn-ghost btn-xs"
-                [attr.aria-label]="prevLabel()"
-                [disabled]="!hasPrev()"
-                [class.btn-ghost]="!hasPrev()"
-                (click)="prevRecord.emit()"
-              >
-                <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              </button>
-              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
-                positionLabel()
-              }}</span>
-              <button
-                type="button"
-                class="btn btn-circle btn-xs"
-                [attr.aria-label]="nextLabel()"
-                [disabled]="!hasNext()"
-                [class.btn-ghost]="!hasNext()"
-                (click)="nextRecord.emit()"
-              >
-                <pc-icon name="chevron-right" [size]="4"></pc-icon>
-              </button>
-            </div>
-          }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
-   * detail-layout overrides it to false for read views. */
-  public showCancel = input<boolean>(true);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail renders in the navbar; the record pager now lives in
-    // this header card (design source), so publish the trail only and leave the
-    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
-    // empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: null,
-        hasPrev: false,
-        hasNext: false,
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-}
 ```
 
 ## File: libs/common/src/lib/kysely.models.ts

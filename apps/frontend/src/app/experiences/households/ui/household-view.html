@@ -116,6 +116,21 @@
         </dl>
       </pc-card>
 
+      <!-- Yard sign standing (Deliveries §14) — the sign lives at this door; scoped to the active campaign -->
+      <pc-card>
+        <h3 class="mb-1 block pc-eyebrow" i18n>Yard sign</h3>
+        @if (campaignContext.activeCampaign(); as campaign) {
+        <p class="mb-3 text-[11px] text-base-content/50">
+          <ng-container i18n>In</ng-container>
+          <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+          @if (campaignContext.isArchivedContext()) {
+          <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+          }
+        </p>
+        }
+        <pc-yard-sign-standing [householdId]="householdRecordId()" [showLabel]="false"></pc-yard-sign-standing>
+      </pc-card>
+
       <!-- Door notes card -->
       <pc-card>
         <h3 class="mb-2 block pc-eyebrow">Door notes</h3>

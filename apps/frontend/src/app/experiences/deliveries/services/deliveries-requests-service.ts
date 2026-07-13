@@ -3,6 +3,7 @@ import { Service } from '@angular/core';
 import type {
   AddDeliveryRequestType,
   CommitDeliveriesType,
+  DeliveryRequestStatus,
   ExportCsvInputType,
   ExportCsvResponseType,
   PlanDeliveriesType,
@@ -44,8 +45,16 @@ export class DeliveriesRequestsService extends AbstractAPIService<'delivery_requ
     return this.api.deliveries.updateRequestNotes.mutate({ id, data });
   }
 
-  public setStatus(ids: string[], status: 'approved' | 'declined'): Promise<{ updated: number }> {
+  public setStatus(ids: string[], status: DeliveryRequestStatus): Promise<{ updated: number }> {
     return this.api.deliveries.setRequestStatus.mutate({ ids, status });
+  }
+
+  /** Yard-sign standing for one household in one campaign (household/person "Yard sign" control). */
+  public getSignStatus(householdId: string, campaignId: string): Promise<RouterOutputs['deliveries']['getSignStatus']> {
+    return this.api.deliveries.getSignStatus.query(
+      { household_id: householdId, campaign_id: campaignId },
+      { signal: this.ac.signal },
+    );
   }
 
   public getRouteDefaults(): Promise<RouterOutputs['deliveries']['getRouteDefaults']> {

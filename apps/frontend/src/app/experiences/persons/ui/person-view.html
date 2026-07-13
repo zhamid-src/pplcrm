@@ -133,8 +133,12 @@
         ></pc-system-metadata>
       </pc-card>
 
-      <!-- Campaign standing: support level + voting status per context, DNC override (§15) -->
-      <pc-person-campaign-facts [personId]="id()" [dncFlag]="!!person().do_not_contact"></pc-person-campaign-facts>
+      <!-- Campaign standing: support level + voting status + yard sign per context, DNC override (§15) -->
+      <pc-person-campaign-facts
+        [personId]="id()"
+        [dncFlag]="!!person().do_not_contact"
+        [householdId]="isPlaceholderHousehold() ? null : householdId()"
+      ></pc-person-campaign-facts>
 
       <!-- Internal Notes (own card) -->
       @if (person().notes) {

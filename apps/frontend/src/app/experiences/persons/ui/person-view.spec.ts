@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActivityService } from '@experiences/activity/services/activity.service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
 import { signal } from '@angular/core';
 
 describe('PersonView', () => {
@@ -27,6 +29,8 @@ describe('PersonView', () => {
   let mockActivitySvc: any;
   let mockDonationsSvc: any;
   let mockTagsSvc: any;
+  let mockCampaignContext: any;
+  let mockDeliveriesSvc: any;
 
   beforeEach(async () => {
     mockAlertSvc = {
@@ -56,6 +60,19 @@ describe('PersonView', () => {
     mockTagsSvc = {
       getAll: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
       refreshCount: signal(0),
+    };
+
+    mockCampaignContext = {
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      activeCampaignId: () => 'c1',
+      activeCampaign: () => ({ id: 'c1', name: 'Office' }),
+      isArchivedContext: () => false,
+    };
+
+    mockDeliveriesSvc = {
+      getSignStatus: vi.fn().mockResolvedValue({ request: null }),
+      add: vi.fn().mockResolvedValue({ id: 'dr1' }),
+      setStatus: vi.fn().mockResolvedValue({ updated: 1 }),
     };
 
     mockPersonsSvc = {
@@ -111,6 +128,8 @@ describe('PersonView', () => {
         { provide: ActivityService, useValue: mockActivitySvc },
         { provide: DonationsService, useValue: mockDonationsSvc },
         { provide: TagsService, useValue: mockTagsSvc },
+        { provide: CampaignContextService, useValue: mockCampaignContext },
+        { provide: DeliveriesRequestsService, useValue: mockDeliveriesSvc },
       ],
     }).compileComponents();
 

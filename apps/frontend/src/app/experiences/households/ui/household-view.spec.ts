@@ -9,6 +9,8 @@ import { HouseholdView } from './household-view';
 import { UserService } from '../../../services/user.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { ActivityService } from '@experiences/activity/services/activity.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
 
 const mockHouseholdData = {
   id: '123',
@@ -39,6 +41,8 @@ let mockLoader: any;
 let mockUserService: any;
 let mockPersonsSvc: any;
 let mockActivitySvc: any;
+let mockCampaignContext: any;
+let mockDeliveriesSvc: any;
 
 describe('HouseholdView', () => {
   beforeEach(async () => {
@@ -64,6 +68,19 @@ describe('HouseholdView', () => {
     mockAlertSvc = {
       showSuccess: vi.fn(),
       showError: vi.fn(),
+    };
+
+    mockCampaignContext = {
+      ensureLoaded: vi.fn().mockResolvedValue(undefined),
+      activeCampaignId: () => 'c1',
+      activeCampaign: () => ({ id: 'c1', name: 'Office' }),
+      isArchivedContext: () => false,
+    };
+
+    mockDeliveriesSvc = {
+      getSignStatus: vi.fn().mockResolvedValue({ request: null }),
+      add: vi.fn().mockResolvedValue({ id: 'dr1' }),
+      setStatus: vi.fn().mockResolvedValue({ updated: 1 }),
     };
 
     mockActivatedRoute = {
@@ -109,6 +126,8 @@ describe('HouseholdView', () => {
         { provide: UserService, useValue: mockUserService },
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: ActivityService, useValue: mockActivitySvc },
+        { provide: CampaignContextService, useValue: mockCampaignContext },
+        { provide: DeliveriesRequestsService, useValue: mockDeliveriesSvc },
       ],
     }).compileComponents();
 

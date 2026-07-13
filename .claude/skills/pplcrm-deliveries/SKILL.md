@@ -49,6 +49,14 @@ or dependency**. Start-address geocoding reuses the shared `geocodeAddress()` in
 Router `deliveries` (registered in `modules/trpc.ts`). `controller.ts` holds all logic; three repos.
 Every internal query is tenant-scoped. Key behaviours:
 
+- **Yard-sign standing (first-level concept, derived — never a stored flag).**
+  `getSignStatus({household_id, campaign_id})` returns the household's most recently touched request
+  for one campaign (+ requester name, derived active-route link) — the truth stays in
+  `delivery_requests`; nothing is stored on persons/households. `setRequestStatus` accepts all four
+  statuses: `delivered` flips any active (pending) stop via `applyStopTransition` (staff-attributed,
+  advances/auto-completes the route); `declined`/`new` are blocked while a pending stop exists.
+  Standing flips and `addRequest` log activity to the `households` entity and, when a requester is
+  set, `persons` too (`logRequestStanding`).
 - **Plan is preview-then-commit.** `previewPlan` is pure — geocodes the start, runs the engine, returns
   routes + `unroutable` + ineligible buckets, **writes nothing**. `commitPlan` re-verifies eligibility
   in-transaction (concurrent-planner guard → `skipped` list), recomputes legs server-side, inserts
@@ -114,6 +122,17 @@ ready-count badge wired in `sidebar.ts` (`deliveries.getReadyCount`, mirrors the
 badge pattern). Help article: `experiences/help/data/articles/engagement.ts` (id `deliveries`); the
 known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
 
+**Standing surfaces outside Deliveries:** `experiences/deliveries/ui/yard-sign-standing.ts`
+(`<pc-yard-sign-standing>`) is the one control that reads/flips a household's sign status in the
+active campaign context (None requested / Requested / Approved / Declined / Delivered, labels from
+`DELIVERY_REQUEST_STATUS_LABELS` in `deliveries.schema.ts`). It's embedded in the person Campaign
+standing card (`persons/ui/person-campaign-facts.html`, fed `householdId` from `person-view.html` —
+null for placeholder households) and in a "Yard sign" card on `households/ui/household-view.html`
+(`showLabel=false`, card provides the eyebrow). No household → muted "Needs an address" guidance,
+never a bare disabled select. Picking a status with no request calls `addRequest` (requester =
+`personId` when set) then, if not `new`, `setRequestStatus`. Specs mounting either view must stub
+`CampaignContextService` AND `DeliveriesRequestsService` or the child fires real tRPC calls.
+
 ## Gotchas
 
 - Grid row DTO types must be **`type` aliases, not `interface`** — the `AbstractAPIService.getAll`
@@ -127,8 +146,9 @@ known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
   emits the picked person (or `null` for **Remove volunteer**); the page calls `svc.assignVolunteer`
   and reloads. When unassigned, the primary action is "Assign a volunteer to share" (opens the picker)
   instead of "Copy volunteer link", since `mintShareLink` refuses without a volunteer.
-- Deferred (not yet built): web-form `yard_sign` intake branch, and the manual "Add request"
-  household-picker dialog (backend `addRequest` exists; wire the UI).
+- Deferred (not yet built): web-form `yard_sign` intake branch, and a grid-level "Add request"
+  household-picker dialog. Manual entry per household DOES exist — the `pc-yard-sign-standing`
+  control on the household/person pages calls `addRequest`.
 
 ## Campaigns (§15) — requests and routes belong to a context
 

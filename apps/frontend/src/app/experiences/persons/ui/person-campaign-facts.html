@@ -40,6 +40,9 @@
         }
       </select>
     </label>
+
+    <!-- Yard sign is household-level truth (one lawn, one sign) surfaced as personal standing. -->
+    <pc-yard-sign-standing [householdId]="householdId()" [personId]="personId()"></pc-yard-sign-standing>
   </div>
   }
 

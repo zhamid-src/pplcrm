@@ -123,6 +123,72 @@ export class DeliveryRequestsRepo extends BaseRepository<'delivery_requests'> {
     };
   }
 
+  /**
+   * The yard-sign standing for one household in one campaign context: the most recently touched
+   * request, with the requester's name and the derived active-route link (pending stop, never a
+   * stored flag). Backs the "Yard sign" control on the household and person pages.
+   */
+  public async getSignStatus(
+    tenantId: string,
+    householdId: string,
+    campaignId: string,
+    trx?: Transaction<Models>,
+  ): Promise<{
+    id: string;
+    status: string;
+    source: string;
+    notes: string | null;
+    skip_reason: string | null;
+    updated_at: Date | string | null;
+    person_id: string | null;
+    person_name: string | null;
+    route_id: string | null;
+    route_name: string | null;
+  } | null> {
+    const db = trx ?? this.db;
+    const row = await db
+      .selectFrom('delivery_requests as dr')
+      .leftJoin('persons as p', 'p.id', 'dr.person_id')
+      .leftJoin('delivery_route_stops as active_stop', (join) =>
+        join
+          .onRef('active_stop.request_id', '=', 'dr.id')
+          .on('active_stop.tenant_id', '=', tenantId)
+          .on('active_stop.status', '=', 'pending'),
+      )
+      .leftJoin('delivery_routes as rt', 'rt.id', 'active_stop.route_id')
+      .where('dr.tenant_id', '=', tenantId)
+      .where('dr.household_id', '=', householdId)
+      .where('dr.campaign_id', '=', campaignId)
+      .select([
+        'dr.id as id',
+        'dr.status as status',
+        'dr.source as source',
+        'dr.notes as notes',
+        'dr.skip_reason as skip_reason',
+        'dr.updated_at as updated_at',
+        'dr.person_id as person_id',
+        sql<string>`NULLIF(TRIM(COALESCE(p.first_name, '') || ' ' || COALESCE(p.last_name, '')), '')`.as('person_name'),
+        'active_stop.route_id as route_id',
+        'rt.name as route_name',
+      ])
+      .orderBy('dr.updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      status: String(row.status),
+      source: String(row.source),
+      notes: row.notes ?? null,
+      skip_reason: row.skip_reason ?? null,
+      updated_at: row.updated_at ?? null,
+      person_id: row.person_id != null ? String(row.person_id) : null,
+      person_name: row.person_name ?? null,
+      route_id: row.route_id != null ? String(row.route_id) : null,
+      route_name: row.route_name ?? null,
+    };
+  }
+
   /** Tab counts for the requests grid (spec §4.1): Open = new + approved. */
   public async getStatusCounts(tenantId: string, trx?: Transaction<Models>): Promise<Record<string, number>> {
     const db = trx ?? this.db;

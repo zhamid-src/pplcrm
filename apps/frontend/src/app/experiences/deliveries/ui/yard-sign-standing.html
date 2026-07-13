@@ -1,0 +1,35 @@
+<label class="flex flex-col gap-1">
+  @if (showLabel()) {
+  <span class="text-[11px] font-medium text-base-content/60" i18n>Yard sign</span>
+  } @if (householdId()) {
+  <select
+    class="select select-bordered select-sm w-full"
+    [value]="request()?.status ?? ''"
+    [disabled]="saving() || readonlyContext()"
+    (change)="onStatusChange($event)"
+  >
+    @if (!request()) {
+    <option value="" i18n>None requested</option>
+    } @for (status of statuses; track status) {
+    <option [value]="status">{{ labels[status] }}</option>
+    }
+  </select>
+  } @else {
+  <!-- No address, no lawn — guide to the fix instead of a dead disabled control. -->
+  <p class="py-1 text-[11px] text-base-content/40" i18n>Needs an address — assign a household first.</p>
+  }
+</label>
+
+@if (request(); as r) { @if (metaLine()) {
+<p class="mt-1 text-[10px] text-base-content/40">{{ metaLine() }}</p>
+} @if (r.route_id) {
+<p class="mt-1 text-[10px]">
+  <a class="link link-primary" [routerLink]="['/deliveries/routes', r.route_id]">
+    <ng-container i18n>On route:</ng-container> {{ r.route_name }}
+  </a>
+</p>
+} @else if (r.status === 'approved' && r.skip_reason) {
+<p class="mt-1 text-[10px] text-base-content/40">
+  <ng-container i18n>Last attempt skipped:</ng-container> {{ r.skip_reason.toLowerCase() }}
+</p>
+} }
