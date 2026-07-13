@@ -15,7 +15,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
   public override async getAllWithCounts(
     input: { tenant_id: string; options?: QueryParams<'authusers'> },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);

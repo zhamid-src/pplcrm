@@ -12,7 +12,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
   public async getAllWithCount(
     tenant_id: string,
     options?: QueryParams<'newsletters'>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const opts: QueryParams<'newsletters'> = options ?? {};
     const searchStr = this.normalizeSearch(opts.searchStr);
     const filterModel = (opts?.filterModel ?? {}) as GridFilterModel;

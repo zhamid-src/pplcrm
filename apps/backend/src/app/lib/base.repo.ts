@@ -246,7 +246,7 @@ export class BaseRepository<T extends keyof Models> {
       options?: any;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     // `count` must be the total matching-rows count, NOT rows.length — getAll applies
     // limit/offset (via startRow/endRow), so rows.length is just the current page size
     // and would break server-side grid pagination. The base getAll filters only by
@@ -257,7 +257,7 @@ export class BaseRepository<T extends keyof Models> {
       this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx),
       this.countScoped(input.tenant_id, input.options as QueryParams<T>, trx),
     ]);
-    return { rows: rows as Record<string, any>[], count };
+    return { rows: rows as Record<string, unknown>[], count };
   }
 
   /** Total count mirroring getAll's campaign scoping (§15) so grid pagination stays honest. */

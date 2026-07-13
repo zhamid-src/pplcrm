@@ -54,7 +54,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
   public override async getAllWithCounts(
     input: { tenant_id: TypeTenantId<'companies'>; options?: any },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const tenant_id = input.tenant_id;
     const [rows, count] = await Promise.all([
       this.getSelectWithColumns(input.options, trx)
@@ -70,7 +70,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
         .execute(),
       this.count(tenant_id, trx),
     ]);
-    return { rows: rows as Record<string, any>[], count };
+    return { rows: rows as Record<string, unknown>[], count };
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {

@@ -17,7 +17,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
       options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
@@ -202,7 +202,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
   public async getHouseholdsByListId(
     input: { tenant_id: string; list_id: string },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const qb = this.getSelect(trx)
       .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
       .innerJoin('households', 'households.id', 'mlh.household_id')
@@ -239,7 +239,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
   public async getPersonsByListId(
     input: { tenant_id: string; list_id: string },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const qb = this.getSelect(trx)
       .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
       .innerJoin('persons', 'persons.id', 'mlp.person_id')

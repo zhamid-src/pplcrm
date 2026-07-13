@@ -15,7 +15,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       options?: QueryParams<'workflows'>;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
