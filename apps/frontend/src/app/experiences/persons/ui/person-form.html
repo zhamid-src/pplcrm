@@ -234,7 +234,7 @@
             <div class="flex items-center justify-between gap-4">
               <dt class="text-base-content/60">People in home</dt>
               <dd class="text-right font-medium tabular-nums text-base-content">
-                {{ householdMembersResource.value() ?? '—' }}
+                {{ isPlaceholderHousehold() ? '—' : (householdMembersResource.value() ?? '—') }}
               </dd>
             </div>
             <div class="flex items-center justify-between gap-4">
