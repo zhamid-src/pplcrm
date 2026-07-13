@@ -133,7 +133,7 @@ cancel route, delete route) — mirrors the canvassing turf table. "Open in Goog
 `maps/dir/?api=1&origin=…&waypoints=…&destination=…` URL from stop coords (route detail only — the
 list row has no stop coords). Sidebar: **Deliveries** in FIELD (`sidebar-items.ts`, icon `map-pin`) with a live
 ready-count badge wired in `sidebar.ts` (`deliveries.getReadyCount`, mirrors the Tasks/Duplicates
-badge pattern). Help article: `experiences/help/data/articles/engagement.ts` (id `deliveries`); the
+badge pattern). Help article: `libs/common/src/lib/help/articles/engagement.ts` (id `deliveries`); the
 known-route allowlist in `help-content.spec.ts` includes `/deliveries*`.
 
 **Standing surfaces outside Deliveries:** `experiences/deliveries/ui/yard-sign-standing.ts`

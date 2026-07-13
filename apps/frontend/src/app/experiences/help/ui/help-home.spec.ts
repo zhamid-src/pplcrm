@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { HELP_CATEGORIES } from '../data/help-content';
+import { HELP_CATEGORIES } from '@common';
 import { HelpHomePage } from './help-home';
 
 describe('HelpHomePage', () => {

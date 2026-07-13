@@ -3,12 +3,19 @@ import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
-import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
-import { readingMinutes, stripHelpInline } from '../data/help-types';
+import {
+  categoryNeighbors,
+  getHelpArticle,
+  getHelpCategory,
+  readingMinutes,
+  relatedArticles,
+  stripHelpInline,
+} from '@common';
+
 import { HelpBlocks } from './help-blocks';
 
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import type { HelpArticle, HelpBlock } from '../data/help-types';
+import type { HelpArticle, HelpBlock } from '@common';
 
 interface TocEntry {
   id: string;

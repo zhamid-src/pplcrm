@@ -1,5 +1,3 @@
-import type { PcIconNameType } from '@icons/icons.index';
-
 /**
  * Content model for the in-app help center.
  *
@@ -21,7 +19,8 @@ export type HelpCategoryId =
 export interface HelpCategory {
   /** One-sentence description shown on the category card. */
   blurb: string;
-  icon: PcIconNameType;
+  /** Heroicon name; each consuming app maps this to its own icon component. */
+  icon: string;
   id: HelpCategoryId;
   label: string;
 }

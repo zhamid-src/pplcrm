@@ -145,6 +145,6 @@ the mechanics; this section is why they're intentional and haven't been schedule
 
 ## After changes
 
-Update the Forms Help Center article (`experiences/help/data/articles/engagement.ts`, id `forms`) and
-run `npx vitest run src/app/experiences/help`. Then the `pplcrm-quality-gate` pipeline. Schema changes
+Update the Forms Help Center article (`libs/common/src/lib/help/articles/engagement.ts`, id `forms`) and
+run `npx nx test common`. Then the `pplcrm-quality-gate` pipeline. Schema changes
 go through `pplcrm-migrations`; new queries through `pplcrm-tenant-safety`.

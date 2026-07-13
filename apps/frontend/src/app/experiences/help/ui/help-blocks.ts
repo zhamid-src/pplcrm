@@ -3,8 +3,8 @@ import { Icon } from '@icons/icon';
 
 import { HelpRichText } from './help-rich-text';
 
-import type { HelpBlock } from '../data/help-types';
 import type { PcIconNameType } from '@icons/icons.index';
+import type { HelpBlock } from '@common';
 
 /** Renders an article's typed content blocks with the house styling. */
 @Component({

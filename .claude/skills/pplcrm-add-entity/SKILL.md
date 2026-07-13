@@ -158,13 +158,14 @@ Spec files live next to source, not in a separate folder. Real examples:
 ### 13. Help documentation (MANDATORY for any user-facing entity)
 
 A new entity is a new user-facing feature, so the in-app Help Center must ship in the same change.
-Articles are typed TypeScript data in `apps/frontend/src/app/experiences/help/data/articles/*.ts`
-(one file per category, aggregated in `help-content.ts`). Add or extend the article that covers the
+Articles are typed TypeScript data in `libs/common/src/lib/help/articles/*.ts`
+(one file per category, aggregated in `libs/common/src/lib/help/help-content.ts`) — shared so both the
+CRM frontend and the marketing website consume the same content. Add or extend the article that covers the
 new record type — what it is, how to create/edit/delete it, and any related flows — and wire its
 `related` ids and internal `[label](/route)` links. Inline mini-markup only: `**bold**`, backtick
-code, `[label](/internal/route)`. The integrity spec (`data/help-content.spec.ts`) fails on duplicate
+code, `[label](/internal/route)`. The integrity spec (`libs/common/src/lib/help/help-content.spec.ts`) fails on duplicate
 slugs, broken `related` ids, and links to unknown routes, but it does **not** catch stale or missing
-prose — write the words yourself. Run `npx vitest run src/app/experiences/help` from `apps/frontend`.
+prose — write the words yourself. Run `npx nx test common`.
 
 ### 14. Verify
 

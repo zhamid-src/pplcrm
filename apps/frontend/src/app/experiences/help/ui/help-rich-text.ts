@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { parseHelpInline } from '../data/help-types';
+import { parseHelpInline } from '@common';
 
 /**
  * Renders one help mini-markup string as inline content:

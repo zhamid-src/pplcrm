@@ -8,17 +8,36 @@ import {
   getHelpCategory,
   HELP_CATEGORIES,
   POPULAR_ARTICLE_IDS,
-} from '../data/help-content';
-import { searchHelp } from '../data/help-search';
-import { readingMinutes } from '../data/help-types';
+  readingMinutes,
+  searchHelp,
+} from '@common';
 
 import type { ElementRef } from '@angular/core';
-import type { HelpArticle, HelpCategory } from '../data/help-types';
+import type { HelpArticle, HelpCategory, HelpCategoryId } from '@common';
+import type { PcIconNameType } from '@icons/icons.index';
 
 interface HelpCategorySection {
   articles: HelpArticle[];
   category: HelpCategory;
+  icon: PcIconNameType;
 }
+
+/**
+ * Maps each help category to this app's icon. `HelpCategory.icon` is a plain
+ * Heroicon name in the shared lib (no `@icons` dependency there); the frontend
+ * resolves it to a typed `PcIconNameType` here, keeping the template type-safe.
+ */
+const HELP_CATEGORY_ICONS: Record<HelpCategoryId, PcIconNameType> = {
+  'getting-started': 'map',
+  contacts: 'identification',
+  grids: 'table-cells',
+  segmentation: 'label',
+  outreach: 'megaphone',
+  engagement: 'currency-dollar',
+  productivity: 'task',
+  data: 'arrow-up-tray',
+  admin: 'cog-6-tooth',
+};
 
 /** Help center landing page: search across all articles, or browse by topic. */
 @Component({
@@ -36,6 +55,7 @@ export class HelpHomePage {
   protected readonly sections: HelpCategorySection[] = HELP_CATEGORIES.map((category) => ({
     articles: articlesInCategory(category.id),
     category,
+    icon: HELP_CATEGORY_ICONS[category.id],
   }));
 
   protected readonly popular: HelpArticle[] = POPULAR_ARTICLE_IDS.map(getHelpArticle).filter(

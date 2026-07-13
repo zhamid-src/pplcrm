@@ -371,3 +371,39 @@ export type {
   JSendStatus,
   JSendErrorInterface as JSendError,
 } from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
