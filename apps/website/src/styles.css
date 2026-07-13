@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+@plugin "daisyui";
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN. */
+@import '@fontsource-variable/inter';
+
+/* Theme tokens (the DaisyUI palette) are shared with the CRM and companion —
+   single source of truth in libs/uxcommon. The marketing design's colors ARE
+   this palette (primary #3498db, secondary #22a6b3, base-content #1f2937,
+   line #e7e5e4, base-200 #f8f8f8, base-50 #fbfbfc, warning/success chips). */
+@import '../../../libs/uxcommon/src/styles/themes.css';
+
+/* The one marketing-only color: the dark navy used for the hero, footer and
+   CTA bands. Registered as a Tailwind theme color so `bg-navy` / `text-navy`
+   (and opacity modifiers) are generated. */
+@theme {
+  --color-navy: #0e182b;
+}
+
+html,
+body {
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  /* The marketing site is light-only regardless of OS preference. */
+  color-scheme: light;
+}
+
+/* Centered content column shared by every section (design uses ~1080px). */
+.site-wrap {
+  width: 100%;
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+/* The small uppercase eyebrow label above section headings. */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+}
