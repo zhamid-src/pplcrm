@@ -15,7 +15,14 @@
         "index": "apps/companion/src/index.html",
         "browser": "apps/companion/src/main.ts",
         "tsConfig": "apps/companion/tsconfig.app.json",
-        "assets": ["apps/companion/src/favicon.ico"],
+        "assets": [
+          "apps/companion/src/favicon.ico",
+          {
+            "glob": "**/*",
+            "input": "apps/frontend/src/assets/icons",
+            "output": "assets/icons"
+          }
+        ],
         "styles": ["apps/companion/src/styles.css"],
         "scripts": [],
         "polyfills": ["@angular/localize/init"]

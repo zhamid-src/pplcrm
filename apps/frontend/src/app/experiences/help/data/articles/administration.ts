@@ -182,7 +182,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
       {
         kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email and a badge appears on [Volunteer access](/volunteer-access) in the Admin section. Each row shows the volunteer, their contact on file, and a status chip — **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds — they never re-enter a code.',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip — **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds — they never re-enter a code.',
       },
       { kind: 'h2', id: 'revoke', text: 'Revoking access' },
       {

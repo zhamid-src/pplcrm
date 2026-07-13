@@ -22,6 +22,7 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { env } from '../../../env';
 import { TurfAssignmentsRepo } from '../canvassing/repositories/turf-assignments.repo';
 import { DeliveryRoutesRepo } from '../deliveries/repositories/delivery-routes.repo';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { CompanionSessionsRepo } from './repositories/companion-sessions.repo';
 import { CompanionVolunteersRepo, type CompanionVolunteer } from './repositories/companion-volunteers.repo';
 
@@ -60,6 +61,7 @@ interface PersonContacts {
 export class CompanionAccessController {
   private activityRepo = new UserActivityRepo();
   private mailService = new TransactionalEmailService();
+  private notificationsRepo = new NotificationsRepo();
   private routesRepo = new DeliveryRoutesRepo();
   private sessionsRepo = new CompanionSessionsRepo();
   private smsService = new SmsService();
@@ -369,12 +371,13 @@ export class CompanionAccessController {
     const volunteerName = person?.first_name ?? 'A volunteer';
     const admins = await this.volunteersRepo.db
       .selectFrom('authusers')
-      .select(['email', 'first_name'])
+      .select(['id', 'email', 'first_name'])
       .where('tenant_id', '=', link.tenant_id)
       .where('role', 'in', ['admin', 'owner'])
       .where('deactivated_at', 'is', null)
       .execute();
-    const approveUrl = `${env.appUrl}/volunteer-access`;
+    const approvePath = '/volunteer-access';
+    const approveUrl = `${env.appUrl}${approvePath}`;
     for (const admin of admins) {
       await this.mailService.enqueueMail(
         {
@@ -383,6 +386,18 @@ export class CompanionAccessController {
           text: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link. Approve them at ${approveUrl}`,
           html: `<h2>Volunteer waiting for approval</h2><p>${volunteerName} verified their contact and is waiting for approval to use their volunteer link.</p><div class="btn-container"><a class="btn" href="${approveUrl}">Review in PeopleCRM</a></div>`,
           tenant_id: link.tenant_id,
+        },
+        trx,
+      );
+      // In-app bell notification — links straight to the Volunteer access page.
+      await this.notificationsRepo.pushNotification(
+        {
+          tenant_id: link.tenant_id,
+          user_id: String(admin.id),
+          title: 'Volunteer waiting for approval',
+          message: `${volunteerName} verified their contact and is waiting for approval to use their volunteer link.`,
+          type: 'info',
+          link: approvePath,
         },
         trx,
       );
