@@ -1,8 +1,8 @@
 import { Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
-import { SIGNUP_URL } from './site-nav';
 import { SiteLogo } from './site-logo';
+import { SIGNUP_URL } from './site-nav';
 
 interface FooterLink {
   readonly label: string;
@@ -86,8 +86,6 @@ export class SiteFooter {
         { label: 'Pricing', path: '/pricing' },
         { label: 'FAQ', path: '/faq' },
         { label: 'Start free', href: SIGNUP_URL },
-        { label: 'Companion apps', path: '/soon', qp: { pageTitle: 'Companion apps' } },
-        { label: 'Import & export', path: '/soon', qp: { pageTitle: 'Import & export' } },
       ],
     },
     {
@@ -103,7 +101,6 @@ export class SiteFooter {
       links: [
         { label: 'Help center', path: '/docs' },
         { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Import guide', path: '/soon', qp: { pageTitle: 'Import guide' } },
         { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
       ],
     },
@@ -119,9 +116,7 @@ export class SiteFooter {
       heading: 'Legal',
       links: [
         { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
-        { label: 'Cookie policy', path: '/soon', qp: { pageTitle: 'Cookie policy' } },
         { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
-        { label: 'Data compact', path: '/soon', qp: { pageTitle: 'Data compact' } },
         { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
       ],
     },
