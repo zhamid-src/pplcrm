@@ -83,7 +83,7 @@ export class FaqPage {
         },
         {
           q: 'Do field volunteers need their own seats?',
-          a: 'In the sample tiers, no. Volunteers join by invite to use the companion apps and don’t take up a staff seat.',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
         },
       ],
     },
@@ -91,12 +91,20 @@ export class FaqPage {
       label: 'Pricing',
       items: [
         {
-          q: 'Why is the pricing marked “sample”?',
-          a: 'We’re still settling the pricing model. The tiers on the pricing page show the shape of it; the numbers are placeholders.',
+          q: 'Is the free plan really free?',
+          a: 'Yes. The Starter plan is free forever — no card, no time limit. It includes 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
         },
         {
-          q: 'Will I be charged when final pricing lands?',
-          a: 'Not without saying yes. We’ll tell you before anything changes, and free workspaces stay free.',
+          q: 'How much do paid plans cost?',
+          a: 'Paid plans start at $29/month for Grassroots and scale up through Representative and Movement as your list and team grow. See the pricing page for what each tier includes.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email — most tools charge you for every contact.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations — unlimited subscribers and sends, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
         },
         {
           q: 'Can I talk to a human before committing?',

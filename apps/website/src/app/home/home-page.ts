@@ -1,5 +1,7 @@
 import { Component, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { PLANS } from '@common';
+import type { PlanDef } from '@common';
 
 import { AppPreview, type PreviewKind } from '../ui/app-preview';
 import { BrowserFrame } from '../ui/browser-frame';
@@ -34,14 +36,6 @@ interface Feature {
   readonly icon: string;
   readonly title: string;
   readonly body: string;
-}
-
-interface Tier {
-  readonly name: string;
-  readonly price: string;
-  readonly cadence: string;
-  readonly blurb: string;
-  readonly featured: boolean;
 }
 
 interface Qa {
@@ -189,34 +183,12 @@ export class HomePage {
     },
   ];
 
-  protected readonly tiers: readonly Tier[] = [
-    {
-      name: 'Starter',
-      price: '$0',
-      cadence: 'forever',
-      blurb: 'The Riverton demo workspace · import up to 500 people · 2 seats',
-      featured: false,
-    },
-    {
-      name: 'Team',
-      price: '$49',
-      cadence: 'per month, sample figure',
-      blurb: 'Unlimited people · all companion apps · newsletters & canvassing · 10 seats',
-      featured: true,
-    },
-    {
-      name: 'Organization',
-      price: 'Let’s talk',
-      cadence: 'multi-office & federations',
-      blurb: 'Multiple workspaces · SSO · data residency · unlimited seats',
-      featured: false,
-    },
-  ];
+  protected readonly tiers: readonly PlanDef[] = PLANS;
 
   protected readonly faqs: readonly Qa[] = [
     {
       q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The demo workspace and up to 500 of your own people stay free.',
+      a: 'Yes. No card and no time limit. The Starter plan stays free forever — 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
     },
     {
       q: 'What is the Riverton demo?',
@@ -235,8 +207,8 @@ export class HomePage {
       a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
     },
     {
-      q: 'What happens when final pricing lands?',
-      a: 'Today’s tiers are samples. We’ll tell you before anything changes, and you’ll never be charged without saying yes.',
+      q: 'How does pricing work?',
+      a: 'Start free forever, then paid plans begin at $29/month. You’re metered on emailable subscribers, not total contacts — so you can store your whole list for free and only pay for who you email.',
     },
   ];
 

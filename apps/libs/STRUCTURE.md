@@ -3,25 +3,21 @@ This file is a merged representation of a subset of the codebase, containing spe
 # File Summary
 
 ## Purpose
-
 This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 
 ## File Format
-
 The content is organized as follows:
-
 1. This summary section
 2. Repository information
 3. Directory structure
 4. Repository files (if enabled)
 5. Multiple file entries, each consisting of:
-   a. A header with the file path (## File: path/to/file)
-   b. The full contents of the file in a code block
+  a. A header with the file path (## File: path/to/file)
+  b. The full contents of the file in a code block
 
 ## Usage Guidelines
-
 - This file should be treated as read-only. Any changes should be made to the
   original repository files, not this packed version.
 - When processing this file, use the file path to distinguish
@@ -30,22 +26,38 @@ The content is organized as follows:
   the same level of security as you would the original repository.
 
 ## Notes
-
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, libs/common/src/**/\*, libs/uxcommon/src/**/\*
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/**, **/STRUCTURE.md, \*\*/_.spec.ts
+- Only files matching these patterns are included: libs/**/*, apps/**/*, scriptis/**/*, libs/common/src/**/*, libs/uxcommon/src/**/*
+- Files matching these patterns are excluded: **/*.test.ts, **/*.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, **/*.picture, **/*.png, **/*.jpg, **/*.jpeg, **/*.svg, **/*.ico, apps/**, **/STRUCTURE.md, **/*.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
-
 ```
 libs/
   common/
     src/
       lib/
+        billing/
+          plans.ts
+        help/
+          articles/
+            administration.ts
+            contacts.ts
+            data-management.ts
+            engagement.ts
+            getting-started.ts
+            grids.ts
+            outreach.ts
+            productivity.ts
+            segmentation.ts
+          help-content.ts
+          help-links.ts
+          help-markdown.ts
+          help-search.ts
+          help-types.ts
         schemas/
           activity.schema.ts
           auth.schema.ts
@@ -204,9 +216,211 @@ libs/
 
 # Files
 
-## File: libs/common/src/lib/schemas/activity.schema.ts
+## File: libs/common/src/lib/billing/plans.ts
+````typescript
+/**
+ * Subscription plans — the single source of truth for tiers, prices and limits.
+ *
+ * Consumed by:
+ *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
+ *  - the CRM billing page (experiences/settings/billing)
+ *  - the marketing website pricing page + home teaser
+ *
+ * Pricing model (decision log, 2026-07):
+ *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
+ *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
+ *    can actually email. This is the differentiator vs. contact-metered tools.
+ *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
+ *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
+ *  - Companion volunteers carry an auth-SMS cost, so they are gated to paid tiers.
+ *  - All prices are USD.
+ *
+ * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
+ * price IDs. Display names are intentionally allowed to differ from keys, but here they are
+ * kept aligned (`grassroots`→"Grassroots", `representative`→"Representative", …) except the
+ * free key which presents as "Starter".
+ */
 
-```typescript
+export const GB = 1024 * 1024 * 1024;
+
+/** Every plan key that can appear in `tenants.subscription_plan`. */
+export type PlanKey = 'free' | 'grassroots' | 'representative' | 'movement' | 'enterprise';
+
+/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
+export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'representative', 'movement'] as const;
+export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
+
+export interface PlanDef {
+  readonly key: PlanKey;
+  /** Customer-facing name (may differ from key). */
+  readonly name: string;
+  /** Display price, e.g. '$29' or 'Custom'. */
+  readonly price: string;
+  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
+  readonly cadence: string;
+  readonly blurb: string;
+  /** Emailable-subscriber cap. null = unlimited / custom. */
+  readonly subscribers: number | null;
+  /** Monthly outbound email (newsletter + shared-inbox) send cap. null = unlimited / custom. */
+  readonly emails: number | null;
+  /** File-storage quota in bytes. null = unlimited / custom. */
+  readonly storageBytes: number | null;
+  /** Included staff seats. null = unlimited. */
+  readonly seats: number | null;
+  /** Included companion volunteers. 0 = none, null = unlimited. */
+  readonly volunteers: number | null;
+  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
+  readonly purchasable: boolean;
+  /** Highlighted as the recommended tier. */
+  readonly featured: boolean;
+  /** Marketing feature bullets shown on both pricing surfaces. */
+  readonly features: readonly string[];
+}
+
+export const PLANS: readonly PlanDef[] = [
+  {
+    key: 'free',
+    name: 'Starter',
+    price: '$0',
+    cadence: 'forever',
+    blurb: 'For getting your bearings and running a small list.',
+    subscribers: 1_000,
+    emails: 2_000,
+    storageBytes: 1 * GB,
+    seats: 2,
+    volunteers: 0,
+    purchasable: false,
+    featured: false,
+    features: [
+      'The Riverton demo workspace',
+      'Unlimited contacts & households',
+      '1,000 email subscribers',
+      '2,000 emails / month',
+      '2 staff seats',
+      '1 GB file storage',
+      'Shared inbox, people CRM & CSV import/export',
+      'Community support',
+    ],
+  },
+  {
+    key: 'grassroots',
+    name: 'Grassroots',
+    price: '$29',
+    cadence: 'per month',
+    blurb: 'For a local candidate or small campaign getting to work.',
+    subscribers: 5_000,
+    emails: 30_000,
+    storageBytes: 10 * GB,
+    seats: 5,
+    volunteers: 15,
+    purchasable: true,
+    featured: false,
+    features: [
+      'Everything in Starter, plus:',
+      '5,000 email subscribers',
+      '30,000 emails / month',
+      '5 staff seats · 15 volunteers',
+      '10 GB file storage',
+      'Companion apps — canvassing & deliveries',
+      'Newsletters, donations & yard signs',
+      'Email support',
+    ],
+  },
+  {
+    key: 'representative',
+    name: 'Representative',
+    price: '$99',
+    cadence: 'per month',
+    blurb: 'For an office or campaign running the whole playbook.',
+    subscribers: 25_000,
+    emails: 150_000,
+    storageBytes: 50 * GB,
+    seats: 15,
+    volunteers: 75,
+    purchasable: true,
+    featured: true,
+    features: [
+      'Everything in Grassroots, plus:',
+      '25,000 email subscribers',
+      '150,000 emails / month',
+      '15 staff seats · 75 volunteers',
+      '50 GB file storage',
+      'Turf cutting, field reports & routes',
+      'Automations, segments & A/B testing',
+      'Priority support',
+    ],
+  },
+  {
+    key: 'movement',
+    name: 'Movement',
+    price: '$249',
+    cadence: 'per month',
+    blurb: 'For a large campaign or advocacy operation at full tilt.',
+    subscribers: 100_000,
+    emails: 600_000,
+    storageBytes: 200 * GB,
+    seats: null,
+    volunteers: null,
+    purchasable: true,
+    featured: false,
+    features: [
+      'Everything in Representative, plus:',
+      '100,000 email subscribers',
+      '600,000 emails / month',
+      'Unlimited staff seats & volunteers',
+      '200 GB file storage',
+      'Optional dedicated sending IP',
+      'Priority support & onboarding',
+    ],
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    price: 'Custom',
+    cadence: 'contact us',
+    blurb: 'For federations, parties and multi-office operations.',
+    subscribers: null,
+    emails: null,
+    storageBytes: null,
+    seats: null,
+    volunteers: null,
+    purchasable: false,
+    featured: false,
+    features: [
+      'Everything in Movement, plus:',
+      'Unlimited subscribers & sends',
+      'Multiple linked workspaces',
+      'Single sign-on (SSO)',
+      'Data residency by region',
+      'Dedicated IP & custom integrations',
+      'SLA support & guided onboarding',
+    ],
+  },
+];
+
+export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
+  (acc, plan) => {
+    acc[plan.key] = plan;
+    return acc;
+  },
+  {} as Record<PlanKey, PlanDef>,
+);
+
+/** Resolve a (possibly mixed-case or unknown) stored plan value to its definition. */
+export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
+  if (!planName) return undefined;
+  const key = planName.toLowerCase();
+  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[key];
+}
+
+/** Customer-facing display name for a stored plan value (falls back to the raw value). */
+export function planDisplayName(planName: string | null | undefined): string {
+  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
+}
+````
+
+## File: libs/common/src/lib/schemas/activity.schema.ts
+````typescript
 import { z } from 'zod';
 
 /**
@@ -246,11 +460,10 @@ export const LogInteractionObj = z.object({
 });
 
 export type LogInteractionType = z.infer<typeof LogInteractionObj>;
-```
+````
 
 ## File: libs/common/src/lib/schemas/auth.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { emailSchema, nameSchema } from './core.schema';
 
@@ -304,11 +517,10 @@ export const Verify2FAObj = z.object({
   code: z.string().length(6),
   rememberMe: z.boolean().optional(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/campaigns.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { descriptionSchema, idSchema, nameSchema, notesSchema } from './core.schema';
 
@@ -420,11 +632,10 @@ export const CarryOverCampaignObj = z.object({
   copy_support: z.boolean().default(true),
   copy_subscriptions: z.boolean().default(false),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/companies.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 /**
@@ -448,11 +659,10 @@ export const CompanyInputObj = z.object({
   industry: z.string().trim().max(100).optional().nullable(),
   notes: z.string().trim().max(10000).optional().nullable(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/connections.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { idSchema, notesSchema } from './core.schema';
 
@@ -494,349 +704,10 @@ export const AddConnectionObj = z.object({
 });
 
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-```
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
-    campaignId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const exportEntitySchema = z.enum([
-  'persons',
-  'households',
-  'companies',
-  'tags',
-  'issues',
-  'tasks',
-  'lists',
-  'newsletters',
-  'teams',
-  'users',
-  'volunteer',
-  'forms',
-  'workflows',
-]);
-
-export const queueExportInput = z.object({
-  entity: exportEntitySchema,
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
- * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
- * so the resulting record is not re-downloadable. */
-export const logInstantExportInput = z.object({
-  entity: exportEntitySchema,
-  fileName: z.string(),
-  rowCount: z.number().int().nonnegative(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  downloadable: z.boolean(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-```
-
-## File: libs/common/src/lib/schemas/deliveries.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema, notesSchema } from './core.schema';
-
-// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
-// the spec's strings win, including the American spelling "canceled" for route status.
-export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
-export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
-export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
-export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
-
-// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
-// reason — it keeps the stop pending and moves it to the end of the route.
-export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
-
-export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
-
-/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
-export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
-  new: 'Requested',
-  approved: 'Approved',
-  declined: 'Declined',
-  delivered: 'Delivered',
-};
-export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
-export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
-export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
-export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
-
-// ---- Requests --------------------------------------------------------------
-export const AddDeliveryRequestObj = z.object({
-  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  household_id: idSchema,
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateDeliveryRequestObj = z.object({
-  notes: notesSchema,
-});
-
-// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
-// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
-export const SetDeliveryRequestStatusObj = z.object({
-  ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(DELIVERY_REQUEST_STATUSES),
-});
-
-// The yard-sign standing lookup for one household in one campaign context.
-export const GetSignStatusObj = z.object({
-  household_id: idSchema,
-  campaign_id: idSchema,
-});
-
-// ---- Planning --------------------------------------------------------------
-// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
-// return trip). Preview is pure — it writes nothing.
-export const PlanDeliveriesObj = z.object({
-  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
-  drivers: z.number().int().min(1).max(50).nullable().optional(),
-  service_minutes: z.number().min(0).max(60).nullable().optional(),
-  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
-  include_return_leg: z.boolean().nullable().optional(),
-});
-
-export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
-  routes: z
-    .array(
-      z.object({
-        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
-      }),
-    )
-    .min(1, 'Nothing to commit'),
-});
-
-// ---- Routes ----------------------------------------------------------------
-export const UpdateDeliveryRouteObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
-  scheduled_for: z.string().datetime().nullable().optional(),
-});
-
-export const AssignVolunteerObj = z.object({
-  route_id: idSchema,
-  person_id: idSchema.nullable(),
-});
-
-export const SetDeliveryRouteStatusObj = z.object({
-  route_id: idSchema,
-  status: z.enum(['in_progress', 'completed', 'canceled']),
-});
-
-export const ReorderStopObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  direction: z.enum(['up', 'down']),
-});
-
-// Staff act on a stop from the route detail page. Same transitions as the public path.
-export const StopActionObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  action: z.enum(['deliver', 'skip', 'remove']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export const RouteIdObj = z.object({ route_id: idSchema });
-
-export const MintShareLinkObj = z.object({
-  route_id: idSchema,
-  regenerate: z.boolean().optional(),
-});
-
-// ---- Public volunteer path (token is the only credential) ------------------
-// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
-export const PublicStopActionObj = z.object({
-  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
-export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
-export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
-export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
-export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
-export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
-export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
-export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
-export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
-export type ReorderStopType = z.infer<typeof ReorderStopObj>;
-export type StopActionType = z.infer<typeof StopActionObj>;
-export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
-export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
-```
+````
 
 ## File: libs/common/src/lib/schemas/donations.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { idSchema } from './core.schema';
 
@@ -864,11 +735,10 @@ export const RecordDonationObj = z.object({
   campaign_id: idSchema.optional(),
 });
 export type RecordDonationType = z.infer<typeof RecordDonationObj>;
-```
+````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { isRegularFolderId, isSpecialFolderId } from '../emails';
 
@@ -930,11 +800,10 @@ export const EmailObj = z.object({
   sender_first_name: z.string().nullish(),
   sender_last_name: z.string().nullish(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/events.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
 
@@ -1070,11 +939,10 @@ export const UpdateRegistrationObj = z.object({
   checked_in_at: z.coerce.date().nullable().optional(),
   notes: notesSchema,
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/lists.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
 
@@ -1153,72 +1021,10 @@ export const ImportListItemObj = z.object({
   canDownloadSource: z.boolean(),
   canDownloadSkipped: z.boolean(),
 });
-```
-
-## File: libs/common/src/lib/schemas/persons.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-/**
- * Do-not-contact channels (Campaigns §15). The flag lives on the person — it is a
- * global compliance override, never a per-campaign preference. A null/absent
- * channel list means "no contact on any channel".
- */
-export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
-export type DncChannel = (typeof DNC_CHANNELS)[number];
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-  preferred_contact: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
-  do_not_contact: z.boolean().optional(),
-  do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
-});
-```
+````
 
 ## File: libs/common/src/lib/schemas/settings.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 export const SettingsObj = z.object({
@@ -1239,11 +1045,10 @@ export const SettingsEntryObj = z.object({
 export const UpsertSettingsInputObj = z.object({
   entries: z.array(SettingsEntryObj).min(1),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/tags.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { nameSchema, descriptionSchema } from './core.schema';
 
@@ -1270,11 +1075,10 @@ export const UpdateTagObj = z.object({
     .optional(),
   type: z.enum(['tag', 'issue']).optional(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/tasks.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { nameSchema, notesSchema, idSchema } from './core.schema';
 
@@ -1357,11 +1161,10 @@ export const UpdateTaskObj = z.object({
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/teams.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { nameSchema, descriptionSchema, idSchema } from './core.schema';
 
@@ -1382,11 +1185,10 @@ export const UpdateTeamObj = z.object({
   volunteer_ids: z.array(idSchema).optional(),
   list_ids: z.array(idSchema).optional(),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/volunteer.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
 
@@ -1498,11 +1300,10 @@ export const UpdateVolunteerShiftObj = z.object({
   hours_worked: z.number().min(0).max(24).nullable().optional(),
   notes: notesSchema,
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/web-forms.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { idSchema, nameSchema, descriptionSchema } from './core.schema';
 
@@ -1777,11 +1578,10 @@ export const FormSubmissionObj = z.object({
   answers: z.record(z.string(), z.unknown()),
   created_at: z.union([z.date(), z.string()]),
 });
-```
+````
 
 ## File: libs/common/src/lib/schemas/workflows.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { queryBuilderNodeSchema } from './core.schema';
 
@@ -1923,11 +1723,191 @@ export const WorkflowRunObj = z.object({
 });
 
 export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
-```
+````
+
+## File: libs/common/src/lib/emails.ts
+````typescript
+// ---------- Public compatibility interface (loose) ----------
+// ---------- Strict types for compile-time guarantees ----------
+interface EmailFolderBase {
+  icon: string;
+  id: string;
+  is_default: boolean;
+  name: string;
+  sort_order: number;
+  is_hidden?: boolean;
+}
+
+export interface EmailFolderConfig {
+  code?: string; // optional/loose for compatibility
+  icon: string;
+  id: string;
+  is_default: boolean;
+  is_virtual: boolean;
+  name: string;
+  sort_order: number;
+  is_hidden?: boolean;
+}
+
+export interface RealEmailFolder extends EmailFolderBase {
+  code?: never; // forbidden on real folders
+  is_virtual: false;
+}
+
+export interface VirtualEmailFolder extends EmailFolderBase {
+  code: string; // required when virtual
+  is_virtual: true;
+}
+
+// ---------- Derived types ----------
+type Folder = (typeof EMAIL_FOLDERS)[number];
+
+type OnlyReal = Extract<Folder, { is_virtual: false }>;
+
+type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
+
+// All folders (merged, exact keys/ids)
+export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
+
+export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
+
+export type EmailStatus = 'open' | 'closed';
+
+export type HasRow = {
+  email_id: string;
+  has: boolean;
+};
+
+export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
+
+export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
+
+export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
+
+export type ServerEmail = {
+  assigned_to?: string | null;
+  attachment_count?: number | string | bigint | null;
+  folder_id: string | number;
+  from_email?: string | null;
+  is_read?: boolean;
+
+  // any of these might be present depending on endpoint:
+  has_attachment?: boolean | null;
+  id: string | number;
+  is_favourite: boolean;
+  preview?: string | null;
+  status?: string;
+  subject?: string | null;
+  to_email?: string | null;
+  updated_at: string | Date;
+  date_sent?: string | Date | null;
+  sender_first_name?: string | null;
+  sender_last_name?: string | null;
+};
+
+export type SpecialFolderId = OnlyVirtual['id'];
+
+export type SpecialFolderKey = OnlyVirtual['code'];
+
+export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
+
+function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type RegularFolder = Extract<F[number], { is_virtual: false }>;
+  type FolderKey = Uppercase<RegularFolder['name'] & string>;
+  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
+
+  const entries = folders
+    .filter((f): f is RegularFolder => !f.is_virtual)
+    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
+
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
+}
+
+function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
+  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
+  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
+  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
+
+  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
+
+  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
+}
+
+export const isRegularFolderId = (id: string): id is RegularFolderId =>
+  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
+
+// Optional runtime type guards
+export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
+  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
+
+// ---------- Configuration (validated against STRICT type) ----------
+export const EMAIL_FOLDERS = [
+  // Virtual
+  { id: '9', name: 'Starred', icon: 'star', sort_order: 1, is_default: false, is_virtual: true, code: 'FAVOURITES' },
+  {
+    id: '8',
+    name: 'Unassigned',
+    icon: 'inbox',
+    sort_order: 2,
+    is_default: false,
+    is_virtual: true,
+    code: 'UNASSIGNED',
+  },
+  {
+    id: '6',
+    name: 'Mine',
+    icon: 'user-circle',
+    sort_order: 3,
+    is_default: true,
+    is_virtual: true,
+    code: 'ASSIGNED_TO_ME',
+  },
+  {
+    id: '1',
+    name: 'Open',
+    icon: 'document-duplicate',
+    sort_order: 4,
+    is_default: false,
+    is_virtual: true,
+    code: 'ALL_OPEN',
+  },
+  {
+    id: '2',
+    name: 'Closed',
+    icon: 'document-check',
+    sort_order: 5,
+    is_default: false,
+    is_virtual: true,
+    code: 'CLOSED',
+  },
+
+  // Real
+  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
+  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
+  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
+  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
+  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
+  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
+] as const satisfies StrictEmailFolderConfig[];
+
+// Real-only (exact keys/ids)
+export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
+
+// ---------- Exposed constants ----------
+
+// Virtual-only (exact keys/ids)
+export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
+export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
+
+// Useful helpers
+export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
+export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
+  Record<Folder['id'], Folder>
+>;
+````
 
 ## File: libs/common/src/lib/jsend.ts
-
-```typescript
+````typescript
 export interface JSendErrorInterface {
   code?: string | number;
   message: string;
@@ -2031,11 +2011,10 @@ export const jsend = {
     throw new Error('Unknown JSend shape');
   },
 };
-```
+````
 
 ## File: libs/common/src/lib/public-id.ts
-
-```typescript
+````typescript
 import { slugifyRecordName } from './utils';
 
 /**
@@ -2139,11 +2118,10 @@ export function buildPersonSlug(
   const id = publicId.toLowerCase();
   return `${name}-${id.slice(0, 4)}-${id.slice(4, PUBLIC_ID_LENGTH)}`;
 }
-```
+````
 
 ## File: libs/common/src/lib/sla.ts
-
-```typescript
+````typescript
 export function calculateWorkingTimeMs(
   startDate: Date,
   endDate: Date,
@@ -2198,11 +2176,10 @@ export function calculateWorkingTimeMs(
 
   return totalMs;
 }
-```
+````
 
 ## File: libs/common/src/lib/utils.ts
-
-```typescript
+````typescript
 export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
   let timeout: ReturnType<typeof setTimeout> | null = null;
   return (...args: Parameters<F>) => {
@@ -2326,11 +2303,10 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-```
+````
 
 ## File: libs/common/eslint.config.cjs
-
-```javascript
+````javascript
 /* ---------------------------------------------------------------
  *  libs/common/eslint.config.cjs
  *  Universal shared library rules (used by frontend + backend)
@@ -2386,11 +2362,10 @@ module.exports = [
       },
     })),
 ];
-```
+````
 
 ## File: libs/common/project.json
-
-```json
+````json
 {
   "name": "common",
   "$schema": "../node_modules/nx/schemas/project-schema.json",
@@ -2416,11 +2391,10 @@ module.exports = [
   },
   "tags": []
 }
-```
+````
 
 ## File: libs/common/tsconfig.json
-
-```json
+````json
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
@@ -2440,11 +2414,10 @@ module.exports = [
     }
   ]
 }
-```
+````
 
 ## File: libs/common/tsconfig.lib.json
-
-```json
+````json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -2455,11 +2428,10 @@ module.exports = [
   "include": ["src/**/*.ts"],
   "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"]
 }
-```
+````
 
 ## File: libs/common/vite.config.ts
-
-```typescript
+````typescript
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
 
@@ -2494,11 +2466,10 @@ export default defineConfig(() => ({
     },
   },
 }));
-```
+````
 
 ## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
-
-```typescript
+````typescript
 import type { AddressType } from '../../../../common/src/lib/kysely.models';
 
 type AddressTypeMapInterface = {
@@ -2578,11 +2549,10 @@ const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
   ],
   country: ['country'],
 };
-```
+````
 
 ## File: libs/uxcommon/src/components/address-form-group/address-form-group.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { Input as PcInput } from '../input/input';
 
@@ -2612,11 +2582,10 @@ import { Input as PcInput } from '../input/input';
 export class AddressFormGroup {
   public form = input.required<any>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-
-```typescript
+````typescript
 import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
 import { debounce } from '../../../../common/src';
 
@@ -2717,11 +2686,10 @@ export class AutoComplete {
 type TFILTER = {
   filter: (arg0: string) => Promise<string[]>;
 };
-```
+````
 
 ## File: libs/uxcommon/src/components/card/card.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -2766,11 +2734,10 @@ export class Card {
   public subtitle = input<string>();
   public icon = input<PcIconNameType>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
-
-```typescript
+````typescript
 // CSV/TSV parsing web worker (shared)
 // Receives: { type: 'parse', text: string }
 // Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
@@ -2844,11 +2811,10 @@ ctx.onmessage = (e: MessageEvent) => {
     ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
   }
 };
-```
+````
 
 ## File: libs/uxcommon/src/components/detail-row/detail-row.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -2897,11 +2863,10 @@ export class DetailRow {
     this.actionClick.emit(event);
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/entity-overview/entity-overview.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 
@@ -2946,11 +2911,50 @@ export class EntityOverview {
   public updatedAt = input<any>();
   public createdBy = input<string | null | undefined>();
 }
-```
+````
+
+## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
+````html
+<div class="space-y-0.5">
+  <!-- Email is always required and locked -->
+  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
+    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
+      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
+      <span class="text-sm font-bold text-primary">Email Address</span>
+    </label>
+    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
+  </div>
+
+  @for (field of allFields; track field.key) {
+  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        [checked]="isEnabled(field.key)"
+        (change)="toggleField(field.key)"
+        class="checkbox checkbox-sm checkbox-primary"
+      />
+      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
+    </label>
+    @if (isEnabled(field.key)) {
+    <button
+      type="button"
+      (click)="toggleRequired(field.key)"
+      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
+      [class.btn-primary]="isRequired(field.key)"
+      [class.btn-outline]="!isRequired(field.key)"
+      [class.btn-accent]="!isRequired(field.key)"
+    >
+      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
+    </button>
+    }
+  </div>
+  }
+</div>
+````
 
 ## File: libs/uxcommon/src/components/fields-selector/fields-selector.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 
 const ALL_FIELDS: { key: string; label: string }[] = [
@@ -3003,11 +3007,69 @@ export class FieldsSelector {
     }
   }
 }
-```
+````
+
+## File: libs/uxcommon/src/components/form-actions/form-actions.html
+````html
+<div class="flex gap-2 justify-center">
+  <button
+    type="button"
+    class="btn btn-primary gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn1Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else {
+    <pc-icon [name]="btn1Icon()" [size]="4" />
+    } {{ btn1Text() }}
+  </button>
+
+  @if (showDelete()) {
+  <button
+    type="button"
+    class="btn btn-error btn-outline gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleDeleteClicked()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="trash" [size]="4" />
+    {{ deleteText() }}
+  </button>
+  } @if (buttonsToShow() === 'three' && !showDelete()) {
+  <button
+    type="button"
+    class="btn btn-primary"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="handleBtn2Clicked()"
+    [disabled]="isSaveDisabled"
+  >
+    @if (isLoading()) {
+    <span class="loading loading-spinner loading-xs text-primary-content"></span>
+    } @else { {{ btn2Text() }} }
+  </button>
+  } @if (showCancel()) {
+  <button
+    type="button"
+    class="btn btn-outline btn-accent gap-2"
+    [class.btn-xs]="size() === 'xs'"
+    [class.btn-sm]="size() === 'sm'"
+    (click)="cancel()"
+    [disabled]="isLoading()"
+  >
+    <pc-icon name="x-mark" [size]="4" />
+    Cancel
+  </button>
+  }
+</div>
+````
 
 ## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
-
-```typescript
+````typescript
 import { Component, computed, input } from '@angular/core';
 import { StatusBadge } from '../status-badge/status-badge';
 import type { PcStatusType } from '../status-badge/status-badge';
@@ -3052,11 +3114,10 @@ export class GeocodeChip {
 
   protected readonly spec = computed(() => geocodeChipSpec(this.status()));
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/icons/attachment-icon.ts
-
-```typescript
+````typescript
 // attachment-icon.component.ts
 import { Component, computed, input } from '@angular/core';
 import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/pipes/file-icon.util';
@@ -3080,11 +3141,10 @@ export class AttachmentIconComponent {
   public size = input<number>(6);
   public title = input<string | undefined>(undefined);
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/icons/icon.ts
-
-```typescript
+````typescript
 import { Component, WritableSignal, effect, input, signal } from '@angular/core';
 import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
 
@@ -3171,11 +3231,10 @@ export class Icon {
     }
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/input/input.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 
@@ -3223,11 +3282,10 @@ export class Input {
   public hasError = input<boolean>(false);
   public blurred = output<void>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/map/map-types.ts
-
-```typescript
+````typescript
 /**
  * Shared value types for the single Google Maps primitive, `<pc-map>`.
  *
@@ -3268,11 +3326,10 @@ export interface PcMapPolygon<T = unknown> {
   id?: string;
   payload?: T;
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/map/map.ts
-
-```typescript
+````typescript
 import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
 import { Icon } from '../icons/icon';
@@ -3544,11 +3601,10 @@ export class PcMap {
     return parts.join(' · ');
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/not-found/not-found.ts
-
-```typescript
+````typescript
 import { Component } from '@angular/core';
 
 @Component({
@@ -3569,11 +3625,10 @@ import { Component } from '@angular/core';
   </section>`,
 })
 export class NotFound {}
-```
+````
 
 ## File: libs/uxcommon/src/components/profile-card/profile-card.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -3614,11 +3669,32 @@ export class ProfileCard {
   public avatarText = input<string | null | undefined>();
   public iconName = input<PcIconNameType | null | undefined>();
 }
-```
+````
+
+## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
+````html
+<pc-card [title]="label()" [subtitle]="subtitle()">
+  <div class="space-y-3">
+    <div class="flex gap-2">
+      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
+      <a
+        [href]="url()"
+        target="_blank"
+        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+        title="Open public page"
+      >
+        <pc-icon name="arrow-top-right-on-square"></pc-icon>
+      </a>
+      <button type="button" class="btn btn-sm btn-outline btn-secondary px-3" (click)="copyUrl()" title="Copy link">
+        <pc-icon name="document-duplicate"></pc-icon>
+      </button>
+    </div>
+  </div>
+</pc-card>
+````
 
 ## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.ts
-
-```typescript
+````typescript
 import { Component, inject, input } from '@angular/core';
 import { AlertService } from '../alerts/alert-service';
 import { Card as PcCard } from '../card/card';
@@ -3645,11 +3721,10 @@ export class PublicLinkPanel {
       .catch((_e) => this.alertSvc.showError('Could not copy link to clipboard'));
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/select/select.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 
@@ -3688,11 +3763,10 @@ export class Select {
   public placeholder = input<string>('');
   public formField = input.required<any>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/side-drawer/side-drawer.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 
@@ -3746,11 +3820,10 @@ export class SideDrawer {
     return 'sm:w-[420px]';
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 
@@ -3792,11 +3865,96 @@ export class SystemMetadata {
   public layout = input<'row' | 'col'>('row');
   public dateFormat = input<string>('M/d/yyyy');
 }
-```
+````
+
+## File: libs/uxcommon/src/components/table/table.ts
+````typescript
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+
+/**
+ * `pc-table` — the lightweight presentational table shell.
+ *
+ * The counterpart to the house `pc-datagrid`: where the datagrid owns data
+ * fetching, sorting, filtering, selection and inline editing, `pc-table` owns
+ * only the *chrome* — the bordered shell, the micro-caps header row, cell
+ * density and the shared skeleton-loading idiom. It exists so bespoke tables
+ * (Tags, Issues, Donations) stay visually identical to the datagrid without
+ * inheriting its machinery. See the `pplcrm-table` skill.
+ *
+ * All visual styling comes from the shared, global `.pc-table-shell` / `.pc-table`
+ * contract in `apps/frontend/src/styles.css` — the single source of truth both
+ * this component and the datagrid consume. This component ships no styles of its
+ * own (emulated encapsulation could not reach the projected rows anyway).
+ *
+ * Consumers keep full control of every cell and of the empty state (which is
+ * per-entity by design — see design principles §3), projecting:
+ *   - `[pcTableHead]` — the `<th>` cells for the header row
+ *   - the default slot — the body rows *and* the page's own empty-state row,
+ *     rendered only when not loading
+ *   - `[pcTableFooter]` — optional caption/pagination hint rendered inside the
+ *     shell, below the table (e.g. "Showing the latest 25 of 312")
+ *
+ * ```html
+ * <pc-table [loading]="loading()" [columns]="5">
+ *   <ng-container pcTableHead>
+ *     <th>Tag</th><th>People</th><th>Last applied</th><th class="w-10"></th>
+ *   </ng-container>
+ *
+ *   @if (rows().length === 0) {
+ *     <tr><td colspan="5">…guided empty state…</td></tr>
+ *   } @else {
+ *     @for (row of rows(); track row.id) {
+ *       <tr [class.animate-saved-flash]="highlightId() === row.id">…</tr>
+ *     }
+ *   }
+ * </pc-table>
+ * ```
+ */
+@Component({
+  selector: 'pc-table',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="pc-table-shell">
+      <table class="table pc-table w-full">
+        <thead>
+          <tr>
+            <ng-content select="[pcTableHead]"></ng-content>
+          </tr>
+        </thead>
+        <tbody>
+          @if (loading()) {
+            @for (row of skeletonList(); track row) {
+              <tr>
+                <td [attr.colspan]="columns()">
+                  <div class="skeleton h-6 w-full"></div>
+                </td>
+              </tr>
+            }
+          } @else {
+            <ng-content></ng-content>
+          }
+        </tbody>
+      </table>
+      <ng-content select="[pcTableFooter]"></ng-content>
+    </div>
+  `,
+})
+export class Table {
+  /** Number of columns — drives the skeleton row's colspan so it spans the table. */
+  public readonly columns = input.required<number>();
+
+  /** When true, render placeholder skeleton rows instead of the projected body. */
+  public readonly loading = input<boolean>(false);
+
+  /** How many skeleton rows to show while loading. */
+  public readonly skeletonRows = input<number>(5);
+
+  protected readonly skeletonList = computed<number[]>(() => Array.from({ length: this.skeletonRows() }, (_, i) => i));
+}
+````
 
 ## File: libs/uxcommon/src/components/tags/tagitem.css
-
-```css
+````css
 :host {
   display: inline-block;
   max-width: 100%;
@@ -3852,11 +4010,10 @@ export class SystemMetadata {
   margin-top: 0 !important;
   align-self: center !important;
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/tags/tagitem.ts
-
-```typescript
+````typescript
 import { Component, Signal, computed, input, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 
@@ -3941,11 +4098,10 @@ export class TagItem {
     return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/textarea/textarea.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 
@@ -3985,11 +4141,10 @@ export class Textarea {
   public formField = input.required<any>();
   public hasError = input<boolean>(false);
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/toggle/toggle.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { FormField } from '@angular/forms/signals';
 
@@ -4022,11 +4177,10 @@ export class Toggle {
   public label = input<string>();
   public formField = input.required<any>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/confirm-dialog.service.ts
-
-```typescript
+````typescript
 import { signal, computed, Service } from '@angular/core';
 import type { PcIconNameType } from '@icons/icons.index';
 
@@ -4201,11 +4355,10 @@ export class ConfirmDialogService {
 export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
 
 export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
-```
+````
 
 ## File: libs/uxcommon/src/directives/animate-if.directive.ts
-
-```typescript
+````typescript
 import {
   Directive,
   DestroyRef,
@@ -4301,11 +4454,10 @@ export class AnimateIfDirective {
     else if (this.view) this.animatedExit();
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/mentions/mention-controller.ts
-
-```typescript
+````typescript
 import { computed, signal } from '@angular/core';
 import type { IAuthUser } from '../../../common/src/lib/auth';
 
@@ -4421,11 +4573,10 @@ export class MentionController {
 export function userDisplay(u: IAuthUser): string {
   return u.first_name || u.email.split('@')[0]!;
 }
-```
+````
 
 ## File: libs/uxcommon/src/pipes/file-icon.pipe.ts
-
-```typescript
+````typescript
 // file-icon.pipe.ts
 import { Pipe, PipeTransform } from '@angular/core';
 
@@ -4440,11 +4591,10 @@ export class FileIconPipe implements PipeTransform {
     return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/pipes/file-icon.util.ts
-
-```typescript
+````typescript
 import type { PcIconNameType } from '@icons/icons.index';
 
 // file-icon.util.ts
@@ -4575,11 +4725,10 @@ export const ICON_FOR_KEY: Record<FileIconKey, PcIconNameType> = {
   exe: 'file-exe',
   unknown: 'unknown',
 };
-```
+````
 
 ## File: libs/uxcommon/src/pipes/filesize.pipe.ts
-
-```typescript
+````typescript
 import { Pipe, PipeTransform } from '@angular/core';
 
 @Pipe({
@@ -4598,11 +4747,10 @@ export class FileSizePipe implements PipeTransform {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/pipes/mention.pipe.ts
-
-```typescript
+````typescript
 import { Pipe, PipeTransform } from '@angular/core';
 
 import type { IAuthUser } from '../../../common/src/lib/auth';
@@ -4663,11 +4811,10 @@ export class MentionifyPipe implements PipeTransform {
       .replace(/'/g, '&#39;');
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/pipes/sanitize-html.pipe.ts
-
-```typescript
+````typescript
 // sanitize-html.pipe.ts
 import { Pipe, PipeTransform, inject } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -4743,11 +4890,10 @@ export class SanitizeHtmlPipe implements PipeTransform {
     return this.sanitizer.bypassSecurityTrustHtml(clean);
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/pipes/svg-html-pipe.ts
-
-```typescript
+````typescript
 import { Pipe, PipeTransform, inject } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 
@@ -4759,11 +4905,10 @@ export class BypassHtmlSanitizerPipe implements PipeTransform {
     return this.sanitizer.bypassSecurityTrustHtml(html);
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/loading-gate.ts
-
-```typescript
+````typescript
 // _loading-gate.ts
 import { type Signal, signal } from '@angular/core';
 
@@ -4857,11 +5002,10 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   return { begin, visible, loaded };
 }
-```
+````
 
 ## File: libs/uxcommon/src/test-setup.ts
-
-```typescript
+````typescript
 import '@angular/compiler';
 import '@analogjs/vitest-angular/setup-zone';
 
@@ -4876,11 +5020,10 @@ getTestBed().initTestEnvironment(BrowserTestingModule, platformBrowserTesting())
   ok: true,
   text: () => Promise.resolve('<svg></svg>'),
 });
-```
+````
 
 ## File: libs/uxcommon/eslint.config.cjs
-
-```javascript
+````javascript
 const { FlatCompat } = require('@eslint/eslintrc');
 const path = require('path');
 
@@ -4918,11 +5061,10 @@ module.exports = [
       rules: {},
     })),
 ];
-```
+````
 
 ## File: libs/uxcommon/project.json
-
-```json
+````json
 {
   "name": "uxcommon",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
@@ -4945,11 +5087,10 @@ module.exports = [
     }
   }
 }
-```
+````
 
 ## File: libs/uxcommon/README.md
-
-```markdown
+````markdown
 # uxcommon
 
 This library was generated with [Nx](https://nx.dev).
@@ -4957,11 +5098,10 @@ This library was generated with [Nx](https://nx.dev).
 ## Running unit tests
 
 Run `nx test uxcommon` to execute the unit tests.
-```
+````
 
 ## File: libs/uxcommon/tsconfig.json
-
-```json
+````json
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
@@ -4989,11 +5129,10 @@ Run `nx test uxcommon` to execute the unit tests.
     }
   ]
 }
-```
+````
 
 ## File: libs/uxcommon/tsconfig.lib.json
-
-```json
+````json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -5021,11 +5160,10 @@ Run `nx test uxcommon` to execute the unit tests.
   ],
   "include": ["src/**/*.ts"]
 }
-```
+````
 
 ## File: libs/uxcommon/tsconfig.spec.json
-
-```json
+````json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -5049,11 +5187,10 @@ Run `nx test uxcommon` to execute the unit tests.
   ],
   "files": ["src/test-setup.ts"]
 }
-```
+````
 
 ## File: libs/uxcommon/vite.config.mts
-
-```typescript
+````typescript
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
 import angular from '@analogjs/vite-plugin-angular';
@@ -5090,11 +5227,2624 @@ export default defineConfig(() => ({
     },
   },
 }));
-```
+````
+
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/contacts.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const CONTACTS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
+      },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Household**: everyone at the same address.',
+          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
+          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer**: their shift history and hours.',
+          '**Events**: event registrations and attendance.',
+          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: [
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
+    ],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
+          },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
+      },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found; open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/data-management.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const DATA_ARTICLES: HelpArticle[] = [
+  {
+    id: 'import',
+    category: 'data',
+    title: 'Import from CSV',
+    summary:
+      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps. Matched, tagged, and deduplicated.',
+    keywords: [
+      'import',
+      'csv',
+      'spreadsheet',
+      'upload data',
+      'migrate',
+      'bulk add',
+      'excel',
+      'wizard',
+      'companies',
+      'households',
+      'tasks',
+    ],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+    blocks: [
+      {
+        kind: 'p',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars. Either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
+      },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'list',
+        items: [
+          'Use a CSV with a header row. Column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
+          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
+          'For companies and tasks the wizard needs a mapped **name** column. Rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
+        ],
+      },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
+          },
+          {
+            title: 'Map columns',
+            detail:
+              'Each column gets a best-guess field match. Review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
+          },
+          {
+            title: 'Review',
+            detail:
+              'For people, duplicates are matched by email, the same identity rule used everywhere in pplCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works. It lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid (or just your selection) as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it, filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready. The export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export. The CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping. They split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
+          },
+          {
+            title: 'Merge into one, or Not duplicates',
+            detail:
+              'Merging fills blanks on the record you keep from the one you remove (it never overwrites a value that is already there), and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good. The confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar. Same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/getting-started.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
+          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
+      },
+    ],
+  },
+  {
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
+      },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
+      {
+        kind: 'list',
+        items: [
+          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state: overdue, due this week, waiting, and done.',
+          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
+      },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
+          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading (useful for areas you rarely use).',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
+          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track**: no open items have exceeded their target.',
+          '**Warning**: the number of breached items has reached the warning threshold.',
+          '**Critical**: breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/grids.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const GRIDS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'grid-basics',
+    category: 'grids',
+    title: 'Working in grids',
+    summary: 'Every list in pplCRM is the same powerful grid. Learn it once and you know it everywhere.',
+    keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
+    related: ['filters', 'bulk-actions', 'import', 'export'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'People, companies, tasks, donations. Every collection in pplCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
+      },
+      { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
+      {
+        kind: 'list',
+        items: [
+          '**Refresh**: reload the grid without touching your filters.',
+          '**Undo / Redo**: step your inline edits backward and forward.',
+          '**Import CSV / Export CSV**: see [Import from CSV](/help/import) and [Export your data](/help/export).',
+          '**Tag, issue, and list filters**: narrow to matching rows; see [Filters and the query builder](/help/filters).',
+          '**Advanced filters and the query builder**: per-column conditions or full and/or logic.',
+          '**Columns**: choose which columns are visible.',
+          '**Archive** (where offered): flip between active and archived records.',
+          '**New {record}** ("New person", "New household", …): the solid button at the far right creates a record of this type.',
+        ],
+      },
+      { kind: 'h2', id: 'open-detail', text: 'Opening records' },
+      {
+        kind: 'p',
+        text: 'The first column is always a link. Click the name to open the full record. The grid remembers your filters, page, and scroll position, so the breadcrumb back returns you exactly where you left off, and the record page gains previous/next arrows for the same filtered set.',
+      },
+      { kind: 'h2', id: 'inline-edit', text: 'Edit without leaving the grid' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Double-click an editable cell', detail: 'Or move to it with the arrow keys and press `Enter`.' },
+          {
+            title: 'Change the value and confirm',
+            detail: 'The cell saves immediately and flashes green so you know it landed.',
+          },
+          {
+            title: 'Change your mind?',
+            detail: 'The toolbar’s undo arrow reverses your last inline edit; redo brings it back.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cell not editable?',
+        text: 'Some columns are read-only on purpose: computed values, or fields that need the full form. Open the record to change those.',
+      },
+      { kind: 'h2', id: 'columns', text: 'Make the grid yours' },
+      {
+        kind: 'list',
+        items: [
+          'Hide columns you never use from the **Columns** menu: fewer columns, faster scanning.',
+          'Drag a column edge to resize it.',
+          'An empty grid always tells you why it is empty and what to do next. For example, “No results match these filters” with a one-click **Clear all filters**.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'filters',
+    category: 'grids',
+    title: 'Filters and the query builder',
+    summary:
+      'From one-click tag filters to full and/or queries, and how active filters always stay visible as removable chips.',
+    keywords: ['filter', 'query builder', 'advanced filter', 'chips', 'conditions', 'segment', 'and or', 'narrow'],
+    related: ['grid-basics', 'lists', 'tags-issues', 'search'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Filters narrow a grid to the rows you care about, and pplCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
+      },
+      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: the dashed pills' },
+      {
+        kind: 'list',
+        items: [
+          '**+ Add filter**: pick a field, an operator, and a value; the condition lands as one removable chip.',
+          '**Tags**: check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
+          '**Issues**: same mechanics as tags, for issue interests.',
+          '**Lists**: show only the members of one [list](/help/lists).',
+        ],
+      },
+      { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
+      {
+        kind: 'p',
+        text: '**Advanced Filters** opens a filter row under the column headers: type a condition per column (a name fragment here, a city there), and the grid narrows to rows matching all of them.',
+      },
+      { kind: 'h2', id: 'builder', text: 'The query builder' },
+      {
+        kind: 'p',
+        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups: “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why is one of the filter buttons disabled?',
+        text: 'Per-column filters and the query builder are mutually exclusive. Mixing both would make the result impossible to reason about. Clear one to use the other.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filters follow you into records',
+        text: 'Open a record from a filtered grid and the pager reads “N of M filtered”. `J`/`K` walk exactly the set you filtered, in order.',
+      },
+    ],
+  },
+  {
+    id: 'bulk-actions',
+    category: 'grids',
+    title: 'Selection, bulk actions, and merging',
+    summary:
+      'Select rows to reveal the bulk action bar: tag, export, delete, clone, or merge many records in one motion.',
+    keywords: ['bulk', 'selection', 'select all', 'mass update', 'batch', 'clone', 'merge', 'delete many', 'bulk tag'],
+    related: ['grid-basics', 'duplicates', 'export', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tick the checkbox on one or more rows and a bulk action bar appears, always stating how many rows it will affect. No action is ever a mystery about scale.',
+      },
+      { kind: 'h2', id: 'select-all', text: 'Selecting beyond one page' },
+      {
+        kind: 'p',
+        text: 'The header checkbox selects the visible page. If more rows match your filters, the grid offers **Select all N rows**. One click extends the selection to every match, and the bar confirms “All N rows are selected.”',
+      },
+      { kind: 'h2', id: 'actions', text: 'What you can do with a selection' },
+      {
+        kind: 'list',
+        items: [
+          '**Add tag**: type a tag name and apply it to every selected row at once.',
+          '**Export**: download the selected rows as CSV.',
+          '**Delete**: remove the selected rows, after a confirmation that states the count.',
+          '**Clone**: available with exactly one row selected; duplicates it as a starting point.',
+          '**Merge**: available with exactly two rows selected; combines them into one record.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Bulk delete is permanent',
+        text: 'The confirmation dialog tells you exactly how many records are about to go. Read the number. There is no undo for delete.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Merging more than a pair?',
+        text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database, better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/outreach.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/productivity.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks: list and board',
+    summary:
+      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+      },
+      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
+      },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/segmentation.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const SEGMENTATION_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tags-issues',
+    category: 'segmentation',
+    title: 'Tags and issues',
+    summary:
+      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
+    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
+    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tags are free-form labels (**community-leader**, **major-donor**, **lawn-sign**) that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags. They are first-class status fields on the person; set them from the person’s standing card.)',
+      },
+      { kind: 'h2', id: 'apply', text: 'Apply tags' },
+      {
+        kind: 'list',
+        items: [
+          'On a profile: add or remove tags directly on the record.',
+          'In bulk: select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
+          'On import: tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
+        ],
+      },
+      { kind: 'h2', id: 'use', text: 'Put them to work' },
+      {
+        kind: 'p',
+        text: 'Every grid has a tag filter and an issue filter. Check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
+      },
+      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
+      {
+        kind: 'p',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary: how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Rename** updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
+          '**Merge into another tag/issue** ("Move everyone to…") folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
+          '**Delete**: the confirmation names how many applications would be affected, so you never delete a label blind.',
+          'The PEOPLE / PEOPLE INTERESTED count on each row is a door. Click it to open the People grid pre-filtered to that exact tag or issue.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about, not to describe who someone is, which is what tags are for.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'A tag taxonomy that stays useful',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people. Merge the stragglers into one instead of deleting and re-tagging.',
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    category: 'segmentation',
+    title: 'Smart and static lists',
+    summary:
+      'Lists are reusable audiences: smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+    keywords: [
+      'list',
+      'audience',
+      'segment',
+      'static list',
+      'smart list',
+      'dynamic list',
+      'snapshot',
+      'membership',
+      'rule',
+      'query',
+    ],
+    related: ['tags-issues', 'filters', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A list is a saved group of people or households you can reuse anywhere: as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+      },
+      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
+      {
+        kind: 'p',
+        text: 'A smart list is defined by rules in the query builder: “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+      },
+      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
+      {
+        kind: 'p',
+        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot. Today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Lists](/lists) and click +',
+            detail: 'Name the list something your teammates will recognize in a dropdown.',
+          },
+          {
+            title: 'Pick Smart or Static',
+            detail:
+              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
+          },
+          {
+            title: 'Choose People or Households',
+            detail: 'A list targets one or the other. Pick what you are grouping.',
+          },
+          {
+            title: 'Build the rule',
+            detail:
+              'Compose conditions in the query builder: match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
+          },
+          {
+            title: 'Create it',
+            detail:
+              'The button carries the scale it will act on: “Create smart list (1,284 now)” or “Create static list (snapshot 1,284)”.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
+      {
+        kind: 'list',
+        items: [
+          '**List**: the name is a door. Click it to open People or Households with that list applied as a removable filter chip.',
+          '**Type**: a Smart or Static chip.',
+          '**Of**: People or Households.',
+          '**Definition**: the rule written as a plain sentence.',
+          '**Members**: how many records are in the list right now.',
+          '**Last used in**: the most recent newsletter, form, or turf that used this list.',
+          '**Updated**: when the list last changed.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Deleting a list names what it will affect',
+        text: 'If a list is in use, the delete confirmation names its consumers (the newsletters, forms, and turfs that reference it), so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Lists are how good newsletters start',
+        text: 'A newsletter audience built on a smart list is accurate on send day by definition. See [Create and send a newsletter](/help/newsletters).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/help-content.ts
+````typescript
+import { ADMIN_ARTICLES } from './articles/administration';
+import { CONTACTS_ARTICLES } from './articles/contacts';
+import { DATA_ARTICLES } from './articles/data-management';
+import { ENGAGEMENT_ARTICLES } from './articles/engagement';
+import { GETTING_STARTED_ARTICLES } from './articles/getting-started';
+import { GRIDS_ARTICLES } from './articles/grids';
+import { OUTREACH_ARTICLES } from './articles/outreach';
+import { PRODUCTIVITY_ARTICLES } from './articles/productivity';
+import { SEGMENTATION_ARTICLES } from './articles/segmentation';
+
+import type { HelpArticle, HelpCategory, HelpCategoryId } from './help-types';
+
+/** Display order of the help center's categories. */
+export const HELP_CATEGORIES: HelpCategory[] = [
+  {
+    id: 'getting-started',
+    label: 'Getting started',
+    blurb: 'Your first session: the tour, navigation habits, search, and shortcuts.',
+    icon: 'map',
+  },
+  {
+    id: 'contacts',
+    label: 'People & relationships',
+    blurb: 'People, households, companies, and teams: the heart of the CRM.',
+    icon: 'identification',
+  },
+  {
+    id: 'grids',
+    label: 'Grids & data entry',
+    blurb: 'One grid everywhere: filters, inline editing, selection, and bulk work.',
+    icon: 'table-cells',
+  },
+  {
+    id: 'segmentation',
+    label: 'Tags, issues & lists',
+    blurb: 'Describe people, capture what they care about, and build reusable audiences.',
+    icon: 'label',
+  },
+  {
+    id: 'outreach',
+    label: 'Newsletters & email',
+    blurb: 'Campaigns, the shared inbox, and automations that follow through for you.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'engagement',
+    label: 'Donations, events & forms',
+    blurb: 'Raise money, run events and shifts, and collect signups from the web.',
+    icon: 'currency-dollar',
+  },
+  {
+    id: 'productivity',
+    label: 'Tasks & files',
+    blurb: 'Track the work on a board and keep shared documents one search away.',
+    icon: 'task',
+  },
+  {
+    id: 'data',
+    label: 'Import, export & data quality',
+    blurb: 'Move data in and out by CSV and keep the database free of duplicates.',
+    icon: 'arrow-up-tray',
+  },
+  {
+    id: 'admin',
+    label: 'Account & administration',
+    blurb: 'Profiles, roles and access, workspace configuration, and the audit trail.',
+    icon: 'cog-6-tooth',
+  },
+];
+
+/** Every article, in category display order. */
+export const HELP_ARTICLES: HelpArticle[] = [
+  ...GETTING_STARTED_ARTICLES,
+  ...CONTACTS_ARTICLES,
+  ...GRIDS_ARTICLES,
+  ...SEGMENTATION_ARTICLES,
+  ...OUTREACH_ARTICLES,
+  ...ENGAGEMENT_ARTICLES,
+  ...PRODUCTIVITY_ARTICLES,
+  ...DATA_ARTICLES,
+  ...ADMIN_ARTICLES,
+];
+
+/** Shown as quick links under the search box on the help home page. */
+export const POPULAR_ARTICLE_IDS: string[] = [
+  'welcome',
+  'grid-basics',
+  'filters',
+  'newsletters',
+  'import',
+  'shortcuts',
+];
+
+const ARTICLES_BY_ID: ReadonlyMap<string, HelpArticle> = new Map(HELP_ARTICLES.map((a) => [a.id, a]));
+const CATEGORIES_BY_ID: ReadonlyMap<HelpCategoryId, HelpCategory> = new Map(HELP_CATEGORIES.map((c) => [c.id, c]));
+
+export function getHelpArticle(id: string): HelpArticle | undefined {
+  return ARTICLES_BY_ID.get(id);
+}
+
+export function getHelpCategory(id: HelpCategoryId): HelpCategory | undefined {
+  return CATEGORIES_BY_ID.get(id);
+}
+
+export function articlesInCategory(id: HelpCategoryId): HelpArticle[] {
+  return HELP_ARTICLES.filter((a) => a.category === id);
+}
+
+/**
+ * Related reading for an article: its hand-picked `related` ids first,
+ * topped up with neighbors from the same category, capped at `limit`.
+ */
+export function relatedArticles(article: HelpArticle, limit = 3): HelpArticle[] {
+  const picked: HelpArticle[] = [];
+  const seen = new Set<string>([article.id]);
+
+  for (const id of article.related ?? []) {
+    const found = ARTICLES_BY_ID.get(id);
+    if (found && !seen.has(found.id)) {
+      picked.push(found);
+      seen.add(found.id);
+    }
+  }
+  for (const neighbor of articlesInCategory(article.category)) {
+    if (picked.length >= limit) break;
+    if (!seen.has(neighbor.id)) {
+      picked.push(neighbor);
+      seen.add(neighbor.id);
+    }
+  }
+  return picked.slice(0, limit);
+}
+
+/** Previous/next article within the same category, in display order. */
+export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; prev?: HelpArticle } {
+  const siblings = articlesInCategory(article.category);
+  const index = siblings.findIndex((a) => a.id === article.id);
+  if (index === -1) return {};
+  return {
+    prev: index > 0 ? siblings[index - 1] : undefined,
+    next: index < siblings.length - 1 ? siblings[index + 1] : undefined,
+  };
+}
+````
+
+## File: libs/common/src/lib/help/help-links.ts
+````typescript
+/**
+ * Route classification shared by both apps' rich-text renderers.
+ *
+ * `parseHelpInline` only emits links whose target starts with `/`, so every
+ * route reaching `classifyHelpRoute` is an internal one. This splits those
+ * into in-help article links versus any other in-app route, letting each app
+ * route them through its own navigation (in-help router vs. cross-app link).
+ */
+
+export type HelpRouteTarget =
+  | { kind: 'help'; id: string } // an in-help article link, e.g. /help/dashboard -> id 'dashboard'
+  | { kind: 'app'; path: string }; // any other internal app route, e.g. /people
+
+const HELP_ROUTE = /^\/help\/(.+)$/;
+
+/**
+ * Classifies an internal route (always starting with `/`): `/help/:id` links
+ * become `{ kind: 'help', id }`, everything else `{ kind: 'app', path }`.
+ */
+export function classifyHelpRoute(route: string): HelpRouteTarget {
+  const id = HELP_ROUTE.exec(route)?.[1];
+  if (id !== undefined) {
+    return { kind: 'help', id };
+  }
+  return { kind: 'app', path: route };
+}
+````
+
+## File: libs/common/src/lib/help/help-markdown.ts
+````typescript
+import type { HelpArticle, HelpBlock } from './help-types';
+
+/**
+ * GitHub-flavored Markdown serialization of the typed help content, for the
+ * website's AI-agent surface. Unlike `blockToPlainText`, the inline mini-markup
+ * (`**bold**`, `` `code` ``, `[label](/route)`) is preserved verbatim — agents
+ * benefit from the links and emphasis, so nothing is stripped.
+ */
+
+const KEYS_TABLE_HEADER = ['| Keys | Action |', '| --- | --- |'];
+
+/** One content block as a Markdown fragment. */
+export function blockToMarkdown(block: HelpBlock): string {
+  switch (block.kind) {
+    case 'p':
+      return block.text;
+    case 'h2':
+      return `## ${block.text}`;
+    case 'list':
+      return block.items.map((item, index) => (block.ordered ? `${index + 1}. ${item}` : `- ${item}`)).join('\n');
+    case 'steps':
+      return block.items
+        .map((step, index) => `${index + 1}. **${step.title}**${step.detail ? ` — ${step.detail}` : ''}`)
+        .join('\n');
+    case 'callout':
+      return `> **${block.title}** — ${block.text}`;
+    case 'keys':
+      return [
+        ...KEYS_TABLE_HEADER,
+        ...block.rows.map((row) => `| ${row.keys.map((key) => `\`${key}\``).join(' ')} | ${row.action} |`),
+      ].join('\n');
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
+  }
+}
+
+/** A whole article as Markdown: `# title`, the summary intro, then each block. */
+export function articleToMarkdown(article: HelpArticle): string {
+  return [`# ${article.title}`, article.summary, ...article.blocks.map(blockToMarkdown)].join('\n\n');
+}
+````
+
+## File: libs/common/src/lib/help/help-search.ts
+````typescript
+import { getHelpCategory, HELP_ARTICLES } from './help-content';
+import { articleToPlainText } from './help-types';
+
+import type { HelpArticle } from './help-types';
+
+/**
+ * Client-side search over the static help content. The corpus is ~30
+ * articles, so a straightforward scored scan is instant and dependency-free.
+ */
+
+/** A run of text, flagged when it matched a search term (for highlighting). */
+export interface HelpHighlightSegment {
+  hit: boolean;
+  text: string;
+}
+
+export interface HelpSearchResult {
+  article: HelpArticle;
+  score: number;
+  /** Summary or body excerpt around the first match, ready to highlight. */
+  snippet: HelpHighlightSegment[];
+  title: HelpHighlightSegment[];
+}
+
+const SCORE_TITLE = 40;
+const SCORE_TITLE_WORD_START = 10;
+const SCORE_KEYWORD = 25;
+const SCORE_SUMMARY = 15;
+const SCORE_CATEGORY = 10;
+const SCORE_BODY = 8;
+const SCORE_PHRASE_IN_TITLE = 30;
+const SNIPPET_RADIUS = 90;
+
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function termsOf(query: string): string[] {
+  return normalize(query).split(' ').filter(Boolean);
+}
+
+/** Does `haystack` contain `term` starting at a word boundary? */
+function hasWordStart(haystack: string, term: string): boolean {
+  const at = haystack.indexOf(term);
+  if (at === -1) return false;
+  if (at === 0) return true;
+  return !/[a-z0-9]/.test(haystack.charAt(at - 1));
+}
+
+/** Splits `text` into plain/hit segments for every occurrence of any term. */
+export function highlightTerms(text: string, terms: string[]): HelpHighlightSegment[] {
+  if (terms.length === 0 || text.length === 0) return [{ hit: false, text }];
+
+  const lower = text.toLowerCase();
+  const segments: HelpHighlightSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let hitStart = -1;
+    let hitLength = 0;
+    for (const term of terms) {
+      const at = lower.indexOf(term, cursor);
+      if (at !== -1 && (hitStart === -1 || at < hitStart || (at === hitStart && term.length > hitLength))) {
+        hitStart = at;
+        hitLength = term.length;
+      }
+    }
+    if (hitStart === -1) {
+      segments.push({ hit: false, text: text.slice(cursor) });
+      break;
+    }
+    if (hitStart > cursor) {
+      segments.push({ hit: false, text: text.slice(cursor, hitStart) });
+    }
+    segments.push({ hit: true, text: text.slice(hitStart, hitStart + hitLength) });
+    cursor = hitStart + hitLength;
+  }
+  return segments;
+}
+
+/** A short window of `text` around the first occurrence of any term. */
+function excerptAround(text: string, terms: string[]): string {
+  const lower = text.toLowerCase();
+  let first = -1;
+  for (const term of terms) {
+    const at = lower.indexOf(term);
+    if (at !== -1 && (first === -1 || at < first)) first = at;
+  }
+  if (first === -1) return text.slice(0, SNIPPET_RADIUS * 2);
+
+  let start = Math.max(0, first - SNIPPET_RADIUS);
+  let end = Math.min(text.length, first + SNIPPET_RADIUS);
+  // Snap to word boundaries so the excerpt doesn't shear words in half.
+  if (start > 0) {
+    const space = text.indexOf(' ', start);
+    if (space !== -1 && space < first) start = space + 1;
+  }
+  if (end < text.length) {
+    const space = text.lastIndexOf(' ', end);
+    if (space > first) end = space;
+  }
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return `${prefix}${text.slice(start, end)}${suffix}`;
+}
+
+/**
+ * Ranked search: every term must match somewhere in an article (title,
+ * keywords, summary, category label, or body) for it to be a result.
+ */
+export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLES): HelpSearchResult[] {
+  const terms = termsOf(query);
+  if (terms.length === 0) return [];
+  const phrase = normalize(query);
+
+  const results: HelpSearchResult[] = [];
+
+  for (const article of articles) {
+    const title = normalize(article.title);
+    const summary = normalize(article.summary);
+    const keywords = article.keywords.map(normalize);
+    const category = normalize(getHelpCategory(article.category)?.label ?? '');
+    const body = normalize(articleToPlainText(article));
+
+    let score = 0;
+    let everyTermMatched = true;
+
+    for (const term of terms) {
+      let termScore = 0;
+      if (title.includes(term)) {
+        termScore = SCORE_TITLE + (hasWordStart(title, term) ? SCORE_TITLE_WORD_START : 0);
+      } else if (keywords.some((k) => k.includes(term))) {
+        termScore = SCORE_KEYWORD;
+      } else if (summary.includes(term)) {
+        termScore = SCORE_SUMMARY;
+      } else if (category.includes(term)) {
+        termScore = SCORE_CATEGORY;
+      } else if (body.includes(term)) {
+        termScore = SCORE_BODY;
+      }
+      if (termScore === 0) {
+        everyTermMatched = false;
+        break;
+      }
+      score += termScore;
+    }
+    if (!everyTermMatched) continue;
+    if (terms.length > 1 && title.includes(phrase)) score += SCORE_PHRASE_IN_TITLE;
+
+    // Prefer the summary; fall back to a body excerpt around the first hit.
+    // Keyword/category-only matches keep the summary (no arbitrary body slice).
+    const summaryHasTerm = terms.some((t) => summary.includes(t));
+    const bodyHasTerm = terms.some((t) => body.includes(t));
+    const snippetSource = summaryHasTerm
+      ? article.summary
+      : bodyHasTerm
+        ? excerptAround(articleToPlainText(article), terms)
+        : article.summary;
+
+    results.push({
+      article,
+      score,
+      snippet: highlightTerms(snippetSource, terms),
+      title: highlightTerms(article.title, terms),
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score || a.article.title.localeCompare(b.article.title));
+}
+````
+
+## File: libs/common/src/lib/help/help-types.ts
+````typescript
+/**
+ * Content model for the in-app help center.
+ *
+ * Articles are plain data (no HTML) rendered through typed blocks, so the
+ * help content is searchable, type-checked, and immune to XSS by design.
+ */
+
+export type HelpCategoryId =
+  | 'getting-started'
+  | 'contacts'
+  | 'grids'
+  | 'segmentation'
+  | 'outreach'
+  | 'engagement'
+  | 'productivity'
+  | 'data'
+  | 'admin';
+
+export interface HelpCategory {
+  /** One-sentence description shown on the category card. */
+  blurb: string;
+  /** Heroicon name; each consuming app maps this to its own icon component. */
+  icon: string;
+  id: HelpCategoryId;
+  label: string;
+}
+
+export interface HelpStep {
+  detail?: string;
+  title: string;
+}
+
+export interface HelpKeyRow {
+  action: string;
+  keys: string[];
+}
+
+/**
+ * A single content block. Inline text in `text`, `items`, and step fields
+ * supports the mini-markup parsed by `parseHelpInline`:
+ * `**bold**`, `` `code` `` and `[label](/internal/route)`.
+ */
+export type HelpBlock =
+  | { kind: 'callout'; tone: 'info' | 'tip' | 'warning'; title: string; text: string }
+  | { kind: 'h2'; id: string; text: string }
+  | { kind: 'keys'; rows: HelpKeyRow[] }
+  | { kind: 'list'; items: string[]; ordered?: boolean }
+  | { kind: 'p'; text: string }
+  | { kind: 'steps'; items: HelpStep[] };
+
+export interface HelpArticle {
+  blocks: HelpBlock[];
+  category: HelpCategoryId;
+  /** Stable slug used in the /help/:id route. */
+  id: string;
+  /** Extra search terms that don't appear verbatim in the copy. */
+  keywords: string[];
+  /** Ids of hand-picked related articles. */
+  related?: string[];
+  summary: string;
+  title: string;
+}
+
+export interface HelpInlineSegment {
+  kind: 'bold' | 'code' | 'link' | 'text';
+  /** Internal route, present only when kind === 'link'. */
+  route?: string;
+  text: string;
+}
+
+const INLINE_TOKEN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
+
+/**
+ * Parses the help mini-markup into typed segments. Unknown or unterminated
+ * markers are left as plain text; only internal routes (starting with `/`)
+ * become links, anything else stays literal text.
+ */
+export function parseHelpInline(text: string): HelpInlineSegment[] {
+  const segments: HelpInlineSegment[] = [];
+  let cursor = 0;
+
+  INLINE_TOKEN.lastIndex = 0;
+  for (let match = INLINE_TOKEN.exec(text); match !== null; match = INLINE_TOKEN.exec(text)) {
+    if (match.index > cursor) {
+      segments.push({ kind: 'text', text: text.slice(cursor, match.index) });
+    }
+
+    const [, bold, code, linkLabel, linkTarget] = match;
+    if (bold !== undefined) {
+      segments.push({ kind: 'bold', text: bold });
+    } else if (code !== undefined) {
+      segments.push({ kind: 'code', text: code });
+    } else if (linkLabel !== undefined && linkTarget !== undefined && linkTarget.startsWith('/')) {
+      segments.push({ kind: 'link', route: linkTarget, text: linkLabel });
+    } else {
+      // Non-internal link targets are rendered as-is so nothing silently 404s.
+      segments.push({ kind: 'text', text: match[0] });
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: 'text', text: text.slice(cursor) });
+  }
+  return segments;
+}
+
+/** Plain text of one inline-markup string (markers stripped) for search. */
+export function stripHelpInline(text: string): string {
+  return parseHelpInline(text)
+    .map((s) => s.text)
+    .join('');
+}
+
+/** All searchable plain text of a block, headings included. */
+export function blockToPlainText(block: HelpBlock): string {
+  switch (block.kind) {
+    case 'p':
+    case 'h2':
+      return stripHelpInline(block.text);
+    case 'list':
+      return block.items.map(stripHelpInline).join(' ');
+    case 'steps':
+      return block.items.map((s) => [s.title, s.detail ?? ''].map(stripHelpInline).join(' ')).join(' ');
+    case 'callout':
+      return `${stripHelpInline(block.title)} ${stripHelpInline(block.text)}`;
+    case 'keys':
+      return block.rows.map((r) => `${r.keys.join(' ')} ${stripHelpInline(r.action)}`).join(' ');
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Whole-article plain text used for search indexing. */
+export function articleToPlainText(article: HelpArticle): string {
+  return article.blocks.map(blockToPlainText).join(' ');
+}
+
+const WORDS_PER_MINUTE = 200;
+
+/** Estimated reading time in whole minutes (always at least 1). */
+export function readingMinutes(article: HelpArticle): number {
+  const words = `${article.title} ${article.summary} ${articleToPlainText(article)}`
+    .split(/\s+/)
+    .filter(Boolean).length;
+  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+}
+````
 
 ## File: libs/common/src/lib/schemas/canvassing.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 import { idSchema, nameSchema, notesSchema } from './core.schema';
@@ -5355,11 +8105,10 @@ export const UpdateCompanionSettingsObj = z.object({
   script: z.string().trim().max(4000).nullable(),
 });
 export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
-```
+````
 
 ## File: libs/common/src/lib/schemas/companion-access.schema.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 /**
@@ -5456,193 +8205,415 @@ export interface CompanionVolunteerRow {
   approved_by_name: string | null;
   created_at: string;
 }
-```
+````
 
-## File: libs/common/src/lib/emails.ts
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
+````typescript
+import { z } from 'zod';
 
-```typescript
-// ---------- Public compatibility interface (loose) ----------
-// ---------- Strict types for compile-time guarantees ----------
-interface EmailFolderBase {
-  icon: string;
-  id: string;
-  is_default: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
+import { idSchema, notesSchema } from './core.schema';
 
-export interface EmailFolderConfig {
-  code?: string; // optional/loose for compatibility
-  icon: string;
-  id: string;
-  is_default: boolean;
-  is_virtual: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
 
-export interface RealEmailFolder extends EmailFolderBase {
-  code?: never; // forbidden on real folders
-  is_virtual: false;
-}
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
 
-export interface VirtualEmailFolder extends EmailFolderBase {
-  code: string; // required when virtual
-  is_virtual: true;
-}
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
 
-// ---------- Derived types ----------
-type Folder = (typeof EMAIL_FOLDERS)[number];
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
 
-type OnlyReal = Extract<Folder, { is_virtual: false }>;
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
+});
 
-type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
+});
 
-// All folders (merged, exact keys/ids)
-export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
+});
 
-export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
+});
 
-export type EmailStatus = 'open' | 'closed';
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
 
-export type HasRow = {
-  email_id: string;
-  has: boolean;
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+````
+
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+````
+
+## File: libs/common/src/lib/schemas/persons.schema.ts
+````typescript
+import { z } from 'zod';
+import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
+
+/**
+ * Do-not-contact channels (Campaigns §15). The flag lives on the person — it is a
+ * global compliance override, never a per-campaign preference. A null/absent
+ * channel list means "no contact on any channel".
+ */
+export const DNC_CHANNELS = ['email', 'phone', 'door'] as const;
+export type DncChannel = (typeof DNC_CHANNELS)[number];
+
+/**
+ * Volunteer & staff standing (Campaigns §15) — first-class person status, not a
+ * tag. Global (tenant-wide), single-valued, and read by team-membership logic,
+ * so it is a structured concept. NULL/absent = "not a volunteer / not staff".
+ * Volunteer carries a recruiting pipeline (prospective → active → inactive →
+ * former); staff has no "prospective" — a person either is staff or has left.
+ */
+export const VOLUNTEER_STATUSES = ['prospective', 'active', 'inactive', 'former'] as const;
+export type VolunteerStatus = (typeof VOLUNTEER_STATUSES)[number];
+
+export const VOLUNTEER_STATUS_LABELS: Record<VolunteerStatus, string> = {
+  prospective: 'Prospective',
+  active: 'Active',
+  inactive: 'Inactive',
+  former: 'Former',
 };
 
-export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
+export const STAFF_STATUSES = ['active', 'inactive', 'former'] as const;
+export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
-export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
-
-export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
-
-export type ServerEmail = {
-  assigned_to?: string | null;
-  attachment_count?: number | string | bigint | null;
-  folder_id: string | number;
-  from_email?: string | null;
-  is_read?: boolean;
-
-  // any of these might be present depending on endpoint:
-  has_attachment?: boolean | null;
-  id: string | number;
-  is_favourite: boolean;
-  preview?: string | null;
-  status?: string;
-  subject?: string | null;
-  to_email?: string | null;
-  updated_at: string | Date;
-  date_sent?: string | Date | null;
-  sender_first_name?: string | null;
-  sender_last_name?: string | null;
+export const STAFF_STATUS_LABELS: Record<StaffStatus, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  former: 'Former',
 };
 
-export type SpecialFolderId = OnlyVirtual['id'];
+export const PersonsObj = z.object({
+  id: z.string(),
+  household_id: z.string(),
+  email: z.string(),
+  email2: z.string(),
+  first_name: z.string(),
+  middle_names: z.string(),
+  last_name: z.string(),
+  home_phone: z.string(),
+  mobile: z.string(),
+  notes: z.string(),
+  linkedin: z.string().nullable().optional(),
+  twitter: z.string().nullable().optional(),
+  facebook: z.string().nullable().optional(),
+  instagram: z.string().nullable().optional(),
+  assigned_to: z.string().nullable().optional(),
+  preferred_contact: z.string().nullable().optional(),
+  volunteer_status: z.string().nullable().optional(),
+  staff_status: z.string().nullable().optional(),
+});
 
-export type SpecialFolderKey = OnlyVirtual['code'];
+export const UpdateHouseholdsObj = addressSchema.extend({
+  home_phone: phoneSchema('Home phone'),
+  notes: notesSchema,
+});
 
-export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
-
-function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type RegularFolder = Extract<F[number], { is_virtual: false }>;
-  type FolderKey = Uppercase<RegularFolder['name'] & string>;
-  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
-
-  const entries = folders
-    .filter((f): f is RegularFolder => !f.is_virtual)
-    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
-}
-
-function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
-  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
-  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
-
-  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
-}
-
-export const isRegularFolderId = (id: string): id is RegularFolderId =>
-  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
-
-// Optional runtime type guards
-export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
-  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
-
-// ---------- Configuration (validated against STRICT type) ----------
-export const EMAIL_FOLDERS = [
-  // Virtual
-  { id: '9', name: 'Starred', icon: 'star', sort_order: 1, is_default: false, is_virtual: true, code: 'FAVOURITES' },
-  {
-    id: '8',
-    name: 'Unassigned',
-    icon: 'inbox',
-    sort_order: 2,
-    is_default: false,
-    is_virtual: true,
-    code: 'UNASSIGNED',
-  },
-  {
-    id: '6',
-    name: 'Mine',
-    icon: 'user-circle',
-    sort_order: 3,
-    is_default: true,
-    is_virtual: true,
-    code: 'ASSIGNED_TO_ME',
-  },
-  {
-    id: '1',
-    name: 'Open',
-    icon: 'document-duplicate',
-    sort_order: 4,
-    is_default: false,
-    is_virtual: true,
-    code: 'ALL_OPEN',
-  },
-  {
-    id: '2',
-    name: 'Closed',
-    icon: 'document-check',
-    sort_order: 5,
-    is_default: false,
-    is_virtual: true,
-    code: 'CLOSED',
-  },
-
-  // Real
-  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
-] as const satisfies StrictEmailFolderConfig[];
-
-// Real-only (exact keys/ids)
-export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
-
-// ---------- Exposed constants ----------
-
-// Virtual-only (exact keys/ids)
-export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
-export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
-
-// Useful helpers
-export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
-export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
-  Record<Folder['id'], Folder>
->;
-```
+export const UpdatePersonsObj = z.object({
+  campaign_id: idSchema.optional(),
+  household_id: idSchema.optional(),
+  company_id: idSchema.or(z.literal('')).nullable().optional(),
+  email: nullableEmailSchema,
+  email2: nullableEmailSchema,
+  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
+  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
+  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
+  home_phone: phoneSchema('Home phone'),
+  mobile: phoneSchema('Mobile phone'),
+  notes: notesSchema,
+  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
+  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
+  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
+  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
+  do_not_contact: z.boolean().optional(),
+  do_not_contact_channels: z.array(z.enum(DNC_CHANNELS)).nullable().optional(),
+  volunteer_status: z.enum(VOLUNTEER_STATUSES).nullable().optional(),
+  staff_status: z.enum(STAFF_STATUSES).nullable().optional(),
+});
+````
 
 ## File: libs/common/src/lib/models.ts
-
-```typescript
+````typescript
 import type { z } from 'zod';
 
 import type {
@@ -5882,11 +8853,10 @@ export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-```
+````
 
 ## File: libs/common/src/lib/schema.ts
-
-```typescript
+````typescript
 export * from './schemas/core.schema';
 export * from './schemas/activity.schema';
 export * from './schemas/auth.schema';
@@ -5909,11 +8879,10 @@ export * from './schemas/canvassing.schema';
 export * from './schemas/deliveries.schema';
 export * from './schemas/donations.schema';
 export * from './schemas/companion-access.schema';
-```
+````
 
 ## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
-
-```typescript
+````typescript
 import { Component, ElementRef, OnInit, effect, inject, input, output, viewChild } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
 import { AddressType } from '../../../../common/src/lib/kysely.models';
@@ -6033,11 +9002,10 @@ export class AddressAutocomplete implements OnInit {
     });
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/alerts/alert-service.ts
-
-```typescript
+````typescript
 import { Injectable, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 
@@ -6141,11 +9109,10 @@ export class AlertService {
 }
 
 export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-```
+````
 
 ## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
-
-```typescript
+````typescript
 import { Injectable, signal } from '@angular/core';
 
 import { PcBreadcrumb } from './breadcrumbs';
@@ -6204,11 +9171,10 @@ export class BreadcrumbsService {
     this._trail.set(null);
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -6296,11 +9262,10 @@ export class Breadcrumbs {
   public readonly prev = output<void>();
   public readonly next = output<void>();
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/csv-import/persons-field-mapping.ts
-
-```typescript
+````typescript
 /**
  * Shared header-to-field auto-mapping heuristic for importing people from a
  * CSV/TSV file. Originally lived inline in `persons-grid.ts` (the legacy
@@ -6427,11 +9392,10 @@ export function autoMapPersonsHeader(header: string): string {
   const key = raw.replace(/[^a-z0-9]/g, '');
   return HEADER_TO_FIELD[key] || '';
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-
-```typescript
+````typescript
 import { Component, inject, input, output } from '@angular/core';
 import { AlertService } from '../alerts/alert-service';
 import { Icon } from '@icons/icon';
@@ -6507,11 +9471,10 @@ export class DetailItem {
       });
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-
-```typescript
+````typescript
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -6647,11 +9610,10 @@ function isEditableTarget(target: EventTarget | null): boolean {
     target.isContentEditable
   );
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/empty-state/empty-state.ts
-
-```typescript
+````typescript
 import { Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -6689,112 +9651,10 @@ export class EmptyState {
   public readonly icon = input.required<PcIconNameType>();
   public readonly title = input.required<string>();
 }
-```
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
-
-```html
-<div class="space-y-0.5">
-  <!-- Email is always required and locked -->
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
-      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-      <span class="text-sm font-bold text-primary">Email Address</span>
-    </label>
-    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-  </div>
-
-  @for (field of allFields; track field.key) {
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        [checked]="isEnabled(field.key)"
-        (change)="toggleField(field.key)"
-        class="checkbox checkbox-sm checkbox-primary"
-      />
-      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
-    </label>
-    @if (isEnabled(field.key)) {
-    <button
-      type="button"
-      (click)="toggleRequired(field.key)"
-      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-      [class.btn-primary]="isRequired(field.key)"
-      [class.btn-outline]="!isRequired(field.key)"
-      [class.btn-accent]="!isRequired(field.key)"
-    >
-      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
-    </button>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
-
-```html
-<div class="flex gap-2 justify-center">
-  <button
-    type="button"
-    class="btn btn-primary gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleBtn1Clicked()"
-    [disabled]="isSaveDisabled"
-  >
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
-
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button
-    type="button"
-    class="btn btn-primary"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="handleBtn2Clicked()"
-    [disabled]="isSaveDisabled"
-  >
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
-  } @if (showCancel()) {
-  <button
-    type="button"
-    class="btn btn-outline btn-accent gap-2"
-    [class.btn-xs]="size() === 'xs'"
-    [class.btn-sm]="size() === 'sm'"
-    (click)="cancel()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
-  }
-</div>
-```
+````
 
 ## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-
-```typescript
+````typescript
 import { Component, inject, input, output } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
@@ -6899,11 +9759,10 @@ export class FormActions {
     }
   };
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/grid-header/grid-header.ts
-
-```typescript
+````typescript
 import { Component, computed, input, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 
@@ -6985,1217 +9844,10 @@ export class GridHeaderComponent {
     this.descToggled.set(!this.descriptionOpen());
   }
 }
-```
-
-## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
-
-```typescript
-import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-/**
- * The one modal chrome for form/tool dialogs: native <dialog> + DaisyUI modal
- * with the house header (primary icon, bold title, ghost-circle close) and a
- * `[pc-modal-footer]` slot for actions. Blocking yes/no decisions stay on
- * ConfirmDialogService — this shell is for dialogs with real content.
- *
- * Drive it either declaratively (`[open]="someSignal()"`) or imperatively via
- * a template ref (`#dlg` → `dlg.show()` / `dlg.close()`). `closed` fires on
- * every close path (X button, ESC, backdrop, programmatic).
- */
-@Component({
-  selector: 'pc-modal-shell',
-  imports: [Icon],
-  template: `
-    <dialog #dlg class="modal" (close)="closed.emit()" (cancel)="onCancel($event)">
-      <div class="modal-box" [class]="boxClass()">
-        <div class="mb-5 flex items-center justify-between">
-          <h3 class="flex items-center gap-2 text-lg font-bold">
-            @if (icon(); as ic) {
-              <pc-icon [name]="ic" [size]="5" class="text-primary" />
-            }
-            {{ title() }}
-          </h3>
-          <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
-            <pc-icon name="x-mark" [size]="4" />
-          </button>
-        </div>
-        <ng-content />
-        <div class="modal-action empty:hidden">
-          <ng-content select="[pc-modal-footer]" />
-        </div>
-      </div>
-      @if (dismissible()) {
-        <form method="dialog" class="modal-backdrop">
-          <button type="submit" aria-label="Close">close</button>
-        </form>
-      }
-    </dialog>
-  `,
-})
-export class ModalShell {
-  /** Extra classes for the modal box — width overrides only (e.g. 'max-w-3xl'). */
-  public readonly boxClass = input<string>('');
-  /** Allow ESC / backdrop-click to dismiss. Turn off for dialogs holding unsaved work. */
-  public readonly dismissible = input<boolean>(true);
-  public readonly icon = input<PcIconNameType | null>(null);
-  /** Declarative visibility; leave unset to drive imperatively via show()/close(). */
-  public readonly open = input<boolean | undefined>(undefined);
-  public readonly title = input.required<string>();
-
-  public readonly closed = output<void>();
-
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-
-  constructor() {
-    effect(() => {
-      const open = this.open();
-      if (open === undefined) return;
-      const dlg = this.dlgRef().nativeElement;
-      try {
-        if (open && !dlg.open) dlg.showModal();
-        else if (!open && dlg.open) dlg.close();
-      } catch {
-        /* dialog not connected yet — the next effect run settles it */
-      }
-    });
-  }
-
-  public close(): void {
-    const dlg = this.dlgRef().nativeElement;
-    if (dlg.open) dlg.close();
-  }
-
-  public show(): void {
-    const dlg = this.dlgRef().nativeElement;
-    if (!dlg.open) dlg.showModal();
-  }
-
-  protected onCancel(e: Event): void {
-    if (!this.dismissible()) e.preventDefault();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
-
-```html
-<pc-card [title]="label()" [subtitle]="subtitle()">
-  <div class="space-y-3">
-    <div class="flex gap-2">
-      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
-      <a
-        [href]="url()"
-        target="_blank"
-        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-        title="Open public page"
-      >
-        <pc-icon name="arrow-top-right-on-square"></pc-icon>
-      </a>
-      <button type="button" class="btn btn-sm btn-outline btn-secondary px-3" (click)="copyUrl()" title="Copy link">
-        <pc-icon name="document-duplicate"></pc-icon>
-      </button>
-    </div>
-  </div>
-</pc-card>
-```
-
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title pc-eyebrow">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
-```
-
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'xs') cls += 'badge-xs ';
-    else if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'md') cls += 'badge-md ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-```
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/table/table.ts
-
-````typescript
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-
-/**
- * `pc-table` — the lightweight presentational table shell.
- *
- * The counterpart to the house `pc-datagrid`: where the datagrid owns data
- * fetching, sorting, filtering, selection and inline editing, `pc-table` owns
- * only the *chrome* — the bordered shell, the micro-caps header row, cell
- * density and the shared skeleton-loading idiom. It exists so bespoke tables
- * (Tags, Issues, Donations) stay visually identical to the datagrid without
- * inheriting its machinery. See the `pplcrm-table` skill.
- *
- * All visual styling comes from the shared, global `.pc-table-shell` / `.pc-table`
- * contract in `apps/frontend/src/styles.css` — the single source of truth both
- * this component and the datagrid consume. This component ships no styles of its
- * own (emulated encapsulation could not reach the projected rows anyway).
- *
- * Consumers keep full control of every cell and of the empty state (which is
- * per-entity by design — see design principles §3), projecting:
- *   - `[pcTableHead]` — the `<th>` cells for the header row
- *   - the default slot — the body rows *and* the page's own empty-state row,
- *     rendered only when not loading
- *   - `[pcTableFooter]` — optional caption/pagination hint rendered inside the
- *     shell, below the table (e.g. "Showing the latest 25 of 312")
- *
- * ```html
- * <pc-table [loading]="loading()" [columns]="5">
- *   <ng-container pcTableHead>
- *     <th>Tag</th><th>People</th><th>Last applied</th><th class="w-10"></th>
- *   </ng-container>
- *
- *   @if (rows().length === 0) {
- *     <tr><td colspan="5">…guided empty state…</td></tr>
- *   } @else {
- *     @for (row of rows(); track row.id) {
- *       <tr [class.animate-saved-flash]="highlightId() === row.id">…</tr>
- *     }
- *   }
- * </pc-table>
- * ```
- */
-@Component({
-  selector: 'pc-table',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="pc-table-shell">
-      <table class="table pc-table w-full">
-        <thead>
-          <tr>
-            <ng-content select="[pcTableHead]"></ng-content>
-          </tr>
-        </thead>
-        <tbody>
-          @if (loading()) {
-            @for (row of skeletonList(); track row) {
-              <tr>
-                <td [attr.colspan]="columns()">
-                  <div class="skeleton h-6 w-full"></div>
-                </td>
-              </tr>
-            }
-          } @else {
-            <ng-content></ng-content>
-          }
-        </tbody>
-      </table>
-      <ng-content select="[pcTableFooter]"></ng-content>
-    </div>
-  `,
-})
-export class Table {
-  /** Number of columns — drives the skeleton row's colspan so it spans the table. */
-  public readonly columns = input.required<number>();
-
-  /** When true, render placeholder skeleton rows instead of the projected body. */
-  public readonly loading = input<boolean>(false);
-
-  /** How many skeleton rows to show while loading. */
-  public readonly skeletonRows = input<number>(5);
-
-  protected readonly skeletonList = computed<number[]>(() => Array.from({ length: this.skeletonRows() }, (_, i) => i));
-}
 ````
-
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-
-```typescript
-import { Component, computed, input, model } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-  /** When set, the pill renders as a router link (page-level tabs that navigate) instead of a stateful button. */
-  route?: string;
-  /** Match the route exactly for the active state (default false). */
-  exact?: boolean;
-}
-
-const PILL_BASE =
-  'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none';
-const PILL_ACTIVE = 'border-primary/30 bg-primary/10 text-primary';
-const PILL_INACTIVE = 'border-base-200 bg-base-100 text-base-content/70';
-
-/**
- * The one tab idiom (design §4): the pill tab bar from the person view, with count
- * badges ("numbers before clicks", §1). Stateful tabs bind `[(activeTab)]`; tabs that
- * navigate set `route` on the option instead. The only sanctioned exception is the
- * grain-tabs row on the People / Households / Companies grids.
- */
-@Component({
-  selector: 'pc-tab-bar',
-  imports: [RouterLink, RouterLinkActive],
-  host: { class: 'block' },
-  template: `
-    <div role="tablist" class="flex flex-wrap gap-2">
-      @for (tab of tabs(); track tab.id) {
-        @if (tab.route) {
-          <a
-            role="tab"
-            [routerLink]="tab.route"
-            routerLinkActive="!border-primary/30 !bg-primary/10 !text-primary"
-            [routerLinkActiveOptions]="{ exact: tab.exact ?? false }"
-            class="{{ pillBase }} {{ pillInactive }} cursor-pointer hover:bg-base-200/60"
-          >
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="rounded-full bg-base-200 px-1.5 text-xs font-semibold tabular-nums text-base-content/50">{{
-                tab.badge
-              }}</span>
-            }
-          </a>
-        } @else {
-          <button
-            type="button"
-            role="tab"
-            [attr.aria-selected]="activeTab() === tab.id"
-            [attr.aria-disabled]="tab.disabled || null"
-            [class]="pillClass(tab)"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span
-                class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
-                [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
-                >{{ tab.badge }}</span
-              >
-            }
-          </button>
-        }
-      }
-    </div>
-  `,
-})
-export class TabBar {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model<string>('');
-
-  protected readonly pillBase = PILL_BASE;
-  protected readonly pillInactive = PILL_INACTIVE;
-
-  protected pillClass(tab: PcTabOption): string {
-    const state = this.activeTab() === tab.id ? PILL_ACTIVE : PILL_INACTIVE;
-    const cursor = tab.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
-    const hover = !tab.disabled && this.activeTab() !== tab.id ? 'hover:bg-base-200/60' : '';
-    return `${PILL_BASE} ${state} ${cursor} ${hover}`;
-  }
-
-  protected selectTab(id: string): void {
-    this.activeTab.set(id);
-  }
-}
-
-/** Pill tab bar + the standard content card (the person-view composition) with projected pc-tab-panels. */
-@Component({
-  selector: 'pc-tabs',
-  imports: [TabBar],
-  host: { class: 'flex flex-grow flex-col gap-6' },
-  template: `
-    <pc-tab-bar [tabs]="tabs()" [(activeTab)]="activeTab" />
-    <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
-      <ng-content></ng-content>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
-}
-```
-
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1 bg-primary/15 text-primary"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
-      }
-    </div>
-  `,
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-
-```html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="onPromptInput($event)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-```
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-
-```typescript
-import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-  host: { '(click)': 'onButtonClick()' },
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
-
-```typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
-
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
-
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
-
-  private readonly cdr = inject(ChangeDetectorRef);
-
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
-
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
-    }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
-    }
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
-  }
-
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
-  }
-
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
-    }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
-  }
-
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
-}
-```
-
-## File: libs/uxcommon/src/styles/themes.css
-
-```css
-/*
- * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
- * palette, consumed by every app (apps/frontend, apps/companion). Import this
- * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
- * these values into an app-local theme block; change them here.
- */
-
-/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
-   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
-   DaisyUI blocks below, same as --color-line. */
-@theme {
-  --color-base-50: #fbfbfc;
-}
-
-/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
-   scanner cannot see — without this safelist an icon size only works if some other
-   file happens to use the same w-/h- class literally. Covers every [size] in use. */
-@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #3498db;
-  --color-primary-content: #ffffff;
-  --color-secondary: #22a6b3;
-  --color-secondary-content: #ffffff;
-  --color-accent: #818789;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: rgb(226, 226, 226);
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e3d6a7;
-  --color-warning-content: #4a3d0a;
-  --color-error: #eb4d4b;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
-     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
-     (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-```
-
-## File: libs/uxcommon/src/request-guard.ts
-
-````typescript
-export type RequestGuard = {
-  /**
-   * Marks the start of a new request and returns a checker for it. After each
-   * `await`, bail out unless the checker still returns true — a newer request
-   * has superseded this one and its (stale) response must not land.
-   */
-  begin(): () => boolean;
-};
-
-/**
- * Guards a reloadable async data source against out-of-order responses: when a
- * component reloads on an input change (e.g. prev/next record navigation), a
- * slow earlier response must not overwrite the newer record.
- *
- * ```ts
- * private readonly guard = createRequestGuard();
- *
- * async load(id: string) {
- *   const isCurrent = this.guard.begin();
- *   const data = await this.svc.getById(id);
- *   if (!isCurrent()) return;
- *   this.detail.set(data);
- * }
- * ```
- */
-export function createRequestGuard(): RequestGuard {
-  let sequence = 0;
-  return {
-    begin(): () => boolean {
-      const requestId = ++sequence;
-      return () => requestId === sequence;
-    },
-  };
-}
-````
-
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-import { idSchema } from './core.schema';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
-});
-
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
-});
-
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
-});
-
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
-});
-
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
-});
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
-  [class.absolute]="!isPositionRelative()"
-  [class.left-0]="!isPositionRelative()"
-  [class.top-4]="isPositionTop()"
-  [class.bottom-4]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-  <div
-    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
-    (click)="dismiss(alert.id)"
-  >
-    <span
-      aria-hidden="true"
-      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
-    ></span>
-    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
-    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
-      {{ alert.text }}
-    </div>
-    @if (alert.count() > 1) {
-    <span
-      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
-    >
-      ×{{ alert.count() }}
-    </span>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    // Service list is newest-first; render newest nearest the pinned edge
-    // (bottom of the stack when pinned bottom — spec §2).
-    return this.isPositionBottom() ? list.slice().reverse() : list;
-  });
-
-  protected dismiss(id: string): void {
-    this.alertSvc.dismiss(id);
-  }
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type?: ALERTTYPE): PcIconNameType {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'exclamation-circle'
-          : 'information-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-
-  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
-  protected barToneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'bg-success'
-      : type === 'warning'
-        ? 'bg-warning'
-        : type === 'error'
-          ? 'bg-error'
-          : 'bg-info';
-  }
-
-  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
-  protected toneClass(type?: ALERTTYPE): string {
-    return type === 'success'
-      ? 'text-success'
-      : type === 'warning'
-        ? 'text-warning'
-        : type === 'error'
-          ? 'text-error'
-          : 'text-info';
-  }
-}
-```
 
 ## File: libs/uxcommon/src/components/icons/icons.index.ts
-
-```typescript
+````typescript
 /****************************************************** */
 /*
 /* Look at https://heroicons.com for icons. Most of these
@@ -8407,11 +10059,658 @@ export const icons = {
   x: 'assets/icons/x.svg',
   'x-mark': 'assets/icons/x-mark.svg',
 } as const;
-```
+````
+
+## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
+````typescript
+import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * The one modal chrome for form/tool dialogs: native <dialog> + DaisyUI modal
+ * with the house header (primary icon, bold title, ghost-circle close) and a
+ * `[pc-modal-footer]` slot for actions. Blocking yes/no decisions stay on
+ * ConfirmDialogService — this shell is for dialogs with real content.
+ *
+ * Drive it either declaratively (`[open]="someSignal()"`) or imperatively via
+ * a template ref (`#dlg` → `dlg.show()` / `dlg.close()`). `closed` fires on
+ * every close path (X button, ESC, backdrop, programmatic).
+ */
+@Component({
+  selector: 'pc-modal-shell',
+  imports: [Icon],
+  template: `
+    <dialog #dlg class="modal" (close)="closed.emit()" (cancel)="onCancel($event)">
+      <div class="modal-box" [class]="boxClass()">
+        <div class="mb-5 flex items-center justify-between">
+          <h3 class="flex items-center gap-2 text-lg font-bold">
+            @if (icon(); as ic) {
+              <pc-icon [name]="ic" [size]="5" class="text-primary" />
+            }
+            {{ title() }}
+          </h3>
+          <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
+            <pc-icon name="x-mark" [size]="4" />
+          </button>
+        </div>
+        <ng-content />
+        <div class="modal-action empty:hidden">
+          <ng-content select="[pc-modal-footer]" />
+        </div>
+      </div>
+      @if (dismissible()) {
+        <form method="dialog" class="modal-backdrop">
+          <button type="submit" aria-label="Close">close</button>
+        </form>
+      }
+    </dialog>
+  `,
+})
+export class ModalShell {
+  /** Extra classes for the modal box — width overrides only (e.g. 'max-w-3xl'). */
+  public readonly boxClass = input<string>('');
+  /** Allow ESC / backdrop-click to dismiss. Turn off for dialogs holding unsaved work. */
+  public readonly dismissible = input<boolean>(true);
+  public readonly icon = input<PcIconNameType | null>(null);
+  /** Declarative visibility; leave unset to drive imperatively via show()/close(). */
+  public readonly open = input<boolean | undefined>(undefined);
+  public readonly title = input.required<string>();
+
+  public readonly closed = output<void>();
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  constructor() {
+    effect(() => {
+      const open = this.open();
+      if (open === undefined) return;
+      const dlg = this.dlgRef().nativeElement;
+      try {
+        if (open && !dlg.open) dlg.showModal();
+        else if (!open && dlg.open) dlg.close();
+      } catch {
+        /* dialog not connected yet — the next effect run settles it */
+      }
+    });
+  }
+
+  public close(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (dlg.open) dlg.close();
+  }
+
+  public show(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (!dlg.open) dlg.showModal();
+  }
+
+  protected onCancel(e: Event): void {
+    if (!this.dismissible()) e.preventDefault();
+  }
+}
+````
+
+## File: libs/uxcommon/src/components/stat-card/stat-card.ts
+````typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-stat-card',
+  imports: [Icon],
+  template: `
+    <div
+      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
+    >
+      <div class="stat p-0 leading-normal">
+        @if (title()) {
+          <div class="stat-title pc-eyebrow">
+            {{ title() }}
+          </div>
+        }
+        @if (loading()) {
+          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
+          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
+        } @else {
+          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
+            {{ value() }}
+          </div>
+        }
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+          @if (description()) {
+            <span>{{ description() }}</span>
+          }
+          <ng-content select="[pc-stat-desc]"></ng-content>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 flex items-center justify-center gap-2">
+        @if (icon()) {
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
+            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
+          </div>
+        }
+        <ng-content select="[pc-stat-extra]"></ng-content>
+      </div>
+    </div>
+  `,
+})
+export class StatCard {
+  public title = input<string>();
+  public value = input<string | number>();
+  /** When true, the value renders as a skeleton block instead of a number/spinner. */
+  public loading = input<boolean>(false);
+  public description = input<string>();
+  public icon = input<PcIconNameType>();
+  public valueColorClass = input<string>('text-base-content');
+  public iconBgClass = input<string>('bg-base-200/50');
+  public iconColorClass = input<string>('text-base-content/70');
+}
+````
+
+## File: libs/uxcommon/src/components/status-badge/status-badge.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
+
+@Component({
+  selector: 'pc-status-badge',
+  template: `
+    <span class="badge font-semibold uppercase" [class]="badgeClass()">
+      <ng-content></ng-content>
+    </span>
+  `,
+})
+export class StatusBadge {
+  public type = input<PcStatusType>('ghost');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
+
+  protected badgeClass = computed(() => {
+    const t = this.type();
+    let cls = '';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
+    else if (this.size() === 'lg') cls += 'badge-lg ';
+
+    switch (t) {
+      case 'success':
+        return cls + 'badge-success text-success-content';
+      case 'warning':
+        return cls + 'badge-warning text-warning-content';
+      case 'error':
+        return cls + 'badge-error text-error-content';
+      case 'info':
+        return cls + 'badge-info text-info-content';
+      case 'neutral':
+        return cls + 'badge-neutral text-neutral-content';
+      default:
+        return cls + 'badge-ghost';
+    }
+  });
+}
+````
+
+## File: libs/uxcommon/src/components/swap/swap.ts
+````typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-swap',
+  imports: [Icon],
+  template: `<label
+    class="swap ml-auto flex-none cursor-pointer p-2"
+    [class.swap-flip]="animation() === 'flip'"
+    [class.swap-rotate]="animation() === 'rotate'"
+    [class.swap-active]="checked()"
+    (click)="emitClick($event)"
+  >
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
+
+    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
+  </label> `,
+})
+export class Swap {
+  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
+  public readonly click = output<void>();
+
+  public animation = input<'flip' | 'rotate'>('rotate');
+
+  public checked = input<boolean>(false);
+  public hoverIcon = input<PcIconNameType | null>(null);
+  public size = input(6);
+
+  public swapOffIcon = input.required<PcIconNameType>();
+
+  public swapOnIcon = input.required<PcIconNameType>();
+
+  public emitClick(event: Event) {
+    event.stopPropagation();
+    this.click.emit();
+  }
+}
+````
+
+## File: libs/uxcommon/src/components/tabs/tabs.ts
+````typescript
+import { Component, computed, input, model } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+
+export interface PcTabOption {
+  id: string;
+  label: string;
+  badge?: string | number;
+  disabled?: boolean;
+  tooltip?: string;
+  /** When set, the pill renders as a router link (page-level tabs that navigate) instead of a stateful button. */
+  route?: string;
+  /** Match the route exactly for the active state (default false). */
+  exact?: boolean;
+}
+
+const PILL_BASE =
+  'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none';
+const PILL_ACTIVE = 'border-primary/30 bg-primary/10 text-primary';
+const PILL_INACTIVE = 'border-base-200 bg-base-100 text-base-content/70';
+
+/**
+ * The one tab idiom (design §4): the pill tab bar from the person view, with count
+ * badges ("numbers before clicks", §1). Stateful tabs bind `[(activeTab)]`; tabs that
+ * navigate set `route` on the option instead. The only sanctioned exception is the
+ * grain-tabs row on the People / Households / Companies grids.
+ */
+@Component({
+  selector: 'pc-tab-bar',
+  imports: [RouterLink, RouterLinkActive],
+  host: { class: 'block' },
+  template: `
+    <div role="tablist" class="flex flex-wrap gap-2">
+      @for (tab of tabs(); track tab.id) {
+        @if (tab.route) {
+          <a
+            role="tab"
+            [routerLink]="tab.route"
+            routerLinkActive="!border-primary/30 !bg-primary/10 !text-primary"
+            [routerLinkActiveOptions]="{ exact: tab.exact ?? false }"
+            class="{{ pillBase }} {{ pillInactive }} cursor-pointer hover:bg-base-200/60"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span class="rounded-full bg-base-200 px-1.5 text-xs font-semibold tabular-nums text-base-content/50">{{
+                tab.badge
+              }}</span>
+            }
+          </a>
+        } @else {
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === tab.id"
+            [attr.aria-disabled]="tab.disabled || null"
+            [class]="pillClass(tab)"
+            [class.tooltip]="tab.disabled && tab.tooltip"
+            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
+            (click)="!tab.disabled && selectTab(tab.id)"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span
+                class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+                [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+                >{{ tab.badge }}</span
+              >
+            }
+          </button>
+        }
+      }
+    </div>
+  `,
+})
+export class TabBar {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model<string>('');
+
+  protected readonly pillBase = PILL_BASE;
+  protected readonly pillInactive = PILL_INACTIVE;
+
+  protected pillClass(tab: PcTabOption): string {
+    const state = this.activeTab() === tab.id ? PILL_ACTIVE : PILL_INACTIVE;
+    const cursor = tab.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
+    const hover = !tab.disabled && this.activeTab() !== tab.id ? 'hover:bg-base-200/60' : '';
+    return `${PILL_BASE} ${state} ${cursor} ${hover}`;
+  }
+
+  protected selectTab(id: string): void {
+    this.activeTab.set(id);
+  }
+}
+
+/** Pill tab bar + the standard content card (the person-view composition) with projected pc-tab-panels. */
+@Component({
+  selector: 'pc-tabs',
+  imports: [TabBar],
+  host: { class: 'flex flex-grow flex-col gap-6' },
+  template: `
+    <pc-tab-bar [tabs]="tabs()" [(activeTab)]="activeTab" />
+    <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <ng-content></ng-content>
+    </div>
+  `,
+})
+export class Tabs {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model.required<string>();
+}
+
+@Component({
+  selector: 'pc-tab-panel',
+  template: `
+    @if (isActive()) {
+      <div class="space-y-4">
+        <ng-content></ng-content>
+      </div>
+    }
+  `,
+})
+export class TabPanel {
+  public id = input.required<string>();
+  public activeTab = input.required<string>();
+
+  protected isActive = computed(() => this.activeTab() === this.id());
+}
+````
+
+## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+@Component({
+  selector: 'pc-user-avatar',
+  template: `
+    <div class="avatar" [class.placeholder]="!avatarUrl()">
+      @if (avatarUrl()) {
+        <div
+          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
+        >
+          <img
+            [src]="avatarUrl()!"
+            [alt]="name() + ' avatar'"
+            class="w-full h-full object-cover"
+            referrerpolicy="no-referrer"
+          />
+        </div>
+      } @else {
+        <div
+          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1 bg-primary/15 text-primary"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
+          [style.font-size.rem]="fontSizeRem()"
+        >
+          <span>{{ initials() }}</span>
+        </div>
+      }
+    </div>
+  `,
+  host: { class: 'contents' },
+})
+export class UserAvatarComponent {
+  readonly avatarUrl = input<string | null | undefined>(null);
+
+  readonly name = input.required<string>();
+
+  readonly size = input<number>(8);
+
+  protected readonly sizeRem = computed(() => this.size() * 0.25);
+  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
+
+  protected readonly initials = computed(() => {
+    const n = (this.name() ?? '').trim();
+    if (!n) return '?';
+    const parts = n.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+    }
+    return n[0]!.toUpperCase();
+  });
+}
+````
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.html
+````html
+<dialog #dlg class="modal">
+  @if (state()) {
+  <div class="modal-box">
+    <div class="flex items-center gap-2">
+      <pc-icon [name]="icon()" class="text-xl" />
+      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
+    </div>
+
+    @if (state()!.message) {
+    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
+    } @if (state()!.type === 'prompt') {
+    <input
+      [placeholder]="state()!.inputPlaceholder || ''"
+      class="input input-bordered w-full mb-4"
+      [value]="promptValue()"
+      (input)="onPromptInput($event)"
+    />
+    } @if (state()!.type === 'choose') {
+    <div class="flex flex-col gap-2 w-full mt-4">
+      @for (choice of state()!.choices; track choice.label) {
+      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
+        {{ choice.label }}
+      </button>
+      } @if (showCancel()) {
+      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+    </div>
+    } @else {
+    <div class="flex justify-end gap-2">
+      @if (showCancel()) {
+      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
+    </div>
+    }
+  </div>
+
+  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
+    <button>close</button>
+  </form>
+  }
+</dialog>
+````
+
+## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
+````typescript
+import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
+
+@Directive({
+  selector: 'button[pcSpinOnClick]',
+  exportAs: 'pcSpinOnClick',
+  host: { '(click)': 'onButtonClick()' },
+})
+export class SpinOnClickDirective {
+  private readonly el = inject(ElementRef<HTMLButtonElement>);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly minMs = input(700);
+
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => this.clearTimer());
+  }
+
+  protected onButtonClick(): void {
+    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
+    if (!icon) return;
+
+    icon.classList.add('animate-spin', 'inline-block');
+    this.clearTimer();
+
+    this.timer = setTimeout(() => {
+      icon.classList.remove('animate-spin', 'inline-block');
+      this.timer = null;
+    }, this.minMs());
+  }
+
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+}
+````
+
+## File: libs/uxcommon/src/pipes/timeago.pipe.ts
+````typescript
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
+
+export interface TimeAgoOptions {
+  thresholdDays?: number;
+  style?: 'long' | 'short' | 'compact' | string;
+  compact?: boolean;
+  hideSuffix?: boolean;
+  // Index signature ensures any other existing options in your codebase are accepted
+  [key: string]: any;
+}
+
+@Pipe({
+  name: 'timeAgo', // Matched to your template casing
+  pure: false, // Must be false to update the UI over time
+})
+export class TimeAgoPipe implements PipeTransform, OnDestroy {
+  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private lastValue?: string | number | Date | null;
+  private lastOptsJson?: string;
+  private lastResult = '';
+
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
+    // Stringify options to avoid pure:false memory reference loops
+    const optsJson = opts ? JSON.stringify(opts) : '';
+
+    // Only recalculate if the date OR the options have actually changed
+    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
+      return this.lastResult;
+    }
+
+    this.lastValue = value;
+    this.lastOptsJson = optsJson;
+    this.clearTimer();
+
+    if (!value) {
+      this.lastResult = '';
+      return this.lastResult;
+    }
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+      this.lastResult = String(value);
+      return this.lastResult;
+    }
+
+    const diffMs = new Date().getTime() - date.getTime();
+
+    // Calculate and cache the result
+    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
+    this.setupTimer(diffMs);
+
+    return this.lastResult;
+  }
+
+  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    // If a threshold is set and exceeded, fallback to a standard date string
+    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
+      return date.toLocaleDateString(undefined, {
+        month: opts.style === 'short' ? 'short' : 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+
+    const suffix = opts?.hideSuffix ? '' : ' ago';
+
+    // Handle compact/short styles
+    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
+      if (seconds < 60) return 'now';
+      if (minutes < 60) return `${minutes}m`;
+      if (hours < 24) return `${hours}h`;
+      return `${days}d`;
+    }
+
+    // Default long style
+    if (seconds < 60) return 'just now';
+    if (minutes === 1) return `a minute${suffix}`;
+    if (minutes < 60) return `${minutes} minutes${suffix}`;
+    if (hours === 1) return `an hour${suffix}`;
+    if (hours < 24) return `${hours} hours${suffix}`;
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days${suffix}`;
+
+    const months = Math.floor(days / 30);
+    if (months === 1) return `a month${suffix}`;
+    if (months < 12) return `${months} months${suffix}`;
+
+    const years = Math.floor(days / 365);
+    if (years === 1) return `a year${suffix}`;
+    return `${years} years${suffix}`;
+  }
+
+  private setupTimer(diffMs: number): void {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+
+    let timeoutMs = 60000;
+
+    // Scale update frequency based on age to save CPU
+    if (seconds < 60) {
+      timeoutMs = 10000; // 10 seconds
+    } else if (minutes < 60) {
+      timeoutMs = 60000; // 1 minute
+    } else if (minutes < 1440) {
+      timeoutMs = 3600000; // 1 hour
+    } else {
+      timeoutMs = 86400000; // 1 day
+    }
+
+    // Native setTimeout triggers Angular's zoneless scheduler internally
+    // when markForCheck is called inside it.
+    this.timerId = setTimeout(() => {
+      this.cdr.markForCheck();
+    }, timeoutMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
+    }
+  }
+
+  public ngOnDestroy(): void {
+    this.clearTimer();
+  }
+}
+````
 
 ## File: libs/uxcommon/src/index.ts
-
-```typescript
+````typescript
 export * from './loading-gate';
 export * from './request-guard';
 
@@ -8458,11 +10757,270 @@ export * from './pipes/filesize.pipe';
 export * from './pipes/sanitize-html.pipe';
 export * from './pipes/svg-html-pipe';
 export * from './pipes/timeago.pipe';
-```
+````
+
+## File: libs/uxcommon/src/request-guard.ts
+````typescript
+export type RequestGuard = {
+  /**
+   * Marks the start of a new request and returns a checker for it. After each
+   * `await`, bail out unless the checker still returns true — a newer request
+   * has superseded this one and its (stale) response must not land.
+   */
+  begin(): () => boolean;
+};
+
+/**
+ * Guards a reloadable async data source against out-of-order responses: when a
+ * component reloads on an input change (e.g. prev/next record navigation), a
+ * slow earlier response must not overwrite the newer record.
+ *
+ * ```ts
+ * private readonly guard = createRequestGuard();
+ *
+ * async load(id: string) {
+ *   const isCurrent = this.guard.begin();
+ *   const data = await this.svc.getById(id);
+ *   if (!isCurrent()) return;
+ *   this.detail.set(data);
+ * }
+ * ```
+ */
+export function createRequestGuard(): RequestGuard {
+  let sequence = 0;
+  return {
+    begin(): () => boolean {
+      const requestId = ++sequence;
+      return () => requestId === sequence;
+    },
+  };
+}
+````
+
+## File: libs/common/src/lib/schemas/core.schema.ts
+````typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+    /**
+     * Volunteer/staff status filters (§15) — first-class replacements for the
+     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
+     * circular import with persons.schema; the enum is validated at the column.
+     */
+    volunteerStatus: z.array(z.string()).optional(),
+    staffStatus: z.array(z.string()).optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+/**
+ * One column's server-side filter as the datagrid posts it inside `filterModel`:
+ * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
+ * `value` to match. Consumed by BaseRepository.applyColumnFilter /
+ * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
+ * numbers, and booleans — coerce with String(...) at the point of use. Matches
+ * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
+ */
+export interface GridColumnFilter {
+  op?: string;
+  value?: unknown;
+}
+
+/** The datagrid's per-column filter bag: column id → its filter. */
+export type GridFilterModel = Record<string, GridColumnFilter>;
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
+````
 
 ## File: libs/common/src/lib/auth.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 export interface IAuthKeyPayload {
@@ -8608,11 +11166,130 @@ export const signUpInputObj = z.object({
   password: z.string().min(8).max(72),
   first_name: z.string().max(100),
 });
-```
+````
+
+## File: libs/uxcommon/src/components/alerts/alerts.html
+````html
+<div
+  class="pointer-events-none z-50 flex w-full flex-col items-center gap-2 px-4"
+  [class.absolute]="!isPositionRelative()"
+  [class.left-0]="!isPositionRelative()"
+  [class.top-4]="isPositionTop()"
+  [class.bottom-4]="isPositionBottom()"
+>
+  @for (alert of alerts(); track alert.id) {
+  <div
+    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
+    role="alert"
+    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
+    (click)="dismiss(alert.id)"
+  >
+    <span
+      aria-hidden="true"
+      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
+    ></span>
+    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
+    <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
+      {{ alert.text }}
+    </div>
+    @if (alert.count() > 1) {
+    <span
+      class="mt-px shrink-0 rounded-full bg-base-content/10 px-[7px] py-px text-[10.5px] font-semibold tabular-nums text-base-content"
+    >
+      ×{{ alert.count() }}
+    </span>
+    }
+  </div>
+  }
+</div>
+````
+
+## File: libs/uxcommon/src/components/alerts/alerts.ts
+````typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+import { ALERTTYPE, AlertService } from './alert-service';
+
+@Component({
+  selector: 'pc-alerts',
+  imports: [Icon, AnimateIfDirective],
+  templateUrl: './alerts.html',
+})
+export class Alerts {
+  protected alertSvc = inject(AlertService);
+
+  public position = input<'top' | 'bottom' | 'relative'>('bottom');
+
+  protected readonly alerts = computed(() => {
+    const list = this.alertSvc.alertList();
+    // Service list is newest-first; render newest nearest the pinned edge
+    // (bottom of the stack when pinned bottom — spec §2).
+    return this.isPositionBottom() ? list.slice().reverse() : list;
+  });
+
+  protected dismiss(id: string): void {
+    this.alertSvc.dismiss(id);
+  }
+
+  protected getEnterAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
+  }
+
+  protected getExitAnim(): string {
+    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
+  }
+
+  protected icon(type?: ALERTTYPE): PcIconNameType {
+    return type === 'success'
+      ? 'check-circle'
+      : type === 'warning'
+        ? 'exclamation-triangle'
+        : type === 'error'
+          ? 'exclamation-circle'
+          : 'information-circle';
+  }
+
+  protected isPositionBottom() {
+    return this.position() === 'bottom';
+  }
+
+  protected isPositionRelative() {
+    return this.position() === 'relative';
+  }
+
+  protected isPositionTop() {
+    return this.position() === 'top';
+  }
+
+  /** Tone accent bar hugging the card's left edge — the card surface and text stay neutral. */
+  protected barToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success'
+      : type === 'warning'
+        ? 'bg-warning'
+        : type === 'error'
+          ? 'bg-error'
+          : 'bg-info';
+  }
+
+  /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
+  protected toneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'text-success'
+      : type === 'warning'
+        ? 'text-warning'
+        : type === 'error'
+          ? 'text-error'
+          : 'text-info';
+  }
+}
+````
 
 ## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-
-```typescript
+````typescript
 import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -8806,11 +11483,10 @@ export class DetailHeader {
     inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
   }
 }
-```
+````
 
 ## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-
-```typescript
+````typescript
 import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
@@ -8946,385 +11622,108 @@ export class ConfirmDialogHost {
     this.svc.ok(value);
   }
 }
-```
+````
 
-## File: libs/common/src/index.ts
+## File: libs/uxcommon/src/styles/themes.css
+````css
+/*
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
+ * palette, consumed by every app (apps/frontend, apps/companion). Import this
+ * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
+ * these values into an app-local theme block; change them here.
+ */
 
-```typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
+/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
+   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
+   DaisyUI blocks below, same as --color-line. */
+@theme {
+  --color-base-50: #fbfbfc;
+}
 
-export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
+   scanner cannot see — without this safelist an icon size only works if some other
+   file happens to use the same w-/h- class literally. Covers every [size] in use. */
+@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
 
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #3498db;
+  --color-primary-content: #ffffff;
+  --color-secondary: #22a6b3;
+  --color-secondary-content: #ffffff;
+  --color-accent: #818789;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: rgb(226, 226, 226);
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e3d6a7;
+  --color-warning-content: #4a3d0a;
+  --color-error: #eb4d4b;
+  --color-error-content: #ffffff;
 
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  KNOCK_RESPONSE_LABELS,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  CompanionSurveyObj,
-  CompanionPersonResultObj,
-  CompanionDoorOutcomeObj,
-  CompanionClearOutcomeObj,
-  CompanionPersonCreateObj,
-  CompanionOpObj,
-  CompanionResultsObj,
-  UpdateCompanionSettingsObj,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  GetSignStatusObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_REQUEST_STATUS_LABELS,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-  CompanionAccessQueryObj,
-  CompanionVerifyStartObj,
-  CompanionVerifyConfirmObj,
-  COMPANION_LINK_KINDS,
-  COMPANION_VERIFY_CHANNELS,
-  COMPANION_VOLUNTEER_STATUSES,
-  COMPANION_ACCESS_STATES,
-} from './lib/schema';
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
 
-export type {
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVolunteerStatus,
-  CompanionAccessState,
-  CompanionContact,
-  CompanionAccessPayload,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-} from './lib/schemas/companion-access.schema';
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel } from './lib/schemas/persons.schema';
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
 
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+@plugin "daisyui/theme" {
+  name: 'dark';
 
-export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
 
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-} from './lib/schemas/workflows.schema';
-export type {
-  TurfStatus,
-  KnockOutcome,
-  KnockResponse,
-  CompanionSurveyType,
-  CompanionOpType,
-  CompanionResultsType,
-  CompanionOpAck,
-  CompanionSurveyPrefill,
-  CompanionPersonResult,
-  CompanionPerson,
-  CompanionDoorOutcome,
-  CompanionHousehold,
-  CompanionTurfPayload,
-  UpdateCompanionSettingsType,
-} from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  GetSignStatusType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
 
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
+  /* Surfaces */
+  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
 
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
 
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
 
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
 
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-```
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+````
 
 ## File: libs/common/src/lib/kysely.models.ts
-
-```typescript
+````typescript
 // tsco:ignore
 /* eslint-disable @typescript-eslint/no-explicit-any */
 //
@@ -9847,6 +12246,10 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   do_not_contact: Generated<boolean>;
   /** Channels the DNC applies to ('email' | 'phone' | 'door'); null = all channels. */
   do_not_contact_channels: string[] | null;
+  /** Global volunteer standing (§15); null = not a volunteer. Retired the volunteer system tag (2026-07-12). */
+  volunteer_status: string | null;
+  /** Global staff standing (§15); null = not staff. Retired the staff system tag (2026-07-12). */
+  staff_status: string | null;
   household_id: string | null;
   createdby_id: string;
   first_name: string | null;
@@ -10592,4 +12995,421 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-```
+````
+
+## File: libs/common/src/index.ts
+````typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  GetSignStatusObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+} from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  GetSignStatusType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export { GB, PLANS, PLANS_BY_KEY, PURCHASABLE_PLAN_KEYS, getPlanDef, planDisplayName } from './lib/billing/plans';
+export type { PlanKey, PurchasablePlanKey, PlanDef } from './lib/billing/plans';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
+````

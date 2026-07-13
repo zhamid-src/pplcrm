@@ -8,18 +8,13 @@
     <p class="mx-auto mt-3.5 max-w-[540px] text-[16px] leading-relaxed text-base-content/60">
       Start free forever. Upgrade when the whole team is on it. Your data comes with you either way.
     </p>
-    <div
-      class="mx-auto mt-5 inline-block rounded-full bg-warning/45 px-3 py-1.5 text-[12.5px] font-semibold text-warning-content"
-    >
-      Sample tiers. The shape is real; the numbers are placeholders.
-    </div>
   </div>
 </section>
 
 <!-- Tiers -->
 <section class="px-5 py-14 sm:px-8">
-  <div class="site-wrap grid gap-4 lg:grid-cols-3">
-    @for (tier of tiers; track tier.name) {
+  <div class="site-wrap grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    @for (tier of tiers; track tier.key) {
     <div
       class="flex flex-col rounded-xl bg-base-100 p-7"
       [class]="tier.featured ? 'border-2 border-primary shadow-[0_12px_40px_rgba(52,152,219,.12)]' : 'border border-line'"
@@ -36,7 +31,7 @@
       <div class="mt-1 text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
       <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
 
-      <ul class="mt-5 flex flex-col gap-2.5 text-[13.5px]">
+      <ul class="mb-6 mt-5 flex flex-col gap-2.5 text-[13.5px]">
         @for (feature of tier.features; track feature) {
         <li class="flex gap-2.5">
           <svg class="mt-0.5 h-4 w-4 flex-none text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -52,14 +47,14 @@
       </ul>
 
       <a
-        [href]="tier.ctaHref"
-        class="mt-6 rounded-field px-4 py-2.5 text-center text-[14px] font-semibold"
+        [href]="ctaHref(tier)"
+        class="mt-auto rounded-field px-4 py-2.5 text-center text-[14px] font-semibold"
         [class]="
             tier.featured
               ? 'btn btn-primary rounded-field'
               : 'border border-line text-base-content hover:border-primary hover:text-primary'
           "
-        >{{ tier.ctaLabel }}</a
+        >{{ ctaLabel(tier) }}</a
       >
     </div>
     }

@@ -5,6 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { PLANS, PURCHASABLE_PLAN_KEYS, planDisplayName, type PlanDef, type PurchasablePlanKey } from '@common';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
@@ -16,6 +17,10 @@ export interface BillingDetailsSnapshot {
   stripeSubscriptionId: string | null;
   hasActiveSubscription: boolean;
   isMockMode: boolean;
+}
+
+function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
+  return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
 }
 
 @Component({
@@ -32,6 +37,14 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   protected readonly loading = this._loading.visible;
   protected readonly actionPending = signal(false);
   protected readonly details = signal<BillingDetailsSnapshot | null>(null);
+
+  /** Upgrade grid: every plan except the free/default tier (Grassroots, Representative, Movement, Enterprise). */
+  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.key !== 'free');
+  protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
+
+  protected planLabel(plan: string | null | undefined): string {
+    return planDisplayName(plan);
+  }
 
   ngOnInit(): void {
     void this.initBilling();
@@ -60,9 +73,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   }
 
   private async handleQueryParams(params: Record<string, string>): Promise<void> {
-    if (params['mock_checkout_success'] && params['plan']) {
-      const plan = params['plan'] as 'grassroots' | 'representative';
-      await this.handleMockActivation(plan);
+    if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
+      await this.handleMockActivation(params['plan']);
     } else if (params['checkout_success']) {
       this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
       this.clearQueryParams();
@@ -72,10 +84,12 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 
-  protected async subscribe(plan: 'grassroots' | 'representative') {
+  protected async subscribe(plan: PlanDef) {
+    if (!isPurchasablePlan(plan.key)) return;
+    const planKey = plan.key;
     this.actionPending.set(true);
     try {
-      const res = await this.api.billing.createCheckout.mutate({ plan });
+      const res = await this.api.billing.createCheckout.mutate({ plan: planKey });
       if (res?.url) {
         window.location.href = res.url;
       } else {
@@ -102,7 +116,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 
-  private async handleMockActivation(plan: 'grassroots' | 'representative') {
+  private async handleMockActivation(plan: PurchasablePlanKey) {
     const end = this._loading.begin();
     try {
       await this.api.billing.activateMockPlan.mutate({ plan });

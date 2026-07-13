@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import Stripe from 'stripe';
+import type { PlanKey, PurchasablePlanKey } from '@common';
 import { env } from '../../../env';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { logger } from '../../logger';
@@ -7,6 +8,22 @@ import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { WorkflowsController } from '../workflows/controller';
 import { WebhookEventsRepo } from './repositories/webhook-events.repo';
 import { getPlanLimits } from './usage-limits';
+
+/** Stripe price ID configured for each self-serve plan (undefined in mock mode / when unset). */
+const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, string | undefined> = {
+  grassroots: env.stripePlanGrassrootsPriceId,
+  representative: env.stripePlanRepresentativePriceId,
+  movement: env.stripePlanMovementPriceId,
+};
+
+/** Reverse-map a Stripe price ID back to our internal plan key. */
+function planForPriceId(priceId: string | undefined | null): PurchasablePlanKey | null {
+  if (!priceId) return null;
+  for (const [plan, id] of Object.entries(PRICE_ID_BY_PLAN)) {
+    if (id && id === priceId) return plan as PurchasablePlanKey;
+  }
+  return null;
+}
 
 const stripeSecretKey = env.stripeSecretKey;
 const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
@@ -67,10 +84,7 @@ export class BillingController {
     };
   }
 
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    plan: 'grassroots' | 'representative',
-  ) {
+  public async createCheckoutSession(auth: { tenant_id: string; user_id: string }, plan: PurchasablePlanKey) {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
@@ -109,7 +123,7 @@ export class BillingController {
     }
 
     // Determine Stripe Price ID
-    const priceId = plan === 'grassroots' ? env.stripePlanGrassrootsPriceId : env.stripePlanRepresentativePriceId;
+    const priceId = PRICE_ID_BY_PLAN[plan];
 
     if (!priceId) {
       throw new Error(`Stripe Price ID is not configured for plan: ${plan}`);
@@ -216,9 +230,7 @@ export class BillingController {
           const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
           const priceId = subscription.items.data[0]?.price.id;
 
-          let planName = 'free';
-          if (priceId === env.stripePlanGrassrootsPriceId) planName = 'grassroots';
-          else if (priceId === env.stripePlanRepresentativePriceId) planName = 'representative';
+          const planName: PlanKey = planForPriceId(priceId) ?? 'free';
 
           await tenantsRepo.update({
             tenant_id: tenantId,
@@ -254,9 +266,7 @@ export class BillingController {
 
         if (dbTenant) {
           const priceId = subscription.items.data[0]?.price.id;
-          let planName = dbTenant.subscription_plan;
-          if (priceId === env.stripePlanGrassrootsPriceId) planName = 'grassroots';
-          else if (priceId === env.stripePlanRepresentativePriceId) planName = 'representative';
+          const planName: string = planForPriceId(priceId) ?? dbTenant.subscription_plan;
 
           await tenantsRepo.update({
             tenant_id: dbTenant.id,
@@ -435,7 +445,7 @@ export class BillingController {
     }
   }
 
-  public async activateMockPlan(auth: { tenant_id: string }, plan: 'grassroots' | 'representative') {
+  public async activateMockPlan(auth: { tenant_id: string }, plan: PurchasablePlanKey) {
     if (!isMockMode) {
       throw new Error('This helper is only available in local Mock Mode');
     }
@@ -516,21 +526,22 @@ export class BillingController {
       const planLimits = getPlanLimits(planName);
       const billingPageUrl = `${env.appUrl}/workspace/billing`;
       const mockPrefix = isMock ? '[MOCK] ' : '';
+      const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
 
       const mailService = new TransactionalEmailService();
       await mailService.sendMail({
         to: admin.email,
         subject: `${mockPrefix}Subscription Updated: Welcome to the ${planName.toUpperCase()} Plan`,
-        text: `Hi ${admin.first_name || 'Owner'},\n\n${mockPrefix}Your subscription has been successfully updated.\n\nNew Plan: ${planName.toUpperCase()}\nPrice: ${planLimits.price}\n\nPlan Limits:\n- Contacts: ${planLimits.contacts.toLocaleString()} contacts\n- User Seats: ${planLimits.seats} seats\n- Monthly Emails: ${planLimits.emails.toLocaleString()} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
+        text: `Hi ${admin.first_name || 'Owner'},\n\n${mockPrefix}Your subscription has been successfully updated.\n\nNew Plan: ${planName.toUpperCase()}\nPrice: ${planLimits.price}\n\nPlan Limits:\n- Email Subscribers: ${fmt(planLimits.subscribers)}\n- User Seats: ${fmt(planLimits.seats)}\n- Monthly Emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
         html: `<p>Hi ${admin.first_name || 'Owner'},</p>
 <p>${mockPrefix}Your subscription has been successfully updated.</p>
 <p><strong>New Plan:</strong> ${planName.toUpperCase()}<br>
 <strong>Price:</strong> ${planLimits.price}</p>
 <p><strong>Active Limits:</strong></p>
 <ul>
-  <li><strong>Contacts:</strong> Up to ${planLimits.contacts.toLocaleString()} contacts</li>
-  <li><strong>User Seats:</strong> Up to ${planLimits.seats} seats</li>
-  <li><strong>Monthly Emails:</strong> Up to ${planLimits.emails.toLocaleString()} outbound emails</li>
+  <li><strong>Email Subscribers:</strong> Up to ${fmt(planLimits.subscribers)}</li>
+  <li><strong>User Seats:</strong> Up to ${fmt(planLimits.seats)}</li>
+  <li><strong>Monthly Emails:</strong> Up to ${fmt(planLimits.emails)} outbound emails</li>
 </ul>
 <p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`,
       });

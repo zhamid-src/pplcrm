@@ -363,6 +363,9 @@ export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 
 export type { EmailStatus, EmailFolderConfig } from './lib/emails';
 
+export { GB, PLANS, PLANS_BY_KEY, PURCHASABLE_PLAN_KEYS, getPlanDef, planDisplayName } from './lib/billing/plans';
+export type { PlanKey, PurchasablePlanKey, PlanDef } from './lib/billing/plans';
+
 export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
 
 export type {

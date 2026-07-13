@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
+import { GB, PLANS, PLANS_BY_KEY, getPlanDef } from '@common';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { env } from '../../../env';
@@ -9,28 +10,31 @@ import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export interface PlanLimits {
   price: string;
-  contacts: number;
+  /** Emailable-subscriber cap (Infinity = unlimited). */
+  subscribers: number;
   seats: number;
   emails: number;
-  /** Storage quota in bytes. */
+  /** Storage quota in bytes (Infinity = unlimited). */
   storageBytes: number;
 }
 
 const settingsRepo = new SettingsRepo();
 const mailService = new TransactionalEmailService();
 
-const GB = 1024 * 1024 * 1024;
+/** null limit in a plan def means "unlimited" — represent it as Infinity so usage % never trips an alert. */
+function orUnlimited(value: number | null): number {
+  return value == null ? Number.POSITIVE_INFINITY : value;
+}
 
 export function getPlanLimits(planName: string | null | undefined): PlanLimits {
-  switch (planName?.toLowerCase()) {
-    case 'grassroots':
-      return { price: '$49/month', contacts: 5000, seats: 3, emails: 5000, storageBytes: 5 * GB };
-    case 'representative':
-      return { price: '$199/month', contacts: 50000, seats: 10, emails: 50000, storageBytes: 25 * GB };
-    default:
-      // Free / Trial Tier
-      return { price: '$0/month (Free Trial)', contacts: 500, seats: 1, emails: 500, storageBytes: 1 * GB };
-  }
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return {
+    price: plan.price === 'Custom' ? 'Custom' : `${plan.price}/month`,
+    subscribers: orUnlimited(plan.subscribers),
+    seats: orUnlimited(plan.seats),
+    emails: orUnlimited(plan.emails),
+    storageBytes: orUnlimited(plan.storageBytes),
+  };
 }
 
 /** Rounds a byte count to GB with one decimal place, for the coarse-grained usage/alerting resources. */
@@ -49,13 +53,23 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   const planName = (tenant['subscription_plan'] as string) || 'free';
   const planLimits = getPlanLimits(planName);
 
-  // 1. Count Contacts (Persons)
-  const contactsCountRow = await db
+  // 1. Count emailable Subscribers.
+  // We meter the sendable audience, NOT total contacts — a tenant can store its whole
+  // voter/canvassing universe for free; the cost (and the cap) is who it can email.
+  // Emailable = has an address, not globally do-not-contact, and the address isn't suppressed
+  // (hard bounce / spam complaint). This intentionally undercounts channel-specific DNC, which
+  // errs in the customer's favour.
+  const suppressedEmails = db.selectFrom('email_suppressions').select('email').where('tenant_id', '=', tenantId);
+  const subscribersCountRow = await db
     .selectFrom('persons')
     .select(db.fn.countAll().as('cnt'))
     .where('tenant_id', '=', tenantId)
+    .where('email', 'is not', null)
+    .where('email', '<>', '')
+    .where('do_not_contact', '=', false)
+    .where('email', 'not in', suppressedEmails)
     .executeTakeFirst();
-  const currentContacts = Number(contactsCountRow?.cnt || 0);
+  const currentSubscribers = Number(subscribersCountRow?.cnt || 0);
 
   // 2. Count Active User Seats
   const seatsCountRow = await db
@@ -128,11 +142,11 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
 
   const resources = [
     {
-      name: 'contacts list',
-      key: 'contacts',
-      current: currentContacts,
-      limit: planLimits.contacts,
-      unit: 'voter contacts',
+      name: 'subscriber list',
+      key: 'subscribers',
+      current: currentSubscribers,
+      limit: planLimits.subscribers,
+      unit: 'email subscribers',
     },
     {
       name: 'user seats',
@@ -242,6 +256,21 @@ async function sendLimitEmail(
   const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
   const prefix = pct === 100 ? 'reached' : 'approaching';
 
+  const seatsLabel = (seats: number | null): string => (seats == null ? 'unlimited' : String(seats));
+  const upgradePlans = PLANS.filter((p) => p.purchasable);
+  const upgradeText = upgradePlans
+    .map(
+      (p) =>
+        `- ${p.name} Plan (${p.price}/month): Up to ${(p.subscribers ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${(p.emails ?? 0).toLocaleString()} monthly emails.`,
+    )
+    .join('\n');
+  const upgradeHtml = upgradePlans
+    .map(
+      (p) =>
+        `  <li><strong>${p.name} Plan (${p.price}/month):</strong> Up to ${(p.subscribers ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${(p.emails ?? 0).toLocaleString()} monthly emails.</li>`,
+    )
+    .join('\n');
+
   const subject = `${alertTag} Action Required: You have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
   const text = `Hi,
 
@@ -252,8 +281,7 @@ Current Usage: ${resource.current.toLocaleString()} / ${resource.limit.toLocaleS
 To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.
 
 Upgrade Options:
-- Grassroots Plan ($49/month): Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.
-- Representative Plan ($199/month): Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.
+${upgradeText}
 
 Update your subscription tier here: ${billingPageUrl}
 
@@ -266,8 +294,7 @@ The PplCRM Team`;
 <p><strong>[${pct === 100 ? 'WARNING' : 'IMPORTANT'}]</strong> To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.</p>
 <p><strong>Upgrade Tiers:</strong></p>
 <ul>
-  <li><strong>Grassroots Plan ($49/month):</strong> Up to 5,000 contacts, 3 user seats, and 5,000 monthly emails.</li>
-  <li><strong>Representative Plan ($199/month):</strong> Up to 50,000 contacts, 10 user seats, and 50,000 monthly emails.</li>
+${upgradeHtml}
 </ul>
 <p><a href="${billingPageUrl}">Upgrade Subscription Plan</a></p>`;
 

@@ -64,16 +64,21 @@ describe('Usage Limits System', () => {
 
   it('should return correct limits for each plan', () => {
     const freeLimits = getPlanLimits('free');
-    expect(freeLimits.contacts).toBe(500);
-    expect(freeLimits.seats).toBe(1);
+    expect(freeLimits.subscribers).toBe(1000);
+    expect(freeLimits.seats).toBe(2);
 
     const grassrootsLimits = getPlanLimits('grassroots');
-    expect(grassrootsLimits.contacts).toBe(5000);
-    expect(grassrootsLimits.seats).toBe(3);
+    expect(grassrootsLimits.subscribers).toBe(5000);
+    expect(grassrootsLimits.seats).toBe(5);
 
     const representativeLimits = getPlanLimits('representative');
-    expect(representativeLimits.contacts).toBe(50000);
-    expect(representativeLimits.seats).toBe(10);
+    expect(representativeLimits.subscribers).toBe(25000);
+    expect(representativeLimits.seats).toBe(15);
+
+    // Movement seats are unlimited (null in the plan def → Infinity).
+    const movementLimits = getPlanLimits('movement');
+    expect(movementLimits.subscribers).toBe(100000);
+    expect(movementLimits.seats).toBe(Number.POSITIVE_INFINITY);
 
     expect(freeLimits.storageBytes).toBeGreaterThan(0);
     expect(grassrootsLimits.storageBytes).toBeGreaterThan(freeLimits.storageBytes);
@@ -103,20 +108,28 @@ describe('Usage Limits System', () => {
   });
 
   it('should trigger alert at 90% and 100% capacity and reset flag on reduction', async () => {
-    const _limits = getPlanLimits('free');
+    // Test via the user-seats resource: the Free plan seat limit is 2. The seed already holds
+    // one seat (the admin), so add a second user to reach exactly 2 seats = 100% capacity.
+    const secondUserId = String(Math.floor(Math.random() * 100000000) + 1000000);
+    await db
+      .insertInto('authusers')
+      .values({
+        id: secondUserId,
+        tenant_id: tenantId,
+        email: `member-${secondUserId}@example.com`,
+        password: 'password',
+        first_name: 'Second',
+        last_name: 'Member',
+        role: 'user',
+        verified: true,
+        createdby_id: secondUserId,
+        updatedby_id: secondUserId,
+      })
+      .execute();
 
-    // 1. Seed contacts to hit exactly 90% capacity of the Free Plan (90% of 500 = 450 contacts)
-    // For performance, we don't need to insert 450 rows, but wait, the query uses sql<number>`count(*)`
-    // So we need to insert rows or mock the db results? It's easier and faster to just insert them.
-    // Wait, inserting 450 contacts might be a bit slow, but since we are running locally on SQLite/PostgreSQL, it is very fast.
-    // Or we can update the tenant plan to a custom plan? But the plan name is an enum.
-    // Wait, we can test user seats! The Free plan limit for user seats is 1.
-    // So 1 seat = 100% capacity!
-    // Let's invite a second user, which hits 2 seats (200% capacity).
-    // Let's run a check!
     await checkTenantUsage(tenantId, db);
 
-    // With 1 seat, we are at 100% of seats limit (limit: 1).
+    // With 2 seats, we are at 100% of the Free seats limit (limit: 2).
     // Let's verify that a background job to alert is enqueued
     const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
 
@@ -139,8 +152,8 @@ describe('Usage Limits System', () => {
     const settingsVal = typeof settingsRow.value === 'string' ? JSON.parse(settingsRow.value) : settingsRow.value;
     expect(settingsVal.seats_100).toBe(true);
 
-    // 2. Now let's change plan to grassroots, which has seats limit of 3.
-    // Since 1 seat < 90% of 3 seats (90% of 3 is 2.7), it should reset the flags!
+    // 2. Now let's change plan to grassroots, which has a seats limit of 5.
+    // Since 2 seats < 90% of 5 seats (90% of 5 is 4.5), it should reset the flags!
     await db.updateTable('tenants').set({ subscription_plan: 'grassroots' }).where('id', '=', tenantId).execute();
 
     // Run check again

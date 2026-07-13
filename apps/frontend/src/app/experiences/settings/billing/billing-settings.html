@@ -38,7 +38,7 @@
         </div>
 
         <div>
-          <h3 class="text-3xl font-extrabold capitalize text-base-content">{{ details()?.plan }} Plan</h3>
+          <h3 class="text-3xl font-extrabold text-base-content">{{ planLabel(details()?.plan) }} Plan</h3>
           @if (details()?.hasActiveSubscription && details()?.endsAt) {
           <p class="text-xs text-base-content/60 mt-1">
             Your subscription will renew automatically on **{{ details()?.endsAt | date:'mediumDate' }}**.
@@ -110,75 +110,25 @@
       <p class="text-xs text-base-content/60">Choose the best fit for your campaign team or constituency office.</p>
     </div>
 
-    <div class="grid gap-6 md:grid-cols-3">
-      <!-- Grassroots Plan Card -->
+    <div class="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      @for (plan of plans; track plan.key) {
       <div
-        class="card pc-panel flex flex-col justify-between p-6 relative overflow-hidden transition-all hover:border-primary/30"
+        class="card flex flex-col justify-between p-6 relative overflow-hidden transition-all"
+        [class.pc-panel]="!plan.featured"
+        [class.hover:border-primary/30]="!plan.featured"
+        [class.bg-base-100]="plan.featured"
+        [class.border-2]="plan.featured"
+        [class.border-primary]="plan.featured"
+        [class.rounded-2xl]="plan.featured"
+        [class.shadow-md]="plan.featured"
       >
-        @if (details()?.plan === 'grassroots') {
+        @if (details()?.plan === plan.key) {
         <div
           class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
         >
           Active Plan
         </div>
-        }
-
-        <div class="space-y-4">
-          <div>
-            <h4 class="font-extrabold text-lg text-base-content">Grassroots</h4>
-            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">
-              Best for small local candidates and municipal campaigns.
-            </p>
-          </div>
-
-          <div class="flex items-baseline text-base-content">
-            <span class="text-4xl font-extrabold tracking-tight">$49</span>
-            <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
-          </div>
-
-          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Up to **5,000** contacts
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              **3 User Seats** included
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Shared Inbox (Email)
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Volunteer sign-up forms
-            </li>
-          </ul>
-        </div>
-
-        <div class="mt-6 pt-4">
-          <button
-            type="button"
-            class="btn btn-primary w-full"
-            [disabled]="details()?.plan === 'grassroots' || actionPending()"
-            (click)="subscribe('grassroots')"
-          >
-            @if (details()?.plan === 'grassroots') { Current Tier } @else { Upgrade to Grassroots }
-          </button>
-        </div>
-      </div>
-
-      <!-- Representative Plan Card -->
-      <div
-        class="card bg-base-100 border-2 border-primary rounded-2xl flex flex-col justify-between p-6 relative overflow-hidden transition-all shadow-md"
-      >
-        @if (details()?.plan === 'representative') {
-        <div
-          class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
-        >
-          Active Plan
-        </div>
-        } @else {
+        } @else if (plan.featured) {
         <div
           class="absolute top-0 right-0 bg-primary text-primary-content text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-bl-xl"
         >
@@ -188,96 +138,43 @@
 
         <div class="space-y-4">
           <div>
-            <h4 class="font-extrabold text-lg text-base-content flex items-center gap-1.5">Representative</h4>
-            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">
-              Best for state/provincial legislators and mid-sized campaign teams.
-            </p>
+            <h4 class="font-extrabold text-lg text-base-content">{{ plan.name }}</h4>
+            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">{{ plan.blurb }}</p>
           </div>
 
           <div class="flex items-baseline text-base-content">
-            <span class="text-4xl font-extrabold tracking-tight">$199</span>
+            <span class="text-4xl font-extrabold tracking-tight">{{ plan.price }}</span>
+            @if (plan.purchasable) {
             <span class="text-xs font-semibold text-base-content/60 ml-1">/ month</span>
+            }
           </div>
 
           <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
+            @for (feature of plan.features; track feature) {
             <li class="flex items-center gap-2">
               <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Up to **50,000** contacts
+              {{ feature }}
             </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              **10 User Seats** included
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Shared Inbox (Email + SMS)
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Volunteer door-knocking tools
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Automated email sequences
-            </li>
+            }
           </ul>
         </div>
 
         <div class="mt-6 pt-4">
+          @if (plan.purchasable) {
           <button
             type="button"
             class="btn btn-primary w-full"
-            [disabled]="details()?.plan === 'representative' || actionPending()"
-            (click)="subscribe('representative')"
+            [disabled]="details()?.plan === plan.key || actionPending()"
+            (click)="subscribe(plan)"
           >
-            @if (details()?.plan === 'representative') { Current Tier } @else { Upgrade to Representative }
+            @if (details()?.plan === plan.key) { Current Tier } @else { Upgrade to {{ plan.name }} }
           </button>
+          } @else {
+          <a [href]="enterpriseMailto" class="btn btn-outline btn-secondary w-full"> Contact Sales </a>
+          }
         </div>
       </div>
-
-      <!-- Enterprise Card -->
-      <div class="card pc-panel flex flex-col justify-between p-6 transition-all hover:border-primary/30">
-        <div class="space-y-4">
-          <div>
-            <h4 class="font-extrabold text-lg text-base-content">Enterprise</h4>
-            <p class="text-xs text-base-content/60 min-h-[32px] mt-1">
-              For national parties, congressional bids, and large advocacy operations.
-            </p>
-          </div>
-
-          <div class="flex items-baseline text-base-content">
-            <span class="text-3xl font-extrabold tracking-tight">Custom</span>
-          </div>
-
-          <ul class="space-y-2.5 text-xs text-base-content/80 border-t border-base-200 pt-4">
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Unlimited voter/contact records
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Custom user seat limits
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              SLA support & Dedicated IP
-            </li>
-            <li class="flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary shrink-0" />
-              Custom API & integrations
-            </li>
-          </ul>
-        </div>
-
-        <div class="mt-6 pt-4">
-          <a
-            href="mailto:support@peoplecrm.example.com?subject=Enterprise Inquiry"
-            class="btn btn-outline btn-secondary w-full"
-          >
-            Contact Sales
-          </a>
-        </div>
-      </div>
+      }
     </div>
   </div>
 </div>
