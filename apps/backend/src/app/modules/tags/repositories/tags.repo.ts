@@ -9,7 +9,6 @@ import type {
   TypeId,
   TypeTenantId,
 } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
 /** Row shape for the §9.1/§9.2 admin pages (Tags admin / Issues admin). Not paginated —
  * tag/issue vocabularies are small (dozens, not thousands), so the admin page fetches
@@ -158,53 +157,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
 
       return Number(result?.numDeletedRows ?? 0) > 0;
     });
-  }
-
-  public async ensureSystemTags(input: { tenant_id: string; user_id: string }, trx?: Transaction<Models>) {
-    for (const seed of SYSTEM_TAG_SEED_DATA) {
-      const existing = await this.getSelect(trx)
-        .select(['id', 'deletable', 'color'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('name', '=', seed.name)
-        .where('type', '=', 'tag')
-        .executeTakeFirst();
-
-      if (!existing) {
-        const row = {
-          tenant_id: input.tenant_id,
-          name: seed.name,
-          description: seed.description,
-          color: seed.color ?? null,
-          deletable: false,
-          type: 'tag',
-          createdby_id: input.user_id,
-          updatedby_id: input.user_id,
-        } as OperationDataType<'tags', 'insert'>;
-
-        await this.add({ row }, trx);
-        continue;
-      }
-
-      const desiredColor = seed.color ?? null;
-      const needsDeletableUpdate = existing.deletable !== false;
-      const needsColorUpdate = existing.color !== desiredColor;
-      if (needsDeletableUpdate || needsColorUpdate) {
-        const updateRow: OperationDataType<'tags', 'update'> = {
-          updatedby_id: input.user_id,
-          ...(needsDeletableUpdate ? { deletable: false } : {}),
-          ...(needsColorUpdate ? { color: desiredColor } : {}),
-        };
-
-        await this.update(
-          {
-            tenant_id: input.tenant_id,
-            id: String(existing.id),
-            row: updateRow,
-          },
-          trx,
-        );
-      }
-    }
   }
 
   public override async getAllWithCounts(

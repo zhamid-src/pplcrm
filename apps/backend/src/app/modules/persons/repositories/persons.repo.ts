@@ -38,23 +38,22 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
   }
 
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+  public async getByIds(
+    input: { tenant_id: string; ids: string[]; requireVolunteer?: boolean },
+    trx?: Transaction<Models>,
+  ) {
     const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
     if (!ids.length) return [];
-
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
 
     let query = this.getSelect(trx)
       .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
       .where('persons.tenant_id', '=', input.tenant_id)
       .where('persons.id', 'in', ids);
 
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
+    // Volunteer standing is a first-class person status (§15), no longer a tag —
+    // any non-null status counts as "is a volunteer".
+    if (input.requireVolunteer) {
+      query = query.where('persons.volunteer_status', 'is not', null);
     }
 
     const rows = await query.execute();
@@ -70,6 +69,26 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       });
     }
     return Array.from(map.values());
+  }
+
+  /**
+   * Promote people to an active volunteer standing when they are added to a team
+   * (§15) — the structured-status replacement for the old auto-attach of the
+   * `volunteer` tag. Only fills a NULL status, so an explicit
+   * inactive/former/prospective classification is never clobbered.
+   */
+  public async promoteToActiveVolunteer(
+    input: { tenant_id: string; ids: string[]; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return;
+    await this.getUpdate(trx)
+      .set({ volunteer_status: 'active', updated_at: sql`now()`, updatedby_id: input.user_id })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', 'in', ids)
+      .where('volunteer_status', 'is', null)
+      .execute();
   }
 
   public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
@@ -134,9 +153,14 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string; campaignId?: string } =
-      input.options || {};
+    const options: JoinedQueryParams & {
+      issues?: string[];
+      listId?: string;
+      campaignId?: string;
+      volunteerStatus?: string[];
+    } = input.options || {};
     const tenantId = input.tenant_id;
+    const volunteerStatus = options.volunteerStatus?.map((s) => s.trim()).filter(Boolean);
     // Campaign-scoped facts join (§15): '0' matches no rows, so without an active
     // campaign the support/voting columns are simply NULL ("Unknown").
     const campaignId = options.campaignId ?? '0';
@@ -162,6 +186,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .where('households.tenant_id', '=', tenantId)
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!volunteerStatus?.length, (q) => q.where('persons.volunteer_status', 'in', volunteerStatus ?? []))
         .$if(!!options.listId, (qb) =>
           qb.where('persons.id', 'in', (eb: any) =>
             eb

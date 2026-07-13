@@ -245,7 +245,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** tags them as a volunteer prospect, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
       },
       {
         kind: 'p',

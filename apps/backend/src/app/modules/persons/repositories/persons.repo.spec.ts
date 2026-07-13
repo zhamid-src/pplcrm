@@ -195,14 +195,15 @@ describe('PersonsRepo Integration', () => {
     expect(r2?.household_is_placeholder).toBe(false);
   });
 
-  it('should fetch persons by ids with tag filtering', async () => {
+  it('should fetch persons by ids, optionally restricted to volunteers', async () => {
     const p1 = await repo.add({
       row: {
         tenant_id: tenantId,
         campaign_id: campaignId,
         household_id: householdId,
-        first_name: 'Tagged',
+        first_name: 'Volunteer',
         last_name: 'One',
+        volunteer_status: 'active',
         createdby_id: userId,
         updatedby_id: userId,
       },
@@ -213,46 +214,21 @@ describe('PersonsRepo Integration', () => {
         tenant_id: tenantId,
         campaign_id: campaignId,
         household_id: householdId,
-        first_name: 'Untagged',
+        first_name: 'NotAVolunteer',
         last_name: 'Two',
         createdby_id: userId,
         updatedby_id: userId,
       },
     });
 
-    const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    const _tag = await db
-      .insertInto('tags')
-      .values({
-        id: randTagId,
-        tenant_id: tenantId,
-        name: 'TestTag',
-        deletable: true,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .execute();
-
-    await db
-      .insertInto('map_peoples_tags')
-      .values({
-        tenant_id: tenantId,
-        person_id: p1.id,
-        tag_id: randTagId,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // Fetch without tag filtering
+    // Fetch without the volunteer restriction
     const allFetched = await repo.getByIds({ tenant_id: tenantId, ids: [p1.id, p2.id] });
     expect(allFetched).toHaveLength(2);
 
-    // Fetch with tag filtering
-    const taggedFetched = await repo.getByIds({ tenant_id: tenantId, ids: [p1.id, p2.id], tags: ['TestTag'] });
-    expect(taggedFetched).toHaveLength(1);
-    expect(taggedFetched[0].id).toBe(p1.id);
+    // Fetch restricted to volunteers (non-null volunteer_status, §15)
+    const volunteersOnly = await repo.getByIds({ tenant_id: tenantId, ids: [p1.id, p2.id], requireVolunteer: true });
+    expect(volunteersOnly).toHaveLength(1);
+    expect(volunteersOnly[0].id).toBe(p1.id);
   });
 
   it('should retrieve created stats', async () => {

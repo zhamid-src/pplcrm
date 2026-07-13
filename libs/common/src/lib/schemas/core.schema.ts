@@ -85,6 +85,13 @@ export const getAllOptions = z
     listId: z.string().optional(),
     /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
     campaignId: z.string().optional(),
+    /**
+     * Volunteer/staff status filters (§15) — first-class replacements for the
+     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
+     * circular import with persons.schema; the enum is validated at the column.
+     */
+    volunteerStatus: z.array(z.string()).optional(),
+    staffStatus: z.array(z.string()).optional(),
   })
   .optional();
 

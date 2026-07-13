@@ -213,6 +213,8 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
         mobile: p.mobile ?? null,
         notes: p.notes ?? null,
         do_not_contact: p.doNotContact ?? false,
+        volunteer_status: p.volunteerStatus ?? null,
+        staff_status: p.staffStatus ?? null,
         created_at: daysAgo(p.createdDaysAgo),
       })),
     )
@@ -225,7 +227,7 @@ export async function seedDemoData(params: SeedParams, trx: Transaction<Models>)
   await backfillMissingSlugs(trx, 'households', tenant_id);
   await backfillMissingSlugs(trx, 'companies', tenant_id);
 
-  // ── Tags (freeform labels; system tags already exist via ensureSystemTags) ─
+  // ── Tags (freeform labels only; volunteer/staff are first-class person status now, §15) ─
   const tagRows = await trx
     .insertInto('tags')
     .values(

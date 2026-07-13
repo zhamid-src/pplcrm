@@ -476,15 +476,14 @@ describe('CanvassingController', () => {
     expect(sub?.status).toBe('subscribed');
     expect(sub?.consent_source).toBe('canvass');
 
-    // Volunteer prospect tag attached.
-    const tagged = await db
-      .selectFrom('map_peoples_tags')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .select('tags.name')
-      .where('map_peoples_tags.tenant_id', '=', s.tenantId)
-      .where('map_peoples_tags.person_id', '=', alice!.id)
-      .execute();
-    expect(tagged.map((t) => t.name)).toContain('Volunteer prospect');
+    // "Wants to volunteer" sets first-class volunteer standing (§15), not a tag.
+    const volunteerRow = await db
+      .selectFrom('persons')
+      .select('volunteer_status')
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', alice!.id)
+      .executeTakeFirst();
+    expect(volunteerRow?.volunteer_status).toBe('prospective');
 
     // DNC-only save (no support level) is allowed and flips the person flag.
     const bobPerson = await db

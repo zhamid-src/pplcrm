@@ -262,7 +262,7 @@ describe('PersonForm', () => {
     expect(component['addressString']()).toBeNull();
   });
 
-  it('should prompt before detaching volunteer tag if person is in teams', async () => {
+  it('should detach a tag without any team cascade (volunteer is a status now, §15)', async () => {
     fixture.componentRef.setInput('mode', 'edit');
     fixture.componentRef.setInput('id', 'p1');
     void component.ngOnInit();
@@ -270,8 +270,6 @@ describe('PersonForm', () => {
 
     await component['tagRemoved']('volunteer');
 
-    expect(mockTeamsSvc.getTeamsForVolunteer).toHaveBeenCalledWith('p1');
-    expect(mockConfirmDlg.confirm).toHaveBeenCalled();
     expect(mockPersonsSvc.detachTag).toHaveBeenCalledWith('p1', 'volunteer', 'tag');
   });
 

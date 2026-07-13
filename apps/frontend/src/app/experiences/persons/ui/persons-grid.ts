@@ -299,7 +299,8 @@ export class PersonsGrid implements OnInit {
   /**
    * Total people count for the grain header sentence (spec §5): "{n} people total".
    * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor/volunteer are just tag filters now — so only the overall total is fetched.
+   * donor is derived from donations and volunteer/staff are first-class person
+   * status (§15), not grid segments — so only the overall total is fetched.
    */
   private async loadTotalCount(): Promise<void> {
     try {

@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus } from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -19,7 +19,6 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
-import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
 import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { Selectable } from 'kysely';
@@ -57,7 +56,6 @@ export class PersonForm implements OnInit {
   private readonly confirmDlg = inject(ConfirmDialogService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
-  private readonly teamsSvc = inject(TeamsService);
   private readonly companiesSvc = inject(CompaniesService);
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
@@ -186,6 +184,9 @@ export class PersonForm implements OnInit {
   protected readonly draftVoting = signal<VotingStatus | ''>('');
   protected readonly draftSubscribe = signal(false);
   protected readonly draftDnc = signal(false);
+  // Volunteer/staff are global person status (§15) — folded straight into the add payload.
+  protected readonly draftVolunteer = signal<VolunteerStatus | ''>('');
+  protected readonly draftStaff = signal<StaffStatus | ''>('');
 
   // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
   protected readonly allTagNames = signal<string[]>([]);
@@ -513,48 +514,11 @@ export class PersonForm implements OnInit {
     const id = this.id();
     if (!id) return;
 
-    const normalized = tag.trim().toLowerCase();
     const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
 
     try {
-      if (normalized === 'volunteer') {
-        let teams: Array<{ id: string; name: string; is_captain: boolean }> = [];
-        try {
-          teams = await this.teamsSvc.getTeamsForVolunteer(id);
-        } catch (err) {
-          console.error('Failed to load teams for volunteer tag removal', err);
-        }
-
-        if (teams.length) {
-          const details = teams
-            .map((team) => `• ${team.name || 'Unnamed team'}${team.is_captain ? ' (captain)' : ''}`)
-            .join('\n');
-          const confirmed = await this.confirmDlg.confirm({
-            title: 'Remove volunteer tag?',
-            message:
-              'Removing the volunteer tag will also remove this person from the following teams:\n\n' +
-              details +
-              '\n\nDo you want to continue?',
-            confirmText: 'Remove tag',
-            cancelText: 'Keep tag',
-            variant: 'warning',
-          });
-          if (!confirmed) {
-            restoreTag();
-            return;
-          }
-        }
-
-        const result = await this.personsSvc.detachTag(id, tag, 'tag');
-        await this.updateTags();
-        await this.tagOptionsSvc.invalidate('tag');
-        if (result?.removed_teams && result.removed_teams.length > 0) {
-          const names = result.removed_teams.map((team) => team.name || 'Unnamed team');
-          this.alertSvc.showSuccess(`Removed from teams: ${names.join(', ')}`);
-        }
-        return;
-      }
-
+      // Volunteer/staff are first-class person status now (§15), no longer tags —
+      // tag removal is the plain path with no team cascade.
       await this.personsSvc.detachTag(id, tag, 'tag');
       await this.updateTags();
       await this.tagOptionsSvc.invalidate('tag');
@@ -603,6 +567,14 @@ export class PersonForm implements OnInit {
       data = { ...data, do_not_contact: true } as UpdatePersonsType;
     }
 
+    // Volunteer/staff are global person status (§15) — fold non-empty values in.
+    if (this.draftVolunteer()) {
+      data = { ...data, volunteer_status: this.draftVolunteer() } as UpdatePersonsType;
+    }
+    if (this.draftStaff()) {
+      data = { ...data, staff_status: this.draftStaff() } as UpdatePersonsType;
+    }
+
     // Snapshot the campaign-scoped standing NOW, before the success handler resets
     // the draft signals — it is applied after the person id exists.
     const standing = {
@@ -629,6 +601,8 @@ export class PersonForm implements OnInit {
           this.draftVoting.set('');
           this.draftSubscribe.set(false);
           this.draftDnc.set(false);
+          this.draftVolunteer.set('');
+          this.draftStaff.set('');
           this.form().reset();
         }
       })

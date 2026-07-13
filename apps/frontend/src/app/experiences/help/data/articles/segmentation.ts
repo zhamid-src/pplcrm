@@ -12,7 +12,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Tags are free-form labels — **volunteer**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful.',
+        text: 'Tags are free-form labels — **community-leader**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags — they are first-class status fields on the person; set them from the person’s standing card.)',
       },
       { kind: 'h2', id: 'apply', text: 'Apply tags' },
       {
@@ -50,7 +50,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'tip',
         title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people — merge the stragglers into one instead of deleting and re-tagging.',
       },
     ],
   },
@@ -81,7 +81,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
       {
         kind: 'p',
-        text: 'A smart list is defined by rules in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+        text: 'A smart list is defined by rules in the query builder — “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
       },
       { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
       {

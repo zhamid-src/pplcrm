@@ -101,16 +101,6 @@ describe('TagsRepo Integration', () => {
     await cleanTenant(db, tenantId);
   });
 
-  it('should ensure system tags exist', async () => {
-    await repo.ensureSystemTags({ tenant_id: tenantId, user_id: userId });
-
-    const all = await repo.getAll({ tenant_id: tenantId });
-    expect(all.length).toBeGreaterThan(0);
-
-    const systemTag = all.find((t) => t.deletable === false);
-    expect(systemTag).toBeDefined();
-  });
-
   it('should delete tags and their mapping associations', async () => {
     const tag = await repo.add({
       row: {

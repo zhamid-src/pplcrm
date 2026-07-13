@@ -5,10 +5,7 @@ import type { Selectable, Transaction } from 'kysely';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
-import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { getCanonicalSystemTagName } from '../tags/system-tags';
 import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
 import { MapTeamsListsRepo } from './repositories/map-teams-lists.repo';
 import { TeamsRepo } from './repositories/teams.repo';
@@ -19,9 +16,6 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly mapRepo = new MapTeamsPersonsRepo();
   private readonly mapListsRepo = new MapTeamsListsRepo();
   private readonly personsRepo = new PersonsRepo();
-  private readonly personsTagRepo = new MapPersonsTagRepo();
-  private readonly tagsRepo = new TagsRepo();
-  private readonly volunteerTag = getCanonicalSystemTagName('volunteer') ?? 'volunteer';
 
   constructor() {
     super(new TeamsRepo());
@@ -31,16 +25,16 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const repo = this.getRepo();
     return repo.transaction().execute(async (trx) => {
       const volunteerIds = this.normalizeVolunteerIds(input.volunteer_ids, input.team_captain_id);
-      await this.ensureVolunteerTag(auth.tenant_id, volunteerIds, auth.user_id, trx);
+      await this.ensureVolunteerStatus(auth.tenant_id, volunteerIds, auth.user_id, trx);
       const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds, trx);
       if (volunteers.length !== volunteerIds.length) {
-        throw new BadRequestError('Volunteers must have the Volunteer tag');
+        throw new BadRequestError('Volunteers must have a volunteer status');
       }
 
       const captainId = input.team_captain_id ? String(input.team_captain_id) : null;
       if (captainId) {
         const captain = volunteers.find((v) => v.id === captainId);
-        if (!captain) throw new BadRequestError('Team captain must have the Volunteer tag');
+        if (!captain) throw new BadRequestError('Team captain must have a volunteer status');
       }
 
       const row = {
@@ -266,15 +260,15 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 
       volunteerIds = this.normalizeVolunteerIds(volunteerIds, targetCaptainId ?? null);
 
-      await this.ensureVolunteerTag(auth.tenant_id, volunteerIds, auth.user_id, trx);
+      await this.ensureVolunteerStatus(auth.tenant_id, volunteerIds, auth.user_id, trx);
       const volunteers = await this.fetchVolunteers(auth.tenant_id, volunteerIds, trx);
       if (volunteers.length !== volunteerIds.length) {
-        throw new BadRequestError('Volunteers must have the Volunteer tag');
+        throw new BadRequestError('Volunteers must have a volunteer status');
       }
 
       if (targetCaptainId) {
         const captain = volunteers.find((v) => v.id === String(targetCaptainId));
-        if (!captain) throw new BadRequestError('Team captain must have the Volunteer tag');
+        if (!captain) throw new BadRequestError('Team captain must have a volunteer status');
       }
 
       if (input.volunteer_ids !== undefined || input.team_captain_id !== undefined) {
@@ -357,7 +351,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 
   private async fetchVolunteers(tenant_id: string, ids: string[], trx?: Transaction<Models>) {
     if (!ids?.length) return [];
-    return this.personsRepo.getByIds({ tenant_id, ids, tags: [this.volunteerTag] }, trx);
+    return this.personsRepo.getByIds({ tenant_id, ids, requireVolunteer: true }, trx);
   }
 
   private normalizeVolunteerIds(ids?: Iterable<string | null | undefined>, captainId?: string | null) {
@@ -371,40 +365,21 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     return Array.from(set);
   }
 
-  private async ensureVolunteerTag(tenant_id: string, personIds: string[], user_id: string, trx?: Transaction<Models>) {
+  /**
+   * Promote team members to an active volunteer standing (§15) — the
+   * structured-status replacement for the old auto-attach of the `volunteer`
+   * tag. Only fills a NULL status, so an explicit inactive/former/prospective
+   * classification is preserved.
+   */
+  private async ensureVolunteerStatus(
+    tenant_id: string,
+    personIds: string[],
+    user_id: string,
+    trx?: Transaction<Models>,
+  ) {
     const ids = Array.from(new Set(personIds.filter(Boolean)));
     if (!ids.length) return;
-
-    const tag = await this.tagsRepo.addOrGet(
-      {
-        row: {
-          tenant_id,
-          name: this.volunteerTag,
-          description: null,
-          deletable: false,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        } as OperationDataType<'tags', 'insert'>,
-        onConflictColumn: 'name',
-      },
-      trx,
-    );
-
-    if (!tag?.id) return;
-    const tagId = String(tag.id);
-
-    for (const personId of ids) {
-      const existing = await this.personsTagRepo.hasMapping({ tenant_id, person_id: personId, tag_id: tagId }, trx);
-      if (existing) continue;
-      const row = {
-        tenant_id,
-        person_id: personId,
-        tag_id: tagId,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      } as OperationDataType<'map_peoples_tags', 'insert'>;
-      await this.personsTagRepo.add({ row }, trx);
-    }
+    await this.personsRepo.promoteToActiveVolunteer({ tenant_id, ids, user_id }, trx);
   }
 
   private async resolveLeadUserName(tenantId: string, leadUserId: string | null, trx?: Transaction<Models>) {

@@ -9,8 +9,12 @@ import {
   SUPPORT_LEVEL_LABELS,
   VOTING_STATUSES,
   VOTING_STATUS_LABELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
 } from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus } from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
 
 import { CampaignContextService } from '../../../services/campaign-context.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -36,6 +40,9 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
 export class PersonCampaignFacts {
   readonly personId = input.required<string>();
   readonly dncFlag = input<boolean>(false);
+  /** Seed values for the global volunteer/staff status selects (§15). */
+  readonly volunteerStatus = input<string | null>(null);
+  readonly staffStatus = input<string | null>(null);
   /** The person's household (null = no address) — drives the yard-sign standing control. */
   readonly householdId = input<string | null>(null);
 
@@ -49,12 +56,19 @@ export class PersonCampaignFacts {
   protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
   protected readonly votingStatuses = VOTING_STATUSES;
   protected readonly votingLabels = VOTING_STATUS_LABELS;
+  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
+  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
+  protected readonly staffStatuses = STAFF_STATUSES;
+  protected readonly staffLabels = STAFF_STATUS_LABELS;
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
   protected readonly saving = signal(false);
   protected readonly facts = signal<PersonCampaignFact[]>([]);
   protected readonly doNotContact = signal(false);
+  /** Global volunteer/staff standing ('' = not one). Seeded from the person row. */
+  protected readonly volunteerSel = signal<string>('');
+  protected readonly staffSel = signal<string>('');
   protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
 
   protected readonly activeCampaign = this.context.activeCampaign;
@@ -103,6 +117,12 @@ export class PersonCampaignFacts {
     });
     effect(() => {
       this.doNotContact.set(this.dncFlag());
+    });
+    effect(() => {
+      this.volunteerSel.set(this.volunteerStatus() ?? '');
+    });
+    effect(() => {
+      this.staffSel.set(this.staffStatus() ?? '');
     });
   }
 
@@ -176,6 +196,41 @@ export class PersonCampaignFacts {
       this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
     } catch (err) {
       this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async onVolunteerStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as VolunteerStatus);
+    await this.saveGlobalStatus({ volunteer_status: next }, this.volunteerSel, value, 'volunteer status');
+  }
+
+  protected async onStaffStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as StaffStatus);
+    await this.saveGlobalStatus({ staff_status: next }, this.staffSel, value, 'staff status');
+  }
+
+  /**
+   * Persist a global person status (volunteer/staff, §15). Optimistically stores
+   * the new value on success; reverts on error by re-reading nothing (the select
+   * is re-bound to the signal, so we just leave the prior value on failure).
+   */
+  private async saveGlobalStatus(
+    change: { volunteer_status?: VolunteerStatus | null; staff_status?: StaffStatus | null },
+    target: { set(v: string): void },
+    value: string,
+    label: string,
+  ): Promise<void> {
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), change);
+      target.set(value);
+      this.alerts.showSuccess('Saved');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, `Could not update ${label}`));
     } finally {
       this.saving.set(false);
     }

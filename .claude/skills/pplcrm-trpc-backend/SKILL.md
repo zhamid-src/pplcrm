@@ -71,7 +71,7 @@ This distinction is load-bearing, not stylistic. The frontend treats **`UNAUTHOR
 Real example, `teams/controller.ts` (`addTeam`):
 
 ```ts
-if (volunteers.length !== volunteerIds.length) throw new BadRequestError('Volunteers must have the Volunteer tag');
+if (volunteers.length !== volunteerIds.length) throw new BadRequestError('Volunteers must have a volunteer status');
 ...
 if (!created) throw new NotFoundError('Failed to create team');
 ```
@@ -114,7 +114,7 @@ const created = await repo.add({ row }, trx);
 
 `BaseRepository.transaction()` returns the Kysely transaction builder (`base.repo.ts`). Wrap **every multi-table write** in one and thread the `trx` through all repo calls and nested-repo calls so they enlist in the same transaction. Repo methods take an optional trailing `trx?: Transaction<Models>`.
 
-Real multi-table write, `addTeam` in `teams/controller.ts` (inserts the team, its volunteer mappings, its list mappings, and the volunteer tag, all atomically):
+Real multi-table write, `addTeam` in `teams/controller.ts` (inserts the team, its volunteer mappings, and its list mappings, and promotes each member's `volunteer_status` to `active`, all atomically):
 
 ```ts
 return repo.transaction().execute(async (trx) => {

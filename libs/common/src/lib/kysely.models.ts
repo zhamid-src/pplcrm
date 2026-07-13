@@ -520,6 +520,10 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   do_not_contact: Generated<boolean>;
   /** Channels the DNC applies to ('email' | 'phone' | 'door'); null = all channels. */
   do_not_contact_channels: string[] | null;
+  /** Global volunteer standing (§15); null = not a volunteer. Retired the volunteer system tag (2026-07-12). */
+  volunteer_status: string | null;
+  /** Global staff standing (§15); null = not staff. Retired the staff system tag (2026-07-12). */
+  staff_status: string | null;
   household_id: string | null;
   createdby_id: string;
   first_name: string | null;
