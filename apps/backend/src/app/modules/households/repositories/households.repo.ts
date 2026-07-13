@@ -1,4 +1,5 @@
-import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import type { ReferenceExpression, Selectable, Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -172,7 +173,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     >;
 
     // Shared where clause builder (for both queries)
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+    const applyFilters = <QB extends AnyQB>(qb: QB) => {
       let q = qb
         .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
         .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')

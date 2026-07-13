@@ -1,4 +1,5 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -19,7 +20,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as GridFilterModel;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+    const applyFilters = <QB extends AnyQB>(qb: QB) => {
       let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;
         return qb2.where(

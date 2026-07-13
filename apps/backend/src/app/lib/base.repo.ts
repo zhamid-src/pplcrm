@@ -86,6 +86,17 @@ const dialect = new PostgresDialect({
   },
 });
 
+/**
+ * Kysely's builder generics can't be named for our dynamically-columned grid
+ * queries: runtime-selected columns, left joins, and aliased aggregates erase
+ * the parameterised row type, so every repo's filter/sort helper is generic
+ * over "some select builder". Confine that single unavoidable escape hatch to
+ * this alias instead of scattering `SelectQueryBuilder<any, any, any>` across
+ * ~10 repos.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyQB = SelectQueryBuilder<any, any, any>;
+
 type ColName<TB extends keyof Models> = keyof Models[TB] & string;
 
 export class BaseRepository<T extends keyof Models> {

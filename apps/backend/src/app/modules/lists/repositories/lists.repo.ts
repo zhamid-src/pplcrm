@@ -1,4 +1,5 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -26,7 +27,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
       qb
         .leftJoin('map_lists_persons', 'map_lists_persons.list_id', 'lists.id')
         .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')

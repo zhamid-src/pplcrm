@@ -1,4 +1,5 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -25,7 +26,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
     const limit = endRowCandidate - startRow;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
       qb
         .leftJoin('map_teams_persons', (join) =>
           join.onRef('map_teams_persons.team_id', '=', 'teams.id').on('map_teams_persons.tenant_id', '=', tenantId),

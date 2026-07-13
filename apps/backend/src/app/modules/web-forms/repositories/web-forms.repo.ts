@@ -1,4 +1,5 @@
-import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import type { ReferenceExpression, Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 
 import type { QueryParams } from '../../../lib/base.repo';
@@ -101,7 +102,7 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
       qb
         .where('web_forms.tenant_id', '=', tenantId)
         // Campaigns §15 — the forms page shows the active context's forms.

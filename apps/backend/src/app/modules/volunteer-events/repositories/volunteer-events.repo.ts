@@ -1,4 +1,5 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -22,7 +23,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+    const applyFilters = <QB extends AnyQB>(qb: QB) => {
       let q = qb.where('volunteer_events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;
         return qb2.where(

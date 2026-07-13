@@ -1,4 +1,5 @@
-import type { ReferenceExpression, SelectQueryBuilder, Transaction, Selectable } from 'kysely';
+import type { ReferenceExpression, Transaction, Selectable } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -179,7 +180,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
     // Shared filter/search logic for both queries
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
       qb
         .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
         .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')

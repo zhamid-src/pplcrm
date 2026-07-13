@@ -1,4 +1,5 @@
-import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import type { ReferenceExpression, Transaction } from 'kysely';
+import type { AnyQB } from '../../../lib/base.repo';
 import { sql } from 'kysely';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -24,7 +25,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+    const applyFilters = <QB extends AnyQB>(qb: QB) =>
       qb
         .where('workflows.tenant_id', '=', tenantId)
         .$if(!!searchStr, (qb) => {
