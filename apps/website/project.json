@@ -34,6 +34,11 @@
             "glob": "**/*",
             "input": "apps/frontend/src/assets/icons",
             "output": "assets/icons"
+          },
+          {
+            "glob": "logo.png",
+            "input": "apps/frontend/src/assets",
+            "output": "assets"
           }
         ],
         "styles": ["apps/website/src/styles.css"],
