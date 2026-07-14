@@ -95,7 +95,7 @@ export class HomePage {
     {
       n: '1',
       title: 'Create your free workspace',
-      body: 'Sign up and land in the Riverton demo: 5,012 sample people, a live inbox, cut turfs and a donor ledger. No card.',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
     },
     {
       n: '2',
@@ -191,8 +191,8 @@ export class HomePage {
       a: 'Yes. No card and no time limit. The Starter plan stays free forever — 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
     },
     {
-      q: 'What is the Riverton demo?',
-      a: 'A complete sample workspace for a fictional campaign: 5,012 people, 611 donors, a live inbox and cut turfs. Try every feature without touching real data.',
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
     },
     {
       q: 'Can I import my existing list?',

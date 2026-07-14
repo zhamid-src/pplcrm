@@ -29,11 +29,11 @@ export class FaqPage {
       items: [
         {
           q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace and up to 500 of your own people stay free for as long as you want them.',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
         },
         {
-          q: 'What is the Riverton demo?',
-          a: 'A complete sample workspace for a fictional local campaign: 5,012 people, 1,890 households, 611 donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
         },
         {
           q: 'Do I need training to get started?',

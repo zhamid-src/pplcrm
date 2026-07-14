@@ -72,8 +72,8 @@ export const PLANS: readonly PlanDef[] = [
     purchasable: false,
     featured: false,
     features: [
-      'The Riverton demo workspace',
       'Unlimited contacts & households',
+      'Demo workspace with sample data',
       '1,000 email subscribers',
       '2,000 emails / month',
       '2 staff seats',
