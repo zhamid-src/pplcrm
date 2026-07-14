@@ -1,11 +1,21 @@
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { PLANS, PURCHASABLE_PLAN_KEYS, planDisplayName, type PlanDef, type PurchasablePlanKey } from '@common';
+import {
+  PLANS,
+  PURCHASABLE_PLAN_KEYS,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  planDisplayName,
+  priceLabelAt,
+  type PlanDef,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 
@@ -18,6 +28,23 @@ export interface BillingDetailsSnapshot {
   hasActiveSubscription: boolean;
   isMockMode: boolean;
 }
+
+/** Shape returned by `billing.getUsage` — the tenant's live emailable-subscriber count against
+ * its current plan's bracket ladder. */
+export interface BillingUsageSnapshot {
+  subscribers: number;
+  billedQuantity: number;
+  subscriberCap: number;
+  emailCap: number;
+  monthlyPrice: number;
+  tierMax: number;
+}
+
+/** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
+ * slider so the two surfaces feel identical. */
+const SUBSCRIBER_SLIDER_STOPS = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000,
+] as const;
 
 function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
   return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
@@ -37,13 +64,49 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   protected readonly loading = this._loading.visible;
   protected readonly actionPending = signal(false);
   protected readonly details = signal<BillingDetailsSnapshot | null>(null);
+  protected readonly usage = signal<BillingUsageSnapshot | null>(null);
 
-  /** Upgrade grid: every plan except the free/default tier (Grassroots, Representative, Movement, Enterprise). */
-  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.key !== 'free');
+  /** Upgrade grid: the purchasable paid tiers only (Grassroots, Movement). Free is the current
+   * plan for everyone who hasn't upgraded, and Enterprise is a contact-us footnote, not a card. */
+  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
   protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
+
+  protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
+  protected readonly sliderIndex = signal(0);
+  protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
+  protected readonly maxSliderStop = computed(
+    () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
+  );
+
+  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" — omits the billed
+   * clause for plans with no meaningful bracket (free, enterprise). */
+  protected readonly usageSummary = computed<string | null>(() => {
+    const snapshot = this.usage();
+    const planKey = this.details()?.plan;
+    if (!snapshot || !planKey) return null;
+
+    const subscribers = `${this.formatCount(snapshot.subscribers)} emailable subscribers`;
+    if (planKey === 'free' || planKey === 'enterprise') return subscribers;
+
+    const cap = this.formatCount(snapshot.subscriberCap);
+    return `${subscribers} · billed for up to ${cap} at $${snapshot.monthlyPrice}/mo`;
+  });
 
   protected planLabel(plan: string | null | undefined): string {
     return planDisplayName(plan);
+  }
+
+  protected priceLabel(plan: PlanDef): string {
+    return priceLabelAt(plan, this.sliderValue());
+  }
+
+  protected formatCount(n: number): string {
+    return n.toLocaleString('en-US');
+  }
+
+  protected onSliderInput(event: Event): void {
+    const index = (event.target as HTMLInputElement).valueAsNumber;
+    if (!Number.isNaN(index)) this.sliderIndex.set(index);
   }
 
   ngOnInit(): void {
@@ -62,14 +125,31 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   protected async loadBilling() {
     const end = this._loading.begin();
     try {
-      const data = await this.api.billing.getDetails.query();
-      this.details.set(data);
+      const [details, usage] = await Promise.all([
+        this.api.billing.getDetails.query(),
+        this.api.billing.getUsage.query(),
+      ]);
+      this.details.set(details);
+      this.usage.set(usage);
+      this.syncSliderToUsage(usage);
     } catch (err) {
       console.error(err);
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
     } finally {
       end();
     }
+  }
+
+  /** Snaps the slider to the tenant's live subscriber count, rounded up to the nearest stop.
+   * Falls back to the first stop when usage is unavailable or already past the highest stop. */
+  private syncSliderToUsage(usage: BillingUsageSnapshot | null | undefined): void {
+    const subscribers = usage?.subscribers;
+    if (subscribers == null) {
+      this.sliderIndex.set(0);
+      return;
+    }
+    const index = this.sliderStops.findIndex((stop) => subscribers <= stop);
+    this.sliderIndex.set(index === -1 ? this.sliderStops.length - 1 : index);
   }
 
   private async handleQueryParams(params: Record<string, string>): Promise<void> {
@@ -119,7 +199,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   private async handleMockActivation(plan: PurchasablePlanKey) {
     const end = this._loading.begin();
     try {
-      await this.api.billing.activateMockPlan.mutate({ plan });
+      const quantity = this.mockQuantityFor(plan);
+      await this.api.billing.activateMockPlan.mutate({ plan, quantity });
       this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
       await this.loadBilling();
     } catch (err) {
@@ -128,6 +209,13 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       end();
       this.clearQueryParams();
     }
+  }
+
+  /** The bracket index (Stripe quantity) matching the tenant's current subscriber count, so mock
+   * activation lands on the same billed tier the real checkout would compute. */
+  private mockQuantityFor(plan: PlanKey): number {
+    const subscribers = this.usage()?.subscribers ?? 0;
+    return bracketIndexForSubscribers(plan, subscribers) ?? maxQuantity(plan);
   }
 
   protected async cancelMock() {

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { planDisplayName } from '@common';
 
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -21,7 +22,7 @@ import {
   userRoleOptions,
   userStatus,
 } from '../user-status';
-import { InviteUserDialog, PLAN_LABELS, type SeatUsage } from './invite-user-dialog';
+import { InviteUserDialog, type SeatUsage } from './invite-user-dialog';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 
 export interface UserRow {
@@ -115,7 +116,7 @@ export class UsersPageComponent implements OnInit {
 
   protected readonly planLabel = computed(() => {
     const usage = this.seatUsage();
-    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+    return usage ? planDisplayName(usage.plan) : '';
   });
 
   /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */

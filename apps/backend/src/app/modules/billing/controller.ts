@@ -1,18 +1,28 @@
 import { sql } from 'kysely';
-import Stripe from 'stripe';
-import type { PlanKey, PurchasablePlanKey } from '@common';
+import type Stripe from 'stripe';
+import {
+  bracketIndexForSubscribers,
+  getPlanDef,
+  maxQuantity,
+  PLANS_BY_KEY,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
 import { env } from '../../../env';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { logger } from '../../logger';
 import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
 import { WorkflowsController } from '../workflows/controller';
 import { WebhookEventsRepo } from './repositories/webhook-events.repo';
-import { getPlanLimits } from './usage-limits';
+import { getStripe, isMockMode, stripe } from './stripe-client';
+import { syncSubscriptionQuantity } from './subscription-sync';
+import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
 
 /** Stripe price ID configured for each self-serve plan (undefined in mock mode / when unset). */
 const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, string | undefined> = {
   grassroots: env.stripePlanGrassrootsPriceId,
-  representative: env.stripePlanRepresentativePriceId,
   movement: env.stripePlanMovementPriceId,
 };
 
@@ -23,17 +33,6 @@ function planForPriceId(priceId: string | undefined | null): PurchasablePlanKey 
     if (id && id === priceId) return plan as PurchasablePlanKey;
   }
   return null;
-}
-
-const stripeSecretKey = env.stripeSecretKey;
-const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
-const isMockMode = stripe === null;
-
-function getStripe(): Stripe {
-  if (!stripe) {
-    throw new Error('Stripe is not configured (running in mock mode)');
-  }
-  return stripe;
 }
 
 /**
@@ -50,7 +49,79 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription): string | null
 }
 
 const tenantsRepo = new TenantsRepo();
+const settingsRepo = new SettingsRepo();
 const webhookEventsRepo = new WebhookEventsRepo();
+
+/** Dedup flag prefix shared with `usage-limits.ts`'s notify-then-adjust bracket alerts — cleared
+ * here once a cycle-boundary downgrade lands, so a future re-growth past the same bracket sends
+ * a fresh notice instead of staying suppressed forever. */
+const BRACKET_FLAG_PREFIX = 'bracket_';
+
+async function clearBracketFlags(tenantId: string, adminUserId: string): Promise<void> {
+  const row = await settingsRepo.getByKey({ tenant_id: tenantId, key: 'billing.limit_alerts_sent' });
+  if (!row?.value) return;
+
+  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+  if (!parsed || typeof parsed !== 'object') return;
+
+  const alertSettings: Record<string, boolean> = { ...parsed };
+  let changed = false;
+  for (const key of Object.keys(alertSettings)) {
+    if (key.startsWith(BRACKET_FLAG_PREFIX) && alertSettings[key]) {
+      alertSettings[key] = false;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  await settingsRepo.upsertMany({
+    tenant_id: tenantId,
+    user_id: adminUserId,
+    entries: [{ key: 'billing.limit_alerts_sent', value: alertSettings }],
+  });
+}
+
+/** The subset of `tenants` columns the webhook/reconciliation paths read — `getOneBy` selects
+ * every column (no subset requested), so narrowing to just these is honest, not a type lie; see
+ * pplcrm-any-exceptions §2. */
+interface TenantBillingRow {
+  id: string;
+  admin_id: string | null;
+  subscription_plan: string | null;
+  subscription_quantity: number | null;
+}
+
+function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const r = row as Record<string, unknown>;
+  if (typeof r['id'] !== 'string') return undefined;
+  return {
+    id: r['id'],
+    admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
+    subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
+    subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
+  };
+}
+
+/**
+ * Cycle-boundary downgrade reconciliation (base plan §4): notify-then-adjust only ever moves the
+ * billed quantity *up* mid-cycle (see `usage-limits.checkTenantUsage`) — a shrink in emailable
+ * subscribers is applied here instead, on `invoice.paid`, which proves we've just crossed a
+ * billing-cycle boundary. No-ops for free/enterprise (no Stripe quantity to reconcile).
+ */
+async function reconcileDowngradeOnInvoicePaid(dbTenant: TenantBillingRow): Promise<void> {
+  const plan = getPlanDef(dbTenant.subscription_plan) ?? PLANS_BY_KEY.free;
+  if (!plan.purchasable) return;
+
+  const billedQuantity = dbTenant.subscription_quantity ?? 1;
+  const subscribers = await countEmailableSubscribers(dbTenant.id, tenantsRepo.db);
+  const targetQuantity = bracketIndexForSubscribers(plan.key, subscribers);
+
+  if (targetQuantity !== null && targetQuantity < billedQuantity) {
+    await syncSubscriptionQuantity(dbTenant.id, targetQuantity);
+    await clearBracketFlags(dbTenant.id, dbTenant.admin_id ?? dbTenant.id);
+  }
+}
 
 export class BillingController {
   constructor() {
@@ -67,6 +138,7 @@ export class BillingController {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
     })) as any;
 
     if (!tenant) {
@@ -84,21 +156,64 @@ export class BillingController {
     };
   }
 
+  /** Live usage snapshot for the billing page: emailable-subscriber count against the tenant's
+   * currently billed bracket. Enterprise (no pricing ladder) reports Infinity caps / $0 price —
+   * the frontend special-cases 'enterprise' to not render the bracket clause. */
+  public async getUsage(auth: { tenant_id: string }): Promise<{
+    subscribers: number;
+    billedQuantity: number;
+    subscriberCap: number;
+    emailCap: number;
+    monthlyPrice: number;
+    tierMax: number;
+  }> {
+    const tenant = asTenantBillingRow(
+      await tenantsRepo.getOneBy('id', {
+        tenant_id: auth.tenant_id,
+        value: auth.tenant_id,
+      }),
+    );
+    if (!tenant) {
+      throw new NotFoundError('Tenant not found');
+    }
+
+    const plan = getPlanDef(tenant.subscription_plan) ?? PLANS_BY_KEY.free;
+    const billedQuantity = tenant.subscription_quantity ?? 1;
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const limits = getPlanLimits(plan.key, billedQuantity);
+
+    return {
+      subscribers,
+      billedQuantity,
+      subscriberCap: limits.subscribers,
+      emailCap: limits.emails,
+      monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
+      tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
+    };
+  }
+
   public async createCheckoutSession(auth: { tenant_id: string; user_id: string }, plan: PurchasablePlanKey) {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
     })) as any;
 
     if (!tenant) {
-      throw new Error('Tenant not found');
+      throw new NotFoundError('Tenant not found');
     }
 
     const frontendUrl = this.getFrontendUrl();
 
+    const subscribers = await countEmailableSubscribers(auth.tenant_id, tenantsRepo.db);
+    const quantity = bracketIndexForSubscribers(plan, subscribers);
+    if (quantity === null) {
+      throw new BadRequestError('Your list is too large for this tier — contact us so we can find a plan that fits.');
+    }
+
     if (isMockMode) {
       // In Mock Mode, direct them to a simulated callback
-      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}`;
+      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}`;
       return { url: mockSuccessUrl };
     }
 
@@ -135,7 +250,7 @@ export class BillingController {
       line_items: [
         {
           price: priceId,
-          quantity: 1,
+          quantity,
         },
       ],
       mode: 'subscription',
@@ -158,6 +273,7 @@ export class BillingController {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
     })) as any;
 
     if (!tenant) {
@@ -228,9 +344,9 @@ export class BillingController {
 
         if (tenantId && subscriptionId) {
           const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-          const priceId = subscription.items.data[0]?.price.id;
-
-          const planName: PlanKey = planForPriceId(priceId) ?? 'free';
+          const item = subscription.items.data[0];
+          const planName: PlanKey = planForPriceId(item?.price.id) ?? 'free';
+          const quantity = item?.quantity ?? 1;
 
           await tenantsRepo.update({
             tenant_id: tenantId,
@@ -241,11 +357,12 @@ export class BillingController {
               subscription_plan: planName,
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
             },
           });
           logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
           try {
-            await this.handleSubscriptionChange(tenantId, planName);
+            await this.handleSubscriptionChange(tenantId, planName, quantity);
           } catch (mailErr) {
             logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
           }
@@ -262,11 +379,13 @@ export class BillingController {
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1',
           value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
         })) as any;
 
         if (dbTenant) {
-          const priceId = subscription.items.data[0]?.price.id;
-          const planName: string = planForPriceId(priceId) ?? dbTenant.subscription_plan;
+          const item = subscription.items.data[0];
+          const planName: string = planForPriceId(item?.price.id) ?? dbTenant.subscription_plan;
+          const quantity = item?.quantity ?? 1;
 
           await tenantsRepo.update({
             tenant_id: dbTenant.id,
@@ -276,11 +395,12 @@ export class BillingController {
               subscription_plan: planName,
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
+              subscription_quantity: quantity,
             },
           });
           logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
           try {
-            await this.handleSubscriptionChange(dbTenant.id, planName);
+            await this.handleSubscriptionChange(dbTenant.id, planName, quantity);
           } catch (mailErr) {
             logger.error(
               { err: mailErr },
@@ -298,6 +418,7 @@ export class BillingController {
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1',
           value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
         })) as any;
 
         if (dbTenant) {
@@ -308,11 +429,12 @@ export class BillingController {
               subscription_status: 'canceled',
               subscription_plan: 'free',
               subscription_ends_at: new Date().toISOString(),
+              subscription_quantity: 1,
             },
           });
           logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
           try {
-            await this.handleSubscriptionChange(dbTenant.id, 'free');
+            await this.handleSubscriptionChange(dbTenant.id, 'free', 1);
           } catch (mailErr) {
             logger.error(
               { err: mailErr },
@@ -326,12 +448,20 @@ export class BillingController {
       case 'invoice.paid': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
-        const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
-          tenant_id: '1',
-          value: customerId,
-        })) as any;
+        const dbTenant = asTenantBillingRow(
+          await tenantsRepo.getOneBy('stripe_customer_id', {
+            tenant_id: '1',
+            value: customerId,
+          }),
+        );
 
         if (dbTenant) {
+          try {
+            await reconcileDowngradeOnInvoicePaid(dbTenant);
+          } catch (err) {
+            logger.error({ err }, 'Failed to reconcile bracket downgrade on invoice.paid');
+          }
+
           const admin = await tenantsRepo.db
             .selectFrom('authusers')
             .select(['email', 'first_name'])
@@ -400,6 +530,7 @@ export class BillingController {
         const dbTenant = (await tenantsRepo.getOneBy('stripe_customer_id', {
           tenant_id: '1',
           value: customerId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
         })) as any;
 
         if (dbTenant) {
@@ -445,13 +576,14 @@ export class BillingController {
     }
   }
 
-  public async activateMockPlan(auth: { tenant_id: string }, plan: PurchasablePlanKey) {
+  public async activateMockPlan(auth: { tenant_id: string }, plan: PurchasablePlanKey, quantity = 1) {
     if (!isMockMode) {
       throw new Error('This helper is only available in local Mock Mode');
     }
 
     const expiry = new Date();
     expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
+    const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
 
     await tenantsRepo.update({
       tenant_id: auth.tenant_id,
@@ -462,11 +594,12 @@ export class BillingController {
         subscription_plan: plan,
         subscription_status: 'active',
         subscription_ends_at: expiry.toISOString(),
+        subscription_quantity: clampedQuantity,
       },
     });
 
     try {
-      await this.handleSubscriptionChange(auth.tenant_id, plan, true);
+      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true);
     } catch (mailErr) {
       logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
     }
@@ -487,11 +620,12 @@ export class BillingController {
         subscription_plan: 'free',
         subscription_status: 'inactive',
         subscription_ends_at: null,
+        subscription_quantity: 1,
       },
     });
 
     try {
-      await this.handleSubscriptionChange(auth.tenant_id, 'free', true);
+      await this.handleSubscriptionChange(auth.tenant_id, 'free', 1, true);
     } catch (mailErr) {
       logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
     }
@@ -499,10 +633,16 @@ export class BillingController {
     return { success: true };
   }
 
-  private async handleSubscriptionChange(tenantId: string, planName: string, isMock = false): Promise<void> {
+  private async handleSubscriptionChange(
+    tenantId: string,
+    planName: string,
+    quantity: number,
+    isMock = false,
+  ): Promise<void> {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: tenantId,
       value: tenantId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic-read result collapses to {}; see pplcrm-any-exceptions
     })) as any;
 
     if (!tenant) return;
@@ -523,7 +663,7 @@ export class BillingController {
       .executeTakeFirst();
 
     if (admin && admin.email) {
-      const planLimits = getPlanLimits(planName);
+      const planLimits = getPlanLimits(planName, quantity);
       const billingPageUrl = `${env.appUrl}/workspace/billing`;
       const mockPrefix = isMock ? '[MOCK] ' : '';
       const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');

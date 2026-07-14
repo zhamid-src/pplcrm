@@ -1,6 +1,6 @@
 import { Component, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { PLANS } from '@common';
+import { PLANS, startingPriceLabel } from '@common';
 import type { PlanDef } from '@common';
 
 import { AppPreview, type PreviewKind } from '../ui/app-preview';
@@ -183,12 +183,16 @@ export class HomePage {
     },
   ];
 
-  protected readonly tiers: readonly PlanDef[] = PLANS;
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $75'). */
+  protected readonly startingPrice = startingPriceLabel;
 
   protected readonly faqs: readonly Qa[] = [
     {
       q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The Starter plan stays free forever — 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
     },
     {
       q: 'What is the demo workspace?',
@@ -208,7 +212,7 @@ export class HomePage {
     },
     {
       q: 'How does pricing work?',
-      a: 'Start free forever, then paid plans begin at $29/month. You’re metered on emailable subscribers, not total contacts — so you can store your whole list for free and only pay for who you email.',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $75/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
     },
   ];
 

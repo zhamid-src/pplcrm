@@ -25,11 +25,14 @@ export class FilesController extends BaseController<'files', FilesRepo> {
   public async getUsageSummary(auth: IAuthKeyPayload) {
     const tenant = await this.getRepo()
       .db.selectFrom('tenants')
-      .select('subscription_plan')
+      .select(['subscription_plan', 'subscription_quantity'])
       .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
-    const planLimits = getPlanLimits(tenant?.subscription_plan as string | null | undefined);
+    const planLimits = getPlanLimits(
+      tenant?.subscription_plan as string | null | undefined,
+      tenant?.subscription_quantity ?? 1,
+    );
     const [usedBytes, largestFiles] = await Promise.all([
       this.getRepo().getTotalBytes(auth.tenant_id),
       this.getRepo().getLargestFiles(auth.tenant_id, LARGEST_FILES_LIMIT),

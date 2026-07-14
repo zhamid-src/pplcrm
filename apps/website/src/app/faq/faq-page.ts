@@ -91,20 +91,20 @@ export class FaqPage {
       label: 'Pricing',
       items: [
         {
-          q: 'Is the free plan really free?',
-          a: 'Yes. The Starter plan is free forever — no card, no time limit. It includes 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-        },
-        {
-          q: 'How much do paid plans cost?',
-          a: 'Paid plans start at $29/month for Grassroots and scale up through Representative and Movement as your list and team grow. See the pricing page for what each tier includes.',
+          q: 'How much does it cost?',
+          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
         },
         {
           q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email — most tools charge you for every contact.',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
         },
         {
           q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations — unlimited subscribers and sends, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
         },
         {
           q: 'Can I talk to a human before committing?',

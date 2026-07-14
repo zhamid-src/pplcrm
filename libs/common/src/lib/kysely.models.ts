@@ -697,6 +697,9 @@ interface Tenants extends RecordType, AddressType {
   stripe_subscription_id: string | null;
   subscription_plan: string | null;
   subscription_status: string | null;
+  /** Billed Stripe quantity (1-based bracket index — see libs/common/src/lib/billing/plans.ts).
+   * Authoritatively synced from the Stripe webhook; defaults to 1. */
+  subscription_quantity: number;
   subscription_ends_at: Timestamp | null;
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;

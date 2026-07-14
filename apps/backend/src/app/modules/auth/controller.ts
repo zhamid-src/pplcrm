@@ -698,13 +698,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const tenant = await db
       .selectFrom('tenants')
-      .select(['subscription_plan'])
+      .select(['subscription_plan', 'subscription_quantity'])
       .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
     if (!tenant) throw new NotFoundError('Tenant not found');
 
     const plan = (tenant.subscription_plan as string | null) || 'free';
-    const limits = getPlanLimits(plan);
+    const limits = getPlanLimits(plan, tenant.subscription_quantity ?? 1);
 
     // Matches the billing usage check: every non-deactivated login (including pending invites) holds a seat.
     const seatRow = await db

@@ -33,6 +33,26 @@ describe('BillingRouter', () => {
     expect(result).toEqual(mockDetails);
   });
 
+  it('should call getUsage on the controller', async () => {
+    const mockUsage = {
+      subscribers: 1234,
+      billedQuantity: 1,
+      subscriberCap: 2500,
+      emailCap: 30000,
+      monthlyPrice: 29,
+      tierMax: 11,
+    };
+    const spy = vi.spyOn(BillingController.prototype, 'getUsage').mockResolvedValue(mockUsage);
+
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+    const result = await caller.getUsage();
+
+    expect(spy).toHaveBeenCalledWith({ tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' });
+    expect(result).toEqual(mockUsage);
+  });
+
   it('should call createCheckoutSession with the requested plan', async () => {
     const spy = vi
       .spyOn(BillingController.prototype, 'createCheckoutSession')
@@ -57,6 +77,16 @@ describe('BillingRouter', () => {
     });
   });
 
+  it('should reject createCheckout with the retired representative plan', async () => {
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    await expect(caller.createCheckout({ plan: 'representative' } as any)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+  });
+
   it('should call createPortalSession on the controller', async () => {
     const spy = vi
       .spyOn(BillingController.prototype, 'createPortalSession')
@@ -71,10 +101,10 @@ describe('BillingRouter', () => {
     expect(result).toEqual({ url: 'https://portal.example.com' });
   });
 
-  it('should call activateMockPlan and cancelMockPlan on the controller', async () => {
+  it('should call activateMockPlan (with quantity) and cancelMockPlan on the controller', async () => {
     const activateSpy = vi
       .spyOn(BillingController.prototype, 'activateMockPlan')
-      .mockResolvedValue({ success: true, plan: 'representative' } as any);
+      .mockResolvedValue({ success: true, plan: 'grassroots' } as any);
     const cancelSpy = vi
       .spyOn(BillingController.prototype, 'cancelMockPlan')
       .mockResolvedValue({ success: true } as any);
@@ -83,14 +113,42 @@ describe('BillingRouter', () => {
       auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
     } as any);
 
-    await caller.activateMockPlan({ plan: 'representative' });
+    await caller.activateMockPlan({ plan: 'grassroots', quantity: 3 });
     expect(activateSpy).toHaveBeenCalledWith(
       { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
-      'representative',
+      'grassroots',
+      3,
     );
 
     await caller.cancelMockPlan();
     expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  it('should default activateMockPlan quantity to undefined when omitted', async () => {
+    const activateSpy = vi
+      .spyOn(BillingController.prototype, 'activateMockPlan')
+      .mockResolvedValue({ success: true, plan: 'movement' } as any);
+
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    await caller.activateMockPlan({ plan: 'movement' });
+    expect(activateSpy).toHaveBeenCalledWith(
+      { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
+      'movement',
+      undefined,
+    );
+  });
+
+  it('should reject activateMockPlan quantity above the max bracket (40)', async () => {
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    await expect(caller.activateMockPlan({ plan: 'movement', quantity: 41 })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
   });
 
   it('should reject non-admin/owner users with FORBIDDEN', async () => {

@@ -12,7 +12,7 @@
   </div>
 </section>
 
-<!-- Tiers -->
+<!-- Plan comparison -->
 <section class="px-5 py-14 sm:px-8">
   <div class="site-wrap mb-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-center text-[14px]">
     <span class="font-semibold text-primary">Unlimited contacts &amp; households on every plan.</span>
@@ -21,54 +21,141 @@
       subscribers.</span
     >
   </div>
-  <div class="site-wrap grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-    @for (tier of tiers; track tier.key) {
-    <div
-      class="flex flex-col rounded-xl bg-base-100 p-7"
-      [class]="tier.featured ? 'border-2 border-primary shadow-[0_12px_40px_rgba(52,152,219,.12)]' : 'border border-line'"
-    >
-      @if (tier.featured) {
-      <div
-        class="mb-3 inline-block self-start rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary"
-      >
-        Most popular
-      </div>
-      }
-      <div class="text-[16px] font-semibold">{{ tier.name }}</div>
-      <div class="mt-2 text-[34px] font-bold tabular-nums leading-none">{{ tier.price }}</div>
-      <div class="mt-1 text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
-      <p class="mt-3 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
 
-      <ul class="mb-6 mt-5 flex flex-col gap-2.5 text-[13.5px]">
-        @for (feature of tier.features; track feature) {
-        <li class="flex gap-2.5">
-          <svg class="mt-0.5 h-4 w-4 flex-none text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path
-              fill-rule="evenodd"
-              d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span class="text-base-content/70">{{ feature }}</span>
-        </li>
-        }
-      </ul>
-
-      <a
-        [href]="ctaHref(tier)"
-        class="mt-auto rounded-field px-4 py-2.5 text-center text-[14px] font-semibold"
-        [class]="
-            tier.featured
-              ? 'btn btn-primary rounded-field'
-              : 'border border-line text-base-content hover:border-primary hover:text-primary'
-          "
-        >{{ ctaLabel(tier) }}</a
-      >
+  <!-- Subscriber slider: the one input that re-prices every column below. -->
+  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
+        How many email subscribers do you have?
+      </label>
+      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
     </div>
-    }
+    <input
+      id="subscriber-slider"
+      type="range"
+      min="0"
+      [max]="maxStopIndex"
+      step="1"
+      class="range range-primary range-sm mt-4 w-full"
+      [value]="stopIndex()"
+      (input)="onSlide($event)"
+    />
+    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
+      <span>1,000</span>
+      <span>200,000</span>
+    </div>
   </div>
 
-  <p class="site-wrap mt-6 text-center text-[13px] text-base-content/50">
+  <!-- Comparison table -->
+  <div class="site-wrap mt-4 overflow-x-auto rounded-xl border border-line bg-base-100">
+    <table class="w-full min-w-[680px] border-separate border-spacing-0">
+      <thead>
+        <tr>
+          <th class="sticky left-0 z-[2] w-[220px] border-b border-line bg-base-100 px-5 py-5 text-left align-bottom">
+            <div class="text-[15px] font-semibold">Compare plans</div>
+            <div class="mt-1 text-[12.5px] font-normal text-base-content/50">
+              Prices shown at {{ subscribersLabel() }} subscribers
+            </div>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <th
+            class="min-w-[180px] border-b border-line px-4 py-5 text-left align-top"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            <div class="h-6">
+              @if (tier.featured) {
+              <span class="inline-block rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                Best value
+              </span>
+              }
+            </div>
+            <div class="mt-1 text-[16px] font-semibold">{{ tier.name }}</div>
+            <p class="mt-1 min-h-[57px] text-[12.5px] font-normal leading-snug text-base-content/60">
+              {{ tier.blurb }}
+            </p>
+            <div class="mt-3 min-h-[52px]">
+              @if (!overMax(tier)) {
+              <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
+              } @else if (tier.key === 'free') {
+              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">$0</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
+              } @else {
+              <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
+              <div class="mt-2 text-[12px] font-normal text-base-content/50">
+                For more than {{ maxSubscribersLabel(tier) }} subscribers
+              </div>
+              }
+            </div>
+            <a
+              [href]="signupUrl"
+              class="mt-4 block rounded-field px-4 py-2.5 text-center text-[13.5px] font-semibold"
+              [class]="
+                tier.featured
+                  ? 'btn btn-primary rounded-field'
+                  : 'border border-line text-base-content hover:border-primary hover:text-primary'
+              "
+              >Start free</a
+            >
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of matrix; track group.category; let groupLast = $last) {
+        <tr>
+          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-7 text-left">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+              {{ group.category }}
+            </span>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <td class="pb-2 pt-7" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
+          }
+        </tr>
+        @for (row of group.rows; track row.label; let rowLast = $last) {
+        <tr>
+          <th
+            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
+            [class.border-b]="!(groupLast && rowLast)"
+          >
+            {{ row.label }}
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
+               past the overflow-x wrapper on small screens. -->
+          <td
+            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
+            [class.border-b]="!(groupLast && rowLast)"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            @let value = matrixValue(row, tier); @if (value === true) {
+            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="sr-only">Included</span>
+            } @else if (value === false) {
+            <span class="text-base-content/30" aria-hidden="true">—</span>
+            <span class="sr-only">Not included</span>
+            } @else { {{ value }} }
+          </td>
+          }
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
+    Need more than 200,000 subscribers, SSO or custom contracts?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
     Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
     <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> —
     <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">or read the FAQ</a>.

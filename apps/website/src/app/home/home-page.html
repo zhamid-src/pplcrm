@@ -172,14 +172,14 @@
       Unlimited contacts and households on every plan, including free. You pay only for features and email subscribers,
       never for the size of your list.
     </p>
-    <div class="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div class="mt-7 grid gap-4 sm:grid-cols-3">
       @for (tier of tiers; track tier.key) {
       <div
         class="rounded-xl bg-base-100 p-6"
         [class]="tier.featured ? 'border-2 border-primary' : 'border border-line'"
       >
         <div class="text-[15px] font-semibold">{{ tier.name }}</div>
-        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ tier.price }}</div>
+        <div class="mt-2.5 text-[30px] font-bold tabular-nums">{{ startingPrice(tier) }}</div>
         <div class="text-[12.5px] text-base-content/50">{{ tier.cadence }}</div>
         <p class="mt-3.5 text-[13.5px] leading-relaxed text-base-content/60">{{ tier.blurb }}</p>
       </div>

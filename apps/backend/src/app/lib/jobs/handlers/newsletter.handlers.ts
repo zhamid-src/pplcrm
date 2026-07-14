@@ -11,6 +11,7 @@ import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
 import { FilesRepo } from '../../../modules/files/repositories/files.repo';
 import { StorageService } from '../../storage.service';
+import { getPlanDef } from '@common';
 import { getPlanLimits } from '../../../modules/billing/usage-limits';
 
 const NEWSLETTER_BATCH_SIZE = 500;
@@ -245,9 +246,9 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
 
   for (const tenant of tenants) {
     try {
-      const plan = tenant.subscription_plan ?? 'free';
+      const planKey = getPlanDef(tenant.subscription_plan)?.key ?? 'free';
       const retentionDays =
-        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
+        planKey === 'movement' || planKey === 'enterprise' ? 90 : planKey === 'grassroots' ? 30 : 15;
 
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
       const tenantId = String(tenant.id);
@@ -411,10 +412,10 @@ export async function buildNewsletterAttachments(
 
   const tenant = await db
     .selectFrom('tenants')
-    .select('subscription_plan')
+    .select(['subscription_plan', 'subscription_quantity'])
     .where('id', '=', tenantId)
     .executeTakeFirst();
-  const quotaBytes = getPlanLimits(tenant?.subscription_plan).storageBytes;
+  const quotaBytes = getPlanLimits(tenant?.subscription_plan, tenant?.subscription_quantity ?? 1).storageBytes;
   const usedBytes = await filesRepo.getTotalBytes(tenantId);
   if (usedBytes >= quotaBytes) {
     logger.warn(

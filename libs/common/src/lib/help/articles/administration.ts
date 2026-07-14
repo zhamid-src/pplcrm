@@ -133,8 +133,31 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance**: default theme and date format for the workspace.',
           '**Integrations & API**: webhook keys and connected services.',
-          '**Billing**: your plan and payment details.',
+          '**Billing**: your plan, live usage, and payment details.',
         ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 2,500 emailable subscribers, then rises in steps as your list grows, up to $229 a month at its 50,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
+          '**Movement**: starts at $75 a month for up to 5,000 emailable subscribers, then rises in steps up to $1,275 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
       },
       {
         kind: 'callout',

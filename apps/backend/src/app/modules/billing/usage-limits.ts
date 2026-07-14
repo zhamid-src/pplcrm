@@ -1,12 +1,25 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
-import { GB, PLANS, PLANS_BY_KEY, getPlanDef } from '@common';
+import {
+  bracketForQuantity,
+  bracketIndexForSubscribers,
+  emailCapForQuantity,
+  getPlanDef,
+  GB,
+  maxQuantity,
+  PLANS,
+  PLANS_BY_KEY,
+  startingPriceLabel,
+  subscriberCapForQuantity,
+  type PlanKey,
+} from '@common';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { env } from '../../../env';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { logger } from '../../logger';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { syncSubscriptionQuantity } from './subscription-sync';
 
 export interface PlanLimits {
   price: string;
@@ -26,13 +39,31 @@ function orUnlimited(value: number | null): number {
   return value == null ? Number.POSITIVE_INFINITY : value;
 }
 
-export function getPlanLimits(planName: string | null | undefined): PlanLimits {
+/**
+ * Bracket-aware plan limits at a given Stripe `quantity` (defaults to 1 — the lowest bracket).
+ * Seats/storage stay flat per tier (unrelated to subscriber count); subscribers/emails/price
+ * come from the bracket the quantity resolves to. Enterprise (`pricing: null`) has no ladder —
+ * subscribers/emails/price fall back to "unlimited"/"Custom" as before.
+ */
+export function getPlanLimits(planName: string | null | undefined, quantity = 1): PlanLimits {
   const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+
+  if (!plan.pricing) {
+    return {
+      price: 'Custom',
+      subscribers: Number.POSITIVE_INFINITY,
+      seats: orUnlimited(plan.seats),
+      emails: Number.POSITIVE_INFINITY,
+      storageBytes: orUnlimited(plan.storageBytes),
+    };
+  }
+
+  const bracket = bracketForQuantity(plan.key, quantity);
   return {
-    price: plan.price === 'Custom' ? 'Custom' : `${plan.price}/month`,
-    subscribers: orUnlimited(plan.subscribers),
+    price: bracket.price === 0 ? '$0/month' : `$${bracket.price}/month`,
+    subscribers: subscriberCapForQuantity(plan.key, quantity),
     seats: orUnlimited(plan.seats),
-    emails: orUnlimited(plan.emails),
+    emails: emailCapForQuantity(plan.key, quantity),
     storageBytes: orUnlimited(plan.storageBytes),
   };
 }
@@ -40,6 +71,34 @@ export function getPlanLimits(planName: string | null | undefined): PlanLimits {
 /** Rounds a byte count to GB with one decimal place, for the coarse-grained usage/alerting resources. */
 function bytesToGB(bytes: number): number {
   return Math.round((bytes / GB) * 10) / 10;
+}
+
+/**
+ * Count of emailable subscribers for a tenant: has an address, not globally do-not-contact, and
+ * the address isn't suppressed (hard bounce / spam complaint). This intentionally undercounts
+ * channel-specific DNC, which errs in the customer's favour. Shared by usage-limit checks and
+ * checkout (to compute the Stripe bracket quantity) and the `getUsage` tRPC endpoint.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
+export async function countEmailableSubscribers(tenantId: string, db: Kysely<any>): Promise<number> {
+  const suppressedEmails = db.selectFrom('email_suppressions').select('email').where('tenant_id', '=', tenantId);
+  const row = await db
+    .selectFrom('persons')
+    .select(db.fn.countAll().as('cnt'))
+    .where('tenant_id', '=', tenantId)
+    .where('email', 'is not', null)
+    .where('email', '<>', '')
+    .where('do_not_contact', '=', false)
+    .where('email', 'not in', suppressedEmails)
+    .executeTakeFirst();
+  return Number(row?.cnt || 0);
+}
+
+/** Dedup key prefix for the "your list has grown" family of bracket alerts, stored in the same
+ * `billing.limit_alerts_sent` settings blob as the existing 90/100% resource alerts. */
+const BRACKET_MAX_FLAG = 'bracket_max';
+function bracketUpFlag(targetQty: number): string {
+  return `bracket_up_${targetQty}`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
@@ -52,25 +111,14 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   }
 
   const planName = (tenant['subscription_plan'] as string) || 'free';
-  const planLimits = getPlanLimits(planName);
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  const billedQuantity = Number(tenant['subscription_quantity'] ?? 1) || 1;
+  const planLimits = getPlanLimits(planName, billedQuantity);
 
   // 1. Count emailable Subscribers.
   // We meter the sendable audience, NOT total contacts — a tenant can store its whole
   // voter/canvassing universe for free; the cost (and the cap) is who it can email.
-  // Emailable = has an address, not globally do-not-contact, and the address isn't suppressed
-  // (hard bounce / spam complaint). This intentionally undercounts channel-specific DNC, which
-  // errs in the customer's favour.
-  const suppressedEmails = db.selectFrom('email_suppressions').select('email').where('tenant_id', '=', tenantId);
-  const subscribersCountRow = await db
-    .selectFrom('persons')
-    .select(db.fn.countAll().as('cnt'))
-    .where('tenant_id', '=', tenantId)
-    .where('email', 'is not', null)
-    .where('email', '<>', '')
-    .where('do_not_contact', '=', false)
-    .where('email', 'not in', suppressedEmails)
-    .executeTakeFirst();
-  const currentSubscribers = Number(subscribersCountRow?.cnt || 0);
+  const currentSubscribers = await countEmailableSubscribers(tenantId, db);
 
   // 2. Count Active User Seats
   const seatsCountRow = await db
@@ -211,6 +259,48 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
     }
   }
 
+  // Bracket-quantity notify-then-adjust: only meaningful for purchasable plans with an active
+  // (or trialing) subscription — free/enterprise tenants have no Stripe quantity to sync.
+  const subscriptionStatus = (tenant['subscription_status'] as string) || '';
+  if (plan.purchasable && (subscriptionStatus === 'active' || subscriptionStatus === 'trialing')) {
+    const targetQuantity = bracketIndexForSubscribers(plan.key, currentSubscribers);
+
+    if (targetQuantity === null) {
+      // Outgrown the tier's top bracket — notify, then clamp the billed quantity to the max
+      // bracket so at least the highest-priced bracket is charged (no unbounded overage).
+      if (!alertSettings[BRACKET_MAX_FLAG]) {
+        alertSettings[BRACKET_MAX_FLAG] = true;
+        settingsChanged = true;
+        await sendBracketMaxEmail(tenantId, tenant['name'] as string, plan.key, currentSubscribers, adminsList, db);
+      }
+      const clamped = maxQuantity(plan.key);
+      if (clamped !== billedQuantity && Number.isFinite(clamped)) {
+        await syncSubscriptionQuantity(tenantId, clamped);
+      }
+    } else if (targetQuantity > billedQuantity) {
+      // List grew into a higher bracket — notify, then adjust Stripe immediately
+      // (proration_behavior: 'none' — the new amount bills starting next cycle).
+      const flag = bracketUpFlag(targetQuantity);
+      if (!alertSettings[flag]) {
+        alertSettings[flag] = true;
+        settingsChanged = true;
+        await sendBracketUpEmail(tenantId, tenant['name'] as string, plan.key, targetQuantity, adminsList, db);
+      }
+      await syncSubscriptionQuantity(tenantId, targetQuantity);
+    } else if (targetQuantity < billedQuantity) {
+      // Mid-cycle shrink — do nothing; `invoice.paid` reconciles downgrades at the cycle boundary.
+    } else {
+      // Back in step with the billed bracket — clear any stale bracket_* flags so a future
+      // regrowth past the same bracket re-sends the notice.
+      for (const key of Object.keys(alertSettings)) {
+        if (key.startsWith('bracket_') && alertSettings[key]) {
+          alertSettings[key] = false;
+          settingsChanged = true;
+        }
+      }
+    }
+  }
+
   if (settingsChanged) {
     const adminUserId = tenant['admin_id'] ? String(tenant['admin_id']) : '1';
     await settingsRepo.upsertMany({
@@ -236,45 +326,15 @@ async function sendLimitEmail(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
   db: Kysely<any>,
 ): Promise<void> {
-  if (adminsCache.length === 0) {
-    const admins = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Kysely expression builder over a BigInt id filter; see pplcrm-any-exceptions
-      .where((eb: any) =>
-        eb.or([
-          eb('role', '=', 'admin'),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt id vs string-typed column; see pplcrm-any-exceptions
-          eb('id', '=', BigInt(tenantId) as any), // admin fallback
-        ]),
-      )
-      .where('deletion_scheduled_at', 'is', null)
-      .where('deactivated_at', 'is', null)
-      .execute();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped-handle query result; see pplcrm-any-exceptions
-    adminsCache.push(...(admins as any));
-  }
+  const admins = await getAdmins(tenantId, adminsCache, db);
 
   const billingPageUrl = `${env.appUrl}/workspace/billing`;
   const planNameUpper = planName.toUpperCase();
   const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
   const prefix = pct === 100 ? 'reached' : 'approaching';
 
-  const seatsLabel = (seats: number | null): string => (seats == null ? 'unlimited' : String(seats));
-  const upgradePlans = PLANS.filter((p) => p.purchasable);
-  const upgradeText = upgradePlans
-    .map(
-      (p) =>
-        `- ${p.name} Plan (${p.price}/month): Up to ${(p.subscribers ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${(p.emails ?? 0).toLocaleString()} monthly emails.`,
-    )
-    .join('\n');
-  const upgradeHtml = upgradePlans
-    .map(
-      (p) =>
-        `  <li><strong>${p.name} Plan (${p.price}/month):</strong> Up to ${(p.subscribers ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${(p.emails ?? 0).toLocaleString()} monthly emails.</li>`,
-    )
-    .join('\n');
+  const upgradeText = upgradePlansText();
+  const upgradeHtml = upgradePlansHtml();
 
   const subject = `${alertTag} Action Required: You have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
   const text = `Hi,
@@ -303,7 +363,115 @@ ${upgradeHtml}
 </ul>
 <p><a href="${billingPageUrl}">Upgrade Subscription Plan</a></p>`;
 
-  for (const admin of adminsCache) {
+  await sendToAdmins(admins, subject, text, html, tenantId, db);
+}
+
+/** "You've outgrown this tier's top bracket" email — clamp warning, distinct from the routine
+ * bracket-up notice (there's no higher bracket to move into). */
+async function sendBracketMaxEmail(
+  tenantId: string,
+  tenantName: string,
+  planKey: PlanKey,
+  currentSubscribers: number,
+  adminsCache: { email: string; first_name: string }[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
+  db: Kysely<any>,
+): Promise<void> {
+  const admins = await getAdmins(tenantId, adminsCache, db);
+  const plan = PLANS_BY_KEY[planKey];
+  const cap = subscriberCapForQuantity(planKey, maxQuantity(planKey));
+  const billingPageUrl = `${env.appUrl}/workspace/billing`;
+
+  const subject = `[ALERT] Your ${plan.name} plan has outgrown its top bracket`;
+  const text = `Hi,
+
+Your organization "${tenantName}" now has ${currentSubscribers.toLocaleString()} emailable subscribers, which exceeds the ${plan.name} plan's top bracket of ${cap.toLocaleString()}.
+
+We've capped your billed bracket at the plan maximum for now. Please contact us so we can talk about a plan that fits your list, or move to a higher tier.
+
+Manage your subscription here: ${billingPageUrl}
+
+Thank you,
+The PplCRM Team`;
+
+  const html = `<p>Hi,</p>
+<p>Your organization <strong>${tenantName}</strong> now has <strong>${currentSubscribers.toLocaleString()}</strong> emailable subscribers, which exceeds the <strong>${plan.name}</strong> plan's top bracket of ${cap.toLocaleString()}.</p>
+<p>We've capped your billed bracket at the plan maximum for now. Please contact us so we can talk about a plan that fits your list, or move to a higher tier.</p>
+<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`;
+
+  await sendToAdmins(admins, subject, text, html, tenantId, db);
+}
+
+/** "Your list grew into the next bracket" email — sent once per bracket via the `bracket_up_N` dedup flag. */
+async function sendBracketUpEmail(
+  tenantId: string,
+  tenantName: string,
+  planKey: PlanKey,
+  targetQuantity: number,
+  adminsCache: { email: string; first_name: string }[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
+  db: Kysely<any>,
+): Promise<void> {
+  const admins = await getAdmins(tenantId, adminsCache, db);
+  const plan = PLANS_BY_KEY[planKey];
+  const bracket = bracketForQuantity(planKey, targetQuantity);
+  const billingPageUrl = `${env.appUrl}/workspace/billing`;
+
+  const subject = `[ALERT] Your ${plan.name} plan is moving to a new price bracket`;
+  const text = `Hi,
+
+Your organization "${tenantName}" has grown past your current bracket on the ${plan.name} plan. Starting next billing cycle, you'll be billed $${bracket.price}/month for up to ${bracket.upTo.toLocaleString()} emailable subscribers — no charge changes mid-cycle.
+
+Manage your subscription here: ${billingPageUrl}
+
+Thank you,
+The PplCRM Team`;
+
+  const html = `<p>Hi,</p>
+<p>Your organization <strong>${tenantName}</strong> has grown past your current bracket on the <strong>${plan.name}</strong> plan. Starting next billing cycle, you'll be billed <strong>$${bracket.price}/month</strong> for up to ${bracket.upTo.toLocaleString()} emailable subscribers — no charge changes mid-cycle.</p>
+<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`;
+
+  await sendToAdmins(admins, subject, text, html, tenantId, db);
+}
+
+async function getAdmins(
+  tenantId: string,
+  adminsCache: { email: string; first_name: string }[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
+  db: Kysely<any>,
+): Promise<{ email: string; first_name: string }[]> {
+  if (adminsCache.length === 0) {
+    const admins = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Kysely expression builder over a BigInt id filter; see pplcrm-any-exceptions
+      .where((eb: any) =>
+        eb.or([
+          eb('role', '=', 'admin'),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt id vs string-typed column; see pplcrm-any-exceptions
+          eb('id', '=', BigInt(tenantId) as any), // admin fallback
+        ]),
+      )
+      .where('deletion_scheduled_at', 'is', null)
+      .where('deactivated_at', 'is', null)
+      .execute();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped-handle query result; see pplcrm-any-exceptions
+    adminsCache.push(...(admins as any));
+  }
+  return adminsCache;
+}
+
+async function sendToAdmins(
+  admins: { email: string; first_name: string }[],
+  subject: string,
+  text: string,
+  html: string,
+  tenantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
+  _db: Kysely<any>,
+): Promise<void> {
+  for (const admin of admins) {
     if (admin.email) {
       try {
         await mailService.enqueueMail({
@@ -318,6 +486,30 @@ ${upgradeHtml}
       }
     }
   }
+}
+
+function seatsLabel(seats: number | null): string {
+  return seats == null ? 'unlimited' : String(seats);
+}
+
+function upgradePlansText(): string {
+  return PLANS.filter((p) => p.purchasable)
+    .map((p) => {
+      const cap = p.pricing ? p.pricing.brackets[p.pricing.brackets.length - 1] : undefined;
+      const emails = cap ? cap.upTo * (p.pricing?.emailsPerSubscriber ?? 0) : 0;
+      return `- ${p.name} Plan (${startingPriceLabel(p)}/month): Up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.`;
+    })
+    .join('\n');
+}
+
+function upgradePlansHtml(): string {
+  return PLANS.filter((p) => p.purchasable)
+    .map((p) => {
+      const cap = p.pricing ? p.pricing.brackets[p.pricing.brackets.length - 1] : undefined;
+      const emails = cap ? cap.upTo * (p.pricing?.emailsPerSubscriber ?? 0) : 0;
+      return `  <li><strong>${p.name} Plan (${startingPriceLabel(p)}/month):</strong> Up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.</li>`;
+    })
+    .join('\n');
 }
 
 export async function checkAllUsageLimits(db: Kysely<Models>): Promise<void> {

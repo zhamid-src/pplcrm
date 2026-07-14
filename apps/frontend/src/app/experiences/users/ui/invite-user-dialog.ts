@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { email, form, required } from '@angular/forms/signals';
+import { planDisplayName } from '@common';
 
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -16,12 +17,6 @@ export interface SeatUsage {
   seatLimit: number;
   seatsUsed: number;
 }
-
-export const PLAN_LABELS: Record<string, string> = {
-  free: 'Free',
-  grassroots: 'Grassroots',
-  representative: 'Representative',
-};
 
 const DEFAULT_ROLE = 'user';
 
@@ -72,7 +67,7 @@ export class InviteUserDialog {
 
   protected readonly planLabel = computed(() => {
     const usage = this.seatUsage();
-    return usage ? (PLAN_LABELS[usage.plan] ?? usage.plan) : '';
+    return usage ? planDisplayName(usage.plan) : '';
   });
 
   public open(): void {
