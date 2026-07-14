@@ -42,6 +42,7 @@ function bytesToGB(bytes: number): number {
   return Math.round((bytes / GB) * 10) / 10;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
 export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
   const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', BigInt(tenantId)).executeTakeFirst();
 
@@ -232,6 +233,7 @@ async function sendLimitEmail(
   resource: { name: string; current: number; limit: number; unit: string },
   pct: 90 | 100,
   adminsCache: { email: string; first_name: string }[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
   db: Kysely<any>,
 ): Promise<void> {
   if (adminsCache.length === 0) {
@@ -239,15 +241,18 @@ async function sendLimitEmail(
       .selectFrom('authusers')
       .select(['email', 'first_name'])
       .where('tenant_id', '=', tenantId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Kysely expression builder over a BigInt id filter; see pplcrm-any-exceptions
       .where((eb: any) =>
         eb.or([
           eb('role', '=', 'admin'),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt id vs string-typed column; see pplcrm-any-exceptions
           eb('id', '=', BigInt(tenantId) as any), // admin fallback
         ]),
       )
       .where('deletion_scheduled_at', 'is', null)
       .where('deactivated_at', 'is', null)
       .execute();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- untyped-handle query result; see pplcrm-any-exceptions
     adminsCache.push(...(admins as any));
   }
 

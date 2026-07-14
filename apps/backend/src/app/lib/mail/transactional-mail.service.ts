@@ -193,6 +193,7 @@ export class TransactionalEmailService {
   public async enqueueMail(options: SendMailOptions, trx?: Transaction<Models> | Kysely<Models>): Promise<void> {
     // NOTE: `as any` retained deliberately — the insert passes a `BigInt` tenant_id
     // that the Kysely model types as `string | null`; a typed handle would reject it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see NOTE above; BigInt tenant_id vs Kysely string-id model. pplcrm-any-exceptions
     const dbClient = (trx || BaseRepository.dbInstance) as any;
     await dbClient
       .insertInto('background_jobs')

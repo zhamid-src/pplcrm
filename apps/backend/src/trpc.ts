@@ -59,7 +59,9 @@ const trpc = initTRPC.context<Context>().create({
           ...shape.data,
           code: 'BAD_REQUEST',
           isZodError: true,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tRPC v11 does not export shape.data's type; see pplcrm-any-exceptions
         } as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tRPC v11 does not export the error-shape type; see pplcrm-any-exceptions
       } as any;
     }
 
@@ -68,6 +70,7 @@ const trpc = initTRPC.context<Context>().create({
     }
 
     // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tRPC v11 does not export error.cause's type; see pplcrm-any-exceptions
     const causeData = (error.cause as any)?.data;
     if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
       return { ...finalShape, data: { ...finalShape.data, ...causeData } };

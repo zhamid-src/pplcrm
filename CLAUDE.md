@@ -52,6 +52,7 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 - `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
 - `pplcrm-debugging` — tracing a bug end-to-end (correlationId → Pino → tRPC → Kysely → signals)
 - `pplcrm-schemas-validation` — the Zod schema triad (`AddXObj`/`UpdateXObj`/`XObj`) and `core.schema` helpers
+- `pplcrm-any-exceptions` — the catalogue of intentional `any` remaining in the backend (dynamic Kysely builders → the `AnyQB` alias, `{}` dynamic-read results, Gmail/Graph external JSON, tRPC shape, BigInt seams): why each is unavoidable, how it's marked, and what would type it away. Read before adding a new `any` or an `eslint-disable` in `apps/backend`
 - `pplcrm-testing` — Vitest conventions and the spec-file lint gap
 
 If none exists for a recurring task you had to figure out the hard way, write one — don't just solve it and move on.
@@ -93,7 +94,7 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 
 ### Type Safety
 
-- **No `as any`** — never cast to `any`. Use `unknown` for external/untyped data and narrow it explicitly with type guards or Zod parsing.
+- **No `as any`** — never cast to `any`. Use `unknown` for external/untyped data and narrow it explicitly with type guards or Zod parsing. The backend's remaining, deliberately-retained `any` are catalogued in the `pplcrm-any-exceptions` skill — read it before adding a new one; if your case isn't one of those categories, it's avoidable.
 - **No `as T` type assertions** unless provably safe and unavoidable. Prefer a type guard function that returns `value is T` instead.
 - **No `// @ts-ignore` or `// @ts-expect-error`** — fix the underlying issue. If a third-party type is wrong, patch it with a `.d.ts` declaration file.
 - **No non-null assertions (`!`)** unless the value is provably non-null at that callsite (e.g., after an explicit `if` check). If you must use `!`, add a comment explaining why.

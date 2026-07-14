@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- Gmail REST sync adapter: the `any` in this file are deeply-nested Gmail message/attachment payloads with no installed type package. File-scoped by design; see the pplcrm-any-exceptions skill. */
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { GoogleOAuthService } from './google-oauth.service';

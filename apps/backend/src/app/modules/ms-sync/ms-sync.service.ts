@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- MS Graph sync adapter: the `any` in this file are MS Graph message/attachment payloads; @microsoft/microsoft-graph-types is not installed. File-scoped by design; see the pplcrm-any-exceptions skill. */
 import { Client } from '@microsoft/microsoft-graph-client';
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
