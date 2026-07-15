@@ -23,6 +23,8 @@ export interface FormDetail {
   redirect_url: string | null;
   status: FormStatus;
   type: FormType | null;
+  /** Distinguishes living-funnel forms from the Stripe-backed donation forms; `type` is null for the latter. */
+  form_type: 'standard' | 'donation' | 'recurring_donation';
   slug: string | null;
   submit_label: string | null;
   thanks_title: string | null;

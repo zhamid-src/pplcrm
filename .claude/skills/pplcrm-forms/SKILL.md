@@ -61,8 +61,14 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   entries).
 - **Donations are separate, on purpose.** `form_type ∈ donation|recurring_donation` keeps the legacy
   `add`/`update` path, the Stripe checkout in `submitFormPublic`, and the `/donation-pages`
-  (fundraising) UI. `listForms` **filters donation types out**; `form_submissions` is **not** written
-  for them. `type` (the template chip) is NULL for donation forms. Don't merge the two type sets.
+  (fundraising) UI. `listForms` **now includes donation types** (the old `form_type not in (...)`
+  filter was removed) so every form shows in one list, but this is _surfacing only_: the forms-page
+  `select()` routes a click on a donation form to `/donation-pages/:id` (the fundraising editor)
+  instead of the living-funnel inline pane, `typeChip()`/`isDonationForm()` render a **Donation** chip,
+  and the card shows "Donation form" instead of a `form_submissions` count. `form_submissions` is
+  still **not** written for them, and their public page is still `/d/:slug`. `type` (the template
+  chip) is NULL for donation forms. Don't merge the two field/type sets — the editor and public
+  rendering stay separate.
   Every form (donation included) now has a NOT NULL per-tenant-unique `slug` (legacy `addForm`
   generates one via `uniqueSlug`; NULLs were backfilled by `2026-07-29-b-web-forms-slug-backfill`).
   Donation forms render only on the server-rendered `GET /api/forms/d/:slug` page (it has the amount
@@ -109,9 +115,11 @@ reasons, so the next agent doesn't have to re-derive them:
   deliberately 404s donation types so they never hit the SPA page without an amount field.
   Converging requires either bringing Stripe Elements into the SPA form renderer or keeping a
   parallel render path forever — both are their own design/build effort.
-- **`form_submissions` isn't written for donations** (`listForms` filters them out entirely) — the
-  donation ledger is `donations`/`donation_pledges`, not `form_submissions`. Unifying the list view
-  means reconciling two different response models, not just two field shapes.
+- **`form_submissions` isn't written for donations** — the donation ledger is
+  `donations`/`donation_pledges`, not `form_submissions`. (Donation forms now appear in the Forms
+  _list_, but their card shows "Donation form" rather than a submission count, and their responses
+  are not reconciled into the Responses tab.) Fully unifying the response view still means reconciling
+  two different response models, not just two field shapes.
 - **The donation-collection UX just changed underneath this decision.** Track J added the Fig. 15
   "Record donation" dialog (`record-donation-dialog.ts`) for offline gifts and rebuilt the
   Donations page stats/table to match spec — i.e. the _product_ gap the spec cared about (no way
@@ -123,11 +131,17 @@ reasons, so the next agent doesn't have to re-derive them:
 `/donation-pages/add` (fundraising) creation flow — the one true "create a donation form" path
 today. No dead end, no new UI invented.
 
-**Revisit convergence when:** the Forms field model natively supports a payment-type field
-(amount + a Stripe Elements-equivalent widget) AND the public page architecture can serve both the
-SPA (`/f/:slug`) and payment (`/d/:slug`) cases from one route. Until then, treat "donation forms
-show in the Forms page" as **won't-fix by design**, not a bug — the non-obvious traps below explain
-the mechanics; this section is why they're intentional and haven't been scheduled for removal.
+**Partially shipped (light surfacing, 2026-07-15):** donation forms now _appear_ in the Forms list
+(`listForms` no longer filters them; **Donation** chip; card reads "Donation form"), but clicking one
+routes to `/donation-pages/:id` — they are **not** editable inline and do **not** render on `/f/:slug`.
+This closes the "I want to see all my forms in one place" gap without touching the field model, Stripe,
+or the public render path.
+
+**Full convergence is still deferred.** Revisit when the Forms field model natively supports a
+payment-type field (amount + a Stripe Elements-equivalent widget) AND the public page architecture can
+serve both the SPA (`/f/:slug`) and payment (`/d/:slug`) cases from one route. Until then, treat
+"donation forms are _edited/rendered_ like living-funnel forms" as **won't-fix by design**, not a bug —
+the non-obvious traps below explain the mechanics.
 
 ## Campaigns (§15) — how forms interact with contexts
 

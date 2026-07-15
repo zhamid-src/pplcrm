@@ -608,7 +608,7 @@ describe('WebFormsController lifecycle', () => {
     }
   });
 
-  it('excludes donation forms from listForms and from the public /f/:slug lookup', async () => {
+  it('includes donation forms in listForms (unified list) but still 404s them on the public /f/:slug lookup', async () => {
     await controller.createForm({ name: 'Signup A', type: 'signup' }, auth() as any);
     await db
       .insertInto('web_forms')
@@ -625,9 +625,13 @@ describe('WebFormsController lifecycle', () => {
       })
       .execute();
 
+    // Donation forms are surfaced in the unified Forms list; the frontend routes clicks on them to
+    // the /donation-pages (Stripe) editor, keying off form_type, which must survive to the client.
     const forms = await controller.listForms(tenantId);
     expect(forms.some((f: any) => f.name === 'Signup A')).toBe(true);
-    expect(forms.some((f: any) => f.name === 'Donation page')).toBe(false);
+    const donationRow = forms.find((f: any) => f.name === 'Donation page');
+    expect(donationRow).toBeDefined();
+    expect((donationRow as any).form_type).toBe('donation');
 
     // Donation forms have slugs like every form, but only resolve on the /d/ donation page —
     // the /f/ SPA page (no amount field) must 404 them.

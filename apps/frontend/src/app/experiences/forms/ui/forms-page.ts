@@ -228,6 +228,13 @@ export class FormsPageComponent implements OnInit {
   // ── Selection / navigation ─────────────────────────────────────────────
 
   protected select(id: string): void {
+    // Donation forms live in this list but keep their Stripe-backed editor and /d/:slug public page.
+    // Selecting one hands off to the fundraising editor instead of the living-funnel inline pane.
+    const form = this.forms().find((f) => f.id === id);
+    if (form && this.isDonationForm(form)) {
+      void this.router.navigate(['/donation-pages', id]);
+      return;
+    }
     if (this.selectedId() === id) return;
     this.selectedId.set(id);
     this.tab.set('form');
@@ -638,9 +645,15 @@ export class FormsPageComponent implements OnInit {
     this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
   }
 
-  protected typeChip(type: FormType | null): string {
-    if (!type) return 'Form';
-    return type.charAt(0).toUpperCase() + type.slice(1);
+  protected isDonationForm(form: FormDetail): boolean {
+    return form.form_type === 'donation' || form.form_type === 'recurring_donation';
+  }
+
+  protected typeChip(form: FormDetail): string {
+    if (form.form_type === 'recurring_donation') return 'Recurring donation';
+    if (form.form_type === 'donation') return 'Donation';
+    if (!form.type) return 'Form';
+    return form.type.charAt(0).toUpperCase() + form.type.slice(1);
   }
 
   protected templateSubmitLabel(type: FormType): string {
