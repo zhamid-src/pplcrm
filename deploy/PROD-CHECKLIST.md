@@ -11,24 +11,38 @@ Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` 
 ## 0. Accounts & tooling
 
 - [ ] Azure subscription with permission to create resources in **Canada Central**.
-- [ ] Cloudflare account managing DNS for `pplcrm.com` **and** `pplforms.com` (register `pplforms.com` if not owned).
-- [ ] Cloudflare **Advanced Certificate Manager** (or equivalent) for the `*.pplforms.com` wildcard cert.
+- [ ] Cloudflare account (Free is fine) managing DNS for `pplcrm.com` **and** `pplforms.com` (register `pplforms.com` if not owned).
+- [ ] Decide how `*.pplforms.com` TLS is served (see §1 — Azure Front Door or a VM-hosted edge with DNS-01; NOT a Cloudflare proxied wildcard, which is Enterprise-only).
 - [ ] GitHub repo admin (to set Actions secrets/variables and GHCR package visibility).
 - [ ] Local tooling: `az` CLI, `docker`, `git`. (Decide: GitHub-runner deploy vs. hand-run.)
 - [ ] Decide the companion subdomain name — plan uses `go.pplcrm.com` (rename in `environment.prod.ts` if different).
 
 ## 1. Domains & DNS (Cloudflare)
 
+**Cloudflare Free is sufficient to launch.** The paid tiers (Pro/Business/Enterprise) sell security/perf
+hardening (WAF, bot management, rate limiting, advanced DDoS, SLA) — nice later, not required. Free gives
+DNS, Pages, Universal SSL, proxied CDN, and basic DDoS.
+
+The three single subdomains are normal proxied records (Universal SSL covers them on Free):
+
 - [ ] `pplcrm.com` (apex + `www`) → Cloudflare Pages (marketing).
-- [ ] `api.pplcrm.com` → **proxied** CNAME to the `pplcrm-api` Container App FQDN.
-- [ ] `app.pplcrm.com` → **proxied** CNAME to the `pplcrm-edge` Container App FQDN.
-- [ ] `go.pplcrm.com` → **proxied** CNAME to the `pplcrm-edge` Container App FQDN.
-- [ ] `*.pplforms.com` → **proxied** CNAME to the `pplcrm-edge` Container App FQDN.
-- [ ] Issue the **wildcard cert** for `*.pplforms.com` (ACM).
-- [ ] Set SSL/TLS mode to **Full (strict)** so Cloudflare validates the Azure origin cert.
-- [ ] **Verify the wildcard-domain caveat:** Azure Container Apps does NOT support wildcard custom domains.
-      Confirm the edge app accepts the forwarded `Host` for `*.pplforms.com`. If not → front the edge with
-      **Azure Front Door** (supports wildcards) or run the edge Caddy on a small **VM/VMSS** (same Caddyfile).
+- [ ] `api.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-api` Container App FQDN.
+- [ ] `app.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-edge` Container App FQDN.
+- [ ] `go.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-edge` Container App FQDN.
+- [ ] For the proxied records above, set SSL/TLS mode to **Full (strict)** (Cloudflare validates the Azure origin cert).
+
+**`*.pplforms.com` (per-org tenant subdomains) — the one that needs a real decision.** Cloudflare only
+**proxies wildcard DNS records on Enterprise**; on Free/Pro/Business a `*` record is forced **DNS-only**
+(grey cloud), so Cloudflare won't terminate TLS/CDN it — and Azure Container Apps doesn't support wildcard
+custom domains either. Upgrading to Pro/Business does NOT fix this (proxied wildcards are Enterprise-only).
+Pick one Free-compatible path — the edge terminates its own wildcard TLS:
+
+- [ ] **Option A — Azure Front Door:** point `*.pplforms.com` (Cloudflare **DNS-only** CNAME) at Front Door,
+      which supports wildcard domains + managed wildcard TLS and forwards to the edge/backend.
+- [ ] **Option B — edge Caddy on an Azure VM/VMSS:** `*.pplforms.com` (Cloudflare **DNS-only** A/CNAME) → the VM;
+      Caddy mints a `*.pplforms.com` Let's Encrypt cert via **DNS-01 using a Cloudflare API token** (uncomment the
+      `tls { dns cloudflare … }` block in `deploy/Caddyfile` and drop `auto_https off`). Everything stays on Cloudflare Free.
+- [ ] (Either way) confirm the edge receives the original `Host` so `<org>.pplforms.com` resolves the tenant via `?t=`.
 
 ## 2. Azure — data layer
 
