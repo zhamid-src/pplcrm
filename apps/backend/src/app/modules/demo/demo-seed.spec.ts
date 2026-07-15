@@ -154,7 +154,7 @@ describe('demo seeding and exit-demo', () => {
     expect(await count('teams', f.tenant_id)).toBe(1);
     expect(await count('volunteer_events', f.tenant_id)).toBe(DEMO_VOLUNTEER_EVENTS.length);
     expect(await count('newsletters', f.tenant_id)).toBe(DEMO_NEWSLETTERS.length);
-    expect(await count('web_forms', f.tenant_id)).toBe(6);
+    expect(await count('web_forms', f.tenant_id)).toBe(7);
     expect(await count('form_submissions', f.tenant_id)).toBe(DEMO_SUBMISSIONS.length);
     expect(await count('campaign_person_facts', f.tenant_id)).toBeGreaterThan(20);
     expect(await count('campaign_subscriptions', f.tenant_id)).toBeGreaterThan(10);
@@ -397,7 +397,7 @@ describe('demo seeding and exit-demo', () => {
     // Kept: starter forms (still drafts), the starter tag/issue vocabulary
     // (fully editable), and the user's own rows.
     const forms = await trx.selectFrom('web_forms').select('status').where('tenant_id', '=', f.tenant_id).execute();
-    expect(forms).toHaveLength(6);
+    expect(forms).toHaveLength(7);
     expect(forms.every((w) => w.status === 'draft')).toBe(true);
     const tags = await trx
       .selectFrom('tags')

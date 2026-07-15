@@ -109,8 +109,10 @@ export async function seedStarterTags(
 }
 
 /**
- * Creates the six starter web forms (one of every kind, all drafts) for a new
- * tenant. These are deliberately separate from the demo dataset
+ * Creates the seven starter web forms (all drafts) for a new tenant: one of
+ * each standard kind (signup ×2, request, survey), a standard fundraising
+ * pledge form, plus the two donation giving pages (one-time + recurring). These
+ * are deliberately separate from the demo dataset
  * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
  * keeps these forms — a ready-made starting point the user publishes when
  * they're ready.
@@ -143,9 +145,9 @@ export async function seedStarterForms(
     {
       key: 'signup',
       formType: 'standard',
-      name: 'Volunteer signup',
+      name: 'Volunteer sign-up',
       slug: 'volunteer-signup',
-      description: 'Volunteer signup form for your website. Customize the fields, then publish to get a public link.',
+      description: 'Volunteer sign-up form for your website. Customize the fields, then publish to get a public link.',
       submitLabel: FORM_TEMPLATES.signup.submitLabel,
       thanksBody: 'You’re signed up — we’ll be in touch soon.',
       confirmSubject: 'Thanks for signing up',
@@ -183,6 +185,18 @@ export async function seedStarterForms(
       thanksBody: 'Your gift means a lot to us.',
       confirmSubject: 'Thanks for your gift',
       confirmBody: 'Hi [First name],\n\nThanks for your gift — a receipt is on its way.',
+    },
+    {
+      key: 'pledge',
+      formType: 'standard',
+      name: 'Fundraising pledge',
+      slug: 'fundraising-pledge',
+      description:
+        'Collect pledges of support from your website. Responses become people you can follow up with — no payment is taken here (use the Fundraising donation pages for card gifts).',
+      submitLabel: FORM_TEMPLATES.pledge.submitLabel,
+      thanksBody: 'Thank you for pledging your support — we’ll be in touch about next steps.',
+      confirmSubject: 'Thanks for your pledge',
+      confirmBody: 'Hi [First name],\n\nThank you for pledging your support — we’ll be in touch about next steps soon.',
     },
     {
       key: 'request',
