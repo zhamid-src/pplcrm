@@ -5,6 +5,7 @@ import type { PlanDef } from '@common';
 
 import { AppPreview, type PreviewKind } from '../ui/app-preview';
 import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
@@ -76,7 +77,7 @@ const HEROES: Record<Audience, Hero> = {
 
 @Component({
   selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon],
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
   templateUrl: './home-page.html',
 })
 export class HomePage {
@@ -162,6 +163,25 @@ export class HomePage {
       icon: 'rectangle-stack',
       title: 'One list, every campaign',
       body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
     },
   ];
 
