@@ -1,5 +1,7 @@
 import type { FastifyPluginCallback } from 'fastify';
+import { sql } from 'kysely';
 
+import { BaseRepository } from './lib/base.repo';
 import emailsApiRoute from './modules/emails/routes/emails-api.route';
 import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
@@ -76,8 +78,19 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // Register files download REST route (auth handled inside route via token/query token)
   fastify.register(filesRoute, { prefix: '/api/files' });
 
-  // Root health check endpoint
+  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
+  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
+  fastify.get('/healthz', async (_req, res) => {
+    try {
+      await sql`select 1`.execute(BaseRepository.dbInstance);
+      return res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'unavailable' });
+    }
+  });
 
   done();
 };

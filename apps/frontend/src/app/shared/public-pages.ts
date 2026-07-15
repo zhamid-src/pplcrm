@@ -8,9 +8,17 @@ import { environment } from '../../environments/environment';
  * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
  */
 
-/** API origin without a trailing slash. */
+/**
+ * Base for public-page API calls (unauthenticated `fetch` to REST `/api/*`).
+ *
+ * In production these pages are served on the dedicated public origin `<org>.pplforms.com`, whose
+ * reverse proxy forwards `/api` and `/d` to the backend. So public calls must be **same-origin**
+ * (origin-relative `''`) — hitting the absolute `api.pplcrm.com` origin would be cross-origin and
+ * CORS-blocked (CORS is deliberately locked to the CRM origin only). In dev we keep the absolute
+ * `apiUrl`, which the backend CORS already allows for `localhost:4200`.
+ */
 export function apiBase(): string {
-  return environment.apiUrl.replace(/\/$/, '');
+  return environment.production ? '' : environment.apiUrl.replace(/\/$/, '');
 }
 
 /**

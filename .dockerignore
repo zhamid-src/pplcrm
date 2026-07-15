@@ -1,0 +1,16 @@
+# Build context hygiene for the backend image (apps/backend/Dockerfile).
+# node_modules and dist are (re)built inside the image; secrets and caches must never be copied in.
+node_modules
+**/node_modules
+dist
+tmp
+.nx
+.git
+coverage
+**/*.log
+
+# Never copy real secrets into the build context. The example template is safe and stays.
+.env
+.env.*
+!.env.production.example
+!.env.development.example

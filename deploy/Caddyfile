@@ -1,0 +1,76 @@
+# pplCRM reverse proxy / static host — Caddy (runs as the `pplcrm-edge` Azure Container App).
+#
+# Fronts four of the five production origins (the marketing site pplcrm.com is on Cloudflare Pages
+# and is NOT handled here). See the deployment plan §1 for the full topology.
+#
+# TLS is terminated UPSTREAM: Cloudflare (proxied, Full-strict) owns the public certs — including the
+# wildcard *.pplforms.com — and Azure Container Apps ingress presents its own cert to Cloudflare. So
+# Caddy serves plain HTTP on :80 (auto_https off) and does NO ACME. Set the Container App targetPort
+# to 80. If you later run this without Cloudflare in front, drop `auto_https off` and add a
+# `tls { dns <provider> }` DNS-01 block to the *.pplforms.com site for the wildcard cert.
+#
+# Environment variables (with dev-friendly defaults):
+#   BACKEND_UPSTREAM   host:port of the Fastify backend (the pplcrm-api app)  (default backend:3000)
+#   FRONTEND_ROOT      dir of dist/apps/frontend                              (default /srv/frontend)
+#   COMPANION_ROOT     dir of dist/apps/companion                             (default /srv/companion)
+
+{
+	auto_https off
+	# Trust Cloudflare/Container Apps forwarding headers so client IPs and Host are honored.
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# NOTE: api.pplcrm.com is NOT served here. In the Azure topology Cloudflare routes api.pplcrm.com
+# directly to the backend Container App (pplcrm-api); this edge only proxies the /api and /d that the
+# companion + public pages need same-origin. BACKEND_UPSTREAM points at that same pplcrm-api app.
+
+# ── app.pplcrm.com — CRM SPA, STATIC ONLY (all its API calls are cross-origin to api.) ──
+http://app.pplcrm.com {
+	encode gzip zstd
+	root * {$FRONTEND_ROOT:/srv/frontend}
+	# Long-cache the content-hashed build assets; never cache index.html (SPA shell).
+	@hashed path_regexp \.[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg|webp)$
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	try_files {path} /index.html
+	file_server
+}
+
+# ── go.pplcrm.com — volunteer companion SPA + same-origin /api proxy ──
+http://go.pplcrm.com {
+	encode gzip zstd
+	# Companion's relative REST (canvass/deliveries/companion-access) → backend.
+	handle /api/* {
+		reverse_proxy {$BACKEND_UPSTREAM:backend:3000}
+	}
+	# Companion static SPA (routes /t/:token and /r/:token).
+	handle {
+		root * {$COMPANION_ROOT:/srv/companion}
+		@hashed path_regexp \.[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg|webp)$
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── *.pplforms.com — per-org public submission surface (untrusted visitors) ──
+# Serves the frontend SPA's public routes (/f /e /v /volunteer) and proxies the backend surfaces the
+# public pages need: REST /api/* (same-origin, thanks to the origin-relative apiBase) and the
+# server-rendered donation checkout /d/*. It NEVER exposes the root tRPC endpoint.
+http://*.pplforms.com {
+	encode gzip zstd
+	handle /api/* {
+		reverse_proxy {$BACKEND_UPSTREAM:backend:3000}
+	}
+	handle /d/* {
+		reverse_proxy {$BACKEND_UPSTREAM:backend:3000}
+	}
+	handle {
+		root * {$FRONTEND_ROOT:/srv/frontend}
+		@hashed path_regexp \.[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|svg|webp)$
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}
