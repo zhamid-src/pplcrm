@@ -338,6 +338,7 @@ export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-t
     subject: payload.subject ?? '',
     text: payload.text ?? '',
     html: payload.html ?? '',
+    tenant_id: payload.tenant_id ?? null,
   });
 }
 

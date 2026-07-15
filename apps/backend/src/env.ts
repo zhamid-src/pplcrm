@@ -47,6 +47,13 @@ const envSchema = z.object({
   POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
   SENDGRID_API_KEY: z.string().optional(),
   SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
+  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
+  // reputation (IP pool) from paying customers'.
+  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
+  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
+  // bounce/complaint webhooks. The webhook rejects requests without it.
+  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
   // Twilio SMS (companion verification codes). All optional — the SMS service
   // logs a dev mock instead of sending when these are unset.
   TWILIO_ACCOUNT_SID: z.string().optional(),
@@ -150,6 +157,8 @@ export const env = {
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
   sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
+  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
   twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
   twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
   twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,

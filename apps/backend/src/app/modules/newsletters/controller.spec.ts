@@ -11,13 +11,32 @@ async function createTestSeed(db: any) {
   const campaignId = rand();
   const householdId = rand();
 
-  // 1. Tenant
+  // 1. Tenant — on a paid plan so the anti-abuse send guards (free-tier phone verification and
+  // warm-up cap) don't apply; the domain-verification gate is satisfied by the settings below.
   await db
     .insertInto('tenants')
     .values({
       id: tenantId,
       name: 'Test Tenant',
+      subscription_plan: 'movement',
     })
+    .execute();
+
+  // Sending identity: a verified domain matching the default From address (send-guards gate).
+  await db
+    .insertInto('settings')
+    .values([
+      {
+        tenant_id: tenantId,
+        key: 'communications.default_from_email',
+        value: JSON.stringify('news@test-tenant.org'),
+      },
+      {
+        tenant_id: tenantId,
+        key: 'communications.verified_domains',
+        value: JSON.stringify([{ domain: 'test-tenant.org', status: 'verified' }]),
+      },
+    ])
     .execute();
 
   // 2. User
@@ -117,6 +136,7 @@ async function cleanTenant(db: any, tenantId: string) {
   await db.deleteFrom('tags').where('tenant_id', '=', tenantId).execute();
   // map_newsletters_lists rows cascade when newsletters/lists are deleted.
   // Newsletters reference campaigns (fk_newsletters_campaign), so they go first.
+  await db.deleteFrom('newsletter_send_log').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('newsletters').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();

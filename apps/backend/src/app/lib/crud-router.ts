@@ -7,18 +7,25 @@ export function createCrudRouter<
   TController extends BaseController<any, any>,
   TInsertSchema extends z.ZodTypeAny,
   TUpdateSchema extends z.ZodTypeAny,
->(controller: TController, insertSchema: TInsertSchema, updateSchema: TUpdateSchema) {
+>(
+  controller: TController,
+  insertSchema: TInsertSchema,
+  updateSchema: TUpdateSchema,
+  // Plan-gated modules pass authProcedure.use(planFeatureGate(...)) so every CRUD mutation is
+  // gated in one place; the gate middleware lets queries through untouched.
+  procedure: typeof authProcedure = authProcedure,
+) {
   return {
-    getAll: authProcedure
+    getAll: procedure
       .input(getAllOptions)
       .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
-    getAllWithCounts: authProcedure
+    getAllWithCounts: procedure
       .input(getAllOptions)
       .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
-    getById: authProcedure
+    getById: procedure
       .input(idSchema)
       .query(({ input, ctx }) => controller.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-    add: authProcedure.input(insertSchema).mutation(({ input, ctx }) =>
+    add: procedure.input(insertSchema).mutation(({ input, ctx }) =>
       controller.add({
         ...(input as Record<string, unknown>),
         tenant_id: ctx.auth.tenant_id,
@@ -26,7 +33,7 @@ export function createCrudRouter<
         updatedby_id: ctx.auth.user_id,
       }),
     ),
-    create: authProcedure.input(insertSchema).mutation(({ input, ctx }) =>
+    create: procedure.input(insertSchema).mutation(({ input, ctx }) =>
       controller.add({
         ...(input as Record<string, unknown>),
         tenant_id: ctx.auth.tenant_id,
@@ -34,7 +41,7 @@ export function createCrudRouter<
         updatedby_id: ctx.auth.user_id,
       }),
     ),
-    update: authProcedure.input(z.object({ id: idSchema, data: updateSchema })).mutation(({ input, ctx }) => {
+    update: procedure.input(z.object({ id: idSchema, data: updateSchema })).mutation(({ input, ctx }) => {
       const { id, data } = input as unknown as { id: string; data: Record<string, unknown> };
       return controller.update({
         tenant_id: ctx.auth.tenant_id,
@@ -42,14 +49,14 @@ export function createCrudRouter<
         row: { ...data, updatedby_id: ctx.auth.user_id },
       });
     }),
-    delete: authProcedure
+    delete: procedure
       .input(idSchema)
       .mutation(({ input, ctx }) => controller.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-    deleteMany: authProcedure
+    deleteMany: procedure
       .input(z.array(idSchema).min(1, 'At least one ID is required'))
       .mutation(({ input, ctx }) => controller.deleteMany(ctx.auth.tenant_id, input)),
-    count: authProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id)),
-    exportCsv: authProcedure
+    count: procedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id)),
+    exportCsv: procedure
       .input(exportCsvInput)
       .output(exportCsvResponse)
       .mutation(({ input, ctx }) =>

@@ -48,6 +48,18 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
     return this.api.settings.requestEmailVerification.mutate({ email });
   }
 
+  public async getPhoneVerificationStatus() {
+    return this.api.settings.getPhoneVerificationStatus.query();
+  }
+
+  public async requestPhoneVerification(phone: string) {
+    return this.api.settings.requestPhoneVerification.mutate({ phone });
+  }
+
+  public async confirmPhoneVerification(code: string) {
+    return this.api.settings.confirmPhoneVerification.mutate({ code });
+  }
+
   public async verifySenderEmail(token: string) {
     return this.api.settings.verifySenderEmail.mutate({ token });
   }

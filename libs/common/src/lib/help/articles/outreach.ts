@@ -8,7 +8,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     summary:
       'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
     keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
     blocks: [
       { kind: 'h2', id: 'compose', text: 'From template to draft' },
       {
@@ -77,6 +77,77 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'warning',
         title: 'Respect unsubscribes',
         text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
       },
     ],
   },

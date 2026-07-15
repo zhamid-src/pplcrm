@@ -1,13 +1,17 @@
 import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
 import { ListsController } from './controller';
 import { createCrudRouter } from '../../lib/crud-router';
+import { planFeatureGate } from '../billing/plan-gate';
 
 const lists = new ListsController();
 
-const crud = createCrudRouter(lists, AddListObj, UpdateListObj);
+// FEATURE_MATRIX plan gate: lists (segments) are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('lists'));
+
+const crud = createCrudRouter(lists, AddListObj, UpdateListObj, authProcedure);
 
 export const ListsRouter = router({
   ...crud,

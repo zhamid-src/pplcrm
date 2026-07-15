@@ -13,9 +13,17 @@ import { FilesRepo } from '../../../modules/files/repositories/files.repo';
 import { StorageService } from '../../storage.service';
 import { getPlanDef } from '@common';
 import { getPlanLimits } from '../../../modules/billing/usage-limits';
+import {
+  loadSendingTenant,
+  logNewsletterBatch,
+  remainingSendAllowance,
+} from '../../../modules/newsletters/send-guards';
 
 const NEWSLETTER_BATCH_SIZE = 500;
 const BATCH_DELAY_MS = 1000;
+// How long a rate-capped send waits before its continuation job retries (rolling windows free
+// up gradually, so a short fixed delay converges without busy-waiting a worker slot).
+const RATE_CAP_DEFER_MS = 15 * 60 * 1000;
 
 export async function handleSendNewsletter(
   payload: JobPayloadOf<'send-newsletter'>,
@@ -93,7 +101,12 @@ export async function handleSendNewsletter(
   }
 
   const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+  // Free-tier traffic on the platform key defaults to the shared free-tier subuser so its
+  // sending reputation is isolated from paying customers'. A tenant-specific whitelabel
+  // subuser (or a tenant-owned API key) always wins — its domain auth lives there.
+  const sendingTenant = await loadSendingTenant(db, tenantId);
+  const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
   const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
   const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
 
@@ -122,6 +135,53 @@ export async function handleSendNewsletter(
   const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
 
   while (offset < totalRecipients) {
+    // Re-check the tenant's blocked state every batch so an abuse tripwire (fired by the
+    // SendGrid webhook while this send is in flight) stops the send mid-stream, not just the
+    // next one. The resume point is stored on the newsletter for a supervised restart.
+    const tenantNow = await loadSendingTenant(db, tenantId);
+    if (tenantNow.suspended_at || tenantNow.sending_paused_at) {
+      logger.warn(
+        { tenantId, newsletterId, offset, deliveredCount },
+        'Tenant sending is blocked — pausing newsletter mid-send',
+      );
+      await db
+        .updateTable('newsletters')
+        .set({ status: 'paused', send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .execute();
+      return;
+    }
+
+    // Per-tenant send-rate cap (hourly, plus the free-tier warm-up daily cap): trim the batch
+    // to what's still allowed; when nothing is, hand the remainder to a continuation job and
+    // free this worker slot instead of sleeping on it.
+    const allowance = await remainingSendAllowance(db, tenantNow, new Date());
+    if (allowance <= 0) {
+      logger.info(
+        { tenantId, newsletterId, offset, deliveredCount },
+        'Per-tenant send cap reached — deferring remainder of newsletter send',
+      );
+      await db
+        .updateTable('newsletters')
+        .set({ send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .execute();
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'send-newsletter', newsletterId, tenantId, userId, offset, deliveredCount }),
+          run_at: new Date(Date.now() + RATE_CAP_DEFER_MS),
+          max_attempts: 3,
+        })
+        .execute();
+      return;
+    }
+
     // Query a chunk of recipients dynamically using LIMIT and OFFSET.
     // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
     // while still carrying the person fields the merge tokens need.
@@ -129,7 +189,7 @@ export async function handleSendNewsletter(
       .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
       .distinctOn('persons.email')
       .orderBy('persons.email', 'asc')
-      .limit(NEWSLETTER_BATCH_SIZE)
+      .limit(Math.min(NEWSLETTER_BATCH_SIZE, allowance))
       .offset(offset)
       .execute();
 
@@ -174,6 +234,9 @@ export async function handleSendNewsletter(
     deliveredCount += batchDelivered;
     offset += chunkRows.length;
 
+    // Meter the batch — this row is what the warm-up and hourly caps SUM over.
+    await logNewsletterBatch(db, tenantId, newsletterId, batchDelivered);
+
     // Update progress in the background job payload (no recipients array!)
     if (jobId) {
       await db
@@ -205,6 +268,7 @@ export async function handleSendNewsletter(
     .set({
       status: 'sent',
       delivered_count: deliveredCount,
+      send_offset: null,
       send_date: new Date(),
       updatedby_id: userId,
       updated_at: new Date(),
@@ -229,6 +293,9 @@ export async function handleSendNewsletter(
   await queueUsageLimitCheck(tenantId, db);
 }
 
+// Send-log rows only feed rolling-window caps (24h max) — 30 days is generous ops headroom.
+const SEND_LOG_RETENTION_DAYS = 30;
+
 export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
   await pruneNewsletterEvents(db);
   await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
@@ -252,6 +319,13 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
 
       const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
       const tenantId = String(tenant.id);
+
+      // Send-log rows only feed the rolling-window send caps (24h max) — prune with the events.
+      await db
+        .deleteFrom('newsletter_send_log')
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', new Date(Date.now() - SEND_LOG_RETENTION_DAYS * DAY_MS))
+        .execute();
 
       // Fetch events older than the retention window that are engagement events.
       const expiringEvents: {

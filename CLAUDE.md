@@ -52,6 +52,7 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 - `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
 - `pplcrm-debugging` — tracing a bug end-to-end (correlationId → Pino → tRPC → Kysely → signals)
 - `pplcrm-schemas-validation` — the Zod schema triad (`AddXObj`/`UpdateXObj`/`XObj`) and `core.schema` helpers
+- `pplcrm-sending-guards` — the anti-abuse layer: pre-send gates (verified domain, free-tier phone verification, 7-day warm-up cap), bounce/complaint tripwires that pause/suspend a tenant, the per-tenant hourly send cap in the worker, the FEATURE_MATRIX plan gate (`plan-gate.ts` + `GATED_FEATURES`), the disposable-email signup block, the free-tier SendGrid subuser, and the Postmark bounce webhook. Read before touching send caps/thresholds, plan gating, or when a tenant's sending is blocked
 - `pplcrm-any-exceptions` — the catalogue of intentional `any` remaining in the backend (dynamic Kysely builders → the `AnyQB` alias, `{}` dynamic-read results, Gmail/Graph external JSON, tRPC shape, BigInt seams): why each is unavoidable, how it's marked, and what would type it away. Read before adding a new `any` or an `eslint-disable` in `apps/backend`
 - `pplcrm-testing` — Vitest conventions and the spec-file lint gap
 

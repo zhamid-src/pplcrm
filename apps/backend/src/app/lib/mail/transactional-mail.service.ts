@@ -178,6 +178,8 @@ export class TransactionalEmailService {
           Subject: options.subject,
           TextBody: options.text,
           HtmlBody: wrappedHtml,
+          // Round-trips to the bounce/complaint webhook so suppressions can be tenant-scoped.
+          ...(options.tenant_id ? { Metadata: { tenant_id: String(options.tenant_id) } } : {}),
         }),
       });
 
@@ -207,6 +209,7 @@ export class TransactionalEmailService {
           subject: options.subject,
           text: options.text,
           html: options.html,
+          tenant_id: options.tenant_id ?? null,
         }),
         run_at: new Date(),
         max_attempts: 5,

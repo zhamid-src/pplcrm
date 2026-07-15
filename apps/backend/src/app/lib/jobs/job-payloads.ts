@@ -114,6 +114,7 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     subject: z.string().nullish(),
     text: z.string().nullish(),
     html: z.string().nullish(),
+    tenant_id: idSchema.nullish(),
   }),
   z.object({
     type: z.literal('send-sms'),

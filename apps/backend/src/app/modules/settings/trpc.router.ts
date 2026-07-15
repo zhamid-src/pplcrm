@@ -12,6 +12,13 @@ export const SettingsRouter = router({
   upsert: adminOrOwnerProcedure
     .input(UpsertSettingsInputObj)
     .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
+  getPhoneVerificationStatus: authProcedure.query(({ ctx }) => settings.getPhoneVerificationStatus(ctx.auth)),
+  requestPhoneVerification: adminOrOwnerProcedure
+    .input(z.object({ phone: z.string().min(7).max(32) }))
+    .mutation(({ ctx, input }) => settings.requestPhoneVerification(ctx.auth, input.phone)),
+  confirmPhoneVerification: adminOrOwnerProcedure
+    .input(z.object({ code: z.string().min(4).max(10) }))
+    .mutation(({ ctx, input }) => settings.confirmPhoneVerification(ctx.auth, input.code)),
   requestEmailVerification: adminOrOwnerProcedure
     .input(z.object({ email: z.string().email() }))
     .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),

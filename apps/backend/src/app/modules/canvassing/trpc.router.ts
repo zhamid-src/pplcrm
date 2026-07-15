@@ -10,10 +10,19 @@ import {
   idSchema,
 } from '../../../../../../libs/common/src';
 
-import { adminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
+import {
+  adminOrOwnerProcedure as baseAdminOrOwnerProcedure,
+  authProcedure as baseAuthProcedure,
+  router,
+} from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
 import { CanvassingController } from './controller';
 
 const controller = new CanvassingController();
+
+// FEATURE_MATRIX plan gate: canvassing is Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('canvassing'));
+const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('canvassing'));
 
 export const CanvassingRouter = router({
   // Turfs & assignments page.

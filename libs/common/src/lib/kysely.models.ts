@@ -61,6 +61,7 @@ export interface Models {
   emails: Emails;
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
+  newsletter_send_log: NewsletterSendLog;
   person_newsletter_engagements: PersonNewsletterEngagements;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
@@ -684,7 +685,11 @@ export interface Tasks extends RecordType {
   file_id: string | null;
 }
 
-interface Tenants extends RecordType, AddressType {
+// Unlike every other record table, tenants.createdby_id is NULLABLE in the schema — the tenant
+// row is created before its first user, and the hard-delete job nulls it to break the
+// fk_createdby_id cycle before wiping authusers.
+interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
+  createdby_id: string | null;
   name: string;
   slug: string | null;
   admin_id: string | null;
@@ -706,6 +711,17 @@ interface Tenants extends RecordType, AddressType {
   paused_at: Timestamp | null;
   /** Demo mode: set while the seeded test-drive data is present; NULL = exited/never. */
   demo_mode_at: Timestamp | null;
+  /** Automated anti-abuse pause (hard-bounce tripwire): blocks newsletter sending only.
+   * Distinct from the user-initiated `paused_at` and the sign-in-blocking `suspended_at`. */
+  sending_paused_at: Timestamp | null;
+  sending_paused_reason: string | null;
+  /** Verified sending phone (E.164) — free tenants must verify one before their first bulk send. */
+  sending_phone: string | null;
+  sending_phone_verified_at: Timestamp | null;
+  pending_phone: string | null;
+  phone_verification_code_hash: string | null;
+  phone_verification_expires_at: Timestamp | null;
+  phone_verification_attempts: Generated<number>;
 }
 
 interface Emails extends RecordType {
@@ -749,6 +765,8 @@ interface Newsletters extends RecordType {
   html_content: string | null;
   plain_text_content: string | null;
   top_links: Json | null;
+  /** Resume point recorded when a send is paused mid-batch (tripwire/rate-cap); NULL otherwise. */
+  send_offset: number | null;
 }
 
 export interface NewsletterEvents {
@@ -767,6 +785,16 @@ export interface NewsletterEvents {
   /** SendGrid bounce sub-type: 'bounce' = hard, 'blocked' = soft. */
   bounce_type: string | null;
   timestamp: Timestamp;
+  created_at: Generated<Timestamp>;
+}
+
+/** One row per delivered newsletter batch — SUM(recipient_count) over a window drives the
+ * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. */
+export interface NewsletterSendLog {
+  id: Generated<string>;
+  tenant_id: string;
+  newsletter_id: string;
+  recipient_count: number;
   created_at: Generated<Timestamp>;
 }
 

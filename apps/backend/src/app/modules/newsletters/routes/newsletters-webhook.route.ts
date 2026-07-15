@@ -2,6 +2,7 @@ import { createPublicKey, createVerify } from 'crypto';
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
 import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
+import { applyEngagementTripwires } from '../send-guards';
 import { env } from '../../../../env';
 import { sql } from 'kysely';
 
@@ -237,6 +238,11 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
             .where('tenant_id', '=', tenantId)
             .execute();
         });
+
+        // Abuse tripwires (§ anti-spam): a high hard-bounce rate pauses the tenant's sending, a
+        // high spam-complaint rate suspends the account pending human review. Runs after the
+        // aggregates so an in-flight send's worker loop sees the flag on its next batch.
+        await applyEngagementTripwires(db, tenantId, newsletterId);
       }
 
       return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });

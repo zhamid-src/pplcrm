@@ -361,6 +361,33 @@ export function priceLabelAt(plan: PlanDef, subscribers: number): string {
   return `$${priceForQuantity(plan.key, index)}`;
 }
 
+/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
+const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
+
+/**
+ * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
+ * two in sync when a feature moves between tiers). The backend's plan-gate middleware
+ * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
+ * below the feature's minimum plan.
+ */
+export const GATED_FEATURES = {
+  forms: { minPlan: 'grassroots', label: 'Forms' },
+  donations: { minPlan: 'grassroots', label: 'Donations' },
+  automations: { minPlan: 'grassroots', label: 'Automations' },
+  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
+  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
+  canvassing: { minPlan: 'movement', label: 'Canvassing' },
+  deliveries: { minPlan: 'movement', label: 'Deliveries' },
+} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
+
+export type GatedFeature = keyof typeof GATED_FEATURES;
+
+/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
+export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
+}
+
 /**
  * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
  * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's

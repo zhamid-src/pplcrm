@@ -39,6 +39,7 @@ import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
 import { parseProfilePreferences } from '../../lib/profile-preferences';
 import { getPlanLimits } from '../billing/usage-limits';
+import { isDisposableEmail } from '../../lib/mail/disposable-email-domains';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPasswordConstantTime } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
@@ -1354,6 +1355,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       refresh_token: '',
       refresh_expires_at: null,
     };
+
+    // Anti-abuse: throwaway inboxes are the raw material of spam accounts. A real org signs up
+    // with a mailbox it keeps; verification links also die with a temporary inbox anyway.
+    if (isDisposableEmail(email)) {
+      throw new BadRequestError(
+        'Temporary or disposable email addresses cannot be used to sign up. Please use your organization or personal mailbox.',
+      );
+    }
 
     try {
       await this.verifyUserDoesNotExist(email);

@@ -21,6 +21,8 @@ import { ListsController } from '../lists/controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { assertNotDemoMode } from '../demo/demo-guard';
+import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
+import { checkRateLimit } from '../../lib/rate-limiter';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
@@ -366,13 +368,21 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       throw new BadRequestError('No recipients found for the selected lists or tags');
     }
 
+    // A 'paused' newsletter (tripwire fired mid-send) resumes from where it stopped once the
+    // tenant is unblocked, instead of double-sending the recipients before the pause point.
+    const resumeOffset = newsletter['status'] === 'paused' ? Number(newsletter['send_offset'] ?? 0) : 0;
+    const resumeDelivered = resumeOffset > 0 ? Number(newsletter['delivered_count'] ?? 0) : 0;
+
+    // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
+    await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
+
     const updated = await this.update({
       tenant_id,
       id,
       row: {
         status: 'queuing',
         total_recipients: totalRecipients,
-        delivered_count: 0,
+        delivered_count: resumeDelivered,
         updatedby_id: userId,
         updated_at: new Date(),
       },
@@ -389,8 +399,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
           newsletterId: id,
           tenantId: tenant_id,
           userId: userId,
-          offset: 0,
-          deliveredCount: 0,
+          offset: resumeOffset,
+          deliveredCount: resumeDelivered,
         }),
         run_at: new Date(),
       })
@@ -402,6 +412,11 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
     await assertNotDemoMode(this.getRepo().db, tenant_id);
     const db = this.getRepo().db;
+
+    // Test sends are single-recipient but still outbound mail: blocked while the tenant is
+    // suspended/paused, and throttled so they can't be scripted into a bulk channel.
+    assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
+    checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
 
     // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
     // from name/email, otherwise fall back to the workspace Communications settings.

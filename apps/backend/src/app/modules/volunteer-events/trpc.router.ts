@@ -7,10 +7,14 @@ import {
   UpdateVolunteerShiftObj,
 } from '../../../../../../libs/common/src';
 import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
 import { VolunteerEventsController } from './controller';
 
 const ctrl = new VolunteerEventsController();
+
+// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
 
 export const VolunteerRouter = router({
   // Events

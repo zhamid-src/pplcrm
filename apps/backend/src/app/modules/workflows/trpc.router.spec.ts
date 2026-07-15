@@ -8,7 +8,9 @@ function mockAuthDb() {
   const mockQB: any = {
     select: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
-    executeTakeFirst: vi.fn().mockResolvedValue({ role: 'owner', verified: true }),
+    // Single shared row for every mocked read: authusers (role/verified), sessions, and the
+    // plan-gate's tenants read (subscription_plan) all resolve from it.
+    executeTakeFirst: vi.fn().mockResolvedValue({ role: 'owner', verified: true, subscription_plan: 'movement' }),
   };
   vi.spyOn(BaseRepository, 'dbInstance', 'get').mockReturnValue({
     selectFrom: vi.fn().mockReturnValue(mockQB),

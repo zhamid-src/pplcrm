@@ -380,9 +380,12 @@ export {
   priceForQuantity,
   startingPriceLabel,
   priceLabelAt,
+  GATED_FEATURES,
+  planAllowsFeature,
 } from './lib/billing/plans';
 export type {
   PlanKey,
+  GatedFeature,
   PurchasablePlanKey,
   PlanDef,
   PriceBracket,

@@ -7,10 +7,14 @@ import {
 } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
-import { authProcedure, publicProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, publicProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
 import { WebFormsController } from './controller';
 
 const webForms = new WebFormsController();
+
+// FEATURE_MATRIX plan gate: forms are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('forms'));
 
 export const WebFormsRouter = router({
   getAllWithCounts: authProcedure

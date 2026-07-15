@@ -18,10 +18,14 @@ import {
 
 import { z } from 'zod';
 
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
 import { DeliveriesController } from './controller';
 
 const controller = new DeliveriesController();
+
+// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
 
 export const DeliveriesRouter = router({
   // Requests

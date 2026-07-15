@@ -6,13 +6,17 @@ import {
   idSchema,
 } from '../../../../../../libs/common/src';
 import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
 import { WorkflowsController } from './controller';
 import { createCrudRouter } from '../../lib/crud-router';
+import { planFeatureGate } from '../billing/plan-gate';
 
 const workflows = new WorkflowsController();
 
-const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj);
+// FEATURE_MATRIX plan gate: automations are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('automations'));
+
+const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj, authProcedure);
 
 export const WorkflowsRouter = router({
   ...crud,

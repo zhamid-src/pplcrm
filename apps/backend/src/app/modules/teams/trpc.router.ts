@@ -2,10 +2,14 @@ import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../
 
 import { z } from 'zod';
 
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
 import { TeamsController } from './controller';
 
 const controller = new TeamsController();
+
+// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
 
 function getAll() {
   return authProcedure

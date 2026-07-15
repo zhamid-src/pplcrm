@@ -1,9 +1,13 @@
 import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
 import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { planFeatureGate } from '../billing/plan-gate';
 import { DonationsController } from './controller';
 
 const controller = new DonationsController();
+
+// FEATURE_MATRIX plan gate: donations are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('donations'));
 
 export const DonationsRouter = router({
   // ── One-time donations ──────────────────────────────────────────────────────

@@ -16,11 +16,22 @@ interface VerifiedDomainEntry {
   linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
 }
 
+import { randomInt, timingSafeEqual } from 'crypto';
+
 import { BaseController } from '../../lib/base.controller';
+import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
 import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { SmsService } from '../../lib/sms/sms.service';
+import { hashToken } from '../../lib/token-hash';
+import { getPlanDef } from '@common';
 import { assertNotDemoMode } from '../demo/demo-guard';
 import { SettingsRepo } from './repositories/settings.repo';
+
+const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
+const PHONE_CODE_MAX_ATTEMPTS = 5;
 
 // Rate limiting in-memory storage to prevent verification spam/abuse
 const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
@@ -130,6 +141,126 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     });
 
     return this.getSnapshot(auth);
+  }
+
+  /**
+   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
+   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
+   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
+   * client-readable.
+   */
+  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    return {
+      verified: tenant?.sending_phone_verified_at != null,
+      verifiedAt: tenant?.sending_phone_verified_at ?? null,
+      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
+      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
+      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
+      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
+    };
+  }
+
+  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = normalizeE164(phone);
+    if (!normalized) {
+      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
+    }
+    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
+    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
+    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
+
+    const code = String(randomInt(100000, 1000000));
+    const smsService = new SmsService();
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('tenants')
+          .set({
+            pending_phone: normalized,
+            phone_verification_code_hash: hashToken(code),
+            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
+            phone_verification_attempts: 0,
+          })
+          .where('id', '=', auth.tenant_id)
+          .execute();
+        await smsService.enqueueSms(
+          {
+            to: normalized,
+            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
+            tenant_id: auth.tenant_id,
+          },
+          trx,
+        );
+      });
+
+    return { success: true, phone: maskPhone(normalized) };
+  }
+
+  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
+    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select([
+        'pending_phone',
+        'phone_verification_code_hash',
+        'phone_verification_expires_at',
+        'phone_verification_attempts',
+      ])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
+      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
+    }
+    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
+      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
+    }
+    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
+    if (!expiresAt || expiresAt.getTime() < Date.now()) {
+      throw new BadRequestError('That code has expired. Request a new one.');
+    }
+
+    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
+    const actual = Buffer.from(hashToken(code.trim()), 'hex');
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      await db
+        .updateTable('tenants')
+        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
+        .where('id', '=', auth.tenant_id)
+        .execute();
+      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
+    }
+
+    await db
+      .updateTable('tenants')
+      .set({
+        sending_phone: tenant.pending_phone,
+        sending_phone_verified_at: new Date(),
+        pending_phone: null,
+        phone_verification_code_hash: null,
+        phone_verification_expires_at: null,
+        phone_verification_attempts: 0,
+      })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'settings',
+      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
+    });
+
+    return { success: true, phone: maskPhone(tenant.pending_phone) };
   }
 
   public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {

@@ -3750,6 +3750,135 @@ export class Table {
 }
 ````
 
+## File: libs/uxcommon/src/components/tabs/tabs.ts
+````typescript
+import { Component, computed, input, model } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+
+export interface PcTabOption {
+  id: string;
+  label: string;
+  badge?: string | number;
+  disabled?: boolean;
+  tooltip?: string;
+  /** When set, the pill renders as a router link (page-level tabs that navigate) instead of a stateful button. */
+  route?: string;
+  /** Match the route exactly for the active state (default false). */
+  exact?: boolean;
+}
+
+const PILL_BASE =
+  'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none';
+const PILL_ACTIVE = 'border-primary/30 bg-primary/10 text-primary';
+const PILL_INACTIVE = 'border-base-200 bg-base-100 text-base-content/70';
+
+/**
+ * The one tab idiom (design §4): the pill tab bar from the person view, with count
+ * badges ("numbers before clicks", §1). Stateful tabs bind `[(activeTab)]`; tabs that
+ * navigate set `route` on the option instead. The only sanctioned exception is the
+ * grain-tabs row on the People / Households / Companies grids.
+ */
+@Component({
+  selector: 'pc-tab-bar',
+  imports: [RouterLink, RouterLinkActive],
+  host: { class: 'block' },
+  template: `
+    <div role="tablist" class="flex flex-wrap gap-2">
+      @for (tab of tabs(); track tab.id) {
+        @if (tab.route) {
+          <a
+            role="tab"
+            [routerLink]="tab.route"
+            routerLinkActive="!border-primary/30 !bg-primary/10 !text-primary"
+            [routerLinkActiveOptions]="{ exact: tab.exact ?? false }"
+            class="{{ pillBase }} {{ pillInactive }} cursor-pointer hover:bg-base-200/60"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span class="rounded-full bg-base-200 px-1.5 text-xs font-semibold tabular-nums text-base-content/50">{{
+                tab.badge
+              }}</span>
+            }
+          </a>
+        } @else {
+          <button
+            type="button"
+            role="tab"
+            [attr.aria-selected]="activeTab() === tab.id"
+            [attr.aria-disabled]="tab.disabled || null"
+            [class]="pillClass(tab)"
+            [class.tooltip]="tab.disabled && tab.tooltip"
+            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
+            (click)="!tab.disabled && selectTab(tab.id)"
+          >
+            <span>{{ tab.label }}</span>
+            @if (tab.badge !== undefined && tab.badge !== null) {
+              <span
+                class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
+                [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
+                >{{ tab.badge }}</span
+              >
+            }
+          </button>
+        }
+      }
+    </div>
+  `,
+})
+export class TabBar {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model<string>('');
+
+  protected readonly pillBase = PILL_BASE;
+  protected readonly pillInactive = PILL_INACTIVE;
+
+  protected pillClass(tab: PcTabOption): string {
+    const state = this.activeTab() === tab.id ? PILL_ACTIVE : PILL_INACTIVE;
+    const cursor = tab.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
+    const hover = !tab.disabled && this.activeTab() !== tab.id ? 'hover:bg-base-200/60' : '';
+    return `${PILL_BASE} ${state} ${cursor} ${hover}`;
+  }
+
+  protected selectTab(id: string): void {
+    this.activeTab.set(id);
+  }
+}
+
+/** Pill tab bar + the standard content card (the person-view composition) with projected pc-tab-panels. */
+@Component({
+  selector: 'pc-tabs',
+  imports: [TabBar],
+  host: { class: 'flex flex-grow flex-col gap-6' },
+  template: `
+    <pc-tab-bar [tabs]="tabs()" [(activeTab)]="activeTab" />
+    <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
+      <ng-content></ng-content>
+    </div>
+  `,
+})
+export class Tabs {
+  public tabs = input.required<PcTabOption[]>();
+  public activeTab = model.required<string>();
+}
+
+@Component({
+  selector: 'pc-tab-panel',
+  template: `
+    @if (isActive()) {
+      <div class="space-y-4">
+        <ng-content></ng-content>
+      </div>
+    }
+  `,
+})
+export class TabPanel {
+  public id = input.required<string>();
+  public activeTab = input.required<string>();
+
+  protected isActive = computed(() => this.activeTab() === this.id());
+}
+````
+
 ## File: libs/uxcommon/src/components/tags/tagitem.css
 ````css
 :host {
@@ -5024,325 +5153,6 @@ export default defineConfig(() => ({
     },
   },
 }));
-````
-
-## File: libs/common/src/lib/help/articles/administration.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 2,500 emailable subscribers, then rises in steps as your list grows, up to $229 a month at its 50,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
-          '**Movement**: starts at $75 a month for up to 5,000 emailable subscribers, then rises in steps up to $1,275 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
-    summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
-      },
-    ],
-  },
-];
 ````
 
 ## File: libs/common/src/lib/help/articles/contacts.ts
@@ -6695,7 +6505,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     summary:
       'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
     keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
     blocks: [
       { kind: 'h2', id: 'compose', text: 'From template to draft' },
       {
@@ -6764,6 +6574,77 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'warning',
         title: 'Respect unsubscribes',
         text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
       },
     ],
   },
@@ -10116,135 +9997,6 @@ export class Swap {
 }
 ````
 
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-````typescript
-import { Component, computed, input, model } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-  /** When set, the pill renders as a router link (page-level tabs that navigate) instead of a stateful button. */
-  route?: string;
-  /** Match the route exactly for the active state (default false). */
-  exact?: boolean;
-}
-
-const PILL_BASE =
-  'inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium transition-colors focus:outline-none';
-const PILL_ACTIVE = 'border-primary/30 bg-primary/10 text-primary';
-const PILL_INACTIVE = 'border-base-200 bg-base-100 text-base-content/70';
-
-/**
- * The one tab idiom (design §4): the pill tab bar from the person view, with count
- * badges ("numbers before clicks", §1). Stateful tabs bind `[(activeTab)]`; tabs that
- * navigate set `route` on the option instead. The only sanctioned exception is the
- * grain-tabs row on the People / Households / Companies grids.
- */
-@Component({
-  selector: 'pc-tab-bar',
-  imports: [RouterLink, RouterLinkActive],
-  host: { class: 'block' },
-  template: `
-    <div role="tablist" class="flex flex-wrap gap-2">
-      @for (tab of tabs(); track tab.id) {
-        @if (tab.route) {
-          <a
-            role="tab"
-            [routerLink]="tab.route"
-            routerLinkActive="!border-primary/30 !bg-primary/10 !text-primary"
-            [routerLinkActiveOptions]="{ exact: tab.exact ?? false }"
-            class="{{ pillBase }} {{ pillInactive }} cursor-pointer hover:bg-base-200/60"
-          >
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="rounded-full bg-base-200 px-1.5 text-xs font-semibold tabular-nums text-base-content/50">{{
-                tab.badge
-              }}</span>
-            }
-          </a>
-        } @else {
-          <button
-            type="button"
-            role="tab"
-            [attr.aria-selected]="activeTab() === tab.id"
-            [attr.aria-disabled]="tab.disabled || null"
-            [class]="pillClass(tab)"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span
-                class="rounded-full px-1.5 text-xs font-semibold tabular-nums"
-                [class]="activeTab() === tab.id ? 'bg-primary/20 text-primary' : 'bg-base-200 text-base-content/50'"
-                >{{ tab.badge }}</span
-              >
-            }
-          </button>
-        }
-      }
-    </div>
-  `,
-})
-export class TabBar {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model<string>('');
-
-  protected readonly pillBase = PILL_BASE;
-  protected readonly pillInactive = PILL_INACTIVE;
-
-  protected pillClass(tab: PcTabOption): string {
-    const state = this.activeTab() === tab.id ? PILL_ACTIVE : PILL_INACTIVE;
-    const cursor = tab.disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
-    const hover = !tab.disabled && this.activeTab() !== tab.id ? 'hover:bg-base-200/60' : '';
-    return `${PILL_BASE} ${state} ${cursor} ${hover}`;
-  }
-
-  protected selectTab(id: string): void {
-    this.activeTab.set(id);
-  }
-}
-
-/** Pill tab bar + the standard content card (the person-view composition) with projected pc-tab-panels. */
-@Component({
-  selector: 'pc-tabs',
-  imports: [TabBar],
-  host: { class: 'flex flex-grow flex-col gap-6' },
-  template: `
-    <pc-tab-bar [tabs]="tabs()" [(activeTab)]="activeTab" />
-    <div class="card rounded-2xl border border-base-200 bg-base-100 p-6 shadow-sm">
-      <ng-content></ng-content>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
-}
-````
-
 ## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
 ````typescript
 import { Component, computed, input } from '@angular/core';
@@ -10617,463 +10369,319 @@ export function createRequestGuard(): RequestGuard {
 }
 ````
 
-## File: libs/common/src/lib/billing/plans.ts
+## File: libs/common/src/lib/help/articles/administration.ts
 ````typescript
-/**
- * Subscription plans — the single source of truth for tiers, prices and limits.
- *
- * Consumed by:
- *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
- *  - the CRM billing page (experiences/settings/billing)
- *  - the marketing website pricing page + home teaser
- *
- * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
- *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
- *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
- *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
- *    Representative $99) the moment they crossed one subscriber count. `representative` is
- *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
- *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
- *    field reports, route optimization — plus A/B testing and the optional dedicated sending
- *    IP are Movement-only.
- *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
- *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
- *    can actually email. This is the differentiator vs. contact-metered tools.
- *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
- *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
- *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
- *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
- *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
- *    keeps 2×.
- *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
- *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
- *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only.
- *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
- *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
- *  - All prices are USD.
- *
- * Market calibration (competitive research 2026-07-14, monthly billing): Grassroots beats
- * every full-suite competitor at every count — $49 vs $75 (Mailchimp Essentials) at 5k,
- * $69 vs $110 at 10k, $109 vs $230 at 20k; only newsletter-only beehiiv Scale undercuts it at
- * 50k ($199 vs $229). Movement beats Mailchimp Standard at every count — $75 vs $100 at 5k,
- * $155 vs $230 at 15k, $375 vs $450 at 50k, $675 vs $800 at 100k. Not 75% under — 20–35% under,
- * "cheapest full-featured option" rather than "suspiciously cheap".
- *
- * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
- * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 'inf', unit_amount: 2000 }]
- *    → qty 1 = $29, qty N (N ≥ 2) = $29 + $20·(N−1) = the bracket ladder below.
- *  - Movement: [{ up_to: 1, unit_amount: 7500 }, { up_to: 4, unit_amount: 4000 }, { up_to: 'inf', unit_amount: 3000 }]
- *    → qty 1 = $75, qty 2–4 add $40/step, qty 5+ add $30/step (the piecewise step change at
- *    the 20,000-subscriber boundary — see MOVEMENT_BRACKETS below).
- *
- * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
- * price IDs. Display names are intentionally allowed to differ from keys, but here they are
- * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
- * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
- * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
- */
+import type { HelpArticle } from '../help-types';
 
-export const GB = 1024 * 1024 * 1024;
-
-/** Every plan key that can appear in `tenants.subscription_plan`. */
-export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
-
-/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
-export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
-export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
-
-/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
- * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
-export interface PriceBracket {
-  /** Emailable-subscriber cap of this bracket (inclusive). */
-  readonly upTo: number;
-  /** USD/month at this bracket. */
-  readonly price: number;
-}
-
-/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
- * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
-export interface TierPricing {
-  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
-   * bracket's `upTo` is the tier's hard subscriber max. */
-  readonly brackets: readonly PriceBracket[];
-  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
-  readonly emailsPerSubscriber: number;
-}
-
-export interface PlanDef {
-  readonly key: PlanKey;
-  /** Customer-facing name (may differ from key). */
-  readonly name: string;
-  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
-  readonly cadence: string;
-  readonly blurb: string;
-  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
-  readonly pricing: TierPricing | null;
-  /** File-storage quota in bytes. null = unlimited / custom. */
-  readonly storageBytes: number | null;
-  /** Included staff seats. null = unlimited. */
-  readonly seats: number | null;
-  /** Included companion volunteers. 0 = none, null = unlimited. */
-  readonly volunteers: number | null;
-  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
-  readonly purchasable: boolean;
-  /** Highlighted as the recommended tier. */
-  readonly featured: boolean;
-  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
-  readonly displayed: boolean;
-  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
-   * the website's comparison-table view of the same feature split — keep both in sync). */
-  readonly features: readonly string[];
-}
-
-/**
- * Build one evenly-stepped run of brackets. `fromUpTo` is the emailable-subscriber cap of the
- * run's FIRST bracket, priced at `startPrice`; each subsequent bracket steps `upTo` by `step`
- * and price by `pricePerStep`, up to and including `toUpTo`. Tiers concatenate one or more
- * runs (plus, where the first bracket doesn't fit the pattern, literal leading brackets) to
- * build their full ladder — see GRASSROOTS_BRACKETS / MOVEMENT_BRACKETS below.
- */
-function linearBrackets(
-  fromUpTo: number,
-  toUpTo: number,
-  step: number,
-  startPrice: number,
-  pricePerStep: number,
-): PriceBracket[] {
-  const brackets: PriceBracket[] = [];
-  for (let upTo = fromUpTo, price = startPrice; upTo <= toUpTo; upTo += step, price += pricePerStep) {
-    brackets.push({ upTo, price });
-  }
-  return brackets;
-}
-
-/**
- * Grassroots ladder — $29 ≤2,500 · $49 ≤5,000 · then +$20 per 5,000 up to 50,000 (11 brackets).
- * Spot prices (qty = 1-based index): 1:$29 (2.5k) · 2:$49 (5k) · 3:$69 (10k) · 4:$89 (15k) ·
- * 5:$109 (20k) · 6:$129 (25k) · 7:$149 (30k) · 8:$169 (35k) · 9:$189 (40k) · 10:$209 (45k) ·
- * 11:$229 (50k, tier max).
- */
-const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 2_500, price: 29 },
-  { upTo: 5_000, price: 49 },
-  ...linearBrackets(10_000, 50_000, 5_000, 69, 20),
-];
-
-/**
- * Movement ladder — $75 ≤5,000 · then +$40 per 5,000 up to 20,000 · then +$30 per 5,000 up to
- * 200,000 (40 brackets; piecewise step change at the 20,000-subscriber boundary).
- * Spot prices (qty = 1-based index): 1:$75 (5k) · 2:$115 (10k) · 3:$155 (15k) · 4:$195 (20k) ·
- * 5:$225 (25k) · 10:$375 (50k) · 20:$675 (100k) · 40:$1,275 (200k, tier max).
- */
-const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 5_000, price: 75 },
-  ...linearBrackets(10_000, 20_000, 5_000, 115, 40),
-  ...linearBrackets(25_000, 200_000, 5_000, 225, 30),
-];
-
-export const PLANS: readonly PlanDef[] = [
+export const ADMIN_ARTICLES: HelpArticle[] = [
   {
-    key: 'free',
-    name: 'Free',
-    cadence: 'forever',
-    blurb: 'For getting your bearings and running a small list.',
-    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
-    storageBytes: 1 * GB,
-    seats: 2,
-    volunteers: 0,
-    purchasable: false,
-    featured: false,
-    displayed: true,
-    features: [
-      'Unlimited contacts & households',
-      'Demo workspace with sample data',
-      'Up to 1,000 email subscribers',
-      '2,000 emails / month',
-      '2 staff seats · 1 GB storage',
-      'Shared inbox, people CRM & CSV import/export',
-      'Newsletters, templates, scheduling & dynamic content',
-      'Custom reports, role-based access & 300+ integrations',
-      'Community support',
-    ],
-  },
-  {
-    key: 'grassroots',
-    name: 'Grassroots',
-    cadence: 'per month',
-    blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 10 * GB,
-    seats: 5,
-    volunteers: 15,
-    purchasable: true,
-    featured: false,
-    displayed: true,
-    features: [
-      'Everything in Free, plus:',
-      'Scales smoothly from $29/month as your list grows',
-      'Up to 50,000 email subscribers · 12× emails/month',
-      '5 staff seats · 15 volunteers · 10 GB storage',
-      'Forms & donations',
-      'Automations & lists (segments)',
-      'Volunteer management & monitoring',
-      'Email support',
-    ],
-  },
-  {
-    key: 'movement',
-    name: 'Movement',
-    cadence: 'per month',
-    blurb: 'For a large campaign or advocacy operation at full tilt.',
-    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 200 * GB,
-    seats: null,
-    volunteers: null,
-    purchasable: true,
-    featured: true,
-    displayed: true,
-    features: [
-      'Everything in Grassroots, plus:',
-      'Scales smoothly from $75/month as your list grows',
-      'Up to 200,000 email subscribers · 12× emails/month',
-      'Unlimited staff seats & volunteers · 200 GB storage',
-      'Canvassing & deliveries companion apps',
-      'Yard signs & route optimization',
-      'Turf cutting, walk lists & routes, field reports',
-      'A/B testing & optional dedicated sending IP',
-      'Priority support & onboarding',
-    ],
-  },
-  {
-    key: 'enterprise',
-    name: 'Enterprise',
-    cadence: 'contact us',
-    blurb: 'For federations, parties and multi-office operations.',
-    pricing: null,
-    storageBytes: null,
-    seats: null,
-    volunteers: null,
-    purchasable: false,
-    featured: false,
-    displayed: false,
-    features: [
-      'Everything in Movement, plus:',
-      'Unlimited subscribers & sends',
-      'Multiple linked workspaces',
-      'Single sign-on (SSO)',
-      'Data residency by region',
-      'Dedicated IP & custom integrations',
-      'SLA support & guided onboarding',
-    ],
-  },
-];
-
-export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
-  (acc, plan) => {
-    acc[plan.key] = plan;
-    return acc;
-  },
-  {} as Record<PlanKey, PlanDef>,
-);
-
-/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
- * `representative` (retired, features split into grassroots/movement — nearest fit is
- * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
-export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
-  representative: 'movement',
-  starter: 'free',
-};
-
-/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
-export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
-  if (!planName) return undefined;
-  const key = planName.toLowerCase();
-  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
-  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
-}
-
-/** Customer-facing display name for a stored plan value (falls back to the raw value). */
-export function planDisplayName(planName: string | null | undefined): string {
-  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
-}
-
-/**
- * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
- * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
- * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
- * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
- */
-export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) return null;
-  const normalizedCount = Math.max(count, 0);
-  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
-  return index === -1 ? null : index + 1;
-}
-
-/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
- * with no pricing ladder (enterprise — no quantity ceiling applies). */
-export function maxQuantity(key: PlanKey): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  return pricing ? pricing.brackets.length : Infinity;
-}
-
-/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
- * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
- * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
- * have at least one bracket. */
-export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) {
-    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
-  }
-  const max = pricing.brackets.length;
-  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
-  const bracket = pricing.brackets[clampedIndex];
-  if (!bracket) {
-    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
-    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
-  }
-  return bracket;
-}
-
-/** Emailable-subscriber cap for a Stripe quantity on a plan. */
-export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).upTo;
-}
-
-/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
- * `emailsPerSubscriber` multiplier). */
-export function emailCapForQuantity(key: PlanKey, qty: number): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  const multiplier = pricing?.emailsPerSubscriber ?? 0;
-  return subscriberCapForQuantity(key, qty) * multiplier;
-}
-
-/** USD/month price for a Stripe quantity on a plan. */
-export function priceForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).price;
-}
-
-/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $75' (movement), 'Custom' (enterprise). */
-export function startingPriceLabel(plan: PlanDef): string {
-  if (!plan.pricing) return 'Custom';
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  return first.price === 0 ? '$0' : `From $${first.price}`;
-}
-
-/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
- * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
- * website pricing slider and the frontend billing upgrade cards. */
-export function priceLabelAt(plan: PlanDef, subscribers: number): string {
-  if (!plan.pricing) return 'Custom';
-  const index = bracketIndexForSubscribers(plan.key, subscribers);
-  if (index === null) return 'Contact us';
-  return `$${priceForQuantity(plan.key, index)}`;
-}
-
-/**
- * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
- * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
- * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
- * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
- * They describe the same feature split from two different plan keys, so keep them in sync by
- * hand when a feature moves between tiers — there is no single source both surfaces read from.
- */
-export interface FeatureMatrixRow {
-  readonly label: string;
-  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
-  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
-}
-
-export interface FeatureMatrixGroup {
-  readonly category: string;
-  readonly rows: readonly FeatureMatrixRow[];
-}
-
-export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
-  {
-    category: 'Usage',
-    rows: [
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
       {
-        label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 50,000', movement: 'Up to 200,000' },
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
-        label: 'Emails / month',
-        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
       },
-      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
-      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
-    ],
-  },
-  {
-    category: 'Everything in every plan',
-    rows: [
-      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
-      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
-      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
-      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
-    ],
-  },
-  {
-    category: 'Grow & engage',
-    rows: [
-      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
       {
-        label: 'Volunteer management & monitoring',
-        values: { free: false, grassroots: true, movement: true },
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
       },
     ],
   },
   {
-    category: 'Canvassing',
-    rows: [
-      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Deliveries',
-    rows: [
-      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Movement only',
-    rows: [
-      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
       {
-        label: 'Support',
-        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan, live usage, and payment details.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 2,500 emailable subscribers, then rises in steps as your list grows, up to $229 a month at its 50,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
+          '**Movement**: starts at $75 a month for up to 5,000 emailable subscribers, then rises in steps up to $1,275 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
       },
     ],
   },
@@ -12005,6 +11613,496 @@ export class ConfirmDialogHost {
 }
 ````
 
+## File: libs/common/src/lib/billing/plans.ts
+````typescript
+/**
+ * Subscription plans — the single source of truth for tiers, prices and limits.
+ *
+ * Consumed by:
+ *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
+ *  - the CRM billing page (experiences/settings/billing)
+ *  - the marketing website pricing page + home teaser
+ *
+ * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
+ *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
+ *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
+ *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
+ *    Representative $99) the moment they crossed one subscriber count. `representative` is
+ *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
+ *    including Free; forms, donations, automations, lists (segments) and volunteer management
+ *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
+ *    field reports, route optimization — plus A/B testing and the optional dedicated sending
+ *    IP are Movement-only.
+ *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
+ *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
+ *    can actually email. This is the differentiator vs. contact-metered tools.
+ *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
+ *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
+ *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
+ *    data; Stripe just multiplies quantity by its graduated unit amounts.
+ *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
+ *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
+ *    keeps 2×.
+ *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
+ *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
+ *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
+ *    Movement-only.
+ *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
+ *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
+ *  - All prices are USD.
+ *
+ * Market calibration (competitive research 2026-07-14, monthly billing): Grassroots beats
+ * every full-suite competitor at every count — $49 vs $75 (Mailchimp Essentials) at 5k,
+ * $69 vs $110 at 10k, $109 vs $230 at 20k; only newsletter-only beehiiv Scale undercuts it at
+ * 50k ($199 vs $229). Movement beats Mailchimp Standard at every count — $75 vs $100 at 5k,
+ * $155 vs $230 at 15k, $375 vs $450 at 50k, $675 vs $800 at 100k. Not 75% under — 20–35% under,
+ * "cheapest full-featured option" rather than "suspiciously cheap".
+ *
+ * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
+ * `quantity` = the bracket index from `bracketIndexForSubscribers`):
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 'inf', unit_amount: 2000 }]
+ *    → qty 1 = $29, qty N (N ≥ 2) = $29 + $20·(N−1) = the bracket ladder below.
+ *  - Movement: [{ up_to: 1, unit_amount: 7500 }, { up_to: 4, unit_amount: 4000 }, { up_to: 'inf', unit_amount: 3000 }]
+ *    → qty 1 = $75, qty 2–4 add $40/step, qty 5+ add $30/step (the piecewise step change at
+ *    the 20,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *
+ * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
+ * price IDs. Display names are intentionally allowed to differ from keys, but here they are
+ * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
+ * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
+ * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
+ */
+
+export const GB = 1024 * 1024 * 1024;
+
+/** Every plan key that can appear in `tenants.subscription_plan`. */
+export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
+
+/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
+export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
+export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
+
+/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
+ * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
+export interface PriceBracket {
+  /** Emailable-subscriber cap of this bracket (inclusive). */
+  readonly upTo: number;
+  /** USD/month at this bracket. */
+  readonly price: number;
+}
+
+/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
+ * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
+export interface TierPricing {
+  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
+   * bracket's `upTo` is the tier's hard subscriber max. */
+  readonly brackets: readonly PriceBracket[];
+  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
+  readonly emailsPerSubscriber: number;
+}
+
+export interface PlanDef {
+  readonly key: PlanKey;
+  /** Customer-facing name (may differ from key). */
+  readonly name: string;
+  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
+  readonly cadence: string;
+  readonly blurb: string;
+  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
+  readonly pricing: TierPricing | null;
+  /** File-storage quota in bytes. null = unlimited / custom. */
+  readonly storageBytes: number | null;
+  /** Included staff seats. null = unlimited. */
+  readonly seats: number | null;
+  /** Included companion volunteers. 0 = none, null = unlimited. */
+  readonly volunteers: number | null;
+  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
+  readonly purchasable: boolean;
+  /** Highlighted as the recommended tier. */
+  readonly featured: boolean;
+  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
+  readonly displayed: boolean;
+  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
+   * the website's comparison-table view of the same feature split — keep both in sync). */
+  readonly features: readonly string[];
+}
+
+/**
+ * Build one evenly-stepped run of brackets. `fromUpTo` is the emailable-subscriber cap of the
+ * run's FIRST bracket, priced at `startPrice`; each subsequent bracket steps `upTo` by `step`
+ * and price by `pricePerStep`, up to and including `toUpTo`. Tiers concatenate one or more
+ * runs (plus, where the first bracket doesn't fit the pattern, literal leading brackets) to
+ * build their full ladder — see GRASSROOTS_BRACKETS / MOVEMENT_BRACKETS below.
+ */
+function linearBrackets(
+  fromUpTo: number,
+  toUpTo: number,
+  step: number,
+  startPrice: number,
+  pricePerStep: number,
+): PriceBracket[] {
+  const brackets: PriceBracket[] = [];
+  for (let upTo = fromUpTo, price = startPrice; upTo <= toUpTo; upTo += step, price += pricePerStep) {
+    brackets.push({ upTo, price });
+  }
+  return brackets;
+}
+
+/**
+ * Grassroots ladder — $29 ≤2,500 · $49 ≤5,000 · then +$20 per 5,000 up to 50,000 (11 brackets).
+ * Spot prices (qty = 1-based index): 1:$29 (2.5k) · 2:$49 (5k) · 3:$69 (10k) · 4:$89 (15k) ·
+ * 5:$109 (20k) · 6:$129 (25k) · 7:$149 (30k) · 8:$169 (35k) · 9:$189 (40k) · 10:$209 (45k) ·
+ * 11:$229 (50k, tier max).
+ */
+const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 2_500, price: 29 },
+  { upTo: 5_000, price: 49 },
+  ...linearBrackets(10_000, 50_000, 5_000, 69, 20),
+];
+
+/**
+ * Movement ladder — $75 ≤5,000 · then +$40 per 5,000 up to 20,000 · then +$30 per 5,000 up to
+ * 200,000 (40 brackets; piecewise step change at the 20,000-subscriber boundary).
+ * Spot prices (qty = 1-based index): 1:$75 (5k) · 2:$115 (10k) · 3:$155 (15k) · 4:$195 (20k) ·
+ * 5:$225 (25k) · 10:$375 (50k) · 20:$675 (100k) · 40:$1,275 (200k, tier max).
+ */
+const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 5_000, price: 75 },
+  ...linearBrackets(10_000, 20_000, 5_000, 115, 40),
+  ...linearBrackets(25_000, 200_000, 5_000, 225, 30),
+];
+
+export const PLANS: readonly PlanDef[] = [
+  {
+    key: 'free',
+    name: 'Free',
+    cadence: 'forever',
+    blurb: 'For getting your bearings and running a small list.',
+    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
+    storageBytes: 1 * GB,
+    seats: 2,
+    volunteers: 0,
+    purchasable: false,
+    featured: false,
+    displayed: true,
+    features: [
+      'Unlimited contacts & households',
+      'Demo workspace with sample data',
+      'Up to 1,000 email subscribers',
+      '2,000 emails / month',
+      '2 staff seats · 1 GB storage',
+      'Shared inbox, people CRM & CSV import/export',
+      'Newsletters, templates, scheduling & dynamic content',
+      'Custom reports, role-based access & 300+ integrations',
+      'Community support',
+    ],
+  },
+  {
+    key: 'grassroots',
+    name: 'Grassroots',
+    cadence: 'per month',
+    blurb: 'For a local candidate or small campaign getting to work.',
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 10 * GB,
+    seats: 5,
+    volunteers: 15,
+    purchasable: true,
+    featured: false,
+    displayed: true,
+    features: [
+      'Everything in Free, plus:',
+      'Scales smoothly from $29/month as your list grows',
+      'Up to 50,000 email subscribers · 12× emails/month',
+      '5 staff seats · 15 volunteers · 10 GB storage',
+      'Forms & donations',
+      'Automations & lists (segments)',
+      'Volunteer management & monitoring',
+      'Email support',
+    ],
+  },
+  {
+    key: 'movement',
+    name: 'Movement',
+    cadence: 'per month',
+    blurb: 'For a large campaign or advocacy operation at full tilt.',
+    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 200 * GB,
+    seats: null,
+    volunteers: null,
+    purchasable: true,
+    featured: true,
+    displayed: true,
+    features: [
+      'Everything in Grassroots, plus:',
+      'Scales smoothly from $75/month as your list grows',
+      'Up to 200,000 email subscribers · 12× emails/month',
+      'Unlimited staff seats & volunteers · 200 GB storage',
+      'Canvassing & deliveries companion apps',
+      'Yard signs & route optimization',
+      'Turf cutting, walk lists & routes, field reports',
+      'A/B testing & optional dedicated sending IP',
+      'Priority support & onboarding',
+    ],
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    cadence: 'contact us',
+    blurb: 'For federations, parties and multi-office operations.',
+    pricing: null,
+    storageBytes: null,
+    seats: null,
+    volunteers: null,
+    purchasable: false,
+    featured: false,
+    displayed: false,
+    features: [
+      'Everything in Movement, plus:',
+      'Unlimited subscribers & sends',
+      'Multiple linked workspaces',
+      'Single sign-on (SSO)',
+      'Data residency by region',
+      'Dedicated IP & custom integrations',
+      'SLA support & guided onboarding',
+    ],
+  },
+];
+
+export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
+  (acc, plan) => {
+    acc[plan.key] = plan;
+    return acc;
+  },
+  {} as Record<PlanKey, PlanDef>,
+);
+
+/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
+ * `representative` (retired, features split into grassroots/movement — nearest fit is
+ * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
+export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
+  representative: 'movement',
+  starter: 'free',
+};
+
+/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
+export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
+  if (!planName) return undefined;
+  const key = planName.toLowerCase();
+  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
+  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
+}
+
+/** Customer-facing display name for a stored plan value (falls back to the raw value). */
+export function planDisplayName(planName: string | null | undefined): string {
+  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
+}
+
+/**
+ * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
+ * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
+ * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
+ * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
+ */
+export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) return null;
+  const normalizedCount = Math.max(count, 0);
+  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
+  return index === -1 ? null : index + 1;
+}
+
+/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
+ * with no pricing ladder (enterprise — no quantity ceiling applies). */
+export function maxQuantity(key: PlanKey): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  return pricing ? pricing.brackets.length : Infinity;
+}
+
+/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
+ * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
+ * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
+ * have at least one bracket. */
+export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) {
+    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
+  }
+  const max = pricing.brackets.length;
+  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
+  const bracket = pricing.brackets[clampedIndex];
+  if (!bracket) {
+    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
+    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
+  }
+  return bracket;
+}
+
+/** Emailable-subscriber cap for a Stripe quantity on a plan. */
+export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).upTo;
+}
+
+/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
+ * `emailsPerSubscriber` multiplier). */
+export function emailCapForQuantity(key: PlanKey, qty: number): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  const multiplier = pricing?.emailsPerSubscriber ?? 0;
+  return subscriberCapForQuantity(key, qty) * multiplier;
+}
+
+/** USD/month price for a Stripe quantity on a plan. */
+export function priceForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).price;
+}
+
+/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
+ * 'From $75' (movement), 'Custom' (enterprise). */
+export function startingPriceLabel(plan: PlanDef): string {
+  if (!plan.pricing) return 'Custom';
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  return first.price === 0 ? '$0' : `From $${first.price}`;
+}
+
+/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
+ * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
+ * website pricing slider and the frontend billing upgrade cards. */
+export function priceLabelAt(plan: PlanDef, subscribers: number): string {
+  if (!plan.pricing) return 'Custom';
+  const index = bracketIndexForSubscribers(plan.key, subscribers);
+  if (index === null) return 'Contact us';
+  return `$${priceForQuantity(plan.key, index)}`;
+}
+
+/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
+const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
+
+/**
+ * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
+ * two in sync when a feature moves between tiers). The backend's plan-gate middleware
+ * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
+ * below the feature's minimum plan.
+ */
+export const GATED_FEATURES = {
+  forms: { minPlan: 'grassroots', label: 'Forms' },
+  donations: { minPlan: 'grassroots', label: 'Donations' },
+  automations: { minPlan: 'grassroots', label: 'Automations' },
+  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
+  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
+  canvassing: { minPlan: 'movement', label: 'Canvassing' },
+  deliveries: { minPlan: 'movement', label: 'Deliveries' },
+} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
+
+export type GatedFeature = keyof typeof GATED_FEATURES;
+
+/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
+export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
+}
+
+/**
+ * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
+ * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
+ * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
+ * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
+ * They describe the same feature split from two different plan keys, so keep them in sync by
+ * hand when a feature moves between tiers — there is no single source both surfaces read from.
+ */
+export interface FeatureMatrixRow {
+  readonly label: string;
+  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
+  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
+}
+
+export interface FeatureMatrixGroup {
+  readonly category: string;
+  readonly rows: readonly FeatureMatrixRow[];
+}
+
+export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
+  {
+    category: 'Usage',
+    rows: [
+      {
+        label: 'Emailable subscribers',
+        values: { free: 'Up to 1,000', grassroots: 'Up to 50,000', movement: 'Up to 200,000' },
+      },
+      {
+        label: 'Emails / month',
+        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+      },
+      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
+      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
+    ],
+  },
+  {
+    category: 'Everything in every plan',
+    rows: [
+      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
+      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
+      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
+      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
+    ],
+  },
+  {
+    category: 'Grow & engage',
+    rows: [
+      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      {
+        label: 'Volunteer management & monitoring',
+        values: { free: false, grassroots: true, movement: true },
+      },
+    ],
+  },
+  {
+    category: 'Canvassing',
+    rows: [
+      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Deliveries',
+    rows: [
+      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Movement only',
+    rows: [
+      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+      {
+        label: 'Support',
+        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/kysely.models.ts
 ````typescript
 // tsco:ignore
@@ -12070,6 +12168,7 @@ export interface Models {
   emails: Emails;
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
+  newsletter_send_log: NewsletterSendLog;
   person_newsletter_engagements: PersonNewsletterEngagements;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
@@ -12715,6 +12814,17 @@ interface Tenants extends RecordType, AddressType {
   paused_at: Timestamp | null;
   /** Demo mode: set while the seeded test-drive data is present; NULL = exited/never. */
   demo_mode_at: Timestamp | null;
+  /** Automated anti-abuse pause (hard-bounce tripwire): blocks newsletter sending only.
+   * Distinct from the user-initiated `paused_at` and the sign-in-blocking `suspended_at`. */
+  sending_paused_at: Timestamp | null;
+  sending_paused_reason: string | null;
+  /** Verified sending phone (E.164) — free tenants must verify one before their first bulk send. */
+  sending_phone: string | null;
+  sending_phone_verified_at: Timestamp | null;
+  pending_phone: string | null;
+  phone_verification_code_hash: string | null;
+  phone_verification_expires_at: Timestamp | null;
+  phone_verification_attempts: Generated<number>;
 }
 
 interface Emails extends RecordType {
@@ -12758,6 +12868,8 @@ interface Newsletters extends RecordType {
   html_content: string | null;
   plain_text_content: string | null;
   top_links: Json | null;
+  /** Resume point recorded when a send is paused mid-batch (tripwire/rate-cap); NULL otherwise. */
+  send_offset: number | null;
 }
 
 export interface NewsletterEvents {
@@ -12776,6 +12888,16 @@ export interface NewsletterEvents {
   /** SendGrid bounce sub-type: 'bounce' = hard, 'blocked' = soft. */
   bounce_type: string | null;
   timestamp: Timestamp;
+  created_at: Generated<Timestamp>;
+}
+
+/** One row per delivered newsletter batch — SUM(recipient_count) over a window drives the
+ * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. */
+export interface NewsletterSendLog {
+  id: Generated<string>;
+  tenant_id: string;
+  newsletter_id: string;
+  recipient_count: number;
   created_at: Generated<Timestamp>;
 }
 
@@ -13667,9 +13789,12 @@ export {
   priceForQuantity,
   startingPriceLabel,
   priceLabelAt,
+  GATED_FEATURES,
+  planAllowsFeature,
 } from './lib/billing/plans';
 export type {
   PlanKey,
+  GatedFeature,
   PurchasablePlanKey,
   PlanDef,
   PriceBracket,

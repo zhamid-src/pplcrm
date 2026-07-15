@@ -11,6 +11,7 @@ import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunt
 import eventsPublicRoute from './modules/events/routes/events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
 import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
@@ -46,6 +47,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register SendGrid newsletters event webhook route
   fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Postmark transactional bounce/spam-complaint webhook route
+  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
 
   // Register Zapier inbound action routes (API key auth handled inside route)
   fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });

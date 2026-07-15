@@ -3,8 +3,10 @@ import {
   bracketIndexForSubscribers,
   emailCapForQuantity,
   getPlanDef,
+  planAllowsFeature,
   priceForQuantity,
   priceLabelAt,
+  GATED_FEATURES,
   PLANS_BY_KEY,
   startingPriceLabel,
 } from './plans';
@@ -104,5 +106,38 @@ describe('getPlanDef legacy alias resolution', () => {
   it('still resolves current keys directly', () => {
     expect(getPlanDef('movement')?.key).toBe('movement');
     expect(getPlanDef('grassroots')?.key).toBe('grassroots');
+  });
+});
+
+describe('planAllowsFeature', () => {
+  it('gates Grassroots-tier features off the free plan', () => {
+    expect(planAllowsFeature('free', 'forms')).toBe(false);
+    expect(planAllowsFeature('grassroots', 'forms')).toBe(true);
+    expect(planAllowsFeature('movement', 'lists')).toBe(true);
+  });
+
+  it('gates Movement-only features off free and grassroots', () => {
+    expect(planAllowsFeature('free', 'canvassing')).toBe(false);
+    expect(planAllowsFeature('grassroots', 'deliveries')).toBe(false);
+    expect(planAllowsFeature('movement', 'canvassing')).toBe(true);
+    expect(planAllowsFeature('enterprise', 'deliveries')).toBe(true);
+  });
+
+  it('treats unknown/missing plan values as free (fail closed)', () => {
+    expect(planAllowsFeature(null, 'forms')).toBe(false);
+    expect(planAllowsFeature('mystery-tier', 'forms')).toBe(false);
+  });
+
+  it('resolves legacy aliases before gating', () => {
+    expect(planAllowsFeature('representative', 'canvassing')).toBe(true); // retired key → movement
+    expect(planAllowsFeature('starter', 'forms')).toBe(false); // renamed key → free
+  });
+
+  it('mirrors the FEATURE_MATRIX split for every gated feature', () => {
+    for (const feature of Object.keys(GATED_FEATURES) as (keyof typeof GATED_FEATURES)[]) {
+      const { minPlan } = GATED_FEATURES[feature];
+      expect(planAllowsFeature(minPlan, feature)).toBe(true);
+      expect(planAllowsFeature('free', feature)).toBe(false); // nothing gated is free-tier
+    }
   });
 });
