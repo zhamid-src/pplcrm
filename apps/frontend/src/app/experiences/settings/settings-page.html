@@ -133,6 +133,18 @@
               </button>
             </div>
           </div>
+          } @if (section.config.id === 'communications') {
+          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
+            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
+              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
+              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
+              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
+              obligations. When in doubt, consult a qualified legal or compliance advisor.
+            </p>
+          </div>
           }
 
           <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
