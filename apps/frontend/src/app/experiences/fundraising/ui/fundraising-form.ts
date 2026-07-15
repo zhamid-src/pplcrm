@@ -13,6 +13,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
+import { DonationsService } from '../../../services/api/donations-service';
 import { environment } from '../../../../environments/environment';
 import { AuthService } from '../../../auth/auth-service';
 
@@ -30,6 +31,7 @@ export class FundraisingFormComponent implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly settingsSvc = inject(SettingsService);
+  private readonly donationsSvc = inject(DonationsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -49,6 +51,10 @@ export class FundraisingFormComponent implements OnInit {
     const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
     return !!key.trim();
   });
+
+  // Donations are paused until the tenant confirms residency restrictions in Workspace → Donations.
+  // Defaults to true so no false "paused" banner flashes before the context loads.
+  protected readonly residencyAcknowledged = signal(true);
 
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly selectedLists = signal<string[]>([]);
@@ -161,6 +167,16 @@ export class FundraisingFormComponent implements OnInit {
     }
     void this.loadLists();
     void this.settingsSvc.load();
+    void this.loadResidencyContext();
+  }
+
+  private async loadResidencyContext(): Promise<void> {
+    try {
+      const ctx = await this.donationsSvc.getResidencyContext();
+      this.residencyAcknowledged.set(ctx.residencyAcknowledged);
+    } catch {
+      // non-fatal — leave the banner hidden if the context can't be read
+    }
   }
 
   protected listName(id: string): string {

@@ -68,6 +68,7 @@ export class FastifyServer {
       if (
         req.url.includes('/billing/webhook') ||
         req.url.includes('/donations/webhook') ||
+        req.url.includes('/donations/helcim-webhook') ||
         req.url.includes('/newsletters/webhook')
       ) {
         done(null, body);

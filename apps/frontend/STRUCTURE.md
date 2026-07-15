@@ -367,6 +367,7 @@ apps/
               domains-settings.html
               domains-settings.ts
             donations/
+              donations-settings.css
               donations-settings.html
               donations-settings.ts
             google-sync/
@@ -622,6 +623,9 @@ apps/
     project.json
     tsconfig.json
   website/
+    functions/
+      api/
+        geo-rates.ts
     src/
       app/
         audience/
@@ -652,6 +656,8 @@ apps/
           auth-hint.ts
           browser-frame.ts
           constellation.ts
+          currency-switcher.ts
+          currency.service.ts
           site-footer.ts
           site-header.ts
           site-icon.ts
@@ -2343,6 +2349,99 @@ export class CampaignsPageComponent implements OnInit {
       this.loaded.set(true);
       end();
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/services/companies-service.ts
+```typescript
+import { Service } from '@angular/core';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class CompaniesService extends AbstractAPIService<'companies', any> {
+  protected override readonly endpointName = 'companies';
+
+  public add(row: RouterInputs['companies']['add']) {
+    return this.api.companies.add.mutate(row);
+  }
+
+  public addMany(rows: RouterInputs['companies']['add'][]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.companies.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(true);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    return this.api.companies.getAll.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string): Promise<any> {
+    return this.api.companies.getById.query(id);
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.companies.getBySlug.query(slug);
+  }
+
+  /** §7 "Enrich" / "Re-check Google" — queues a Google Places lookup background job. */
+  public enrich(id: string, force = false): Promise<RouterOutputs['companies']['enrich']> {
+    return this.api.companies.enrich.mutate({ id, force });
+  }
+
+  /** Add-time preview: fetch Google Places fields for a name without persisting. */
+  public lookupEnrichment(name: string): Promise<RouterOutputs['companies']['lookupEnrichment']> {
+    return this.api.companies.lookupEnrichment.mutate({ name });
+  }
+
+  /** Advisory duplicate-name check for the add/edit form (case-insensitive, tenant-scoped). */
+  public checkNameExists(name: string, excludeId?: string): Promise<RouterOutputs['companies']['nameExists']> {
+    return this.api.companies.nameExists.query({ name, excludeId });
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public async update(id: string, data: RouterInputs['companies']['update']['data']) {
+    return this.api.companies.update.mutate({ id, data });
+  }
+
+  public import(input: RouterInputs['companies']['import']): Promise<RouterOutputs['companies']['import']> {
+    return this.api.companies.import.mutate(input);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.companies.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['companies']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['companies']['getPotentialDuplicates']> {
+    return this.api.companies.getPotentialDuplicates.query(options);
+  }
+
+  public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
+    return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
   }
 }
 ```
@@ -6518,6 +6617,125 @@ export class StandardFormsService extends FormsService {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/households/services/households-service.ts
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class HouseholdsService extends AbstractAPIService<'households', never> {
+  protected override readonly endpointName = 'households';
+
+  public add(household: UpdateHouseholdsType) {
+    return this.api.households.add.mutate(household);
+  }
+
+  public override addMany(rows: never[]): Promise<unknown> {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  /** CSV import wizard (spec §17) — queues a background households import. */
+  public import(input: RouterInputs['households']['import']): Promise<RouterOutputs['households']['import']> {
+    return this.api.households.import.mutate(input);
+  }
+
+  public count(): Promise<number> {
+    return this.api.households.count.query();
+  }
+
+  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
+  public countDistinctWards(): Promise<number> {
+    return this.api.households.countDistinctWards.query();
+  }
+
+  /** People in the placeholder household (no matchable address) — powers the grid footer note. */
+  public getUnhoused(): Promise<{ count: number; household_id: string | null }> {
+    return this.api.households.getUnhoused.query();
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.households.getBySlug.query(slug);
+  }
+
+  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithPeopleCount(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.households.getById.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.households.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public getPeopleCount(id: string) {
+    return this.api.households.getPeopleCount.query(id);
+  }
+
+  /** Most recent canvass at this household's door, or null if never canvassed. */
+  public getLastCanvass(id: string) {
+    return this.api.households.getLastCanvass.query(id);
+  }
+
+  public update(id: string, data: UpdateHouseholdsType) {
+    return this.api.households.update.mutate({ id: id, data });
+  }
+
+  private async getAllWithPeopleCount(options?: getAllOptionsType) {
+    return this.api.households.getAllWithPeopleCount.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.households.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(options?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ groups: any[]; total: number }> {
+    return this.api.households.getPotentialDuplicates.query(options);
+  }
+
+  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
+    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
+  }
+
+  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
+    return this.api.households.getLastFingerprintRecomputation.query();
+  }
+
+  public recomputeAddressFingerprints(): Promise<void> {
+    return this.api.households.recomputeAddressFingerprints.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
 ```typescript
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
@@ -6955,6 +7173,643 @@ export class ImportsService extends TRPCService<unknown> {
     },
   ) {
     return this.api.imports.delete.mutate({ id, ...options });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
+```typescript
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+
+import { emailSchema } from '@common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { CompaniesService } from '../../companies/services/companies-service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import {
+  IMPORT_ENTITY_CONFIGS,
+  IMPORT_ENTITY_TYPES,
+  isImportEntityType,
+  type ImportEntityType,
+} from '../import-entity-config';
+import { ImportsService } from '../services/imports-service';
+
+/** The four steps of the CSV import wizard (spec §17), in order. */
+type WizardStep = 'upload' | 'map' | 'review' | 'confirm';
+
+type DuplicateDecision = 'merge' | 'skip' | 'import_new';
+type BadEmailDecision = 'skip' | 'strip';
+
+interface DuplicateMatch {
+  email: string;
+  person_id: string;
+  name: string;
+  slug: string | null;
+}
+
+/** Confirm & run step state, modeled as a discriminated union (never a bag of optionals). */
+type RunState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | {
+      status: 'done';
+      inserted: number;
+      merged: number;
+      skipped: number;
+      errors: number;
+      tag: string | null;
+      importId: string | null;
+    }
+  | { status: 'error'; message: string };
+
+/** How long to wait between status polls once an import has been queued. */
+const POLL_INTERVAL_MS = 1500;
+/** Give up narrating progress (the import itself keeps running server-side) after this long. */
+const POLL_TIMEOUT_MS = 120_000;
+
+@Component({
+  selector: 'pc-import-wizard',
+  imports: [Icon, RouterLink],
+  templateUrl: './import-wizard.html',
+})
+export class ImportWizard {
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly personsService = inject(PersonsService);
+  private readonly companiesService = inject(CompaniesService);
+  private readonly householdsService = inject(HouseholdsService);
+  private readonly tasksService = inject(TasksService);
+  private readonly importsService = inject(ImportsService);
+  private readonly listsService = inject(ListsService);
+
+  private readonly _duplicateCheck = createLoadingGate();
+  protected readonly checkingDuplicates = this._duplicateCheck.visible;
+
+  // --- What are you importing? ---
+  protected readonly entityTypes = IMPORT_ENTITY_TYPES;
+  protected readonly configs = IMPORT_ENTITY_CONFIGS;
+  private readonly requestedType = this.route.snapshot.queryParamMap.get('type');
+  protected readonly entity = signal<ImportEntityType>(
+    isImportEntityType(this.requestedType) ? this.requestedType : 'people',
+  );
+  protected readonly config = computed(() => IMPORT_ENTITY_CONFIGS[this.entity()]);
+
+  protected readonly step = signal<WizardStep>('upload');
+  protected readonly stepOrder: WizardStep[] = ['upload', 'map', 'review', 'confirm'];
+  protected readonly stepLabels: Record<WizardStep, string> = {
+    upload: 'Upload',
+    map: 'Map columns',
+    review: 'Review',
+    confirm: 'Import',
+  };
+  protected readonly currentStepIndex = computed(() => this.stepOrder.indexOf(this.step()));
+
+  /** A step is reachable once its prerequisite data exists — never skip ahead of validation. */
+  protected canReachStep(target: WizardStep): boolean {
+    const targetIdx = this.stepOrder.indexOf(target);
+    if (targetIdx <= this.currentStepIndex()) return true;
+    if (target === 'map') return this.rowCount() > 0;
+    if (target === 'review') return this.canContinueToReview();
+    return false;
+  }
+
+  // --- Upload ---
+  protected readonly parsing = signal(false);
+  protected readonly dragOver = signal(false);
+  protected readonly fileName = signal<string | null>(null);
+  private fileText = '';
+  protected readonly headers = signal<string[]>([]);
+  protected readonly rawRows = signal<Array<Record<string, string>>>([]);
+
+  protected readonly rowCount = computed(() => this.rawRows().length);
+  protected readonly columnCount = computed(() => this.headers().length);
+
+  // --- Map columns ---
+  protected readonly mapping = signal<string[]>([]); // index-aligned with headers()
+
+  protected readonly mappedColumnCount = computed(() => this.mapping().filter((m) => !!m).length);
+  protected readonly skippedColumnCount = computed(() => this.columnCount() - this.mappedColumnCount());
+
+  /** Required fields (e.g. a company/task name) that no column is mapped to yet. */
+  protected readonly missingRequiredFields = computed(() => {
+    const mapped = new Set(this.mapping().filter((m) => !!m));
+    return this.config().requiredFields.filter((field) => !mapped.has(field));
+  });
+  protected readonly missingRequiredFieldLabels = computed(() =>
+    this.missingRequiredFields()
+      .map((field) => this.config().fieldLabels[field] ?? field)
+      .join(', '),
+  );
+  protected readonly canContinueToReview = computed(
+    () => this.mappedColumnCount() > 0 && this.missingRequiredFields().length === 0,
+  );
+
+  /** Every row, with only its mapped, non-blank fields — the shape the backend import mutation expects. */
+  protected readonly mappedRows = computed(() => {
+    const headers = this.headers();
+    const mapping = this.mapping();
+    return this.rawRows().map((row) => {
+      const out: Record<string, string> = {};
+      headers.forEach((header, idx) => {
+        const field = mapping[idx];
+        if (!field) return;
+        const value = (row[header] ?? '').toString().trim();
+        if (value && !(field in out)) out[field] = value;
+      });
+      return out;
+    });
+  });
+
+  protected readonly importableRowCount = computed(
+    () => this.mappedRows().filter((row) => Object.keys(row).length > 0).length,
+  );
+
+  /** Rows that have data but are missing a required field — the backend would skip them anyway. */
+  protected readonly missingRequiredRowCount = computed(() => {
+    const required = this.config().requiredFields;
+    if (required.length === 0) return 0;
+    return this.mappedRows().filter((row) => Object.keys(row).length > 0 && required.some((field) => !row[field]))
+      .length;
+  });
+
+  // --- Review ---
+  protected readonly duplicateDecision = signal<DuplicateDecision>('merge');
+  protected readonly badEmailDecision = signal<BadEmailDecision>('skip');
+  protected readonly tagsText = signal('');
+  protected readonly listName = signal('');
+  protected readonly existingListNames = signal<string[]>([]);
+  protected readonly duplicateMatches = signal<DuplicateMatch[]>([]);
+
+  protected readonly emailRows = computed(() =>
+    this.mappedRows()
+      .map((row, idx) => ({ idx: idx + 1, email: row['email'] ?? '' }))
+      .filter((r) => !!r.email),
+  );
+  protected readonly validEmailRows = computed(() =>
+    this.emailRows().filter((r) => emailSchema.safeParse(r.email).success),
+  );
+  protected readonly badEmailRows = computed(() => {
+    if (!this.config().supportsEmailReview) return [];
+    return this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success);
+  });
+  protected readonly duplicateRowCount = computed(() => {
+    const matched = new Set(this.duplicateMatches().map((m) => m.email.toLowerCase()));
+    return this.validEmailRows().filter((r) => matched.has(r.email.toLowerCase())).length;
+  });
+  protected readonly reviewIsClean = computed(
+    () => this.duplicateMatches().length === 0 && this.badEmailRows().length === 0,
+  );
+
+  protected readonly parsedTags = computed(() =>
+    this.tagsText()
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
+  );
+
+  // --- Confirm & run ---
+  protected readonly run = signal<RunState>({ status: 'idle' });
+  private pollHandle: ReturnType<typeof setTimeout> | undefined;
+
+  /** The exact row count the Confirm button and working-state sentence quote (spec §17). */
+  protected readonly finalRowCount = computed(() => {
+    let count = this.importableRowCount() - this.missingRequiredRowCount();
+    if (this.config().supportsEmailReview && this.badEmailDecision() === 'skip') {
+      count -= this.badEmailRows().length;
+    }
+    return count;
+  });
+
+  /** One line of "what the background job is doing" copy while the import runs. */
+  protected readonly runningHint = computed(() => {
+    const entity = this.entity();
+    switch (entity) {
+      case 'people':
+        return 'Matching by email, merging duplicates and applying tags';
+      case 'households':
+        return 'Deduplicating by address, applying tags and queueing geocoding';
+      case 'companies':
+        return 'Creating companies and recording the import in history';
+      case 'tasks':
+        return 'Creating tasks and recording the import in history';
+      default: {
+        const _exhaustive: never = entity;
+        return _exhaustive;
+      }
+    }
+  });
+
+  constructor() {
+    this.destroyRef.onDestroy(() => this.clearPoll());
+    void this.loadExistingListNames();
+  }
+
+  /** Switch record type — remaps the already-parsed headers with the new type's heuristic. */
+  protected setEntity(type: ImportEntityType): void {
+    if (this.entity() === type || this.run().status === 'running') return;
+    this.entity.set(type);
+    this.mapping.set(this.headers().map((h) => IMPORT_ENTITY_CONFIGS[type].autoMapHeader(h)));
+    this.duplicateDecision.set('merge');
+    this.badEmailDecision.set('skip');
+    this.tagsText.set('');
+    this.listName.set('');
+    this.duplicateMatches.set([]);
+    // Keep the URL shareable/bookmarkable — grids deep-link here with ?type=.
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { type },
+      replaceUrl: true,
+    });
+  }
+
+  private async loadExistingListNames(): Promise<void> {
+    try {
+      const result = await this.listsService.getAll({ startRow: 0, endRow: 200 });
+      const rows = (result?.rows ?? []) as Array<{ name?: string; is_dynamic?: boolean; object?: string }>;
+      this.existingListNames.set(
+        rows
+          .filter((r) => !r.is_dynamic && r.object === 'people' && typeof r.name === 'string')
+          .map((r) => r.name as string),
+      );
+    } catch {
+      // Non-blocking — the list-name field still works as free text without suggestions.
+    }
+  }
+
+  // --- Upload step ---
+
+  protected onDragOver(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  protected onDragLeave(): void {
+    this.dragOver.set(false);
+  }
+
+  protected onDrop(ev: DragEvent): void {
+    ev.preventDefault();
+    this.dragOver.set(false);
+    const file = ev.dataTransfer?.files?.[0];
+    if (file) void this.readFile(file);
+  }
+
+  protected onFileSelected(ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) void this.readFile(file);
+    input.value = '';
+  }
+
+  private async readFile(file: File): Promise<void> {
+    this.parsing.set(true);
+    this.fileName.set(file.name);
+    try {
+      // UTF-8 and Excel-exported CSVs both decode correctly as text — Excel's
+      // CSV export is UTF-8 (sometimes BOM-prefixed), which readAsText handles.
+      // FileReader (not the newer File.text()) matches the shared csv-import
+      // worker's original reading approach.
+      const text = await this.readFileAsText(file);
+      this.fileText = text;
+      const { headers, rows } = await this.parseCsv(text);
+      this.headers.set(headers);
+      this.rawRows.set(rows);
+      this.mapping.set(headers.map((h) => this.config().autoMapHeader(h)));
+    } catch {
+      this.alerts.showError('Failed to read that file. Make sure it is a CSV export.');
+      this.fileName.set(null);
+    } finally {
+      this.parsing.set(false);
+    }
+  }
+
+  private readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string) || '');
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
+  }
+
+  /** Reuses the shared CSV/TSV parsing worker (libs/uxcommon/components/csv-import) — no second parser. */
+  private parseCsv(text: string): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(
+        new URL('../../../../../../../libs/uxcommon/src/components/csv-import/csv.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+      worker.onmessage = (e: MessageEvent) => {
+        const data = e.data as {
+          type: string;
+          headers?: string[];
+          rows?: Array<Record<string, string>>;
+          message?: string;
+        };
+        worker.terminate();
+        if (data.type === 'result') {
+          resolve({ headers: data.headers ?? [], rows: data.rows ?? [] });
+        } else {
+          reject(new Error(data.message || 'Failed to parse CSV'));
+        }
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        reject(new Error('Failed to parse CSV'));
+      };
+      worker.postMessage({ type: 'parse', text });
+    });
+  }
+
+  protected chooseAnotherFile(): void {
+    this.fileName.set(null);
+    this.fileText = '';
+    this.headers.set([]);
+    this.rawRows.set([]);
+    this.mapping.set([]);
+  }
+
+  protected sampleValues(headerIdx: number): string {
+    const header = this.headers()[headerIdx];
+    if (!header) return '';
+    return this.rawRows()
+      .slice(0, 2)
+      .map((row) => row[header])
+      .filter((v) => !!v)
+      .join(', ');
+  }
+
+  // --- Step navigation ---
+
+  protected goToStep(target: WizardStep): void {
+    this.step.set(target);
+  }
+
+  protected async goToReview(): Promise<void> {
+    this.step.set('review');
+    if (!this.config().supportsEmailReview) {
+      this.duplicateMatches.set([]);
+      return;
+    }
+    const end = this._duplicateCheck.begin();
+    try {
+      const emails = [...new Set(this.validEmailRows().map((r) => r.email.toLowerCase()))];
+      const matches = emails.length ? await this.personsService.checkDuplicateEmails(emails) : [];
+      this.duplicateMatches.set(matches);
+    } catch {
+      // Review still works without the duplicate preview — the backend re-checks authoritatively at import time.
+      this.duplicateMatches.set([]);
+    } finally {
+      end();
+    }
+  }
+
+  protected setMapping(headerIdx: number, field: string): void {
+    const next = [...this.mapping()];
+    next[headerIdx] = field;
+    this.mapping.set(next);
+  }
+
+  // --- Confirm & run ---
+
+  protected async runImport(): Promise<void> {
+    if (this.run().status === 'running') return;
+    this.run.set({ status: 'running' });
+    try {
+      const result = this.entity() === 'people' ? await this.importPeople() : await this.importSimple();
+
+      if (result.import_id) {
+        await this.pollUntilDone(result.import_id, Date.now());
+      } else {
+        // Nothing importable — the backend already reported the terminal state synchronously.
+        this.run.set({
+          status: 'done',
+          inserted: result.inserted,
+          merged: 0,
+          skipped: result.skipped,
+          errors: result.errors,
+          tag: result.tag,
+          importId: null,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'The import could not be started.';
+      this.run.set({ status: 'error', message });
+    }
+  }
+
+  /** People import — the full duplicate-decision / bad-email / tags / list pipeline. */
+  private async importPeople(): Promise<{
+    import_id: string | null;
+    inserted: number;
+    skipped: number;
+    errors: number;
+    tag: string | null;
+  }> {
+    const badEmailRows = this.badEmailRows();
+    const badEmailIdx = new Set(badEmailRows.map((r) => r.idx - 1));
+    const skipBadEmail = this.badEmailDecision() === 'skip';
+    const rowsToSend = this.mappedRows()
+      .map((row, idx) => {
+        if (!badEmailIdx.has(idx)) return row;
+        if (skipBadEmail) return null; // dropped below
+        const { email: _unused, ...rest } = row; // "Import without an email"
+        return rest;
+      })
+      .filter((row): row is Record<string, string> => row !== null && Object.keys(row).length > 0);
+    const skippedCount = this.rawRows().length - rowsToSend.length;
+    const clientSkipReasons = skipBadEmail
+      ? badEmailRows.map((r) => ({ row: r.idx, email: r.email, reason: 'Email address is not valid' }))
+      : [];
+
+    const result = await this.personsService.import({
+      rows: rowsToSend,
+      tags: this.parsedTags(),
+      skipped: skippedCount,
+      file_name: this.fileName() ?? undefined,
+      duplicate_decision: this.duplicateDecision(),
+      list_name: this.listName().trim() || undefined,
+      source_csv: this.fileText || undefined,
+      client_skip_reasons: clientSkipReasons,
+    });
+    return {
+      import_id: result?.import_id ?? null,
+      inserted: result?.inserted ?? 0,
+      skipped: result?.skipped ?? skippedCount,
+      errors: result?.errors ?? 0,
+      tag: result?.tag ?? null,
+    };
+  }
+
+  /**
+   * Companies / households / tasks import — no client-side review pipeline, but
+   * rows missing a required field are dropped here (and counted as skipped) so
+   * one bad row can't fail the whole mutation's input validation.
+   */
+  private async importSimple(): Promise<{
+    import_id: string | null;
+    inserted: number;
+    skipped: number;
+    errors: number;
+    tag: string | null;
+  }> {
+    const required = this.config().requiredFields;
+    const rowsToSend = this.mappedRows().filter(
+      (row) => Object.keys(row).length > 0 && required.every((field) => !!row[field]),
+    );
+    const skippedCount = this.rawRows().length - rowsToSend.length;
+    const common = {
+      skipped: skippedCount,
+      file_name: this.fileName() ?? undefined,
+      source_csv: this.fileText || undefined,
+    };
+
+    const entity = this.entity();
+    switch (entity) {
+      case 'companies': {
+        const result = await this.companiesService.import({
+          rows: rowsToSend.map((row) => ({
+            name: row['name'] ?? '',
+            description: row['description'],
+            website: row['website'],
+            email: row['email'],
+            phone: row['phone'],
+            industry: row['industry'],
+            notes: row['notes'],
+          })),
+          ...common,
+        });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
+      }
+      case 'households': {
+        const result = await this.householdsService.import({
+          rows: rowsToSend.map((row) => ({
+            street_num: row['street_num'],
+            apt: row['apt'],
+            street1: row['street1'],
+            street2: row['street2'],
+            city: row['city'],
+            state: row['state'],
+            zip: row['zip'],
+            country: row['country'],
+            home_phone: row['home_phone'],
+            notes: row['notes'],
+          })),
+          tags: this.parsedTags(),
+          ...common,
+        });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
+      }
+      case 'tasks': {
+        const result = await this.tasksService.import({
+          rows: rowsToSend.map((row) => ({
+            name: row['name'] ?? '',
+            details: row['details'],
+            status: row['status'],
+            priority: row['priority'],
+            due_at: row['due_at'],
+            assigned_to: row['assigned_to'],
+          })),
+          ...common,
+        });
+        return {
+          import_id: result?.import_id ?? null,
+          inserted: 0,
+          skipped: result?.skipped ?? skippedCount,
+          errors: 0,
+          tag: null,
+        };
+      }
+      case 'people':
+        throw new Error('People imports go through importPeople()');
+      default: {
+        const _exhaustive: never = entity;
+        throw new Error(`Unhandled import type: ${String(_exhaustive)}`);
+      }
+    }
+  }
+
+  private async pollUntilDone(importId: string, startedAt: number): Promise<void> {
+    this.clearPoll();
+    try {
+      const list = await this.importsService.list();
+      const record = (list ?? []).find((item) => String(item.id) === String(importId));
+
+      if (record?.status === 'completed') {
+        this.run.set({
+          status: 'done',
+          inserted: record.insertedCount,
+          merged: record.mergedCount,
+          skipped: record.skippedCount,
+          errors: record.errorCount,
+          tag: record.tagName,
+          importId,
+        });
+        return;
+      }
+      if (record?.status === 'failed') {
+        this.run.set({ status: 'error', message: record.errorMessage || 'The import failed.' });
+        return;
+      }
+      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        this.run.set({
+          status: 'error',
+          message: 'This is taking longer than expected. Check the import history page for its final status.',
+        });
+        return;
+      }
+    } catch {
+      // Transient — keep polling until the timeout above gives up.
+    }
+    this.pollHandle = setTimeout(() => void this.pollUntilDone(importId, startedAt), POLL_INTERVAL_MS);
+  }
+
+  private clearPoll(): void {
+    if (this.pollHandle) {
+      clearTimeout(this.pollHandle);
+      this.pollHandle = undefined;
+    }
+  }
+
+  protected startOver(): void {
+    this.clearPoll();
+    this.chooseAnotherFile();
+    this.mapping.set([]);
+    this.duplicateDecision.set('merge');
+    this.badEmailDecision.set('skip');
+    this.tagsText.set('');
+    this.listName.set('');
+    this.duplicateMatches.set([]);
+    this.run.set({ status: 'idle' });
+    this.step.set('upload');
+  }
+
+  protected viewImported(): void {
+    void this.router.navigate([this.config().viewRoute]);
+  }
+
+  protected backToHistory(): void {
+    void this.router.navigate(['/imports']);
   }
 }
 ```
@@ -7548,6 +8403,157 @@ export class ListView implements OnDestroy {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
+```typescript
+import { Service, inject } from '@angular/core';
+import {
+  AddMarketingEmailType,
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  UpdateMarketingEmailType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+
+@Service()
+export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
+  protected override readonly endpointName = 'newsletters';
+
+  private readonly campaignContext = inject(CampaignContextService);
+
+  public add(row: AddMarketingEmailType) {
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
+  }
+
+  public addMany(_rows: AddMarketingEmailType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.newsletters.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
+    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
+    const count = result?.count != null ? Number(result.count) : rows.length;
+    return { rows, count };
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getById(id: string) {
+    const record = await this.api.newsletters.getById.query(id);
+    return this.normalize(record);
+  }
+
+  public getReport(id: string): Promise<NewsletterReportType> {
+    return this.api.newsletters.getReport.query(id);
+  }
+
+  public createClickersList(id: string): Promise<CreateClickersListResultType> {
+    return this.api.newsletters.createClickersList.mutate(id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateMarketingEmailType) {
+    return this.api.newsletters.update.mutate({ id, data });
+  }
+
+  public send(id: string): Promise<any> {
+    return this.api.newsletters.send.mutate(id);
+  }
+
+  public sendTest(input: {
+    subject: string;
+    html: string;
+    text?: string;
+    to: string;
+    fromName?: string;
+    fromEmail?: string;
+  }): Promise<{ to: string; delivered: number }> {
+    return this.api.newsletters.sendTest.mutate(input);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.newsletters.exportCsv.mutate(input);
+  }
+
+  private normalize(record: any) {
+    if (!record) return record;
+    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
+    const asNumber = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const asDate = (value: unknown) => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const date = new Date(value as string);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    return {
+      ...record,
+      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
+      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
+      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
+      total_recipients: asNumber(record.total_recipients) ?? 0,
+      delivered_count: asNumber(record.delivered_count) ?? 0,
+      bounce_count: asNumber(record.bounce_count) ?? 0,
+      open_rate: asNumber(record.open_rate) ?? 0,
+      click_rate: asNumber(record.click_rate) ?? 0,
+      unique_opens: asNumber(record.unique_opens) ?? 0,
+      unique_clicks: asNumber(record.unique_clicks) ?? 0,
+      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
+      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
+      reply_count: asNumber(record.reply_count) ?? 0,
+      send_date: asDate(record.send_date),
+      last_engagement_at: asDate(record.last_engagement_at),
+      created_at: asDate(record.created_at) ?? new Date(),
+      updated_at: asDate(record.updated_at) ?? new Date(),
+      top_links,
+    };
+  }
+
+  private parseJsonArray<T>(value: unknown): T[] | null {
+    if (!value) return null;
+    if (Array.isArray(value)) return value as T[];
+    try {
+      const parsed = JSON.parse(String(value));
+      return Array.isArray(parsed) ? (parsed as T[]) : null;
+    } catch {
+      return null;
+    }
+  }
 }
 ```
 
@@ -8805,6 +9811,22 @@ export class PersonConnections implements OnInit {
   </button>
   }
 </div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.css
+```css
+/* Hide the native number-input spinner arrows on this page's amount/percentage fields.
+   Scoped via `.no-spinner` (and component view encapsulation) so app-wide number inputs are untouched. */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 ```
 
@@ -10321,6 +11343,95 @@ export function computeTaskSla(inputs: TaskSlaInputs, now: Date = new Date()): S
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/services/tasks-service.ts
+```typescript
+import { Service } from '@angular/core';
+import {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
+  protected override readonly endpointName = 'tasks';
+
+  public add(row: AddTaskType) {
+    return this.api.tasks.add.mutate(row);
+  }
+
+  public addMany(_rows: AddTaskType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.tasks.count.query();
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — sidebar badge + count sentences (spec §4). */
+  public countSlaBreaches(): Promise<number> {
+    return this.api.tasks.countSlaBreaches.query();
+  }
+
+  /** The count-sentence numbers in one call: open total, unassigned, assigned-to-me, SLA breaches. */
+  public getSummaryCounts(): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    return this.api.tasks.getSummaryCounts.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.tasks.getAll.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: { [x: string]: any }[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(options?: getAllOptionsType) {
+    return this.api.tasks.getArchived.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: { [x: string]: any }[];
+      count: number;
+    }>;
+  }
+
+  public getById(id: string) {
+    return this.api.tasks.getById.query(id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateTaskType) {
+    return this.api.tasks.update.mutate({ id, data });
+  }
+
+  public import(input: RouterInputs['tasks']['import']): Promise<RouterOutputs['tasks']['import']> {
+    return this.api.tasks.import.mutate(input);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.tasks.exportCsv.mutate(input);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-add.html
 ```html
 <section
@@ -10749,6 +11860,330 @@ export class TasksBoard implements OnInit {
 
   protected openList(): void {
     void this.router.navigate(['/tasks']);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
+
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../services/tasks-service';
+import { computeTaskSla } from '../services/task-sla';
+
+type ListTab = 'all' | 'mine' | 'unassigned' | 'done';
+type DueBucket = 'overdue' | 'today' | 'upcoming' | 'none';
+
+interface ListTask {
+  id: string;
+  name: string;
+  status: string;
+  priority: string | null;
+  assigned_to: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  details: string | null;
+}
+
+const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
+  overdue: { label: 'Overdue', tone: 'error' },
+  today: { label: 'Due Today', tone: 'warning' },
+  upcoming: { label: 'Coming Up', tone: 'info' },
+  none: { label: 'No due date', tone: 'neutral' },
+};
+const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MS_PER_HOUR = 3_600_000;
+const MS_PER_DAY = 86_400_000;
+
+@Component({
+  selector: 'pc-tasks-list',
+  imports: [Icon, TabBar],
+  templateUrl: './tasks-list.html',
+})
+export class TasksList implements OnInit {
+  private readonly router = inject(Router);
+  private readonly svc = inject(TasksService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly _loading = createLoadingGate();
+
+  protected readonly loading = this._loading.visible;
+  protected readonly loaded = this._loading.loaded;
+  protected readonly tab = signal<ListTab>('all');
+  protected readonly tasks = signal<ListTask[]>([]);
+  protected readonly usersById = signal<Map<string, string>>(new Map());
+  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly counts = signal<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  } | null>(null);
+
+  private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
+
+  /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
+  protected readonly countSentence = computed(() => {
+    const c = this.counts();
+    if (!c) return '';
+    return `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ${c.assignedToMe} assigned to you`;
+  });
+
+  protected readonly tabCounts = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    return {
+      all: all.length,
+      mine: all.filter((t) => t.assigned_to === me).length,
+      unassigned: all.filter((t) => t.assigned_to == null && t.status !== 'done').length,
+      done: all.filter((t) => t.status === 'done').length,
+    };
+  });
+
+  /** The standard pill tab bar with counts (§1 "numbers before clicks"). */
+  protected readonly tabs = computed((): PcTabOption[] => {
+    const c = this.tabCounts();
+    return [
+      { id: 'all', label: 'All', badge: c.all },
+      { id: 'mine', label: 'Mine', badge: c.mine },
+      { id: 'unassigned', label: 'Unassigned', badge: c.unassigned },
+      { id: 'done', label: 'Done', badge: c.done },
+    ];
+  });
+
+  protected readonly filtered = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    const tab = this.tab();
+    switch (tab) {
+      case 'all':
+        return all;
+      case 'mine':
+        return all.filter((t) => t.assigned_to === me);
+      case 'unassigned':
+        return all.filter((t) => t.assigned_to == null && t.status !== 'done');
+      case 'done':
+        return all.filter((t) => t.status === 'done');
+      default: {
+        const _exhaustive: never = tab;
+        return _exhaustive;
+      }
+    }
+  });
+
+  protected readonly groups = computed(() => {
+    const buckets = new Map<DueBucket, ListTask[]>(DUE_BUCKET_ORDER.map((b) => [b, []]));
+    for (const t of this.filtered()) {
+      buckets.get(this.bucketFor(t))?.push(t);
+    }
+    return DUE_BUCKET_ORDER.map((key) => ({ key, meta: DUE_BUCKET_META[key], rows: buckets.get(key) ?? [] })).filter(
+      (g) => g.rows.length > 0,
+    );
+  });
+
+  public ngOnInit(): void {
+    void this.settingsSvc.load();
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [res, users, counts] = await Promise.all([
+        this.svc.getAll({
+          limit: 1000,
+          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details'],
+        }),
+        this.userService.getUsers(),
+        this.svc.getSummaryCounts(),
+      ]);
+      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
+      this.counts.set(counts);
+
+      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
+      this.tasks.set(rows.map((r) => this.toListTask(r)));
+
+      const flashId = (window.history.state as { flashId?: unknown } | undefined)?.flashId;
+      if (typeof flashId === 'string' && flashId) this.flashCard(flashId);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load tasks. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  private toListTask(r: Record<string, unknown>): ListTask {
+    return {
+      id: String(r['id']),
+      name: String(r['name'] || '(no name)'),
+      status: String(r['status'] ?? 'todo'),
+      priority: (r['priority'] as string | null) ?? null,
+      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
+      due_at: (r['due_at'] as string | null) ?? null,
+      created_at: (r['created_at'] as string | null) ?? null,
+      details: (r['details'] as string | null) ?? null,
+    };
+  }
+
+  private bucketFor(t: ListTask): DueBucket {
+    if (!t.due_at) return 'none';
+    const due = this.dateOnly(t.due_at);
+    const today = this.dateOnly(new Date().toISOString());
+    if (due < today) return 'overdue';
+    if (due === today) return 'today';
+    return 'upcoming';
+  }
+
+  private dateOnly(v: string): string {
+    return v.length > 10 ? v.slice(0, 10) : v;
+  }
+
+  protected setTab(tab: string): void {
+    if (tab !== 'all' && tab !== 'mine' && tab !== 'unassigned' && tab !== 'done') return;
+    this.tab.set(tab);
+  }
+
+  protected isFlashed(id: string): boolean {
+    return this.flashedIds().has(id);
+  }
+
+  protected assigneeName(id: string | null): string | null {
+    return id ? (this.usersById().get(id) ?? null) : null;
+  }
+
+  protected assigneeInitial(id: string | null): string {
+    const name = this.assigneeName(id);
+    return name ? name.slice(0, 1).toUpperCase() : '?';
+  }
+
+  protected waitingReason(t: ListTask): string | null {
+    if (t.status !== 'waiting' || !t.details) return null;
+    const oneLine = t.details.trim().split('\n')[0] ?? '';
+    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
+  }
+
+  /** Short scan-friendly badge for the list row; the full honest breakdown still lives on the detail page (task-view). */
+  protected slaBadge(t: ListTask): { text: string; tone: 'error' | 'warning' } | null {
+    const pill = computeTaskSla({
+      status: t.status,
+      createdAt: t.created_at ? new Date(t.created_at) : null,
+      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+    if (!pill) return null;
+    if (pill.tone === 'error') return { text: 'SLA breached', tone: 'error' };
+    if (pill.tone === 'warning') return { text: 'Due soon', tone: 'warning' };
+    return null;
+  }
+
+  /** "Due 4h ago" / "Due yesterday" / "Due today, 5:00" / "Due tomorrow" / "Due Thursday" (spec §4). */
+  protected dateLabel(v?: string | null): string {
+    if (!v) return '';
+    const due = new Date(v);
+    const now = new Date();
+    const dueDay = this.dateOnly(v);
+    const today = this.dateOnly(now.toISOString());
+
+    if (dueDay < today) {
+      const hoursAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_HOUR);
+      if (hoursAgo < 24) return `Due ${hoursAgo}h ago`;
+      if (hoursAgo < 48) return 'Due yesterday';
+      const daysAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_DAY);
+      return `Due ${daysAgo}d ago`;
+    }
+
+    if (dueDay === today) {
+      const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      return `Due today, ${time}`;
+    }
+
+    const daysAhead = Math.round((new Date(dueDay).getTime() - new Date(today).getTime()) / MS_PER_DAY);
+    if (daysAhead === 1) return 'Due tomorrow';
+    if (daysAhead < 7) return `Due ${WEEKDAY_NAMES[due.getDay()]}`;
+    return `Due ${due.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+  }
+
+  protected priorityBadgeClass(p?: string | null): string {
+    const v = (p || '').toLowerCase();
+    return v === 'urgent'
+      ? 'badge-error'
+      : v === 'high'
+        ? 'badge-warning'
+        : v === 'medium'
+          ? 'badge-info'
+          : 'badge-neutral';
+  }
+
+  /** Check-circle toggle: complete (-> done) or reopen (-> todo) a task in place. */
+  protected async toggleDone(t: ListTask): Promise<void> {
+    const next = t.status === 'done' ? 'todo' : 'done';
+    this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: next } : x)));
+    try {
+      await this.svc.update(t.id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.flashCard(t.id);
+    } catch (err) {
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: t.status } : x)));
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
+    }
+  }
+
+  protected async takeTask(t: ListTask): Promise<void> {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    try {
+      await this.svc.update(t.id, { assigned_to: me.id } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, assigned_to: me.id } : x)));
+      this.flashCard(t.id);
+      this.alerts.showSuccess(`You're now assigned to "${t.name}"`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
+    }
+  }
+
+  private flashCard(id: string): void {
+    this.flashedIds.update((s) => new Set([...s, id]));
+    setTimeout(() => {
+      this.flashedIds.update((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }, 1200);
+  }
+
+  protected openTask(t: ListTask): void {
+    void this.router.navigate(['tasks', t.id]);
+  }
+
+  protected openBoard(): void {
+    void this.router.navigate(['/tasks/board']);
+  }
+
+  protected newTask(): void {
+    void this.router.navigate(['/tasks/add']);
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-page import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'tasks' } });
   }
 }
 ```
@@ -12433,6 +13868,11 @@ export class DonationsService extends TRPCService<'donations'> {
 
   public getWebhookTokenStatus() {
     return this.api.donations.getWebhookTokenStatus.query();
+  }
+
+  /** Country / processor / residency-acknowledged context that drives the donation settings disclaimers. */
+  public getResidencyContext() {
+    return this.api.donations.getResidencyContext.query();
   }
 
   public regenerateWebhookToken() {
@@ -16761,6 +18201,85 @@ export class SingleselectFilterComponent {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
+```css
+/* Fill whatever height the page grants so the body scrolls inside the shell and the
+   pagination footer stays pinned. In auto-height parents `height: 100%` resolves to
+   auto, so embedded grids (list-form preview box, list-view tabs) keep growing
+   naturally with the page. */
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+/* lock layout + neutralize cell padding/borders */
+:host table {
+  table-layout: fixed;
+}
+
+/* The body scrolls inside the shell, so headers must pin or they scroll out of view.
+   Needs its own background (the tr's doesn't travel with a sticky cell) and to sit
+   above the pinned body cells (z-10/z-20). */
+:host thead th {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background-color: var(--color-base-100);
+}
+
+:host table :where(th, td) {
+  box-sizing: border-box;
+  vertical-align: middle;
+  /* Shared table density token — single source of truth in styles.css (pc-table contract). */
+  padding-block: var(--pc-table-cell-py, 0.375rem);
+}
+
+:host table tbody td {
+  vertical-align: top;
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+:host table tbody td > * {
+  min-width: 0;
+}
+
+/* keep scrollbars from shifting header/body widths */
+.flex-1.overflow-auto {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* ── Row saved flash ─────────────────────────────────────────────── */
+@keyframes row-saved-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+  }
+  60% {
+    background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+:host td.cell-flash {
+  animation: row-saved-flash 1.2s ease-out forwards;
+}
+
+/* ── Pencil cursor for inline-editable cells ──────────────────────── */
+/* SVG: HeroIcons solid pencil. White stroke ensures visibility on dark backgrounds.
+   Hotspot (1 13) places the interaction point at the pencil tip (bottom-left). */
+:host .cursor-pencil,
+:host .cursor-pencil * {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z' fill='%231e293b' stroke='white' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E")
+      1 13,
+    default !important;
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
 ```typescript
 import type { GridRow } from './types';
@@ -20161,95 +21680,138 @@ export class CutTurfsDialog implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/services/companies-service.ts
+## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
 ```typescript
-import { Service } from '@angular/core';
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
+import { Component, signal, inject, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { PersonsService } from '../../persons/services/persons-service';
+import { CompaniesService } from '../services/companies-service';
 
-@Service()
-export class CompaniesService extends AbstractAPIService<'companies', any> {
-  protected override readonly endpointName = 'companies';
+@Component({
+  selector: 'pc-companies-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [grainLayout]="true"
+        [fitColumns]="true"
+        title="Companies"
+        i18n-title
+        description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        (rowsDeleted)="onRowsDeleted()"
+        plusIcon="add-company"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          <pc-grain-tabs />
+        </div>
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'company',
+        entityNounPlural: 'companies',
+        exportEntity: 'companies',
+        exportFileName: 'companies-export.csv',
+      },
+    }),
+  ],
+})
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly personsService = inject(PersonsService);
+  private readonly router = inject(Router);
 
-  public add(row: RouterInputs['companies']['add']) {
-    return this.api.companies.add.mutate(row);
+  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    this.grainTabs()?.reloadCounts();
   }
 
-  public addMany(rows: RouterInputs['companies']['add'][]) {
-    return Promise.resolve(rows);
+  constructor() {
+    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadGrainSentence();
   }
 
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [people, companies] = await Promise.all([
+        this.personsService.countWithCompany(),
+        this.companiesService.count(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
+      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
+      this.totalSentence.set(`${peopleText} in ${companiesText}`);
+    } catch (err) {
+      console.error('Failed to load company grain counts', err);
+    }
   }
 
-  public count(): Promise<number> {
-    return this.api.companies.count.query();
+  protected col: ColDef[] = [
+    {
+      // The door that opens the company record. Non-editable and non-hidable identity column.
+      field: 'name',
+      headerName: 'Company Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 240,
+      minWidth: 180,
+    },
+    {
+      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
+      // the Company Name column is the door.
+      field: 'persons_count',
+      headerName: 'People',
+      editable: false,
+      width: 110,
+      minWidth: 90,
+      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
+    },
+    { field: 'website', headerName: 'Website', editable: true, width: 240 },
+    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
+  ];
+
+  /** Formats the employee count as "N people" (singular/plural). */
+  private formatPeopleCount(params: CellParams): string {
+    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
   }
 
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(true);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    return this.api.companies.getAll.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string): Promise<any> {
-    return this.api.companies.getById.query(id);
-  }
-
-  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
-  public getBySlug(slug: string) {
-    return this.api.companies.getBySlug.query(slug);
-  }
-
-  /** §7 "Enrich" / "Re-check Google" — queues a Google Places lookup background job. */
-  public enrich(id: string, force = false): Promise<RouterOutputs['companies']['enrich']> {
-    return this.api.companies.enrich.mutate({ id, force });
-  }
-
-  /** Add-time preview: fetch Google Places fields for a name without persisting. */
-  public lookupEnrichment(name: string): Promise<RouterOutputs['companies']['lookupEnrichment']> {
-    return this.api.companies.lookupEnrichment.mutate({ name });
-  }
-
-  /** Advisory duplicate-name check for the add/edit form (case-insensitive, tenant-scoped). */
-  public checkNameExists(name: string, excludeId?: string): Promise<RouterOutputs['companies']['nameExists']> {
-    return this.api.companies.nameExists.query({ name, excludeId });
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public async update(id: string, data: RouterInputs['companies']['update']['data']) {
-    return this.api.companies.update.mutate({ id, data });
-  }
-
-  public import(input: RouterInputs['companies']['import']): Promise<RouterOutputs['companies']['import']> {
-    return this.api.companies.import.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.companies.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['companies']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['companies']['getPotentialDuplicates']> {
-    return this.api.companies.getPotentialDuplicates.query(options);
-  }
-
-  public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
-    return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
   }
 }
 ```
@@ -23541,6 +25103,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
+import { DonationsService } from '../../../services/api/donations-service';
 import { environment } from '../../../../environments/environment';
 import { AuthService } from '../../../auth/auth-service';
 
@@ -23558,6 +25121,7 @@ export class FundraisingFormComponent implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly settingsSvc = inject(SettingsService);
+  private readonly donationsSvc = inject(DonationsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -23577,6 +25141,10 @@ export class FundraisingFormComponent implements OnInit {
     const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
     return !!key.trim();
   });
+
+  // Donations are paused until the tenant confirms residency restrictions in Workspace → Donations.
+  // Defaults to true so no false "paused" banner flashes before the context loads.
+  protected readonly residencyAcknowledged = signal(true);
 
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly selectedLists = signal<string[]>([]);
@@ -23689,6 +25257,16 @@ export class FundraisingFormComponent implements OnInit {
     }
     void this.loadLists();
     void this.settingsSvc.load();
+    void this.loadResidencyContext();
+  }
+
+  private async loadResidencyContext(): Promise<void> {
+    try {
+      const ctx = await this.donationsSvc.getResidencyContext();
+      this.residencyAcknowledged.set(ctx.residencyAcknowledged);
+    } catch {
+      // non-fatal — leave the banner hidden if the context can't be read
+    }
   }
 
   protected listName(id: string): string {
@@ -24250,123 +25828,293 @@ export class HelpRichText {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/services/households-service.ts
+## File: apps/frontend/src/app/experiences/imports/import-entity-config.ts
 ```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
+import type { PcIconNameType } from '@icons/icons.index';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+import { PERSONS_MAPPABLE_FIELDS, autoMapPersonsHeader } from '@uxcommon/components/csv-import/persons-field-mapping';
 
-@Service()
-export class HouseholdsService extends AbstractAPIService<'households', never> {
-  protected override readonly endpointName = 'households';
+/**
+ * Everything the CSV import wizard (spec §17) needs to know about one
+ * importable record type. One wizard, four configs — the per-entity mapping
+ * heuristics were ported verbatim from the retired in-grid import dialogs so
+ * files that auto-mapped before keep auto-mapping the same way.
+ */
+export type ImportEntityType = 'people' | 'companies' | 'households' | 'tasks';
 
-  public add(household: UpdateHouseholdsType) {
-    return this.api.households.add.mutate(household);
-  }
-
-  public override addMany(rows: never[]): Promise<unknown> {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  /** CSV import wizard (spec §17) — queues a background households import. */
-  public import(input: RouterInputs['households']['import']): Promise<RouterOutputs['households']['import']> {
-    return this.api.households.import.mutate(input);
-  }
-
-  public count(): Promise<number> {
-    return this.api.households.count.query();
-  }
-
-  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
-  public countDistinctWards(): Promise<number> {
-    return this.api.households.countDistinctWards.query();
-  }
-
-  /** People in the placeholder household (no matchable address) — powers the grid footer note. */
-  public getUnhoused(): Promise<{ count: number; household_id: string | null }> {
-    return this.api.households.getUnhoused.query();
-  }
-
-  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
-  public getBySlug(slug: string) {
-    return this.api.households.getBySlug.query(slug);
-  }
-
-  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithPeopleCount(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.households.getById.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.households.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public getPeopleCount(id: string) {
-    return this.api.households.getPeopleCount.query(id);
-  }
-
-  /** Most recent canvass at this household's door, or null if never canvassed. */
-  public getLastCanvass(id: string) {
-    return this.api.households.getLastCanvass.query(id);
-  }
-
-  public update(id: string, data: UpdateHouseholdsType) {
-    return this.api.households.update.mutate({ id: id, data });
-  }
-
-  private async getAllWithPeopleCount(options?: getAllOptionsType) {
-    return this.api.households.getAllWithPeopleCount.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.households.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(options?: {
-    page?: number;
-    pageSize?: number;
-  }): Promise<{ groups: any[]; total: number }> {
-    return this.api.households.getPotentialDuplicates.query(options);
-  }
-
-  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
-    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
-  }
-
-  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
-    return this.api.households.getLastFingerprintRecomputation.query();
-  }
-
-  public recomputeAddressFingerprints(): Promise<void> {
-    return this.api.households.recomputeAddressFingerprints.mutate();
-  }
+export interface ImportEntityConfig {
+  id: ImportEntityType;
+  /** Picker-card title, e.g. "People". */
+  label: string;
+  /** Lowercase plural for running copy, e.g. "Import 12 people". */
+  noun: string;
+  icon: PcIconNameType;
+  /** One-line picker-card description of what a row becomes. */
+  description: string;
+  /** The "· separated" facts line under the page title. */
+  subtitle: string;
+  mappableFields: string[];
+  fieldLabels: Record<string, string>;
+  autoMapHeader: (header: string) => string;
+  /**
+   * Fields that must be mapped before the wizard lets the user continue past
+   * Map columns — the backend skips (or rejects) rows without them.
+   */
+  requiredFields: string[];
+  /** People only: the email duplicate/bad-email Review step. */
+  supportsEmailReview: boolean;
+  /** Batch-level "tag everything in this import" input. */
+  supportsTags: boolean;
+  /** People only: "add everyone to a list" input. */
+  supportsList: boolean;
+  /** Shown on the Review step for types deduplicated server-side. */
+  reviewNote: string | null;
+  /** Where "View imported …" navigates once the import completes. */
+  viewRoute: string;
 }
+
+const COMPANIES_HEADER_TO_FIELD: Record<string, string> = {
+  name: 'name',
+  company: 'name',
+  companyname: 'name',
+  organization: 'name',
+  organisation: 'name',
+  description: 'description',
+  desc: 'description',
+  website: 'website',
+  web: 'website',
+  url: 'website',
+  email: 'email',
+  emailaddress: 'email',
+  phone: 'phone',
+  tel: 'phone',
+  telephone: 'phone',
+  phonenumber: 'phone',
+  industry: 'industry',
+  notes: 'notes',
+  note: 'notes',
+  comments: 'notes',
+};
+
+const HOUSEHOLDS_HEADER_TO_FIELD: Record<string, string> = {
+  streetnum: 'street_num',
+  streetnumber: 'street_num',
+  homestreet: 'street1',
+  homestreet1: 'street1',
+  homestreet2: 'street2',
+  homestreet3: 'street2',
+  homeaddress: 'street1',
+  homeaddresspobox: 'street2',
+  businessstreet: 'street1',
+  businessstreet1: 'street1',
+  businessstreet2: 'street2',
+  businessstreet3: 'street2',
+  businessaddress: 'street1',
+  businessaddresspobox: 'street2',
+  address: 'street1',
+  address1: 'street1',
+  address2: 'street2',
+  addressline1: 'street1',
+  addressline2: 'street2',
+  street: 'street1',
+  streetaddress: 'street1',
+  street1: 'street1',
+  street2: 'street2',
+  apt: 'apt',
+  apartment: 'apt',
+  unit: 'apt',
+  suite: 'apt',
+  city: 'city',
+  town: 'city',
+  state: 'state',
+  province: 'state',
+  stateprovince: 'state',
+  region: 'state',
+  zip: 'zip',
+  zipcode: 'zip',
+  postal: 'zip',
+  postalcode: 'zip',
+  postcode: 'zip',
+  country: 'country',
+  homephone: 'home_phone',
+  phone: 'home_phone',
+  telephone: 'home_phone',
+  notes: 'notes',
+  note: 'notes',
+  comments: 'notes',
+};
+
+const TASKS_HEADER_TO_FIELD: Record<string, string> = {
+  name: 'name',
+  task: 'name',
+  taskname: 'name',
+  title: 'name',
+  subject: 'name',
+  details: 'details',
+  description: 'details',
+  desc: 'details',
+  status: 'status',
+  priority: 'priority',
+  due: 'due_at',
+  duedate: 'due_at',
+  dueat: 'due_at',
+  assignedto: 'assigned_to',
+  assignee: 'assigned_to',
+  owner: 'assigned_to',
+};
+
+function autoMapWith(table: Record<string, string>): (header: string) => string {
+  return (header: string) => {
+    const key = (header || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]/g, '');
+    return table[key] || '';
+  };
+}
+
+export const IMPORT_ENTITY_CONFIGS: Record<ImportEntityType, ImportEntityConfig> = {
+  people: {
+    id: 'people',
+    label: 'People',
+    noun: 'people',
+    icon: 'user-group',
+    description: 'Contacts with names, emails, phones and addresses. Duplicates are matched by email.',
+    subtitle: 'Headers in the first row · duplicates are matched by email · nothing is written until the last step',
+    mappableFields: PERSONS_MAPPABLE_FIELDS,
+    fieldLabels: {
+      first_name: 'First name',
+      last_name: 'Last name',
+      middle_names: 'Middle name(s)',
+      email: 'Email',
+      email2: 'Secondary email',
+      mobile: 'Mobile phone',
+      home_phone: 'Home phone',
+      street_num: 'Street number',
+      street1: 'Street line 1',
+      street2: 'Street line 2',
+      apt: 'Apt/Unit',
+      city: 'City',
+      state: 'State/Province',
+      zip: 'Zip/Postal code',
+      country: 'Country',
+      company: 'Company',
+      tags: 'Tags (comma-separated)',
+      notes: 'Notes',
+    },
+    autoMapHeader: autoMapPersonsHeader,
+    requiredFields: [],
+    supportsEmailReview: true,
+    supportsTags: true,
+    supportsList: true,
+    reviewNote: null,
+    viewRoute: '/people',
+  },
+  companies: {
+    id: 'companies',
+    label: 'Companies',
+    noun: 'companies',
+    icon: 'briefcase',
+    description: 'Organizations with a name, website, contact details and industry.',
+    subtitle: 'Headers in the first row · rows need a company name · nothing is written until the last step',
+    mappableFields: ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'],
+    fieldLabels: {
+      name: 'Company name',
+      description: 'Description',
+      website: 'Website',
+      email: 'Email',
+      phone: 'Phone',
+      industry: 'Industry',
+      notes: 'Notes',
+    },
+    autoMapHeader: autoMapWith(COMPANIES_HEADER_TO_FIELD),
+    requiredFields: ['name'],
+    supportsEmailReview: false,
+    supportsTags: false,
+    supportsList: false,
+    reviewNote: 'Rows without a company name are skipped during the import.',
+    viewRoute: '/companies',
+  },
+  households: {
+    id: 'households',
+    label: 'Households',
+    noun: 'households',
+    icon: 'house-modern',
+    description: 'Addresses (doors). Each unique address becomes one household, ready for geocoding.',
+    subtitle: 'Headers in the first row · duplicates are matched by address · nothing is written until the last step',
+    mappableFields: [
+      'street_num',
+      'apt',
+      'street1',
+      'street2',
+      'city',
+      'state',
+      'zip',
+      'country',
+      'home_phone',
+      'notes',
+    ],
+    fieldLabels: {
+      street_num: 'Street number',
+      apt: 'Apt/Unit',
+      street1: 'Street line 1',
+      street2: 'Street line 2',
+      city: 'City',
+      state: 'State/Province',
+      zip: 'Zip/Postal code',
+      country: 'Country',
+      home_phone: 'Home phone',
+      notes: 'Notes',
+    },
+    autoMapHeader: autoMapWith(HOUSEHOLDS_HEADER_TO_FIELD),
+    requiredFields: [],
+    supportsEmailReview: false,
+    supportsTags: true,
+    supportsList: false,
+    reviewNote:
+      'Rows matching an address you already have (or repeated in the file) are skipped automatically, and new addresses are queued for geocoding.',
+    viewRoute: '/households',
+  },
+  tasks: {
+    id: 'tasks',
+    label: 'Tasks',
+    noun: 'tasks',
+    icon: 'task',
+    description: 'To-dos with a name, status, priority, due date and assignee.',
+    subtitle: 'Headers in the first row · rows need a task name · nothing is written until the last step',
+    mappableFields: ['name', 'details', 'status', 'priority', 'due_at', 'assigned_to'],
+    fieldLabels: {
+      name: 'Task name',
+      details: 'Details',
+      status: 'Status',
+      priority: 'Priority',
+      due_at: 'Due date',
+      assigned_to: 'Assigned to (name or email)',
+    },
+    autoMapHeader: autoMapWith(TASKS_HEADER_TO_FIELD),
+    requiredFields: ['name'],
+    supportsEmailReview: false,
+    supportsTags: false,
+    supportsList: false,
+    reviewNote: 'Rows without a task name are skipped during the import.',
+    viewRoute: '/tasks',
+  },
+};
+
+export const IMPORT_ENTITY_TYPES: ImportEntityType[] = ['people', 'companies', 'households', 'tasks'];
+
+/** Narrowing guard for the wizard's `?type=` query param. */
+export function isImportEntityType(value: string | null | undefined): value is ImportEntityType {
+  return value === 'people' || value === 'companies' || value === 'households' || value === 'tasks';
+}
+
+/** data_imports.source (backend vocabulary) → wizard entity type. */
+export const IMPORT_SOURCE_TO_ENTITY: Record<string, ImportEntityType> = {
+  persons: 'people',
+  companies: 'companies',
+  households: 'households',
+  tasks: 'tasks',
+};
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/services/list-consumers.ts
@@ -24429,152 +26177,886 @@ export function buildDeleteConfirmMessage(listName: string, value: unknown): str
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
+## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
 ```typescript
-import { Service, inject } from '@angular/core';
-import {
-  AddMarketingEmailType,
-  CreateClickersListResultType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  UpdateMarketingEmailType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
+import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { describeListDefinition } from '@experiences/lists/services/list-definition';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { Icon } from '@icons/icon';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UpdateListType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
 
-@Service()
-export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
-  protected override readonly endpointName = 'newsletters';
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
-  private readonly campaignContext = inject(CampaignContextService);
+function formatDateTime(value: unknown): string {
+  if (value == null) return '—';
+  const date = new Date(value as string | number | Date);
+  if (isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
 
-  public add(row: AddMarketingEmailType) {
-    // A newsletter is created in the context the user is working in (§15);
-    // the backend falls back to the office context when none is known.
-    const campaignId = this.campaignContext.activeCampaignId();
-    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+@Component({
+  selector: 'pc-lists-grid',
+  imports: [DataGrid, Icon, GridHeaderComponent],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-4 p-6">
+      <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
+           own in-grid title/toolbar are switched off below so this is the only header, and its
+           p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
+      <pc-grid-header title="Lists" [totalSentence]="summarySentence()">
+        <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          <span>New list</span>
+        </button>
+      </pc-grid-header>
+
+      <pc-datagrid
+        #grid
+        class="min-h-0 flex-1"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        [enableSelection]="false"
+        [showToolbar]="false"
+        [showColumnMenus]="false"
+        plusIcon="add-list"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+
+      <!-- Footer explainer (verbatim §8): narrates what each list type does. -->
+      <p class="text-xs leading-relaxed text-base-content/60">
+        Smart lists refresh themselves. Membership updates automatically as people and households change. Static lists
+        run their rules once at creation and save a fixed snapshot; membership only changes when you edit it by hand.
+        Opening a list shows it applied on the grid.
+      </p>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'list',
+        entityNounPlural: 'lists',
+        exportEntity: 'lists',
+        exportFileName: 'lists-export.csv',
+      },
+    }),
+  ],
+})
+export class ListsGridComponent implements OnInit {
+  private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+
+  /** Counts for the grain sentence — refreshed alongside the grid. */
+  private readonly counts = signal<{ total: number; smart: number; static: number }>({ total: 0, smart: 0, static: 0 });
+
+  protected readonly summarySentence = computed<string>(() => {
+    const { total, smart, static: staticCount } = this.counts();
+    const n = (v: number) => new Intl.NumberFormat().format(v);
+    if (total === 0) return 'No lists yet · create a smart list that refreshes itself or a static snapshot';
+    const listWord = total === 1 ? 'list' : 'lists';
+    return `${n(total)} ${listWord} · ${n(smart)} smart (refresh themselves), ${n(staticCount)} static (fixed snapshots)`;
+  });
+
+  constructor() {
+    effect(() => {
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        untracked(() => {
+          void this.grid()?.refresh();
+          void this.loadCounts();
+        });
+      }
+    });
   }
 
-  public addMany(_rows: AddMarketingEmailType[]) {
-    return Promise.resolve([]);
+  public ngOnInit(): void {
+    void this.loadCounts();
   }
 
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.newsletters.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    // Campaigns §15 — the newsletters grid shows the active context's sends.
-    const campaignId = this.campaignContext.activeCampaignId();
-    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
-    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
-    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
-    const count = result?.count != null ? Number(result.count) : rows.length;
-    return { rows, count };
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getById(id: string) {
-    const record = await this.api.newsletters.getById.query(id);
-    return this.normalize(record);
-  }
-
-  public getReport(id: string): Promise<NewsletterReportType> {
-    return this.api.newsletters.getReport.query(id);
-  }
-
-  public createClickersList(id: string): Promise<CreateClickersListResultType> {
-    return this.api.newsletters.createClickersList.mutate(id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateMarketingEmailType) {
-    return this.api.newsletters.update.mutate({ id, data });
-  }
-
-  public send(id: string): Promise<any> {
-    return this.api.newsletters.send.mutate(id);
-  }
-
-  public sendTest(input: {
-    subject: string;
-    html: string;
-    text?: string;
-    to: string;
-    fromName?: string;
-    fromEmail?: string;
-  }): Promise<{ to: string; delivered: number }> {
-    return this.api.newsletters.sendTest.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.newsletters.exportCsv.mutate(input);
-  }
-
-  private normalize(record: any) {
-    if (!record) return record;
-    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const asNumber = (value: unknown) => {
-      if (value === null || value === undefined || value === '') return null;
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-    const asDate = (value: unknown) => {
-      if (!value) return null;
-      if (value instanceof Date) return value;
-      const date = new Date(value as string);
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    return {
-      ...record,
-      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
-      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
-      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
-      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
-      total_recipients: asNumber(record.total_recipients) ?? 0,
-      delivered_count: asNumber(record.delivered_count) ?? 0,
-      bounce_count: asNumber(record.bounce_count) ?? 0,
-      open_rate: asNumber(record.open_rate) ?? 0,
-      click_rate: asNumber(record.click_rate) ?? 0,
-      unique_opens: asNumber(record.unique_opens) ?? 0,
-      unique_clicks: asNumber(record.unique_clicks) ?? 0,
-      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
-      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
-      reply_count: asNumber(record.reply_count) ?? 0,
-      send_date: asDate(record.send_date),
-      last_engagement_at: asDate(record.last_engagement_at),
-      created_at: asDate(record.created_at) ?? new Date(),
-      updated_at: asDate(record.updated_at) ?? new Date(),
-      top_links,
-    };
-  }
-
-  private parseJsonArray<T>(value: unknown): T[] | null {
-    if (!value) return null;
-    if (Array.isArray(value)) return value as T[];
+  private async loadCounts(): Promise<void> {
     try {
-      const parsed = JSON.parse(String(value));
-      return Array.isArray(parsed) ? (parsed as T[]) : null;
+      const result = await this.listsSvc.getAll();
+      const rows = isRecord(result) && Array.isArray(result['rows']) ? result['rows'] : [];
+      let smart = 0;
+      for (const r of rows) {
+        if (isRecord(r) && r['is_dynamic'] === true) smart += 1;
+      }
+      this.counts.set({ total: rows.length, smart, static: rows.length - smart });
     } catch {
-      return null;
+      // The grid itself surfaces load errors; the sentence just stays put.
+    }
+  }
+
+  protected col: ColDef[] = [
+    {
+      // LIST — the name is the door: opens People/Households with this list
+      // applied as a removable chip (§8). withComponentInputBinding() maps the
+      // ?listId query param onto the grid's listId input.
+      field: 'name',
+      headerName: 'List',
+      cellRenderer: (p: CellParams) => {
+        const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
+        return `<span class="cursor-pointer text-xs font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary">${escapeHtml(name)}</span>`;
+      },
+      onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'Type',
+      cellRenderer: (p: CellParams) => {
+        const isSmart = p?.data?.['is_dynamic'] === true;
+        return isSmart
+          ? `<span class="badge badge-primary badge-sm font-semibold">Smart</span>`
+          : `<span class="badge badge-neutral badge-sm font-semibold">Static</span>`;
+      },
+    },
+    {
+      field: 'object',
+      headerName: 'Of',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return typeof val === 'string' && val ? val : '—';
+      },
+    },
+    {
+      field: 'definition',
+      headerName: 'Definition',
+      valueFormatter: (p: CellParams) => describeListDefinition(p?.data?.['definition']),
+    },
+    {
+      field: 'list_size',
+      headerName: 'Members',
+      // Right-aligned, tabular figures (§1/§8). Populated for both types.
+      valueFormatter: (p: CellParams) => new Intl.NumberFormat().format(Number(p?.value ?? 0)),
+    },
+    {
+      field: 'last_used_in',
+      headerName: 'Last used in',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        return typeof val === 'string' && val.trim() ? val : 'Not used yet';
+      },
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      valueFormatter: (p: CellParams) => formatDateTime(p?.value),
+    },
+  ];
+
+  /** Open the People/Households grid with this list applied as a chip. */
+  private openListOnGrid(data: unknown): void {
+    if (!isRecord(data)) return;
+    const id = String(data['id'] ?? '');
+    if (!id) return;
+    const route = data['object'] === 'households' ? '/households' : '/people';
+    void this.router.navigate([route], { queryParams: { listId: id } });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+
+import {
+  MarketingEmailType,
+  NewsletterReportBounceType,
+  NewsletterReportType,
+} from '../../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { NewslettersService } from '../services/newsletters-service';
+import { FilesService } from '../../files/services/files.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+const STATUS_TONE: Record<string, PcStatusType> = {
+  archived: 'ghost',
+  draft: 'ghost',
+  paused: 'warning',
+  queuing: 'info',
+  scheduled: 'info',
+  sending: 'info',
+  sent: 'success',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  archived: 'Archived',
+  draft: 'Draft',
+  paused: 'Paused',
+  queuing: 'Sending',
+  scheduled: 'Scheduled',
+  sending: 'Sending',
+  sent: 'Sent',
+};
+
+const BOUNCE_KIND_LABEL: Record<NewsletterReportBounceType['kind'], string> = {
+  hard: 'Hard',
+  soft: 'Soft',
+  dropped: 'Dropped',
+};
+
+/** The 48-hour engagement chart: sixteen 3-hour buckets from the send moment. */
+const CHART_BUCKET_HOURS = 3;
+const CHART_BUCKETS = 16;
+const MS_PER_HOUR = 3_600_000;
+/** Providers throttle senders whose spam-report rate crosses ~0.1% of delivered. */
+const SPAM_RATE_DANGER_PCT = 0.1;
+/** Bounce rows shown inline; the full set goes through the CSV export. */
+const BOUNCE_ROWS_SHOWN = 6;
+
+interface NewsletterAttachment {
+  id: string;
+  filename: string;
+  size_bytes: number | null;
+}
+
+interface StatTile {
+  label: string;
+  value: string;
+  valueClass: string;
+  sub: string;
+}
+
+interface FunnelRow {
+  label: string;
+  count: string;
+  share: string;
+  width: number;
+}
+
+interface ChartBucket {
+  opens: number;
+  clicks: number;
+  opensPct: number;
+  clicksPct: number;
+  tip: string;
+}
+
+interface CompareRow {
+  label: string;
+  current: string;
+  delta: string | null;
+  deltaClass: string;
+  bars: { height: number; isCurrent: boolean }[];
+}
+
+@Component({
+  selector: 'pc-newsletter-detail',
+  imports: [DetailLayout, Icon, RouterLink, StatusBadge],
+  templateUrl: './newsletter-detail.html',
+})
+export class NewsletterDetailComponent {
+  readonly id = input.required<string>();
+
+  private readonly service = inject(NewslettersService);
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly router = inject(Router);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly email = signal<MarketingEmailType | null>(null);
+  protected readonly report = signal<NewsletterReportType | null>(null);
+  protected readonly error = signal<string | null>(null);
+  protected readonly attachments = signal<NewsletterAttachment[]>([]);
+  protected readonly isUploadingAttachment = signal(false);
+  protected readonly isCreatingList = signal(false);
+  protected readonly isDuplicating = signal(false);
+  protected readonly emailExpanded = signal(false);
+
+  /** Attachments can only be managed before a newsletter has gone out. */
+  protected readonly canManageAttachments = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
+
+  /** A "report" only exists once a send is (or was) underway; before that this page is plain details. */
+  protected readonly isUnsent = computed(() => {
+    const status = this.email()?.status;
+    return status === 'draft' || status === 'scheduled';
+  });
+
+  protected readonly eyebrow = computed(() => (this.isUnsent() ? 'Newsletter details' : 'Newsletter report'));
+
+  /** Entity noun while loading; the record's real name (or explicit "Untitled") once loaded. */
+  protected readonly pageTitle = computed(() => {
+    const email = this.email();
+    if (!email) return 'Newsletter';
+    return email.name || 'Untitled newsletter';
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Newsletters', route: '/newsletters' },
+    { label: this.pageTitle() },
+  ]);
+
+  protected readonly sentSentence = computed(() => {
+    const email = this.email();
+    if (!email) return '';
+    const from = this.report()?.from;
+    const fromPart = from?.email ? ` · from ${from.name ? `${from.name} ` : ''}<${from.email}>` : '';
+    if (email.status === 'sent' && email.send_date) return `Sent ${this.formatDateTime(email.send_date)}${fromPart}`;
+    if (email.status === 'scheduled' && email.send_date) {
+      return `Scheduled for ${this.formatDateTime(email.send_date)}${fromPart}`;
+    }
+    return `Not sent yet${fromPart}`;
+  });
+
+  protected readonly tiles = computed<StatTile[]>(() => {
+    const email = this.email();
+    if (!email) return [];
+    const report = this.report();
+    const sent = email.total_recipients;
+    const delivered = email.delivered_count;
+
+    // Averages across the earlier sends in this campaign (excludes this one).
+    const history = (report?.previous_sends ?? []).filter((s) => s.id !== email.id);
+    const avg = (values: number[]) => (values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null);
+    const avgOpen = avg(history.map((s) => s.open_rate));
+    const avgClick = avg(history.map((s) => s.click_rate));
+
+    const bounceTotal = report ? report.bounces.total : email.bounce_count;
+    const bounceSubParts: string[] = [];
+    if (report && report.bounces.total > 0) {
+      bounceSubParts.push(`${report.bounces.hard} hard · ${report.bounces.soft} soft`);
+      if (report.bounces.dropped > 0) bounceSubParts.push(`${report.bounces.dropped} dropped`);
+    }
+
+    return [
+      {
+        label: 'Delivered',
+        value: this.formatNumber(delivered),
+        valueClass: 'text-base-content',
+        sub: sent > 0 ? `${this.pct(delivered, sent)} of ${this.formatNumber(sent)} sent` : 'No recipients yet',
+      },
+      {
+        label: 'Open rate',
+        value: this.formatPercent(email.open_rate),
+        valueClass: email.open_rate > 0 ? 'text-primary' : 'text-base-content',
+        sub:
+          `${this.formatNumber(email.unique_opens)} unique opens` +
+          (avgOpen != null ? ` · avg ${this.formatPercent(avgOpen)}` : ''),
+      },
+      {
+        label: 'Click rate',
+        value: this.formatPercent(email.click_rate),
+        valueClass: email.click_rate > 0 ? 'text-secondary' : 'text-base-content',
+        sub:
+          `${this.formatNumber(report?.unique_clickers ?? email.unique_clicks)} unique clickers` +
+          (avgClick != null ? ` · avg ${this.formatPercent(avgClick)}` : ''),
+      },
+      {
+        label: 'Replies',
+        value: this.formatNumber(email.reply_count),
+        valueClass: 'text-base-content',
+        sub: email.reply_count > 0 ? 'Landed in the Inbox' : 'None yet',
+      },
+      {
+        label: 'Bounces',
+        value: this.formatNumber(bounceTotal),
+        valueClass: bounceTotal > 0 ? 'text-warning' : 'text-base-content',
+        sub: bounceSubParts.length > 0 ? bounceSubParts.join(' · ') : 'Every address accepted mail',
+      },
+    ];
+  });
+
+  protected readonly funnel = computed<FunnelRow[]>(() => {
+    const email = this.email();
+    if (!email) return [];
+    const sent = email.total_recipients;
+    const delivered = email.delivered_count;
+    const opened = email.unique_opens;
+    const clicked = this.report()?.unique_clickers ?? email.unique_clicks;
+    if (sent === 0) return [];
+    return [
+      { label: 'Sent', count: this.formatNumber(sent), share: '100%', width: 100 },
+      {
+        label: 'Delivered',
+        count: this.formatNumber(delivered),
+        share: `${this.pct(delivered, sent)} of sent`,
+        width: (delivered / sent) * 100,
+      },
+      {
+        label: 'Opened',
+        count: this.formatNumber(opened),
+        share: delivered > 0 ? `${this.pct(opened, delivered)} of delivered` : '—',
+        width: (opened / sent) * 100,
+      },
+      {
+        label: 'Clicked',
+        count: this.formatNumber(clicked),
+        share: opened > 0 ? `${this.pct(clicked, opened)} of opens` : '—',
+        width: (clicked / sent) * 100,
+      },
+    ];
+  });
+
+  protected readonly bounceRowsShown = computed<NewsletterReportBounceType[]>(
+    () => this.report()?.bounces.rows.slice(0, BOUNCE_ROWS_SHOWN) ?? [],
+  );
+
+  protected readonly engagementChart = computed<ChartBucket[] | null>(() => {
+    const report = this.report();
+    if (!report || report.timeline.length === 0) return null;
+    const email = this.email();
+    const firstBucket = report.timeline[0];
+    if (!firstBucket) return null;
+    const start = email?.send_date ? new Date(email.send_date).getTime() : this.bucketTime(firstBucket.time);
+
+    const buckets = Array.from({ length: CHART_BUCKETS }, () => ({ opens: 0, clicks: 0 }));
+    for (const point of report.timeline) {
+      const index = Math.floor((this.bucketTime(point.time) - start) / (CHART_BUCKET_HOURS * MS_PER_HOUR));
+      if (index < 0 || index >= CHART_BUCKETS) continue; // engagement past 48h isn't in this chart
+      const bucket = buckets[index];
+      if (!bucket) continue;
+      bucket.opens += point.opens;
+      bucket.clicks += point.clicks;
+    }
+    const max = Math.max(1, ...buckets.map((b) => Math.max(b.opens, b.clicks)));
+    return buckets.map((b, i) => ({
+      opens: b.opens,
+      clicks: b.clicks,
+      opensPct: (b.opens / max) * 100,
+      clicksPct: (b.clicks / max) * 100,
+      tip: `${i * CHART_BUCKET_HOURS}–${(i + 1) * CHART_BUCKET_HOURS}h: ${b.opens} opens · ${b.clicks} clicks`,
+    }));
+  });
+
+  protected readonly opensIn24hSentence = computed(() => {
+    const pctValue = this.report()?.opens_in_24h_pct;
+    if (pctValue == null) return null;
+    return `${Math.round(pctValue)}% of opens came within 24 hours of send.`;
+  });
+
+  protected readonly topLinks = computed(() => {
+    const report = this.report();
+    if (!report || report.top_links.length === 0) return [];
+    const max = Math.max(1, ...report.top_links.map((l) => l.clicks));
+    return report.top_links.map((l) => ({
+      ...l,
+      display: l.url.replace(/^https?:\/\//, ''),
+      width: (l.clicks / max) * 100,
+    }));
+  });
+
+  protected readonly linksSentence = computed(() => {
+    const report = this.report();
+    if (!report) return '';
+    return (
+      `${this.formatNumber(report.total_clicks)} clicks from ${this.formatNumber(report.unique_clickers)} ` +
+      `people · ${report.tracked_links} tracked link${report.tracked_links === 1 ? '' : 's'}`
+    );
+  });
+
+  protected readonly comparison = computed<CompareRow[]>(() => {
+    const report = this.report();
+    const sends = report?.previous_sends ?? [];
+    if (sends.length < 2) return [];
+    const previous = sends[sends.length - 2];
+    const metrics: { label: string; values: number[]; higherIsBetter: boolean }[] = [
+      { label: 'Open rate', values: sends.map((s) => s.open_rate), higherIsBetter: true },
+      { label: 'Click rate', values: sends.map((s) => s.click_rate), higherIsBetter: true },
+      { label: 'Unsubscribe rate', values: sends.map((s) => s.unsubscribe_rate), higherIsBetter: false },
+      { label: 'Bounce rate', values: sends.map((s) => s.bounce_rate), higherIsBetter: false },
+    ];
+    return metrics.map((m) => {
+      const current = m.values[m.values.length - 1] ?? 0;
+      const prior = m.values[m.values.length - 2] ?? 0;
+      const delta = current - prior;
+      const good = m.higherIsBetter ? delta > 0 : delta < 0;
+      const max = Math.max(0.1, ...m.values);
+      return {
+        label: m.label,
+        current: this.formatPercent(current),
+        delta: previous ? `${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} pts vs "${previous.name}"` : null,
+        deltaClass: Math.abs(delta) < 0.05 ? 'text-base-content/50' : good ? 'text-success' : 'text-error',
+        bars: m.values.map((v, i) => ({
+          height: Math.max(8, (v / max) * 100),
+          isCurrent: i === m.values.length - 1,
+        })),
+      };
+    });
+  });
+
+  protected readonly previousSendCount = computed(() => (this.report()?.previous_sends.length ?? 1) - 1);
+
+  protected readonly mostEngaged = computed(() => {
+    const report = this.report();
+    if (!report) return [];
+    return report.most_engaged.map((e) => {
+      const displayName = e.person?.name ?? e.email;
+      const parts: string[] = [];
+      if (e.opens > 0) parts.push(`Opened ${e.opens}×`);
+      if (e.links > 0) parts.push(`clicked ${e.links} link${e.links === 1 ? '' : 's'}`);
+      else if (e.clicks > 0) parts.push(`clicked ${e.clicks}×`);
+      return {
+        ...e,
+        displayName,
+        initials: this.initials(displayName),
+        summary: parts.join(' · '),
+      };
+    });
+  });
+
+  protected readonly audienceSinceSend = computed(() => {
+    const email = this.email();
+    const report = this.report();
+    if (!email || !report) return null;
+    const parts: string[] = [];
+    if (report.unsubscribes.total > 0) parts.push(`${report.unsubscribes.total} unsubscribed`);
+    if (report.bounces.total > 0) parts.push(`${report.bounces.total} joined the bounce list`);
+    if (report.spam_reports.total > 0) {
+      parts.push(`${report.spam_reports.total} spam report${report.spam_reports.total === 1 ? '' : 's'}`);
+    }
+    return parts.length > 0 ? `Since the send: ${parts.join(' · ')}.` : null;
+  });
+
+  protected readonly unsubscribeReasons = computed(() => {
+    const report = this.report();
+    if (!report || report.unsubscribes.total === 0) return [];
+    return report.unsubscribes.reasons.map((r) => ({
+      label: r.reason ?? 'No reason given',
+      count: r.count,
+      width: (r.count / report.unsubscribes.total) * 100,
+    }));
+  });
+
+  protected readonly unsubscribeRate = computed(() => {
+    const email = this.email();
+    const total = this.report()?.unsubscribes.total ?? 0;
+    if (!email || email.delivered_count === 0) return null;
+    return this.pct(total, email.delivered_count);
+  });
+
+  protected readonly spamRate = computed(() => {
+    const email = this.email();
+    const total = this.report()?.spam_reports.total ?? 0;
+    if (!email || email.delivered_count === 0) return null;
+    return (total / email.delivered_count) * 100;
+  });
+
+  protected readonly spamRateIsSafe = computed(() => {
+    const rate = this.spamRate();
+    return rate != null && rate < SPAM_RATE_DANGER_PCT;
+  });
+
+  protected readonly spamRows = computed(() => {
+    const report = this.report();
+    const email = this.email();
+    if (!report) return [];
+    return report.spam_reports.rows.map((r) => {
+      let timing = '';
+      if (r.occurred_at && email?.send_date) {
+        const hours = Math.round(
+          (new Date(r.occurred_at).getTime() - new Date(email.send_date).getTime()) / MS_PER_HOUR,
+        );
+        if (hours >= 0) timing = `${hours}h after send`;
+      }
+      return {
+        email: r.email || 'Address withheld by the provider',
+        timing: timing || (r.occurred_at ? this.formatDateTime(r.occurred_at) : ''),
+      };
+    });
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.load(currentId));
+    });
+  }
+
+  protected statusLabel(status: string | undefined): string {
+    if (!status) return '—';
+    return STATUS_LABEL[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
+  }
+
+  protected statusTone(status: string | undefined): PcStatusType {
+    return (status && STATUS_TONE[status]) || 'ghost';
+  }
+
+  protected bounceKindLabel(kind: NewsletterReportBounceType['kind']): string {
+    return BOUNCE_KIND_LABEL[kind];
+  }
+
+  protected bounceKindTone(kind: NewsletterReportBounceType['kind']): PcStatusType {
+    return kind === 'hard' ? 'warning' : 'ghost';
+  }
+
+  protected personRoute(person: { id: string; public_id: string | null }): string[] {
+    return ['/people', person.public_id ?? person.id];
+  }
+
+  protected async createClickersList(): Promise<void> {
+    const report = this.report();
+    if (!report || report.unique_clickers === 0 || this.isCreatingList()) return;
+    this.isCreatingList.set(true);
+    try {
+      const result = await this.service.createClickersList(this.id());
+      this.alertSvc.showSuccess(`List "${result.name}" created with ${this.formatNumber(result.members)} people`);
+      await this.router.navigate(['/lists', result.id]);
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to create the list'));
+    } finally {
+      this.isCreatingList.set(false);
+    }
+  }
+
+  protected async duplicateNewsletter(): Promise<void> {
+    const email = this.email();
+    if (!email || this.isDuplicating()) return;
+    this.isDuplicating.set(true);
+    try {
+      await this.service.add({
+        name: `${email.name} (copy)`,
+        status: 'draft',
+        subject: email.subject ?? null,
+        preview_text: email.preview_text ?? null,
+        summary: email.summary ?? null,
+        audience_description: email.audience_description ?? null,
+        target_lists: email.target_lists ?? null,
+        segments: email.segments ?? null,
+        html_content: email.html_content ?? null,
+        plain_text_content: email.plain_text_content ?? null,
+      });
+      this.alertSvc.showSuccess(`Draft "${email.name} (copy)" created`);
+      await this.router.navigate(['/newsletters']);
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to duplicate the newsletter'));
+    } finally {
+      this.isDuplicating.set(false);
+    }
+  }
+
+  protected exportReportCsv(): void {
+    const email = this.email();
+    const report = this.report();
+    if (!email) return;
+    const lines: string[][] = [
+      ['Metric', 'Value'],
+      ['Newsletter', email.name],
+      ['Status', this.statusLabel(email.status)],
+      ['Sent', email.send_date ? new Date(email.send_date).toISOString() : ''],
+      ['Recipients', String(email.total_recipients)],
+      ['Delivered', String(email.delivered_count)],
+      ['Open rate', this.formatPercent(email.open_rate)],
+      ['Unique opens', String(email.unique_opens)],
+      ['Click rate', this.formatPercent(email.click_rate)],
+      ['Unique clickers', String(report?.unique_clickers ?? email.unique_clicks)],
+      ['Replies', String(email.reply_count)],
+      ['Bounces', String(report?.bounces.total ?? email.bounce_count)],
+      ['Unsubscribes', String(report?.unsubscribes.total ?? email.unsubscribe_count)],
+      ['Spam reports', String(report?.spam_reports.total ?? email.spam_complaint_count)],
+    ];
+    if (report && report.top_links.length > 0) {
+      lines.push([], ['Link', 'Clicks', 'People']);
+      for (const link of report.top_links) {
+        lines.push([link.url, String(link.clicks), link.people != null ? String(link.people) : '']);
+      }
+    }
+    this.downloadCsv(this.csvFileName('report'), lines);
+  }
+
+  protected exportBouncesCsv(): void {
+    const report = this.report();
+    if (!report || report.bounces.rows.length === 0) return;
+    const lines: string[][] = [['Email', 'Kind', 'Reason', 'Occurred at', 'CRM match']];
+    for (const bounce of report.bounces.rows) {
+      lines.push([
+        bounce.email,
+        this.bounceKindLabel(bounce.kind),
+        bounce.reason ?? '',
+        bounce.occurred_at ? new Date(bounce.occurred_at).toISOString() : '',
+        bounce.person?.name ?? '',
+      ]);
+    }
+    this.downloadCsv(this.csvFileName('bounces'), lines);
+  }
+
+  protected async onAttachmentSelected(event: Event): Promise<void> {
+    const inputEl = event.target as HTMLInputElement;
+    const file = inputEl?.files?.[0];
+    const newsletterId = this.id();
+    if (!file || !newsletterId) return;
+
+    this.isUploadingAttachment.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
+      this.alertSvc.showSuccess(`"${file.name}" attached`);
+      await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to attach file');
+    } finally {
+      this.isUploadingAttachment.set(false);
+      inputEl.value = '';
+    }
+  }
+
+  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: `Remove "${attachment.filename}"?`,
+      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(attachment.id);
+      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
+      const newsletterId = this.id();
+      if (newsletterId) await this.loadAttachments(newsletterId);
+    } catch {
+      this.alertSvc.showError('Failed to remove attachment');
+    }
+  }
+
+  protected formatBytes(value: number | null | undefined): string {
+    if (!value) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let size = value;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  protected formatNumber(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return new Intl.NumberFormat().format(value);
+  }
+
+  protected formatPercent(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return `${value.toFixed(1)}%`;
+  }
+
+  protected formatSpamRate(value: number | null): string {
+    if (value == null) return '—';
+    return `${value.toFixed(2)}%`;
+  }
+
+  private pct(part: number, whole: number): string {
+    return whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '—';
+  }
+
+  private formatDateTime(value: Date | string): string {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+
+  /** Timeline bucket keys are 'YYYY-MM-DD HH24:00' strings; parse as local time. */
+  private bucketTime(bucket: string): number {
+    return new Date(bucket.replace(' ', 'T')).getTime();
+  }
+
+  private initials(name: string): string {
+    const words = name
+      .replace(/[^\p{L}\p{N}@ ]/gu, '')
+      .split(/\s+/)
+      .filter(Boolean);
+    if (words.length === 0) return '?';
+    const first = words[0]?.charAt(0) ?? '';
+    const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
+    return (first + last).toUpperCase() || '?';
+  }
+
+  private csvFileName(kind: string): string {
+    const name = (this.email()?.name ?? 'newsletter')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    return `${name || 'newsletter'}-${kind}.csv`;
+  }
+
+  private downloadCsv(filename: string, rows: string[][]): void {
+    const escapeCell = (cell: string) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
+    const csv = rows.map((row) => row.map(escapeCell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private async load(id: string): Promise<void> {
+    if (!id) {
+      this.error.set('Newsletter not found.');
+      return;
+    }
+    const end = this.loading.begin();
+    try {
+      const record = (await this.service.getById(id)) as MarketingEmailType | null;
+      if (!record) {
+        this.error.set('Newsletter not found.');
+        return;
+      }
+      this.email.set(record);
+
+      const reportData = await this.service.getReport(id);
+      this.report.set(reportData);
+
+      await this.loadAttachments(id);
+    } catch (err: unknown) {
+      console.error(err);
+      this.error.set('Unable to load newsletter.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadAttachments(id: string): Promise<void> {
+    try {
+      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
+      this.attachments.set(
+        (rows as Record<string, unknown>[]).map((r) => ({
+          id: String(r['id']),
+          filename: String(r['filename']),
+          size_bytes: r['size_bytes'] as number | null,
+        })),
+      );
+    } catch {
+      // Non-fatal — attachments are supplementary to the newsletter report.
     }
   }
 }
@@ -26831,95 +29313,6 @@ export class TagAdminActions {
 <pc-add-tag-dialog (saved)="onTagSaved()" />
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/services/tasks-service.ts
-```typescript
-import { Service } from '@angular/core';
-import {
-  AddTaskType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTaskType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
-
-@Service()
-export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
-  protected override readonly endpointName = 'tasks';
-
-  public add(row: AddTaskType) {
-    return this.api.tasks.add.mutate(row);
-  }
-
-  public addMany(_rows: AddTaskType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.tasks.count.query();
-  }
-
-  /** Live count of open tasks past the working-hours SLA target — sidebar badge + count sentences (spec §4). */
-  public countSlaBreaches(): Promise<number> {
-    return this.api.tasks.countSlaBreaches.query();
-  }
-
-  /** The count-sentence numbers in one call: open total, unassigned, assigned-to-me, SLA breaches. */
-  public getSummaryCounts(): Promise<{
-    assignedToMe: number;
-    openTotal: number;
-    slaBreaches: number;
-    unassigned: number;
-  }> {
-    return this.api.tasks.getSummaryCounts.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.tasks.getAll.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: { [x: string]: any }[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(options?: getAllOptionsType) {
-    return this.api.tasks.getArchived.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: { [x: string]: any }[];
-      count: number;
-    }>;
-  }
-
-  public getById(id: string) {
-    return this.api.tasks.getById.query(id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateTaskType) {
-    return this.api.tasks.update.mutate({ id, data });
-  }
-
-  public import(input: RouterInputs['tasks']['import']): Promise<RouterOutputs['tasks']['import']> {
-    return this.api.tasks.import.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.tasks.exportCsv.mutate(input);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-add.ts
 ```typescript
 import { Component, ElementRef, OnInit, inject, signal, viewChild } from '@angular/core';
@@ -27248,330 +29641,6 @@ export class TaskAddComponent implements OnInit {
     }
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
-
-import { AuthService } from '../../../auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../services/tasks-service';
-import { computeTaskSla } from '../services/task-sla';
-
-type ListTab = 'all' | 'mine' | 'unassigned' | 'done';
-type DueBucket = 'overdue' | 'today' | 'upcoming' | 'none';
-
-interface ListTask {
-  id: string;
-  name: string;
-  status: string;
-  priority: string | null;
-  assigned_to: string | null;
-  due_at: string | null;
-  created_at: string | null;
-  details: string | null;
-}
-
-const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
-  overdue: { label: 'Overdue', tone: 'error' },
-  today: { label: 'Due Today', tone: 'warning' },
-  upcoming: { label: 'Coming Up', tone: 'info' },
-  none: { label: 'No due date', tone: 'neutral' },
-};
-const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
-const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MS_PER_HOUR = 3_600_000;
-const MS_PER_DAY = 86_400_000;
-
-@Component({
-  selector: 'pc-tasks-list',
-  imports: [Icon, TabBar],
-  templateUrl: './tasks-list.html',
-})
-export class TasksList implements OnInit {
-  private readonly router = inject(Router);
-  private readonly svc = inject(TasksService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly _loading = createLoadingGate();
-
-  protected readonly loading = this._loading.visible;
-  protected readonly loaded = this._loading.loaded;
-  protected readonly tab = signal<ListTab>('all');
-  protected readonly tasks = signal<ListTask[]>([]);
-  protected readonly usersById = signal<Map<string, string>>(new Map());
-  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
-  protected readonly counts = signal<{
-    assignedToMe: number;
-    openTotal: number;
-    slaBreaches: number;
-    unassigned: number;
-  } | null>(null);
-
-  private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
-
-  /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
-  protected readonly countSentence = computed(() => {
-    const c = this.counts();
-    if (!c) return '';
-    return `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ${c.assignedToMe} assigned to you`;
-  });
-
-  protected readonly tabCounts = computed(() => {
-    const all = this.tasks();
-    const me = this.myId();
-    return {
-      all: all.length,
-      mine: all.filter((t) => t.assigned_to === me).length,
-      unassigned: all.filter((t) => t.assigned_to == null && t.status !== 'done').length,
-      done: all.filter((t) => t.status === 'done').length,
-    };
-  });
-
-  /** The standard pill tab bar with counts (§1 "numbers before clicks"). */
-  protected readonly tabs = computed((): PcTabOption[] => {
-    const c = this.tabCounts();
-    return [
-      { id: 'all', label: 'All', badge: c.all },
-      { id: 'mine', label: 'Mine', badge: c.mine },
-      { id: 'unassigned', label: 'Unassigned', badge: c.unassigned },
-      { id: 'done', label: 'Done', badge: c.done },
-    ];
-  });
-
-  protected readonly filtered = computed(() => {
-    const all = this.tasks();
-    const me = this.myId();
-    const tab = this.tab();
-    switch (tab) {
-      case 'all':
-        return all;
-      case 'mine':
-        return all.filter((t) => t.assigned_to === me);
-      case 'unassigned':
-        return all.filter((t) => t.assigned_to == null && t.status !== 'done');
-      case 'done':
-        return all.filter((t) => t.status === 'done');
-      default: {
-        const _exhaustive: never = tab;
-        return _exhaustive;
-      }
-    }
-  });
-
-  protected readonly groups = computed(() => {
-    const buckets = new Map<DueBucket, ListTask[]>(DUE_BUCKET_ORDER.map((b) => [b, []]));
-    for (const t of this.filtered()) {
-      buckets.get(this.bucketFor(t))?.push(t);
-    }
-    return DUE_BUCKET_ORDER.map((key) => ({ key, meta: DUE_BUCKET_META[key], rows: buckets.get(key) ?? [] })).filter(
-      (g) => g.rows.length > 0,
-    );
-  });
-
-  public ngOnInit(): void {
-    void this.settingsSvc.load();
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [res, users, counts] = await Promise.all([
-        this.svc.getAll({
-          limit: 1000,
-          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details'],
-        }),
-        this.userService.getUsers(),
-        this.svc.getSummaryCounts(),
-      ]);
-      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
-      this.counts.set(counts);
-
-      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
-      this.tasks.set(rows.map((r) => this.toListTask(r)));
-
-      const flashId = (window.history.state as { flashId?: unknown } | undefined)?.flashId;
-      if (typeof flashId === 'string' && flashId) this.flashCard(flashId);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not load tasks. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  private toListTask(r: Record<string, unknown>): ListTask {
-    return {
-      id: String(r['id']),
-      name: String(r['name'] || '(no name)'),
-      status: String(r['status'] ?? 'todo'),
-      priority: (r['priority'] as string | null) ?? null,
-      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
-      due_at: (r['due_at'] as string | null) ?? null,
-      created_at: (r['created_at'] as string | null) ?? null,
-      details: (r['details'] as string | null) ?? null,
-    };
-  }
-
-  private bucketFor(t: ListTask): DueBucket {
-    if (!t.due_at) return 'none';
-    const due = this.dateOnly(t.due_at);
-    const today = this.dateOnly(new Date().toISOString());
-    if (due < today) return 'overdue';
-    if (due === today) return 'today';
-    return 'upcoming';
-  }
-
-  private dateOnly(v: string): string {
-    return v.length > 10 ? v.slice(0, 10) : v;
-  }
-
-  protected setTab(tab: string): void {
-    if (tab !== 'all' && tab !== 'mine' && tab !== 'unassigned' && tab !== 'done') return;
-    this.tab.set(tab);
-  }
-
-  protected isFlashed(id: string): boolean {
-    return this.flashedIds().has(id);
-  }
-
-  protected assigneeName(id: string | null): string | null {
-    return id ? (this.usersById().get(id) ?? null) : null;
-  }
-
-  protected assigneeInitial(id: string | null): string {
-    const name = this.assigneeName(id);
-    return name ? name.slice(0, 1).toUpperCase() : '?';
-  }
-
-  protected waitingReason(t: ListTask): string | null {
-    if (t.status !== 'waiting' || !t.details) return null;
-    const oneLine = t.details.trim().split('\n')[0] ?? '';
-    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
-  }
-
-  /** Short scan-friendly badge for the list row; the full honest breakdown still lives on the detail page (task-view). */
-  protected slaBadge(t: ListTask): { text: string; tone: 'error' | 'warning' } | null {
-    const pill = computeTaskSla({
-      status: t.status,
-      createdAt: t.created_at ? new Date(t.created_at) : null,
-      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
-      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
-      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
-      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
-    });
-    if (!pill) return null;
-    if (pill.tone === 'error') return { text: 'SLA breached', tone: 'error' };
-    if (pill.tone === 'warning') return { text: 'Due soon', tone: 'warning' };
-    return null;
-  }
-
-  /** "Due 4h ago" / "Due yesterday" / "Due today, 5:00" / "Due tomorrow" / "Due Thursday" (spec §4). */
-  protected dateLabel(v?: string | null): string {
-    if (!v) return '';
-    const due = new Date(v);
-    const now = new Date();
-    const dueDay = this.dateOnly(v);
-    const today = this.dateOnly(now.toISOString());
-
-    if (dueDay < today) {
-      const hoursAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_HOUR);
-      if (hoursAgo < 24) return `Due ${hoursAgo}h ago`;
-      if (hoursAgo < 48) return 'Due yesterday';
-      const daysAgo = Math.round((now.getTime() - due.getTime()) / MS_PER_DAY);
-      return `Due ${daysAgo}d ago`;
-    }
-
-    if (dueDay === today) {
-      const time = due.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      return `Due today, ${time}`;
-    }
-
-    const daysAhead = Math.round((new Date(dueDay).getTime() - new Date(today).getTime()) / MS_PER_DAY);
-    if (daysAhead === 1) return 'Due tomorrow';
-    if (daysAhead < 7) return `Due ${WEEKDAY_NAMES[due.getDay()]}`;
-    return `Due ${due.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
-  }
-
-  protected priorityBadgeClass(p?: string | null): string {
-    const v = (p || '').toLowerCase();
-    return v === 'urgent'
-      ? 'badge-error'
-      : v === 'high'
-        ? 'badge-warning'
-        : v === 'medium'
-          ? 'badge-info'
-          : 'badge-neutral';
-  }
-
-  /** Check-circle toggle: complete (-> done) or reopen (-> todo) a task in place. */
-  protected async toggleDone(t: ListTask): Promise<void> {
-    const next = t.status === 'done' ? 'todo' : 'done';
-    this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: next } : x)));
-    try {
-      await this.svc.update(t.id, { status: next } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      this.flashCard(t.id);
-    } catch (err) {
-      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: t.status } : x)));
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
-    }
-  }
-
-  protected async takeTask(t: ListTask): Promise<void> {
-    const me = this.auth.getUser();
-    if (!me?.id) return;
-    try {
-      await this.svc.update(t.id, { assigned_to: me.id } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, assigned_to: me.id } : x)));
-      this.flashCard(t.id);
-      this.alerts.showSuccess(`You're now assigned to "${t.name}"`);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
-    }
-  }
-
-  private flashCard(id: string): void {
-    this.flashedIds.update((s) => new Set([...s, id]));
-    setTimeout(() => {
-      this.flashedIds.update((s) => {
-        const next = new Set(s);
-        next.delete(id);
-        return next;
-      });
-    }, 1200);
-  }
-
-  protected openTask(t: ListTask): void {
-    void this.router.navigate(['tasks', t.id]);
-  }
-
-  protected openBoard(): void {
-    void this.router.navigate(['/tasks/board']);
-  }
-
-  protected newTask(): void {
-    void this.router.navigate(['/tasks/add']);
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-page import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'tasks' } });
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
@@ -29707,85 +31776,6 @@ export class GridContextService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
-```css
-/* Fill whatever height the page grants so the body scrolls inside the shell and the
-   pagination footer stays pinned. In auto-height parents `height: 100%` resolves to
-   auto, so embedded grids (list-form preview box, list-view tabs) keep growing
-   naturally with the page. */
-:host {
-  display: block;
-  height: 100%;
-  min-height: 0;
-}
-
-/* lock layout + neutralize cell padding/borders */
-:host table {
-  table-layout: fixed;
-}
-
-/* The body scrolls inside the shell, so headers must pin or they scroll out of view.
-   Needs its own background (the tr's doesn't travel with a sticky cell) and to sit
-   above the pinned body cells (z-10/z-20). */
-:host thead th {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  background-color: var(--color-base-100);
-}
-
-:host table :where(th, td) {
-  box-sizing: border-box;
-  vertical-align: middle;
-  /* Shared table density token — single source of truth in styles.css (pc-table contract). */
-  padding-block: var(--pc-table-cell-py, 0.375rem);
-}
-
-:host table tbody td {
-  vertical-align: top;
-  white-space: normal !important;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-:host table tbody td > * {
-  min-width: 0;
-}
-
-/* keep scrollbars from shifting header/body widths */
-.flex-1.overflow-auto {
-  scrollbar-gutter: stable both-edges;
-}
-
-/* ── Row saved flash ─────────────────────────────────────────────── */
-@keyframes row-saved-flash {
-  0% {
-    background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-  }
-  60% {
-    background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-:host td.cell-flash {
-  animation: row-saved-flash 1.2s ease-out forwards;
-}
-
-/* ── Pencil cursor for inline-editable cells ──────────────────────── */
-/* SVG: HeroIcons solid pencil. White stroke ensures visibility on dark backgrounds.
-   Hotspot (1 13) places the interaction point at the pencil tip (bottom-left). */
-:host .cursor-pencil,
-:host .cursor-pencil * {
-  cursor:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='16' height='16'%3E%3Cpath d='M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z' fill='%231e293b' stroke='white' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E")
-      1 13,
-    default !important;
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
 ```typescript
 import type { Provider } from '@angular/core';
@@ -30394,6 +32384,85 @@ export const environment = {
   // there and copied links use window.location.origin instead. See shared/public-pages.companionUrl.
   companionOrigin: 'http://localhost:4300',
 };
+```
+
+## File: apps/website/functions/api/geo-rates.ts
+```typescript
+/**
+ * Cloudflare Pages Function — GET /api/geo-rates
+ *
+ * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
+ * Does both region detection and rate lookup at the edge so the browser makes a single
+ * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
+ * browser:
+ *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
+ *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
+ *
+ * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
+ * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
+ * mapping and formatting live on the client, so the edge stays a thin data source.
+ *
+ * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
+ * `_redirects` fallback are untouched.
+ */
+
+/** Display currencies we return rates for. USD is the billing currency (always 1). */
+const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
+type RateCurrency = (typeof RATE_CURRENCIES)[number];
+
+/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
+const FX_URL = 'https://open.er-api.com/v6/latest/USD';
+
+/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
+const CACHE_SECONDS = 43_200;
+
+/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
+interface CfRequest extends Request {
+  readonly cf?: { readonly country?: string };
+}
+interface PagesContext {
+  readonly request: CfRequest;
+}
+
+type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
+
+/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
+function toRate(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
+async function fetchRates(): Promise<Rates> {
+  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
+  try {
+    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
+    if (!res.ok) return rates;
+    const body: unknown = await res.json();
+    const table =
+      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+    if (typeof table !== 'object' || table === null) return rates;
+    const record = table as Record<string, unknown>;
+    for (const code of RATE_CURRENCIES) {
+      const rate = toRate(record[code]);
+      if (rate !== undefined) rates[code] = rate;
+    }
+  } catch {
+    // Network/parse failure: fall through with USD-only. The client stays in USD.
+  }
+  return rates;
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const country = context.request.cf?.country ?? null;
+  const rates = await fetchRates();
+  const payload = JSON.stringify({ country, rates });
+  return new Response(payload, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
+    },
+  });
+}
 ```
 
 ## File: apps/website/src/app/audience/audience-content.ts
@@ -31812,115 +33881,292 @@ export class Constellation {
 }
 ```
 
-## File: apps/website/src/app/ui/site-header.ts
+## File: apps/website/src/app/ui/currency-switcher.ts
 ```typescript
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, input } from '@angular/core';
+import type { CurrencyCode } from '@common';
 
-import { AuthHint } from './auth-hint';
-import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
-import { SiteLogo } from './site-logo';
-
-type HeaderVariant = 'over-hero' | 'solid';
+import { CurrencyService } from './currency.service';
 
 /**
- * Site header. Two looks from one component:
- *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
- *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
- * Below `md` the nav collapses behind a hamburger toggle.
+ * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
+ * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
+ * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
+ * {@link SiteHeader}'s variants.
  */
 @Component({
-  selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo],
+  selector: 'pc-currency-switcher',
   template: `
-    <header [class]="barClass()">
-      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
-          <pc-site-logo [onDark]="onDark()" />
-        </a>
-
-        <!-- Desktop nav -->
-        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
-          }
-          @if (signedIn()) {
-            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-          } @else {
-            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
-            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-          }
-        </nav>
-
-        <!-- Mobile toggle -->
-        <button
-          type="button"
-          class="btn btn-square btn-ghost btn-sm lg:hidden"
-          [class.text-white]="onDark()"
-          [attr.aria-expanded]="open()"
-          aria-label="Toggle menu"
-          (click)="open.set(!open())"
+    <div class="dropdown dropdown-end">
+      <button
+        type="button"
+        tabindex="0"
+        [class]="triggerClass()"
+        [attr.aria-label]="'Change currency, currently ' + active().label"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
         >
-          @if (open()) {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-            </svg>
-          } @else {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
-            </svg>
-          }
-        </button>
-      </div>
-
-      <!-- Mobile menu -->
-      @if (open()) {
-        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
-              link.label
-            }}</a>
-          }
-          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-            @if (signedIn()) {
-              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-            } @else {
-              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
-              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-            }
-          </div>
-        </nav>
-      }
-    </header>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
+        </svg>
+        <span class="tabular-nums">{{ active().code }}</span>
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
+      >
+        @for (opt of options; track opt.code) {
+          <li>
+            <button
+              type="button"
+              class="flex items-center justify-between gap-3 text-[13.5px]"
+              [class.text-primary]="opt.code === active().code"
+              [class.font-semibold]="opt.code === active().code"
+              (click)="select(opt.code, $event)"
+            >
+              <span>{{ opt.label }}</span>
+              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
   `,
 })
-export class SiteHeader {
-  public readonly variant = input<HeaderVariant>('solid');
+export class CurrencySwitcher {
+  public readonly onDark = input<boolean>(false);
 
-  private readonly auth = inject(AuthHint);
+  private readonly currency = inject(CurrencyService);
 
-  protected readonly nav = PRIMARY_NAV;
-  protected readonly loginUrl = LOGIN_URL;
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly dashboardUrl = DASHBOARD_URL;
-  protected readonly signedIn = this.auth.signedIn;
-  protected readonly open = signal(false);
+  protected readonly options = this.currency.options;
+  protected readonly active = this.currency.active;
 
-  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
-
-  protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'bg-navy' : 'border-b border-line bg-base-100',
-  );
-
-  protected readonly linkClass = computed<string>(() =>
-    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
-  );
-
-  protected readonly loginBtnClass = computed<string>(() =>
+  protected readonly triggerClass = computed<string>(() =>
     this.onDark()
-      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
-      : 'btn btn-outline btn-sm rounded-field',
+      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
+      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
   );
+
+  protected select(code: CurrencyCode, event: Event): void {
+    this.currency.setCurrency(code);
+    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
+    (event.currentTarget as HTMLElement | null)?.blur();
+  }
+}
+```
+
+## File: apps/website/src/app/ui/currency.service.ts
+```typescript
+import { afterNextRender, computed, Injectable, signal } from '@angular/core';
+import {
+  currencyForCountry,
+  currencyPriceSymbol,
+  formatCurrency,
+  isCurrencyCode,
+  SUPPORTED_CURRENCIES,
+  type CurrencyCode,
+  type CurrencyDef,
+  type ExchangeRates,
+} from '@common';
+
+/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
+const STORAGE_CURRENCY = 'pc_currency';
+/** localStorage key for the cached FX rates + fetch timestamp. */
+const STORAGE_FX = 'pc_fx';
+/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
+const FX_TTL_MS = 12 * 60 * 60 * 1000;
+/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
+const GEO_ENDPOINT = '/api/geo-rates';
+/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
+ * (local dev, or before the Pages Function is wired). USD base, no key. */
+const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
+
+interface CachedFx {
+  readonly rates: ExchangeRates;
+  readonly ts: number;
+}
+
+/**
+ * Picks which currency the marketing site displays prices in, and converts USD prices to it at
+ * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
+ *
+ * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
+ * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
+ * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
+ * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
+ */
+@Injectable({ providedIn: 'root' })
+export class CurrencyService {
+  /** The active display currency (USD until detection/override resolves after hydration). */
+  public readonly currency = signal<CurrencyCode>('USD');
+  /** USD-base rates; USD is always 1, other codes appear once loaded. */
+  public readonly rates = signal<ExchangeRates>({ USD: 1 });
+
+  /** The currencies offered in the switcher. */
+  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
+  /** The active currency's display metadata (for the switcher trigger). */
+  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
+  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
+  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
+
+  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
+   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
+  public readonly isConverted = computed<boolean>(() => {
+    const code = this.currency();
+    return code !== 'USD' && this.rates()[code] != null;
+  });
+
+  constructor() {
+    afterNextRender(() => this.init());
+  }
+
+  /** Set and persist the visitor's manual currency choice. */
+  public setCurrency(code: CurrencyCode): void {
+    this.currency.set(code);
+    try {
+      localStorage.setItem(STORAGE_CURRENCY, code);
+    } catch {
+      // Storage unavailable (private mode): the choice still applies for this session.
+    }
+  }
+
+  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
+  public format(usd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(usd, 'USD');
+    return formatCurrency(Math.round(usd * rate), code);
+  }
+
+  private init(): void {
+    const override = this.readOverride();
+    if (override) this.currency.set(override);
+
+    const cached = this.readCachedRates();
+    if (cached) this.rates.set(cached);
+
+    void this.refresh(override != null);
+  }
+
+  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
+  private async refresh(hasOverride: boolean): Promise<void> {
+    try {
+      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
+      const { country, rates } = this.parsePayload(await res.json());
+      this.rates.set(rates);
+      this.writeCachedRates(rates);
+      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
+    } catch {
+      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
+      // public FX API and detect the region from the browser locale instead of the visitor's IP.
+      const rates = await this.fetchRatesDirect();
+      if (rates) {
+        this.rates.set(rates);
+        this.writeCachedRates(rates);
+      }
+      // Only switch if we actually have a rate for the detected currency, else stay in USD.
+      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
+    }
+  }
+
+  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
+   * the browser; returns null on any failure so we simply stay in USD. */
+  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
+    try {
+      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
+      if (!res.ok) return null;
+      const body: unknown = await res.json();
+      const table =
+        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+      return this.sanitizeRates(table);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
+  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
+    if (code === 'USD' || rates[code] != null) this.currency.set(code);
+  }
+
+  private readOverride(): CurrencyCode | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_CURRENCY);
+      return raw && isCurrencyCode(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readCachedRates(): ExchangeRates | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_FX);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      const { rates, ts } = parsed as Partial<CachedFx>;
+      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
+      return this.sanitizeRates(rates);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedRates(rates: ExchangeRates): void {
+    try {
+      const entry: CachedFx = { rates, ts: Date.now() };
+      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
+    } catch {
+      // Non-fatal: we just refetch next visit.
+    }
+  }
+
+  /** Validate the Pages Function response into a country + sanitized rates. */
+  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
+    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
+    const record = body as { country?: unknown; rates?: unknown };
+    const country = typeof record.country === 'string' ? record.country : null;
+    return { country, rates: this.sanitizeRates(record.rates) };
+  }
+
+  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
+  private sanitizeRates(raw: unknown): ExchangeRates {
+    const clean: ExchangeRates = { USD: 1 };
+    if (typeof raw !== 'object' || raw === null) return clean;
+    const record = raw as Record<string, unknown>;
+    for (const def of this.options) {
+      if (def.code === 'USD') continue;
+      const value = record[def.code];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
+    }
+    return clean;
+  }
+
+  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
+  private regionFromLocale(): string | null {
+    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
+    const region = locale.split('-')[1];
+    return region ? region.toUpperCase() : null;
+  }
 }
 ```
 
@@ -39130,930 +41376,908 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.ts
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
 ```typescript
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 
-import { emailSchema } from '@common';
-import { Icon } from '@icons/icon';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { CompaniesService } from '../../companies/services/companies-service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { ListsService } from '../../lists/services/lists-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import {
-  IMPORT_ENTITY_CONFIGS,
-  IMPORT_ENTITY_TYPES,
-  isImportEntityType,
-  type ImportEntityType,
-} from '../import-entity-config';
-import { ImportsService } from '../services/imports-service';
-
-/** The four steps of the CSV import wizard (spec §17), in order. */
-type WizardStep = 'upload' | 'map' | 'review' | 'confirm';
-
-type DuplicateDecision = 'merge' | 'skip' | 'import_new';
-type BadEmailDecision = 'skip' | 'strip';
-
-interface DuplicateMatch {
-  email: string;
-  person_id: string;
-  name: string;
-  slug: string | null;
-}
-
-/** Confirm & run step state, modeled as a discriminated union (never a bag of optionals). */
-type RunState =
-  | { status: 'idle' }
-  | { status: 'running' }
-  | {
-      status: 'done';
-      inserted: number;
-      merged: number;
-      skipped: number;
-      errors: number;
-      tag: string | null;
-      importId: string | null;
-    }
-  | { status: 'error'; message: string };
-
-/** How long to wait between status polls once an import has been queued. */
-const POLL_INTERVAL_MS = 1500;
-/** Give up narrating progress (the import itself keeps running server-side) after this long. */
-const POLL_TIMEOUT_MS = 120_000;
+import { HouseholdsService } from '../services/households-service';
 
 @Component({
-  selector: 'pc-import-wizard',
-  imports: [Icon, RouterLink],
-  templateUrl: './import-wizard.html',
-})
-export class ImportWizard {
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly personsService = inject(PersonsService);
-  private readonly companiesService = inject(CompaniesService);
-  private readonly householdsService = inject(HouseholdsService);
-  private readonly tasksService = inject(TasksService);
-  private readonly importsService = inject(ImportsService);
-  private readonly listsService = inject(ListsService);
-
-  private readonly _duplicateCheck = createLoadingGate();
-  protected readonly checkingDuplicates = this._duplicateCheck.visible;
-
-  // --- What are you importing? ---
-  protected readonly entityTypes = IMPORT_ENTITY_TYPES;
-  protected readonly configs = IMPORT_ENTITY_CONFIGS;
-  private readonly requestedType = this.route.snapshot.queryParamMap.get('type');
-  protected readonly entity = signal<ImportEntityType>(
-    isImportEntityType(this.requestedType) ? this.requestedType : 'people',
-  );
-  protected readonly config = computed(() => IMPORT_ENTITY_CONFIGS[this.entity()]);
-
-  protected readonly step = signal<WizardStep>('upload');
-  protected readonly stepOrder: WizardStep[] = ['upload', 'map', 'review', 'confirm'];
-  protected readonly stepLabels: Record<WizardStep, string> = {
-    upload: 'Upload',
-    map: 'Map columns',
-    review: 'Review',
-    confirm: 'Import',
-  };
-  protected readonly currentStepIndex = computed(() => this.stepOrder.indexOf(this.step()));
-
-  /** A step is reachable once its prerequisite data exists — never skip ahead of validation. */
-  protected canReachStep(target: WizardStep): boolean {
-    const targetIdx = this.stepOrder.indexOf(target);
-    if (targetIdx <= this.currentStepIndex()) return true;
-    if (target === 'map') return this.rowCount() > 0;
-    if (target === 'review') return this.canContinueToReview();
-    return false;
-  }
-
-  // --- Upload ---
-  protected readonly parsing = signal(false);
-  protected readonly dragOver = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-  private fileText = '';
-  protected readonly headers = signal<string[]>([]);
-  protected readonly rawRows = signal<Array<Record<string, string>>>([]);
-
-  protected readonly rowCount = computed(() => this.rawRows().length);
-  protected readonly columnCount = computed(() => this.headers().length);
-
-  // --- Map columns ---
-  protected readonly mapping = signal<string[]>([]); // index-aligned with headers()
-
-  protected readonly mappedColumnCount = computed(() => this.mapping().filter((m) => !!m).length);
-  protected readonly skippedColumnCount = computed(() => this.columnCount() - this.mappedColumnCount());
-
-  /** Required fields (e.g. a company/task name) that no column is mapped to yet. */
-  protected readonly missingRequiredFields = computed(() => {
-    const mapped = new Set(this.mapping().filter((m) => !!m));
-    return this.config().requiredFields.filter((field) => !mapped.has(field));
-  });
-  protected readonly missingRequiredFieldLabels = computed(() =>
-    this.missingRequiredFields()
-      .map((field) => this.config().fieldLabels[field] ?? field)
-      .join(', '),
-  );
-  protected readonly canContinueToReview = computed(
-    () => this.mappedColumnCount() > 0 && this.missingRequiredFields().length === 0,
-  );
-
-  /** Every row, with only its mapped, non-blank fields — the shape the backend import mutation expects. */
-  protected readonly mappedRows = computed(() => {
-    const headers = this.headers();
-    const mapping = this.mapping();
-    return this.rawRows().map((row) => {
-      const out: Record<string, string> = {};
-      headers.forEach((header, idx) => {
-        const field = mapping[idx];
-        if (!field) return;
-        const value = (row[header] ?? '').toString().trim();
-        if (value && !(field in out)) out[field] = value;
-      });
-      return out;
-    });
-  });
-
-  protected readonly importableRowCount = computed(
-    () => this.mappedRows().filter((row) => Object.keys(row).length > 0).length,
-  );
-
-  /** Rows that have data but are missing a required field — the backend would skip them anyway. */
-  protected readonly missingRequiredRowCount = computed(() => {
-    const required = this.config().requiredFields;
-    if (required.length === 0) return 0;
-    return this.mappedRows().filter((row) => Object.keys(row).length > 0 && required.some((field) => !row[field]))
-      .length;
-  });
-
-  // --- Review ---
-  protected readonly duplicateDecision = signal<DuplicateDecision>('merge');
-  protected readonly badEmailDecision = signal<BadEmailDecision>('skip');
-  protected readonly tagsText = signal('');
-  protected readonly listName = signal('');
-  protected readonly existingListNames = signal<string[]>([]);
-  protected readonly duplicateMatches = signal<DuplicateMatch[]>([]);
-
-  protected readonly emailRows = computed(() =>
-    this.mappedRows()
-      .map((row, idx) => ({ idx: idx + 1, email: row['email'] ?? '' }))
-      .filter((r) => !!r.email),
-  );
-  protected readonly validEmailRows = computed(() =>
-    this.emailRows().filter((r) => emailSchema.safeParse(r.email).success),
-  );
-  protected readonly badEmailRows = computed(() => {
-    if (!this.config().supportsEmailReview) return [];
-    return this.emailRows().filter((r) => !emailSchema.safeParse(r.email).success);
-  });
-  protected readonly duplicateRowCount = computed(() => {
-    const matched = new Set(this.duplicateMatches().map((m) => m.email.toLowerCase()));
-    return this.validEmailRows().filter((r) => matched.has(r.email.toLowerCase())).length;
-  });
-  protected readonly reviewIsClean = computed(
-    () => this.duplicateMatches().length === 0 && this.badEmailRows().length === 0,
-  );
-
-  protected readonly parsedTags = computed(() =>
-    this.tagsText()
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0),
-  );
-
-  // --- Confirm & run ---
-  protected readonly run = signal<RunState>({ status: 'idle' });
-  private pollHandle: ReturnType<typeof setTimeout> | undefined;
-
-  /** The exact row count the Confirm button and working-state sentence quote (spec §17). */
-  protected readonly finalRowCount = computed(() => {
-    let count = this.importableRowCount() - this.missingRequiredRowCount();
-    if (this.config().supportsEmailReview && this.badEmailDecision() === 'skip') {
-      count -= this.badEmailRows().length;
-    }
-    return count;
-  });
-
-  /** One line of "what the background job is doing" copy while the import runs. */
-  protected readonly runningHint = computed(() => {
-    const entity = this.entity();
-    switch (entity) {
-      case 'people':
-        return 'Matching by email, merging duplicates and applying tags';
-      case 'households':
-        return 'Deduplicating by address, applying tags and queueing geocoding';
-      case 'companies':
-        return 'Creating companies and recording the import in history';
-      case 'tasks':
-        return 'Creating tasks and recording the import in history';
-      default: {
-        const _exhaustive: never = entity;
-        return _exhaustive;
-      }
-    }
-  });
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearPoll());
-    void this.loadExistingListNames();
-  }
-
-  /** Switch record type — remaps the already-parsed headers with the new type's heuristic. */
-  protected setEntity(type: ImportEntityType): void {
-    if (this.entity() === type || this.run().status === 'running') return;
-    this.entity.set(type);
-    this.mapping.set(this.headers().map((h) => IMPORT_ENTITY_CONFIGS[type].autoMapHeader(h)));
-    this.duplicateDecision.set('merge');
-    this.badEmailDecision.set('skip');
-    this.tagsText.set('');
-    this.listName.set('');
-    this.duplicateMatches.set([]);
-    // Keep the URL shareable/bookmarkable — grids deep-link here with ?type=.
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { type },
-      replaceUrl: true,
-    });
-  }
-
-  private async loadExistingListNames(): Promise<void> {
-    try {
-      const result = await this.listsService.getAll({ startRow: 0, endRow: 200 });
-      const rows = (result?.rows ?? []) as Array<{ name?: string; is_dynamic?: boolean; object?: string }>;
-      this.existingListNames.set(
-        rows
-          .filter((r) => !r.is_dynamic && r.object === 'people' && typeof r.name === 'string')
-          .map((r) => r.name as string),
-      );
-    } catch {
-      // Non-blocking — the list-name field still works as free text without suggestions.
-    }
-  }
-
-  // --- Upload step ---
-
-  protected onDragOver(ev: DragEvent): void {
-    ev.preventDefault();
-    this.dragOver.set(true);
-  }
-
-  protected onDragLeave(): void {
-    this.dragOver.set(false);
-  }
-
-  protected onDrop(ev: DragEvent): void {
-    ev.preventDefault();
-    this.dragOver.set(false);
-    const file = ev.dataTransfer?.files?.[0];
-    if (file) void this.readFile(file);
-  }
-
-  protected onFileSelected(ev: Event): void {
-    const input = ev.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (file) void this.readFile(file);
-    input.value = '';
-  }
-
-  private async readFile(file: File): Promise<void> {
-    this.parsing.set(true);
-    this.fileName.set(file.name);
-    try {
-      // UTF-8 and Excel-exported CSVs both decode correctly as text — Excel's
-      // CSV export is UTF-8 (sometimes BOM-prefixed), which readAsText handles.
-      // FileReader (not the newer File.text()) matches the shared csv-import
-      // worker's original reading approach.
-      const text = await this.readFileAsText(file);
-      this.fileText = text;
-      const { headers, rows } = await this.parseCsv(text);
-      this.headers.set(headers);
-      this.rawRows.set(rows);
-      this.mapping.set(headers.map((h) => this.config().autoMapHeader(h)));
-    } catch {
-      this.alerts.showError('Failed to read that file. Make sure it is a CSV export.');
-      this.fileName.set(null);
-    } finally {
-      this.parsing.set(false);
-    }
-  }
-
-  private readFileAsText(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve((reader.result as string) || '');
-      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
-      reader.readAsText(file);
-    });
-  }
-
-  /** Reuses the shared CSV/TSV parsing worker (libs/uxcommon/components/csv-import) — no second parser. */
-  private parseCsv(text: string): Promise<{ headers: string[]; rows: Array<Record<string, string>> }> {
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(
-        new URL('../../../../../../../libs/uxcommon/src/components/csv-import/csv.worker.ts', import.meta.url),
-        { type: 'module' },
-      );
-      worker.onmessage = (e: MessageEvent) => {
-        const data = e.data as {
-          type: string;
-          headers?: string[];
-          rows?: Array<Record<string, string>>;
-          message?: string;
-        };
-        worker.terminate();
-        if (data.type === 'result') {
-          resolve({ headers: data.headers ?? [], rows: data.rows ?? [] });
-        } else {
-          reject(new Error(data.message || 'Failed to parse CSV'));
+  selector: 'pc-households-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
+        [fitColumns]="true"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        (rowsDeleted)="onRowsDeleted()"
+        [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+        @if (!inline() && unhoused().count > 0) {
+          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+            <button
+              type="button"
+              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
+              (click)="openUnhoused()"
+            >
+              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+            </button>
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household: no address, or one that can't be
+            matched to a door.
+          </p>
         }
-      };
-      worker.onerror = () => {
-        worker.terminate();
-        reject(new Error('Failed to parse CSV'));
-      };
-      worker.postMessage({ type: 'parse', text });
-    });
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly router = inject(Router);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the household record: a generated address string, just like
+      // the People grid's combined Name column. People count rides along as a muted subtitle.
+      field: 'household',
+      headerName: 'Household',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 260,
+      minWidth: 180,
+      valueGetter: (params: CellParams) => this.addressString(params.data),
+      doorSubtitle: (params: CellParams) => {
+        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+        return `${n} ${n === 1 ? 'person' : 'people'}`;
+      },
+    },
+    {
+      field: 'members',
+      headerName: 'Members',
+      editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
+      minWidth: 200,
+      // Each member name is a link to their person card. The renderer output is
+      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
+      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
+      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
+    },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    {
+      field: 'updated_at',
+      headerName: 'Last touch',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      hide: true,
+      width: 280,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** People with no matchable address (the placeholder household) — footer note + link target. */
+  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
+    count: 0,
+    household_id: null,
+  });
+
+  public ngOnInit(): void {
+    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
+    // keep full contrast — they're a second focal point (the People-grain of the household).
+    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadOnInit();
   }
 
-  protected chooseAnotherFile(): void {
-    this.fileName.set(null);
-    this.fileText = '';
-    this.headers.set([]);
-    this.rawRows.set([]);
-    this.mapping.set([]);
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
   }
 
-  protected sampleValues(headerIdx: number): string {
-    const header = this.headers()[headerIdx];
-    if (!header) return '';
-    return this.rawRows()
-      .slice(0, 2)
-      .map((row) => row[header])
-      .filter((v) => !!v)
-      .join(', ');
+  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+    this.grainTabs()?.reloadCounts();
   }
 
-  // --- Step navigation ---
-
-  protected goToStep(target: WizardStep): void {
-    this.step.set(target);
-  }
-
-  protected async goToReview(): Promise<void> {
-    this.step.set('review');
-    if (!this.config().supportsEmailReview) {
-      this.duplicateMatches.set([]);
-      return;
-    }
-    const end = this._duplicateCheck.begin();
+  private async loadUnhoused(): Promise<void> {
     try {
-      const emails = [...new Set(this.validEmailRows().map((r) => r.email.toLowerCase()))];
-      const matches = emails.length ? await this.personsService.checkDuplicateEmails(emails) : [];
-      this.duplicateMatches.set(matches);
-    } catch {
-      // Review still works without the duplicate preview — the backend re-checks authoritatively at import time.
-      this.duplicateMatches.set([]);
-    } finally {
-      end();
-    }
-  }
-
-  protected setMapping(headerIdx: number, field: string): void {
-    const next = [...this.mapping()];
-    next[headerIdx] = field;
-    this.mapping.set(next);
-  }
-
-  // --- Confirm & run ---
-
-  protected async runImport(): Promise<void> {
-    if (this.run().status === 'running') return;
-    this.run.set({ status: 'running' });
-    try {
-      const result = this.entity() === 'people' ? await this.importPeople() : await this.importSimple();
-
-      if (result.import_id) {
-        await this.pollUntilDone(result.import_id, Date.now());
-      } else {
-        // Nothing importable — the backend already reported the terminal state synchronously.
-        this.run.set({
-          status: 'done',
-          inserted: result.inserted,
-          merged: 0,
-          skipped: result.skipped,
-          errors: result.errors,
-          tag: result.tag,
-          importId: null,
-        });
-      }
+      this.unhoused.set(await this.householdsService.getUnhoused());
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'The import could not be started.';
-      this.run.set({ status: 'error', message });
+      console.error('Failed to load unhoused people count', err);
     }
   }
 
-  /** People import — the full duplicate-decision / bad-email / tags / list pipeline. */
-  private async importPeople(): Promise<{
-    import_id: string | null;
-    inserted: number;
-    skipped: number;
-    errors: number;
-    tag: string | null;
-  }> {
-    const badEmailRows = this.badEmailRows();
-    const badEmailIdx = new Set(badEmailRows.map((r) => r.idx - 1));
-    const skipBadEmail = this.badEmailDecision() === 'skip';
-    const rowsToSend = this.mappedRows()
-      .map((row, idx) => {
-        if (!badEmailIdx.has(idx)) return row;
-        if (skipBadEmail) return null; // dropped below
-        const { email: _unused, ...rest } = row; // "Import without an email"
-        return rest;
-      })
-      .filter((row): row is Record<string, string> => row !== null && Object.keys(row).length > 0);
-    const skippedCount = this.rawRows().length - rowsToSend.length;
-    const clientSkipReasons = skipBadEmail
-      ? badEmailRows.map((r) => ({ row: r.idx, email: r.email, reason: 'Email address is not valid' }))
-      : [];
-
-    const result = await this.personsService.import({
-      rows: rowsToSend,
-      tags: this.parsedTags(),
-      skipped: skippedCount,
-      file_name: this.fileName() ?? undefined,
-      duplicate_decision: this.duplicateDecision(),
-      list_name: this.listName().trim() || undefined,
-      source_csv: this.fileText || undefined,
-      client_skip_reasons: clientSkipReasons,
-    });
-    return {
-      import_id: result?.import_id ?? null,
-      inserted: result?.inserted ?? 0,
-      skipped: result?.skipped ?? skippedCount,
-      errors: result?.errors ?? 0,
-      tag: result?.tag ?? null,
-    };
+  /** Opens the placeholder household, whose detail view lists everyone with no address. */
+  protected openUnhoused(): void {
+    const id = this.unhoused().household_id;
+    if (id) void this.router.navigate(['/households', id]);
   }
 
-  /**
-   * Companies / households / tasks import — no client-side review pipeline, but
-   * rows missing a required field are dropped here (and counted as skipped) so
-   * one bad row can't fail the whole mutation's input validation.
-   */
-  private async importSimple(): Promise<{
-    import_id: string | null;
-    inserted: number;
-    skipped: number;
-    errors: number;
-    tag: string | null;
-  }> {
-    const required = this.config().requiredFields;
-    const rowsToSend = this.mappedRows().filter(
-      (row) => Object.keys(row).length > 0 && required.every((field) => !!row[field]),
-    );
-    const skippedCount = this.rawRows().length - rowsToSend.length;
-    const common = {
-      skipped: skippedCount,
-      file_name: this.fileName() ?? undefined,
-      source_csv: this.fileText || undefined,
-    };
-
-    const entity = this.entity();
-    switch (entity) {
-      case 'companies': {
-        const result = await this.companiesService.import({
-          rows: rowsToSend.map((row) => ({
-            name: row['name'] ?? '',
-            description: row['description'],
-            website: row['website'],
-            email: row['email'],
-            phone: row['phone'],
-            industry: row['industry'],
-            notes: row['notes'],
-          })),
-          ...common,
-        });
-        return {
-          import_id: result?.import_id ?? null,
-          inserted: 0,
-          skipped: result?.skipped ?? skippedCount,
-          errors: 0,
-          tag: null,
-        };
-      }
-      case 'households': {
-        const result = await this.householdsService.import({
-          rows: rowsToSend.map((row) => ({
-            street_num: row['street_num'],
-            apt: row['apt'],
-            street1: row['street1'],
-            street2: row['street2'],
-            city: row['city'],
-            state: row['state'],
-            zip: row['zip'],
-            country: row['country'],
-            home_phone: row['home_phone'],
-            notes: row['notes'],
-          })),
-          tags: this.parsedTags(),
-          ...common,
-        });
-        return {
-          import_id: result?.import_id ?? null,
-          inserted: 0,
-          skipped: result?.skipped ?? skippedCount,
-          errors: 0,
-          tag: null,
-        };
-      }
-      case 'tasks': {
-        const result = await this.tasksService.import({
-          rows: rowsToSend.map((row) => ({
-            name: row['name'] ?? '',
-            details: row['details'],
-            status: row['status'],
-            priority: row['priority'],
-            due_at: row['due_at'],
-            assigned_to: row['assigned_to'],
-          })),
-          ...common,
-        });
-        return {
-          import_id: result?.import_id ?? null,
-          inserted: 0,
-          skipped: result?.skipped ?? skippedCount,
-          errors: 0,
-          tag: null,
-        };
-      }
-      case 'people':
-        throw new Error('People imports go through importPeople()');
-      default: {
-        const _exhaustive: never = entity;
-        throw new Error(`Unhandled import type: ${String(_exhaustive)}`);
-      }
-    }
-  }
-
-  private async pollUntilDone(importId: string, startedAt: number): Promise<void> {
-    this.clearPoll();
+  private async loadGrainSentence(): Promise<void> {
     try {
-      const list = await this.importsService.list();
-      const record = (list ?? []).find((item) => String(item.id) === String(importId));
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
+  }
 
-      if (record?.status === 'completed') {
-        this.run.set({
-          status: 'done',
-          inserted: record.insertedCount,
-          merged: record.mergedCount,
-          skipped: record.skippedCount,
-          errors: record.errorCount,
-          tag: record.tagName,
-          importId,
-        });
-        return;
-      }
-      if (record?.status === 'failed') {
-        this.run.set({ status: 'error', message: record.errorMessage || 'The import failed.' });
-        return;
-      }
-      if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
-        this.run.set({
-          status: 'error',
-          message: 'This is taking longer than expected. Check the import history page for its final status.',
-        });
-        return;
-      }
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
     } catch {
-      // Transient — keep polling until the timeout above gives up.
-    }
-    this.pollHandle = setTimeout(() => void this.pollUntilDone(importId, startedAt), POLL_INTERVAL_MS);
-  }
-
-  private clearPoll(): void {
-    if (this.pollHandle) {
-      clearTimeout(this.pollHandle);
-      this.pollHandle = undefined;
+      this.tagOptionValues = [];
     }
   }
 
-  protected startOver(): void {
-    this.clearPoll();
-    this.chooseAnotherFile();
-    this.mapping.set([]);
-    this.duplicateDecision.set('merge');
-    this.badEmailDecision.set('skip');
-    this.tagsText.set('');
-    this.listName.set('');
-    this.duplicateMatches.set([]);
-    this.run.set({ status: 'idle' });
-    this.step.set('upload');
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
   }
 
-  protected viewImported(): void {
-    void this.router.navigate([this.config().viewRoute]);
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
   }
 
-  protected backToHistory(): void {
-    void this.router.navigate(['/imports']);
+  /** Renders member names as person-card links; a comma separator keeps them on one line. */
+  private renderMembers(value: unknown): string {
+    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
+    const links = members
+      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
+      .map((m) => {
+        const id = this.escapeHtml(String(m.id));
+        const name = this.escapeHtml(String(m.name));
+        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
+      });
+    if (!links.length) return '';
+    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
+    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
+  }
+
+  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
+  private onMemberClicked(event: Event | undefined): void {
+    const target = event?.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('[data-person-id]');
+    const id = anchor?.getAttribute('data-person-id');
+    if (id) void this.router.navigate(['/people', id]);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** Street number + name for the Household door column (city has its own column). */
+  private addressString(data: unknown): string {
+    const d = data as Record<string, unknown> | undefined;
+    if (!d) return '';
+    if (d['is_placeholder']) return 'People with no addresses';
+    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
+  }
+
+  /** Compact relative "last touch" — matches the household view's low-chrome style. */
+  private formatLastTouch(value: unknown): string {
+    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/imports/import-entity-config.ts
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
+## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
+```html
+<div class="p-6 max-w-4xl mx-auto">
+  <!-- Where am I? / Where was I? -->
+  <div class="mb-6">
+    <p class="pc-eyebrow">Import / export</p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import {{ config().noun }} from CSV</h1>
+    <p class="text-sm text-base-content/60 mt-1">{{ config().subtitle }}</p>
+  </div>
 
-import { PERSONS_MAPPABLE_FIELDS, autoMapPersonsHeader } from '@uxcommon/components/csv-import/persons-field-mapping';
+  <!-- Step indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    @for (s of stepOrder; track s; let idx = $index) {
+    <li
+      class="step"
+      [class.step-primary]="idx <= currentStepIndex()"
+      [class.cursor-pointer]="canReachStep(s)"
+      (click)="canReachStep(s) && goToStep(s)"
+    >
+      {{ stepLabels[s] }}
+    </li>
+    }
+  </ul>
 
-/**
- * Everything the CSV import wizard (spec §17) needs to know about one
- * importable record type. One wizard, four configs — the per-entity mapping
- * heuristics were ported verbatim from the retired in-grid import dialogs so
- * files that auto-mapped before keep auto-mapping the same way.
- */
-export type ImportEntityType = 'people' | 'companies' | 'households' | 'tasks';
+  <!-- ============ UPLOAD ============ -->
+  @if (step() === 'upload') {
+  <div class="flex flex-col gap-4">
+    <!-- What are you importing? -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="pc-eyebrow">What are you importing?</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          @for (t of entityTypes; track t) {
+          <button
+            type="button"
+            class="rounded-lg border p-3 text-left transition-colors duration-150 cursor-pointer flex flex-col gap-1.5"
+            [class.border-primary]="entity() === t"
+            [class.bg-primary/5]="entity() === t"
+            [class.border-base-300]="entity() !== t"
+            (click)="setEntity(t)"
+          >
+            <span class="flex items-center gap-2">
+              <pc-icon [name]="configs[t].icon" class="text-primary" [size]="5"></pc-icon>
+              <span class="text-sm font-medium text-base-content">{{ configs[t].label }}</span>
+              @if (entity() === t) {
+              <pc-icon name="check-circle" class="text-primary ml-auto" [size]="4"></pc-icon>
+              }
+            </span>
+            <span class="text-xs text-base-content/60">{{ configs[t].description }}</span>
+          </button>
+          }
+        </div>
+      </div>
+    </div>
 
-export interface ImportEntityConfig {
-  id: ImportEntityType;
-  /** Picker-card title, e.g. "People". */
-  label: string;
-  /** Lowercase plural for running copy, e.g. "Import 12 people". */
-  noun: string;
-  icon: PcIconNameType;
-  /** One-line picker-card description of what a row becomes. */
-  description: string;
-  /** The "· separated" facts line under the page title. */
-  subtitle: string;
-  mappableFields: string[];
-  fieldLabels: Record<string, string>;
-  autoMapHeader: (header: string) => string;
-  /**
-   * Fields that must be mapped before the wizard lets the user continue past
-   * Map columns — the backend skips (or rejects) rows without them.
-   */
-  requiredFields: string[];
-  /** People only: the email duplicate/bad-email Review step. */
-  supportsEmailReview: boolean;
-  /** Batch-level "tag everything in this import" input. */
-  supportsTags: boolean;
-  /** People only: "add everyone to a list" input. */
-  supportsList: boolean;
-  /** Shown on the Review step for types deduplicated server-side. */
-  reviewNote: string | null;
-  /** Where "View imported …" navigates once the import completes. */
-  viewRoute: string;
-}
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        @if (!fileName()) {
+        <div
+          class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
+          [class.border-primary]="dragOver()"
+          [class.bg-primary/5]="dragOver()"
+          [class.border-base-300]="!dragOver()"
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave()"
+          (drop)="onDrop($event)"
+        >
+          <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
+          <label class="btn btn-primary gap-2 cursor-pointer">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Drop a CSV here, or click to browse
+            <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
+          </label>
+          @if (parsing()) {
+          <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
+            <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
+            Reading and parsing the file…
+          </p>
+          }
+        </div>
+        <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
+          <li>First row must have column headers. They drive the automatic mapping on the next step.</li>
+          @if (config().supportsEmailReview) {
+          <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
+          } @if (config().reviewNote) {
+          <li>{{ config().reviewNote }}</li>
+          }
+          <li>UTF-8 and Excel both work.</li>
+        </ul>
+        } @else {
+        <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
+          <div class="flex items-center gap-3 min-w-0">
+            <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
+            <span class="font-mono text-sm text-base-content truncate">
+              {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
+            </span>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
+        </div>
+        <div class="flex justify-end">
+          <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
+            Continue to column mapping
+            <pc-icon name="chevron-right" [size]="4"></pc-icon>
+          </button>
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
 
-const COMPANIES_HEADER_TO_FIELD: Record<string, string> = {
-  name: 'name',
-  company: 'name',
-  companyname: 'name',
-  organization: 'name',
-  organisation: 'name',
-  description: 'description',
-  desc: 'description',
-  website: 'website',
-  web: 'website',
-  url: 'website',
-  email: 'email',
-  emailaddress: 'email',
-  phone: 'phone',
-  tel: 'phone',
-  telephone: 'phone',
-  phonenumber: 'phone',
-  industry: 'industry',
-  notes: 'notes',
-  note: 'notes',
-  comments: 'notes',
-};
+  <!-- ============ MAP COLUMNS ============ -->
+  @if (step() === 'map') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      <p class="text-sm text-base-content/70">
+        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
+        matching by the header row
+      </p>
 
-const HOUSEHOLDS_HEADER_TO_FIELD: Record<string, string> = {
-  streetnum: 'street_num',
-  streetnumber: 'street_num',
-  homestreet: 'street1',
-  homestreet1: 'street1',
-  homestreet2: 'street2',
-  homestreet3: 'street2',
-  homeaddress: 'street1',
-  homeaddresspobox: 'street2',
-  businessstreet: 'street1',
-  businessstreet1: 'street1',
-  businessstreet2: 'street2',
-  businessstreet3: 'street2',
-  businessaddress: 'street1',
-  businessaddresspobox: 'street2',
-  address: 'street1',
-  address1: 'street1',
-  address2: 'street2',
-  addressline1: 'street1',
-  addressline2: 'street2',
-  street: 'street1',
-  streetaddress: 'street1',
-  street1: 'street1',
-  street2: 'street2',
-  apt: 'apt',
-  apartment: 'apt',
-  unit: 'apt',
-  suite: 'apt',
-  city: 'city',
-  town: 'city',
-  state: 'state',
-  province: 'state',
-  stateprovince: 'state',
-  region: 'state',
-  zip: 'zip',
-  zipcode: 'zip',
-  postal: 'zip',
-  postalcode: 'zip',
-  postcode: 'zip',
-  country: 'country',
-  homephone: 'home_phone',
-  phone: 'home_phone',
-  telephone: 'home_phone',
-  notes: 'notes',
-  note: 'notes',
-  comments: 'notes',
-};
+      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
+        @for (header of headers(); track header; let idx = $index) {
+        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
+          <div class="flex-1 min-w-0">
+            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
+            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <select
+              class="select select-bordered select-sm w-56"
+              [value]="mapping()[idx] || ''"
+              (change)="setMapping(idx, $any($event.target).value)"
+            >
+              <!-- [selected] on the options, not just [value] on the select: the select's
+                   value is assigned before the @for options exist in the DOM, so an
+                   auto-mapped field would otherwise render as unselected. -->
+              <option value="" [selected]="!mapping()[idx]">— Skip this column —</option>
+              @for (field of config().mappableFields; track field) {
+              <option [value]="field" [selected]="mapping()[idx] === field">
+                {{ config().fieldLabels[field] ?? field }}
+              </option>
+              }
+            </select>
+            @if (!mapping()[idx]) {
+            <span class="badge badge-ghost text-xs">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+      </div>
 
-const TASKS_HEADER_TO_FIELD: Record<string, string> = {
-  name: 'name',
-  task: 'name',
-  taskname: 'name',
-  title: 'name',
-  subject: 'name',
-  details: 'details',
-  description: 'details',
-  desc: 'details',
-  status: 'status',
-  priority: 'priority',
-  due: 'due_at',
-  duedate: 'due_at',
-  dueat: 'due_at',
-  assignedto: 'assigned_to',
-  assignee: 'assigned_to',
-  owner: 'assigned_to',
-};
+      @if (mappedColumnCount() > 0 && missingRequiredFields().length > 0) {
+      <div class="alert bg-warning/10 border border-warning/30 gap-2 text-sm text-base-content">
+        <pc-icon name="exclamation-triangle" class="text-warning" [size]="5"></pc-icon>
+        <span>Map a column to {{ missingRequiredFieldLabels() }} to continue. Rows without one can't be imported.</span>
+      </div>
+      }
 
-function autoMapWith(table: Record<string, string>): (header: string) => string {
-  return (header: string) => {
-    const key = (header || '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]/g, '');
-    return table[key] || '';
-  };
-}
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary gap-2" [disabled]="!canContinueToReview()" (click)="goToReview()">
+          Continue to review
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+  }
 
-export const IMPORT_ENTITY_CONFIGS: Record<ImportEntityType, ImportEntityConfig> = {
-  people: {
-    id: 'people',
-    label: 'People',
-    noun: 'people',
-    icon: 'user-group',
-    description: 'Contacts with names, emails, phones and addresses. Duplicates are matched by email.',
-    subtitle: 'Headers in the first row · duplicates are matched by email · nothing is written until the last step',
-    mappableFields: PERSONS_MAPPABLE_FIELDS,
-    fieldLabels: {
-      first_name: 'First name',
-      last_name: 'Last name',
-      middle_names: 'Middle name(s)',
-      email: 'Email',
-      email2: 'Secondary email',
-      mobile: 'Mobile phone',
-      home_phone: 'Home phone',
-      street_num: 'Street number',
-      street1: 'Street line 1',
-      street2: 'Street line 2',
-      apt: 'Apt/Unit',
-      city: 'City',
-      state: 'State/Province',
-      zip: 'Zip/Postal code',
-      country: 'Country',
-      company: 'Company',
-      tags: 'Tags (comma-separated)',
-      notes: 'Notes',
-    },
-    autoMapHeader: autoMapPersonsHeader,
-    requiredFields: [],
-    supportsEmailReview: true,
-    supportsTags: true,
-    supportsList: true,
-    reviewNote: null,
-    viewRoute: '/people',
-  },
-  companies: {
-    id: 'companies',
-    label: 'Companies',
-    noun: 'companies',
-    icon: 'briefcase',
-    description: 'Organizations with a name, website, contact details and industry.',
-    subtitle: 'Headers in the first row · rows need a company name · nothing is written until the last step',
-    mappableFields: ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'],
-    fieldLabels: {
-      name: 'Company name',
-      description: 'Description',
-      website: 'Website',
-      email: 'Email',
-      phone: 'Phone',
-      industry: 'Industry',
-      notes: 'Notes',
-    },
-    autoMapHeader: autoMapWith(COMPANIES_HEADER_TO_FIELD),
-    requiredFields: ['name'],
-    supportsEmailReview: false,
-    supportsTags: false,
-    supportsList: false,
-    reviewNote: 'Rows without a company name are skipped during the import.',
-    viewRoute: '/companies',
-  },
-  households: {
-    id: 'households',
-    label: 'Households',
-    noun: 'households',
-    icon: 'house-modern',
-    description: 'Addresses (doors). Each unique address becomes one household, ready for geocoding.',
-    subtitle: 'Headers in the first row · duplicates are matched by address · nothing is written until the last step',
-    mappableFields: [
-      'street_num',
-      'apt',
-      'street1',
-      'street2',
-      'city',
-      'state',
-      'zip',
-      'country',
-      'home_phone',
-      'notes',
-    ],
-    fieldLabels: {
-      street_num: 'Street number',
-      apt: 'Apt/Unit',
-      street1: 'Street line 1',
-      street2: 'Street line 2',
-      city: 'City',
-      state: 'State/Province',
-      zip: 'Zip/Postal code',
-      country: 'Country',
-      home_phone: 'Home phone',
-      notes: 'Notes',
-    },
-    autoMapHeader: autoMapWith(HOUSEHOLDS_HEADER_TO_FIELD),
-    requiredFields: [],
-    supportsEmailReview: false,
-    supportsTags: true,
-    supportsList: false,
-    reviewNote:
-      'Rows matching an address you already have (or repeated in the file) are skipped automatically, and new addresses are queued for geocoding.',
-    viewRoute: '/households',
-  },
-  tasks: {
-    id: 'tasks',
-    label: 'Tasks',
-    noun: 'tasks',
-    icon: 'task',
-    description: 'To-dos with a name, status, priority, due date and assignee.',
-    subtitle: 'Headers in the first row · rows need a task name · nothing is written until the last step',
-    mappableFields: ['name', 'details', 'status', 'priority', 'due_at', 'assigned_to'],
-    fieldLabels: {
-      name: 'Task name',
-      details: 'Details',
-      status: 'Status',
-      priority: 'Priority',
-      due_at: 'Due date',
-      assigned_to: 'Assigned to (name or email)',
-    },
-    autoMapHeader: autoMapWith(TASKS_HEADER_TO_FIELD),
-    requiredFields: ['name'],
-    supportsEmailReview: false,
-    supportsTags: false,
-    supportsList: false,
-    reviewNote: 'Rows without a task name are skipped during the import.',
-    viewRoute: '/tasks',
-  },
-};
+  <!-- ============ REVIEW ============ -->
+  @if (step() === 'review') {
+  <div class="flex flex-col gap-4">
+    @if (checkingDuplicates()) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body items-center py-10">
+        <progress class="progress progress-primary w-64"></progress>
+        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
+      </div>
+    </div>
+    } @else {
+    <!-- What will happen, in numbers -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-2">
+        <p class="text-sm text-base-content">
+          <span class="font-medium">{{ finalRowCount() }}</span> of {{ rowCount() }} rows will be imported as {{
+          config().noun }}
+        </p>
+        @if (missingRequiredRowCount() > 0) {
+        <p class="text-xs text-base-content/60">
+          {{ missingRequiredRowCount() }} rows are missing {{ missingRequiredFieldLabels() || 'a required field' }} and
+          will be skipped
+        </p>
+        } @if (config().reviewNote) {
+        <p class="text-xs text-base-content/60">{{ config().reviewNote }}</p>
+        }
+      </div>
+    </div>
 
-export const IMPORT_ENTITY_TYPES: ImportEntityType[] = ['people', 'companies', 'households', 'tasks'];
+    @if (config().supportsEmailReview) { @if (reviewIsClean()) {
+    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
+      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
+      <span>No duplicate emails and no email problems found in this file.</span>
+    </div>
+    } @if (duplicateMatches().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="pc-eyebrow">{{ duplicateRowCount() }} rows match people you already have</p>
+        <ul class="space-y-1">
+          @for (match of duplicateMatches(); track match.person_id) {
+          <li class="text-sm flex items-center gap-2">
+            <span class="font-mono text-base-content/70">{{ match.email }}</span>
+            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
+            @if (match.slug) {
+            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
+              >{{ match.name }}</a
+            >
+            } @else {
+            <span class="text-base-content">{{ match.name }}</span>
+            }
+          </li>
+          }
+        </ul>
 
-/** Narrowing guard for the wizard's `?type=` query param. */
-export function isImportEntityType(value: string | null | undefined): value is ImportEntityType {
-  return value === 'people' || value === 'companies' || value === 'households' || value === 'tasks';
-}
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'merge'"
+              (change)="duplicateDecision.set('merge')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Merge into existing</span>
+              <span class="block text-xs text-base-content/60">
+                Recommended: fills blank fields, never overwrites
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'skip'"
+              (change)="duplicateDecision.set('skip')"
+            />
+            <span class="text-sm font-medium text-base-content">
+              Skip the {{ duplicateRowCount() }} duplicate rows
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'import_new'"
+              (change)="duplicateDecision.set('import_new')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import as new anyway</span>
+              <span class="block text-xs text-base-content/60">
+                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    } @if (badEmailRows().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="pc-eyebrow">{{ badEmailRows().length }} rows have email problems</p>
+        <ul class="space-y-1">
+          @for (row of badEmailRows(); track row.idx) {
+          <li class="text-sm">
+            <span class="text-base-content/60">Row {{ row.idx }}:</span>
+            <span class="font-mono text-base-content">{{ row.email }}</span>
+          </li>
+          }
+        </ul>
 
-/** data_imports.source (backend vocabulary) → wizard entity type. */
-export const IMPORT_SOURCE_TO_ENTITY: Record<string, ImportEntityType> = {
-  persons: 'people',
-  companies: 'companies',
-  households: 'households',
-  tasks: 'tasks',
-};
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'skip'"
+              (change)="badEmailDecision.set('skip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
+              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'strip'"
+              (change)="badEmailDecision.set('strip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import without an email</span>
+              <span class="block text-xs text-base-content/60">
+                They can't receive newsletters until an email is added
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    } }
+
+    <!-- Tags / list options -->
+    @if (config().supportsTags || config().supportsList) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        @if (config().supportsTags) {
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Tag everything in this import (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            placeholder="Comma separated e.g. donor, canvass-2026"
+            [value]="tagsText()"
+            (input)="tagsText.set($any($event.target).value)"
+          />
+        </label>
+        } @if (config().supportsList) {
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            list="existing-static-lists"
+            placeholder="New or existing list name"
+            [value]="listName()"
+            (input)="listName.set($any($event.target).value)"
+          />
+          <datalist id="existing-static-lists">
+            @for (name of existingListNames(); track name) {
+            <option [value]="name"></option>
+            }
+          </datalist>
+        </label>
+        }
+      </div>
+    </div>
+    }
+
+    <div class="flex justify-between">
+      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
+        Continue to import
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+    }
+  </div>
+  }
+
+  <!-- ============ CONFIRM & RUN ============ -->
+  @if (step() === 'confirm') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @let r = run(); @switch (r.status) { @case ('idle') {
+      <div class="space-y-2 text-sm text-base-content">
+        <p class="font-mono text-base-content/70">
+          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
+        </p>
+        <ul class="list-disc list-inside text-base-content/70 space-y-1">
+          <li>Importing as {{ config().noun }}</li>
+          @if (config().supportsEmailReview) {
+          <li>
+            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
+            'skip duplicate rows' : 'import as new anyway' }}
+          </li>
+          @if (badEmailRows().length > 0) {
+          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
+          } } @if (missingRequiredRowCount() > 0) {
+          <li>{{ missingRequiredRowCount() }} rows missing {{ missingRequiredFieldLabels() }} will be skipped</li>
+          } @if (parsedTags().length > 0 && config().supportsTags) {
+          <li>Tags: {{ parsedTags().join(', ') }}</li>
+          } @if (listName().trim() && config().supportsList) {
+          <li>Added to list: {{ listName().trim() }}</li>
+          }
+        </ul>
+        <p class="text-base-content/60">
+          The import runs in the background. Once started you can navigate away, and it lands in import history and the
+          Activity log.
+        </p>
+      </div>
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          Import {{ finalRowCount() }} {{ config().noun }}
+        </button>
+      </div>
+      } @case ('running') {
+      <div class="flex flex-col items-center gap-3 py-10">
+        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
+        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
+        <p class="text-sm text-base-content/60">{{ runningHint() }}</p>
+        <p class="text-sm text-base-content/60">
+          You can leave this page. The import keeps running in the background and its result lands in import history.
+        </p>
+        <button type="button" class="btn btn-ghost btn-sm gap-2 mt-2" (click)="backToHistory()">
+          <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+          Go to import history
+        </button>
+      </div>
+      } @case ('done') {
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
+          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} {{ config().noun }}</h2>
+        </div>
+        <ul class="text-sm text-base-content/70 space-y-1">
+          <li>{{ r.inserted }} imported</li>
+          @if (r.merged > 0) {
+          <li>{{ r.merged }} merged into existing people</li>
+          } @if (r.skipped > 0) {
+          <li>{{ r.skipped }} skipped</li>
+          } @if (r.errors > 0) {
+          <li class="text-error">{{ r.errors }} errors</li>
+          } @if (r.tag) {
+          <li>Tagged {{ r.tag }}</li>
+          }
+        </ul>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="viewImported()">
+            <pc-icon [name]="config().icon" [size]="4"></pc-icon>
+            View imported {{ config().noun }}
+          </button>
+          <button type="button" class="btn btn-outline btn-secondary gap-2" (click)="startOver()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import another file
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
+            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+            Back to import history
+          </button>
+        </div>
+      </div>
+      } @case ('error') {
+      <div class="flex flex-col gap-4">
+        <div class="alert alert-error gap-2">
+          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+          <span>{{ r.message }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            Try again
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
+        </div>
+      </div>
+      } }
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-form.html
@@ -41020,889 +43244,151 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
-```typescript
-import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { describeListDefinition } from '@experiences/lists/services/list-definition';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { Icon } from '@icons/icon';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { UpdateListType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.html
+```html
+<div class="mx-auto w-full max-w-7xl p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Newsletters" [totalSentence]="headerSentence()">
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New newsletter
+    </a>
+  </pc-grid-header>
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function formatDateTime(value: unknown): string {
-  if (value == null) return '—';
-  const date = new Date(value as string | number | Date);
-  if (isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-@Component({
-  selector: 'pc-lists-grid',
-  imports: [DataGrid, Icon, GridHeaderComponent],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-4 p-6">
-      <!-- Page header: the one list-page header idiom (pc-grid-header, design §4). The grid's
-           own in-grid title/toolbar are switched off below so this is the only header, and its
-           p-6 padding moves here since the grid itself no longer applies it (no title/grainLayout). -->
-      <pc-grid-header title="Lists" [totalSentence]="summarySentence()">
-        <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="grid.doAdd()">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          <span>New list</span>
-        </button>
-      </pc-grid-header>
-
-      <pc-datagrid
-        #grid
-        class="min-h-0 flex-1"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [allowFilter]="false"
-        [enableSelection]="false"
-        [showToolbar]="false"
-        [showColumnMenus]="false"
-        plusIcon="add-list"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-
-      <!-- Footer explainer (verbatim §8): narrates what each list type does. -->
-      <p class="text-xs leading-relaxed text-base-content/60">
-        Smart lists refresh themselves. Membership updates automatically as people and households change. Static lists
-        run their rules once at creation and save a fixed snapshot; membership only changes when you edit it by hand.
-        Opening a list shows it applied on the grid.
-      </p>
+  <!-- All-time engagement stat tiles -->
+  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Sent campaigns</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().sentCount) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">All time</div>
+      </div>
     </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'list',
-        entityNounPlural: 'lists',
-        exportEntity: 'lists',
-        exportFileName: 'lists-export.csv',
-      },
-    }),
-  ],
-})
-export class ListsGridComponent implements OnInit {
-  private readonly refreshSvc = inject(ListsRefreshService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly router = inject(Router);
-  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
 
-  /** Counts for the grain sentence — refreshed alongside the grid. */
-  private readonly counts = signal<{ total: number; smart: number; static: number }>({ total: 0, smart: 0, static: 0 });
-
-  protected readonly summarySentence = computed<string>(() => {
-    const { total, smart, static: staticCount } = this.counts();
-    const n = (v: number) => new Intl.NumberFormat().format(v);
-    if (total === 0) return 'No lists yet · create a smart list that refreshes itself or a static snapshot';
-    const listWord = total === 1 ? 'list' : 'lists';
-    return `${n(total)} ${listWord} · ${n(smart)} smart (refresh themselves), ${n(staticCount)} static (fixed snapshots)`;
-  });
-
-  constructor() {
-    effect(() => {
-      const count = this.refreshSvc.refreshCount();
-      if (count > 0) {
-        untracked(() => {
-          void this.grid()?.refresh();
-          void this.loadCounts();
-        });
-      }
-    });
-  }
-
-  public ngOnInit(): void {
-    void this.loadCounts();
-  }
-
-  private async loadCounts(): Promise<void> {
-    try {
-      const result = await this.listsSvc.getAll();
-      const rows = isRecord(result) && Array.isArray(result['rows']) ? result['rows'] : [];
-      let smart = 0;
-      for (const r of rows) {
-        if (isRecord(r) && r['is_dynamic'] === true) smart += 1;
-      }
-      this.counts.set({ total: rows.length, smart, static: rows.length - smart });
-    } catch {
-      // The grid itself surfaces load errors; the sentence just stays put.
-    }
-  }
-
-  protected col: ColDef[] = [
-    {
-      // LIST — the name is the door: opens People/Households with this list
-      // applied as a removable chip (§8). withComponentInputBinding() maps the
-      // ?listId query param onto the grid's listId input.
-      field: 'name',
-      headerName: 'List',
-      cellRenderer: (p: CellParams) => {
-        const name = String(p?.value ?? p?.data?.['name'] ?? 'Untitled list');
-        return `<span class="cursor-pointer text-xs font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary">${escapeHtml(name)}</span>`;
-      },
-      onCellClicked: (p: CellParams) => this.openListOnGrid(p?.data),
-    },
-    {
-      field: 'is_dynamic',
-      headerName: 'Type',
-      cellRenderer: (p: CellParams) => {
-        const isSmart = p?.data?.['is_dynamic'] === true;
-        return isSmart
-          ? `<span class="badge badge-primary badge-sm font-semibold">Smart</span>`
-          : `<span class="badge badge-neutral badge-sm font-semibold">Static</span>`;
-      },
-    },
-    {
-      field: 'object',
-      headerName: 'Of',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        if (val === 'people') return 'People';
-        if (val === 'households') return 'Households';
-        return typeof val === 'string' && val ? val : '—';
-      },
-    },
-    {
-      field: 'definition',
-      headerName: 'Definition',
-      valueFormatter: (p: CellParams) => describeListDefinition(p?.data?.['definition']),
-    },
-    {
-      field: 'list_size',
-      headerName: 'Members',
-      // Right-aligned, tabular figures (§1/§8). Populated for both types.
-      valueFormatter: (p: CellParams) => new Intl.NumberFormat().format(Number(p?.value ?? 0)),
-    },
-    {
-      field: 'last_used_in',
-      headerName: 'Last used in',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        return typeof val === 'string' && val.trim() ? val : 'Not used yet';
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      valueFormatter: (p: CellParams) => formatDateTime(p?.value),
-    },
-  ];
-
-  /** Open the People/Households grid with this list applied as a chip. */
-  private openListOnGrid(data: unknown): void {
-    if (!isRecord(data)) return;
-    const id = String(data['id'] ?? '');
-    if (!id) return;
-    const route = data['object'] === 'households' ? '/households' : '/people';
-    void this.router.navigate([route], { queryParams: { listId: id } });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-
-import {
-  MarketingEmailType,
-  NewsletterReportBounceType,
-  NewsletterReportType,
-} from '../../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { NewslettersService } from '../services/newsletters-service';
-import { FilesService } from '../../files/services/files.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-const STATUS_TONE: Record<string, PcStatusType> = {
-  archived: 'ghost',
-  draft: 'ghost',
-  paused: 'warning',
-  queuing: 'info',
-  scheduled: 'info',
-  sending: 'info',
-  sent: 'success',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  archived: 'Archived',
-  draft: 'Draft',
-  paused: 'Paused',
-  queuing: 'Sending',
-  scheduled: 'Scheduled',
-  sending: 'Sending',
-  sent: 'Sent',
-};
-
-const BOUNCE_KIND_LABEL: Record<NewsletterReportBounceType['kind'], string> = {
-  hard: 'Hard',
-  soft: 'Soft',
-  dropped: 'Dropped',
-};
-
-/** The 48-hour engagement chart: sixteen 3-hour buckets from the send moment. */
-const CHART_BUCKET_HOURS = 3;
-const CHART_BUCKETS = 16;
-const MS_PER_HOUR = 3_600_000;
-/** Providers throttle senders whose spam-report rate crosses ~0.1% of delivered. */
-const SPAM_RATE_DANGER_PCT = 0.1;
-/** Bounce rows shown inline; the full set goes through the CSV export. */
-const BOUNCE_ROWS_SHOWN = 6;
-
-interface NewsletterAttachment {
-  id: string;
-  filename: string;
-  size_bytes: number | null;
-}
-
-interface StatTile {
-  label: string;
-  value: string;
-  valueClass: string;
-  sub: string;
-}
-
-interface FunnelRow {
-  label: string;
-  count: string;
-  share: string;
-  width: number;
-}
-
-interface ChartBucket {
-  opens: number;
-  clicks: number;
-  opensPct: number;
-  clicksPct: number;
-  tip: string;
-}
-
-interface CompareRow {
-  label: string;
-  current: string;
-  delta: string | null;
-  deltaClass: string;
-  bars: { height: number; isCurrent: boolean }[];
-}
-
-@Component({
-  selector: 'pc-newsletter-detail',
-  imports: [DetailLayout, Icon, RouterLink, StatusBadge],
-  templateUrl: './newsletter-detail.html',
-})
-export class NewsletterDetailComponent {
-  readonly id = input.required<string>();
-
-  private readonly service = inject(NewslettersService);
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly router = inject(Router);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly email = signal<MarketingEmailType | null>(null);
-  protected readonly report = signal<NewsletterReportType | null>(null);
-  protected readonly error = signal<string | null>(null);
-  protected readonly attachments = signal<NewsletterAttachment[]>([]);
-  protected readonly isUploadingAttachment = signal(false);
-  protected readonly isCreatingList = signal(false);
-  protected readonly isDuplicating = signal(false);
-  protected readonly emailExpanded = signal(false);
-
-  /** Attachments can only be managed before a newsletter has gone out. */
-  protected readonly canManageAttachments = computed(() => {
-    const status = this.email()?.status;
-    return status === 'draft' || status === 'scheduled';
-  });
-
-  /** A "report" only exists once a send is (or was) underway; before that this page is plain details. */
-  protected readonly isUnsent = computed(() => {
-    const status = this.email()?.status;
-    return status === 'draft' || status === 'scheduled';
-  });
-
-  protected readonly eyebrow = computed(() => (this.isUnsent() ? 'Newsletter details' : 'Newsletter report'));
-
-  /** Entity noun while loading; the record's real name (or explicit "Untitled") once loaded. */
-  protected readonly pageTitle = computed(() => {
-    const email = this.email();
-    if (!email) return 'Newsletter';
-    return email.name || 'Untitled newsletter';
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Newsletters', route: '/newsletters' },
-    { label: this.pageTitle() },
-  ]);
-
-  protected readonly sentSentence = computed(() => {
-    const email = this.email();
-    if (!email) return '';
-    const from = this.report()?.from;
-    const fromPart = from?.email ? ` · from ${from.name ? `${from.name} ` : ''}<${from.email}>` : '';
-    if (email.status === 'sent' && email.send_date) return `Sent ${this.formatDateTime(email.send_date)}${fromPart}`;
-    if (email.status === 'scheduled' && email.send_date) {
-      return `Scheduled for ${this.formatDateTime(email.send_date)}${fromPart}`;
-    }
-    return `Not sent yet${fromPart}`;
-  });
-
-  protected readonly tiles = computed<StatTile[]>(() => {
-    const email = this.email();
-    if (!email) return [];
-    const report = this.report();
-    const sent = email.total_recipients;
-    const delivered = email.delivered_count;
-
-    // Averages across the earlier sends in this campaign (excludes this one).
-    const history = (report?.previous_sends ?? []).filter((s) => s.id !== email.id);
-    const avg = (values: number[]) => (values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null);
-    const avgOpen = avg(history.map((s) => s.open_rate));
-    const avgClick = avg(history.map((s) => s.click_rate));
-
-    const bounceTotal = report ? report.bounces.total : email.bounce_count;
-    const bounceSubParts: string[] = [];
-    if (report && report.bounces.total > 0) {
-      bounceSubParts.push(`${report.bounces.hard} hard · ${report.bounces.soft} soft`);
-      if (report.bounces.dropped > 0) bounceSubParts.push(`${report.bounces.dropped} dropped`);
-    }
-
-    return [
-      {
-        label: 'Delivered',
-        value: this.formatNumber(delivered),
-        valueClass: 'text-base-content',
-        sub: sent > 0 ? `${this.pct(delivered, sent)} of ${this.formatNumber(sent)} sent` : 'No recipients yet',
-      },
-      {
-        label: 'Open rate',
-        value: this.formatPercent(email.open_rate),
-        valueClass: email.open_rate > 0 ? 'text-primary' : 'text-base-content',
-        sub:
-          `${this.formatNumber(email.unique_opens)} unique opens` +
-          (avgOpen != null ? ` · avg ${this.formatPercent(avgOpen)}` : ''),
-      },
-      {
-        label: 'Click rate',
-        value: this.formatPercent(email.click_rate),
-        valueClass: email.click_rate > 0 ? 'text-secondary' : 'text-base-content',
-        sub:
-          `${this.formatNumber(report?.unique_clickers ?? email.unique_clicks)} unique clickers` +
-          (avgClick != null ? ` · avg ${this.formatPercent(avgClick)}` : ''),
-      },
-      {
-        label: 'Replies',
-        value: this.formatNumber(email.reply_count),
-        valueClass: 'text-base-content',
-        sub: email.reply_count > 0 ? 'Landed in the Inbox' : 'None yet',
-      },
-      {
-        label: 'Bounces',
-        value: this.formatNumber(bounceTotal),
-        valueClass: bounceTotal > 0 ? 'text-warning' : 'text-base-content',
-        sub: bounceSubParts.length > 0 ? bounceSubParts.join(' · ') : 'Every address accepted mail',
-      },
-    ];
-  });
-
-  protected readonly funnel = computed<FunnelRow[]>(() => {
-    const email = this.email();
-    if (!email) return [];
-    const sent = email.total_recipients;
-    const delivered = email.delivered_count;
-    const opened = email.unique_opens;
-    const clicked = this.report()?.unique_clickers ?? email.unique_clicks;
-    if (sent === 0) return [];
-    return [
-      { label: 'Sent', count: this.formatNumber(sent), share: '100%', width: 100 },
-      {
-        label: 'Delivered',
-        count: this.formatNumber(delivered),
-        share: `${this.pct(delivered, sent)} of sent`,
-        width: (delivered / sent) * 100,
-      },
-      {
-        label: 'Opened',
-        count: this.formatNumber(opened),
-        share: delivered > 0 ? `${this.pct(opened, delivered)} of delivered` : '—',
-        width: (opened / sent) * 100,
-      },
-      {
-        label: 'Clicked',
-        count: this.formatNumber(clicked),
-        share: opened > 0 ? `${this.pct(clicked, opened)} of opens` : '—',
-        width: (clicked / sent) * 100,
-      },
-    ];
-  });
-
-  protected readonly bounceRowsShown = computed<NewsletterReportBounceType[]>(
-    () => this.report()?.bounces.rows.slice(0, BOUNCE_ROWS_SHOWN) ?? [],
-  );
-
-  protected readonly engagementChart = computed<ChartBucket[] | null>(() => {
-    const report = this.report();
-    if (!report || report.timeline.length === 0) return null;
-    const email = this.email();
-    const firstBucket = report.timeline[0];
-    if (!firstBucket) return null;
-    const start = email?.send_date ? new Date(email.send_date).getTime() : this.bucketTime(firstBucket.time);
-
-    const buckets = Array.from({ length: CHART_BUCKETS }, () => ({ opens: 0, clicks: 0 }));
-    for (const point of report.timeline) {
-      const index = Math.floor((this.bucketTime(point.time) - start) / (CHART_BUCKET_HOURS * MS_PER_HOUR));
-      if (index < 0 || index >= CHART_BUCKETS) continue; // engagement past 48h isn't in this chart
-      const bucket = buckets[index];
-      if (!bucket) continue;
-      bucket.opens += point.opens;
-      bucket.clicks += point.clicks;
-    }
-    const max = Math.max(1, ...buckets.map((b) => Math.max(b.opens, b.clicks)));
-    return buckets.map((b, i) => ({
-      opens: b.opens,
-      clicks: b.clicks,
-      opensPct: (b.opens / max) * 100,
-      clicksPct: (b.clicks / max) * 100,
-      tip: `${i * CHART_BUCKET_HOURS}–${(i + 1) * CHART_BUCKET_HOURS}h: ${b.opens} opens · ${b.clicks} clicks`,
-    }));
-  });
-
-  protected readonly opensIn24hSentence = computed(() => {
-    const pctValue = this.report()?.opens_in_24h_pct;
-    if (pctValue == null) return null;
-    return `${Math.round(pctValue)}% of opens came within 24 hours of send.`;
-  });
-
-  protected readonly topLinks = computed(() => {
-    const report = this.report();
-    if (!report || report.top_links.length === 0) return [];
-    const max = Math.max(1, ...report.top_links.map((l) => l.clicks));
-    return report.top_links.map((l) => ({
-      ...l,
-      display: l.url.replace(/^https?:\/\//, ''),
-      width: (l.clicks / max) * 100,
-    }));
-  });
-
-  protected readonly linksSentence = computed(() => {
-    const report = this.report();
-    if (!report) return '';
-    return (
-      `${this.formatNumber(report.total_clicks)} clicks from ${this.formatNumber(report.unique_clickers)} ` +
-      `people · ${report.tracked_links} tracked link${report.tracked_links === 1 ? '' : 's'}`
-    );
-  });
-
-  protected readonly comparison = computed<CompareRow[]>(() => {
-    const report = this.report();
-    const sends = report?.previous_sends ?? [];
-    if (sends.length < 2) return [];
-    const previous = sends[sends.length - 2];
-    const metrics: { label: string; values: number[]; higherIsBetter: boolean }[] = [
-      { label: 'Open rate', values: sends.map((s) => s.open_rate), higherIsBetter: true },
-      { label: 'Click rate', values: sends.map((s) => s.click_rate), higherIsBetter: true },
-      { label: 'Unsubscribe rate', values: sends.map((s) => s.unsubscribe_rate), higherIsBetter: false },
-      { label: 'Bounce rate', values: sends.map((s) => s.bounce_rate), higherIsBetter: false },
-    ];
-    return metrics.map((m) => {
-      const current = m.values[m.values.length - 1] ?? 0;
-      const prior = m.values[m.values.length - 2] ?? 0;
-      const delta = current - prior;
-      const good = m.higherIsBetter ? delta > 0 : delta < 0;
-      const max = Math.max(0.1, ...m.values);
-      return {
-        label: m.label,
-        current: this.formatPercent(current),
-        delta: previous ? `${delta >= 0 ? '+' : '−'}${Math.abs(delta).toFixed(1)} pts vs "${previous.name}"` : null,
-        deltaClass: Math.abs(delta) < 0.05 ? 'text-base-content/50' : good ? 'text-success' : 'text-error',
-        bars: m.values.map((v, i) => ({
-          height: Math.max(8, (v / max) * 100),
-          isCurrent: i === m.values.length - 1,
-        })),
-      };
-    });
-  });
-
-  protected readonly previousSendCount = computed(() => (this.report()?.previous_sends.length ?? 1) - 1);
-
-  protected readonly mostEngaged = computed(() => {
-    const report = this.report();
-    if (!report) return [];
-    return report.most_engaged.map((e) => {
-      const displayName = e.person?.name ?? e.email;
-      const parts: string[] = [];
-      if (e.opens > 0) parts.push(`Opened ${e.opens}×`);
-      if (e.links > 0) parts.push(`clicked ${e.links} link${e.links === 1 ? '' : 's'}`);
-      else if (e.clicks > 0) parts.push(`clicked ${e.clicks}×`);
-      return {
-        ...e,
-        displayName,
-        initials: this.initials(displayName),
-        summary: parts.join(' · '),
-      };
-    });
-  });
-
-  protected readonly audienceSinceSend = computed(() => {
-    const email = this.email();
-    const report = this.report();
-    if (!email || !report) return null;
-    const parts: string[] = [];
-    if (report.unsubscribes.total > 0) parts.push(`${report.unsubscribes.total} unsubscribed`);
-    if (report.bounces.total > 0) parts.push(`${report.bounces.total} joined the bounce list`);
-    if (report.spam_reports.total > 0) {
-      parts.push(`${report.spam_reports.total} spam report${report.spam_reports.total === 1 ? '' : 's'}`);
-    }
-    return parts.length > 0 ? `Since the send: ${parts.join(' · ')}.` : null;
-  });
-
-  protected readonly unsubscribeReasons = computed(() => {
-    const report = this.report();
-    if (!report || report.unsubscribes.total === 0) return [];
-    return report.unsubscribes.reasons.map((r) => ({
-      label: r.reason ?? 'No reason given',
-      count: r.count,
-      width: (r.count / report.unsubscribes.total) * 100,
-    }));
-  });
-
-  protected readonly unsubscribeRate = computed(() => {
-    const email = this.email();
-    const total = this.report()?.unsubscribes.total ?? 0;
-    if (!email || email.delivered_count === 0) return null;
-    return this.pct(total, email.delivered_count);
-  });
-
-  protected readonly spamRate = computed(() => {
-    const email = this.email();
-    const total = this.report()?.spam_reports.total ?? 0;
-    if (!email || email.delivered_count === 0) return null;
-    return (total / email.delivered_count) * 100;
-  });
-
-  protected readonly spamRateIsSafe = computed(() => {
-    const rate = this.spamRate();
-    return rate != null && rate < SPAM_RATE_DANGER_PCT;
-  });
-
-  protected readonly spamRows = computed(() => {
-    const report = this.report();
-    const email = this.email();
-    if (!report) return [];
-    return report.spam_reports.rows.map((r) => {
-      let timing = '';
-      if (r.occurred_at && email?.send_date) {
-        const hours = Math.round(
-          (new Date(r.occurred_at).getTime() - new Date(email.send_date).getTime()) / MS_PER_HOUR,
-        );
-        if (hours >= 0) timing = `${hours}h after send`;
-      }
-      return {
-        email: r.email || 'Address withheld by the provider',
-        timing: timing || (r.occurred_at ? this.formatDateTime(r.occurred_at) : ''),
-      };
-    });
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.load(currentId));
-    });
-  }
-
-  protected statusLabel(status: string | undefined): string {
-    if (!status) return '—';
-    return STATUS_LABEL[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
-  }
-
-  protected statusTone(status: string | undefined): PcStatusType {
-    return (status && STATUS_TONE[status]) || 'ghost';
-  }
-
-  protected bounceKindLabel(kind: NewsletterReportBounceType['kind']): string {
-    return BOUNCE_KIND_LABEL[kind];
-  }
-
-  protected bounceKindTone(kind: NewsletterReportBounceType['kind']): PcStatusType {
-    return kind === 'hard' ? 'warning' : 'ghost';
-  }
-
-  protected personRoute(person: { id: string; public_id: string | null }): string[] {
-    return ['/people', person.public_id ?? person.id];
-  }
-
-  protected async createClickersList(): Promise<void> {
-    const report = this.report();
-    if (!report || report.unique_clickers === 0 || this.isCreatingList()) return;
-    this.isCreatingList.set(true);
-    try {
-      const result = await this.service.createClickersList(this.id());
-      this.alertSvc.showSuccess(`List "${result.name}" created with ${this.formatNumber(result.members)} people`);
-      await this.router.navigate(['/lists', result.id]);
-    } catch (err: unknown) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to create the list'));
-    } finally {
-      this.isCreatingList.set(false);
-    }
-  }
-
-  protected async duplicateNewsletter(): Promise<void> {
-    const email = this.email();
-    if (!email || this.isDuplicating()) return;
-    this.isDuplicating.set(true);
-    try {
-      await this.service.add({
-        name: `${email.name} (copy)`,
-        status: 'draft',
-        subject: email.subject ?? null,
-        preview_text: email.preview_text ?? null,
-        summary: email.summary ?? null,
-        audience_description: email.audience_description ?? null,
-        target_lists: email.target_lists ?? null,
-        segments: email.segments ?? null,
-        html_content: email.html_content ?? null,
-        plain_text_content: email.plain_text_content ?? null,
-      });
-      this.alertSvc.showSuccess(`Draft "${email.name} (copy)" created`);
-      await this.router.navigate(['/newsletters']);
-    } catch (err: unknown) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Failed to duplicate the newsletter'));
-    } finally {
-      this.isDuplicating.set(false);
-    }
-  }
-
-  protected exportReportCsv(): void {
-    const email = this.email();
-    const report = this.report();
-    if (!email) return;
-    const lines: string[][] = [
-      ['Metric', 'Value'],
-      ['Newsletter', email.name],
-      ['Status', this.statusLabel(email.status)],
-      ['Sent', email.send_date ? new Date(email.send_date).toISOString() : ''],
-      ['Recipients', String(email.total_recipients)],
-      ['Delivered', String(email.delivered_count)],
-      ['Open rate', this.formatPercent(email.open_rate)],
-      ['Unique opens', String(email.unique_opens)],
-      ['Click rate', this.formatPercent(email.click_rate)],
-      ['Unique clickers', String(report?.unique_clickers ?? email.unique_clicks)],
-      ['Replies', String(email.reply_count)],
-      ['Bounces', String(report?.bounces.total ?? email.bounce_count)],
-      ['Unsubscribes', String(report?.unsubscribes.total ?? email.unsubscribe_count)],
-      ['Spam reports', String(report?.spam_reports.total ?? email.spam_complaint_count)],
-    ];
-    if (report && report.top_links.length > 0) {
-      lines.push([], ['Link', 'Clicks', 'People']);
-      for (const link of report.top_links) {
-        lines.push([link.url, String(link.clicks), link.people != null ? String(link.people) : '']);
-      }
-    }
-    this.downloadCsv(this.csvFileName('report'), lines);
-  }
-
-  protected exportBouncesCsv(): void {
-    const report = this.report();
-    if (!report || report.bounces.rows.length === 0) return;
-    const lines: string[][] = [['Email', 'Kind', 'Reason', 'Occurred at', 'CRM match']];
-    for (const bounce of report.bounces.rows) {
-      lines.push([
-        bounce.email,
-        this.bounceKindLabel(bounce.kind),
-        bounce.reason ?? '',
-        bounce.occurred_at ? new Date(bounce.occurred_at).toISOString() : '',
-        bounce.person?.name ?? '',
-      ]);
-    }
-    this.downloadCsv(this.csvFileName('bounces'), lines);
-  }
-
-  protected async onAttachmentSelected(event: Event): Promise<void> {
-    const inputEl = event.target as HTMLInputElement;
-    const file = inputEl?.files?.[0];
-    const newsletterId = this.id();
-    if (!file || !newsletterId) return;
-
-    this.isUploadingAttachment.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file, { entityType: 'newsletter', entityId: newsletterId });
-      this.alertSvc.showSuccess(`"${file.name}" attached`);
-      await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to attach file');
-    } finally {
-      this.isUploadingAttachment.set(false);
-      inputEl.value = '';
-    }
-  }
-
-  protected async removeAttachment(attachment: NewsletterAttachment): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: `Remove "${attachment.filename}"?`,
-      message: 'This detaches the file from this newsletter and deletes it from cloud storage.',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(attachment.id);
-      this.alertSvc.showSuccess(`"${attachment.filename}" removed`);
-      const newsletterId = this.id();
-      if (newsletterId) await this.loadAttachments(newsletterId);
-    } catch {
-      this.alertSvc.showError('Failed to remove attachment');
-    }
-  }
-
-  protected formatBytes(value: number | null | undefined): string {
-    if (!value) return '';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let unitIndex = 0;
-    let size = value;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-  }
-
-  protected formatNumber(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return new Intl.NumberFormat().format(value);
-  }
-
-  protected formatPercent(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return `${value.toFixed(1)}%`;
-  }
-
-  protected formatSpamRate(value: number | null): string {
-    if (value == null) return '—';
-    return `${value.toFixed(2)}%`;
-  }
-
-  private pct(part: number, whole: number): string {
-    return whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '—';
-  }
-
-  private formatDateTime(value: Date | string): string {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-  }
-
-  /** Timeline bucket keys are 'YYYY-MM-DD HH24:00' strings; parse as local time. */
-  private bucketTime(bucket: string): number {
-    return new Date(bucket.replace(' ', 'T')).getTime();
-  }
-
-  private initials(name: string): string {
-    const words = name
-      .replace(/[^\p{L}\p{N}@ ]/gu, '')
-      .split(/\s+/)
-      .filter(Boolean);
-    if (words.length === 0) return '?';
-    const first = words[0]?.charAt(0) ?? '';
-    const last = words.length > 1 ? (words[words.length - 1]?.charAt(0) ?? '') : '';
-    return (first + last).toUpperCase() || '?';
-  }
-
-  private csvFileName(kind: string): string {
-    const name = (this.email()?.name ?? 'newsletter')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-    return `${name || 'newsletter'}-${kind}.csv`;
-  }
-
-  private downloadCsv(filename: string, rows: string[][]): void {
-    const escapeCell = (cell: string) => (/[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell);
-    const csv = rows.map((row) => row.map(escapeCell).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  private async load(id: string): Promise<void> {
-    if (!id) {
-      this.error.set('Newsletter not found.');
-      return;
-    }
-    const end = this.loading.begin();
-    try {
-      const record = (await this.service.getById(id)) as MarketingEmailType | null;
-      if (!record) {
-        this.error.set('Newsletter not found.');
-        return;
-      }
-      this.email.set(record);
-
-      const reportData = await this.service.getReport(id);
-      this.report.set(reportData);
-
-      await this.loadAttachments(id);
-    } catch (err: unknown) {
-      console.error(err);
-      this.error.set('Unable to load newsletter.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadAttachments(id: string): Promise<void> {
-    try {
-      const { rows } = await this.filesSvc.getAll({ entityType: 'newsletter', entityId: id });
-      this.attachments.set(
-        (rows as Record<string, unknown>[]).map((r) => ({
-          id: String(r['id']),
-          filename: String(r['filename']),
-          size_bytes: r['size_bytes'] as number | null,
-        })),
-      );
-    } catch {
-      // Non-fatal — attachments are supplementary to the newsletter report.
-    }
-  }
-}
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Delivered</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatNumber(stats().delivered) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Successful deliveries</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Avg open rate</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-success]="stats().avgOpenRate > 0"
+          [class.text-base-content]="stats().avgOpenRate === 0"
+        >
+          {{ formatPercent(stats().avgOpenRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Opens per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Avg click rate</div>
+        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
+          {{ formatPercent(stats().avgClickRate) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Clicks per delivery</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Bounces</div>
+        <div
+          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
+          [class.text-warning]="stats().bounces > 0"
+          [class.text-base-content]="stats().bounces === 0"
+        >
+          {{ formatNumber(stats().bounces) }}
+        </div>
+        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Auto-skipped on next send</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campaign table -->
+  <pc-table [loading]="loading.visible()" [columns]="7">
+    <ng-container pcTableHead>
+      <th>Campaign</th>
+      <th>Status</th>
+      <th>Audience</th>
+      <th>Open</th>
+      <th>Click</th>
+      <th>Date</th>
+      <th class="w-28"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="7" class="px-6">
+        <pc-empty-state icon="megaphone" [bordered]="false" title="No newsletters in this workspace yet">
+          <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+            <pc-icon name="plus" [size]="4"></pc-icon>
+            New newsletter
+          </a>
+        </pc-empty-state>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
+      </td>
+      <td>
+        <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.total_recipients > 0) { {{ formatNumber(row.total_recipients) }} recipients } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.open_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="tabular-nums text-base-content/70">
+        @if (row.status === 'sent') { {{ formatPercent(row.click_rate) }} } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        @if (row.send_date) { {{ row.send_date | date: (row.status === 'scheduled' ? 'MMM d, h:mm a' : 'MMM d, y') }} }
+        @else {
+        <span class="text-base-content/40">Not scheduled</span>
+        }
+      </td>
+      <td class="text-right">
+        <!-- A report only exists once a send is (or was) underway. -->
+        @if (row.status === 'draft') {
+        <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="sendBlocker(row) !== null"
+            (click)="sendDraft(row)"
+          >
+            Send…
+          </button>
+        </span>
+        } @else if (row.status !== 'scheduled') {
+        <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
+        }
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
@@ -43406,6 +44892,59 @@ export class PersonStandingDraft {
     this.staffStatus.set(value === '' ? '' : (value as StaffStatus));
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+```html
+<!-- Template for persons grid -->
+<div class="flex h-full min-h-0 flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    (rowsDeleted)="onRowsDeleted()"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
+
+<pc-modal-shell #confirmAddressEdit title="Address edit" icon="home">
+  <p class="py-2 font-light">
+    Addresses can only be edited in the Households Component. Would you like me to take you there?
+  </p>
+
+  <div pc-modal-footer class="flex flex-row gap-2">
+    <button class="btn btn-primary" type="button" (click)="routeToHouseholds()">
+      <pc-icon name="arrow-right-start-on-rectangle" />
+      Yes
+    </button>
+    <button class="btn btn-outline btn-accent" type="button" (click)="confirmAddressEdit.close()">
+      <pc-icon name="x-circle" />
+      Cancel
+    </button>
+  </div>
+</pc-modal-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
@@ -45067,6 +46606,137 @@ export class IssuesAdmin implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Tasks</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs with counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
+
+  @if (loaded() && !filtered().length) {
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    @switch (tab()) { @case ('all') {
+    <span class="text-base font-medium">No tasks yet</span>
+    } @case ('mine') {
+    <span class="text-base font-medium">Nothing assigned to you yet</span>
+    } @case ('unassigned') {
+    <span class="text-base font-medium">Every open task has an owner</span>
+    } @case ('done') {
+    <span class="text-base font-medium">Nothing completed yet</span>
+    } }
+    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New task
+    </button>
+  </div>
+  } @else {
+  <div class="flex flex-col gap-5">
+    @for (group of groups(); track group.key) {
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2 px-1">
+        <span
+          class="pc-eyebrow"
+          [class.text-error]="group.meta.tone === 'error'"
+          [class.text-warning]="group.meta.tone === 'warning'"
+          [class.text-info]="group.meta.tone === 'info'"
+          [class.text-base-content/50]="group.meta.tone === 'neutral'"
+        >
+          {{ group.meta.label }}
+        </span>
+        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+      </div>
+
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle shrink-0"
+            [class.text-success]="t.status === 'done'"
+            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+            (click)="toggleDone(t)"
+          >
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
+          </button>
+
+          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+            <div
+              class="truncate text-xs font-medium"
+              [class.line-through]="t.status === 'done'"
+              [class.opacity-50]="t.status === 'done'"
+            >
+              {{ t.name }}
+            </div>
+            @if (reason) {
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
+            }
+          </div>
+
+          @if (t.priority) {
+          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+          } @if (badge) {
+          <span
+            class="badge badge-xs w-fit shrink-0"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
+          >
+            {{ badge.text }}
+          </span>
+          } @if (t.due_at) {
+          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
+            >{{ dateLabel(t.due_at) }}</span
+          >
+          } @if (t.assigned_to) {
+          <span
+            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            [attr.title]="assignee"
+            >{{ assigneeInitial(t.assigned_to) }}</span
+          >
+          } @else {
+          <button
+            type="button"
+            class="badge badge-outline shrink-0 border-dashed text-xs"
+            title="Take this task. One click assigns it to you"
+            (click)="takeTask(t); $event.stopPropagation()"
+          >
+            Unassigned
+          </button>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
@@ -48069,6 +49739,566 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
+## File: apps/frontend/src/app/dashboard.routes.ts
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+    // `breadcrumb` feeds BreadcrumbDefaultsService: every route publishes a navbar
+    // trail on NavigationEnd, so no page ever shows an empty or stale strip.
+    data: { breadcrumb: 'Dashboard' },
+  },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'people',
+    data: { breadcrumb: 'People' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New person' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    data: { breadcrumb: 'Households' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New household' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    data: { breadcrumb: 'Duplicates' },
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+        data: { breadcrumb: 'People' },
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+        data: { breadcrumb: 'Households' },
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+        data: { breadcrumb: 'Companies' },
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+    data: { shouldReuse: true, key: 'tagsadminroot', breadcrumb: 'Tags' },
+  },
+
+  {
+    path: 'issues',
+    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+    data: { shouldReuse: true, key: 'issuesadminroot', breadcrumb: 'Issues' },
+  },
+
+  {
+    path: 'lists',
+    data: { breadcrumb: 'Lists' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new', breadcrumb: 'New list' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit', breadcrumb: 'Edit list' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    data: { breadcrumb: 'Newsletters' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New newsletter' },
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'automations',
+    data: { breadcrumb: 'Automations' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+        data: { breadcrumb: 'New automation' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    data: { breadcrumb: 'Donations' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot', breadcrumb: 'Monthly pledges' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+    data: { breadcrumb: 'Inbox' },
+  },
+  {
+    path: 'tasks',
+    data: { breadcrumb: 'Tasks' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
+        data: { shouldReuse: true, key: 'taskslistroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+        data: { breadcrumb: 'New task' },
+      },
+      // Must precede ':id' — otherwise the wildcard param route would swallow it.
+      {
+        path: 'board',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+        data: { shouldReuse: true, key: 'tasksboardroot', breadcrumb: 'Board' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
+  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+
+  {
+    path: 'canvassing',
+    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+    data: { breadcrumb: 'Canvassing' },
+  },
+
+  {
+    path: 'campaigns',
+    data: { breadcrumb: 'Campaigns' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'new', breadcrumb: 'New campaign' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'teams',
+    data: { breadcrumb: 'Teams' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new', breadcrumb: 'New team' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'deliveries',
+    data: { breadcrumb: 'Deliveries' },
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
+        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
+      },
+      {
+        path: 'plan',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
+        data: { breadcrumb: 'Plan routes' },
+      },
+      {
+        path: 'routes',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
+        data: { breadcrumb: 'Routes' },
+      },
+      {
+        path: 'routes/:id',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
+        // Default until the page loads and publishes the route's name itself.
+        data: { breadcrumb: [{ label: 'Routes', route: '/deliveries/routes' }] },
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    data: { breadcrumb: 'Users' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        // View and edit merged into one page (approved 2026-07-10 design) — the
+        // unsaved-changes guard now protects the view, and old edit links redirect.
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      { path: ':id/edit', redirectTo: ':id' },
+    ],
+  },
+  {
+    // Companion access approvals: volunteers who verified their contact and
+    // are waiting for an admin to unlock their turf/route link.
+    path: 'volunteer-access',
+    canActivate: [roleGuard],
+    loadComponent: () =>
+      import('./experiences/volunteer-access/ui/volunteer-access-page').then((m) => m.VolunteerAccessPage),
+    data: { breadcrumb: 'Volunteer access' },
+  },
+  {
+    path: 'forms',
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        // Flat route that conceptually nests under Donations — pre-built trail.
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'New donation page' }] },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donations' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'Edit donation page' }] },
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    data: { breadcrumb: 'Settings' },
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'workspace',
+    canActivate: [roleGuard],
+    data: { breadcrumb: 'Workspace' },
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'workspace' },
+      },
+    ],
+  },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
+  {
+    path: 'billing',
+    redirectTo: '/workspace/billing',
+    pathMatch: 'full',
+  },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+    data: { breadcrumb: 'Profile' },
+  },
+  {
+    path: 'imports/new',
+    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+    // Flat route that conceptually nests under the Imports tab of the history page.
+    data: { breadcrumb: [{ label: 'Imports', route: '/imports' }, { label: 'New import' }] },
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+    // Default matches the page's initial tab — the page publishes the tab-aware
+    // crumb ("Imports"/"Exports") itself on every tab switch.
+    data: { breadcrumb: 'Imports' },
+  },
+  {
+    // Wave 1E (spec §17): Exports folded into the Import/export History page's
+    // Exports tab — redirect the old standalone route rather than 404 stale links.
+    path: 'exports',
+    redirectTo: '/imports',
+    pathMatch: 'full',
+  },
+  {
+    path: 'companies',
+    data: { breadcrumb: 'Companies' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New company' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+    data: { breadcrumb: 'Activity' },
+  },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
+  {
+    path: 'help',
+    data: { breadcrumb: 'Help' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/website/src/app/audience/audience-page.html
 ```html
 <pc-site-header variant="over-hero" />
@@ -48165,6 +50395,123 @@ export const appRoutes = [
 </section>
 
 <pc-site-footer />
+```
+
+## File: apps/website/src/app/ui/site-header.ts
+```typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
+import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
+import { SiteLogo } from './site-logo';
+
+type HeaderVariant = 'over-hero' | 'solid';
+
+/**
+ * Site header. Two looks from one component:
+ *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
+ *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
+ * Below `md` the nav collapses behind a hamburger toggle.
+ */
+@Component({
+  selector: 'pc-site-header',
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
+  template: `
+    <header [class]="barClass()">
+      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
+        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
+          <pc-site-logo [onDark]="onDark()" />
+        </a>
+
+        <!-- Desktop nav -->
+        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
+          }
+          <pc-currency-switcher [onDark]="onDark()" />
+          @if (signedIn()) {
+            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+          } @else {
+            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
+            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+          }
+        </nav>
+
+        <!-- Mobile toggle -->
+        <button
+          type="button"
+          class="btn btn-square btn-ghost btn-sm lg:hidden"
+          [class.text-white]="onDark()"
+          [attr.aria-expanded]="open()"
+          aria-label="Toggle menu"
+          (click)="open.set(!open())"
+        >
+          @if (open()) {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+            </svg>
+          }
+        </button>
+      </div>
+
+      <!-- Mobile menu -->
+      @if (open()) {
+        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
+              link.label
+            }}</a>
+          }
+          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
+            @if (signedIn()) {
+              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+            } @else {
+              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
+              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+            }
+          </div>
+        </nav>
+      }
+    </header>
+  `,
+})
+export class SiteHeader {
+  public readonly variant = input<HeaderVariant>('solid');
+
+  private readonly auth = inject(AuthHint);
+
+  protected readonly nav = PRIMARY_NAV;
+  protected readonly loginUrl = LOGIN_URL;
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly dashboardUrl = DASHBOARD_URL;
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly open = signal(false);
+
+  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
+
+  protected readonly barClass = computed<string>(() =>
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
+  );
+
+  protected readonly linkClass = computed<string>(() =>
+    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
+  );
+
+  protected readonly loginBtnClass = computed<string>(() =>
+    this.onDark()
+      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
+      : 'btn btn-outline btn-sm rounded-field',
+  );
+}
 ```
 
 ## File: apps/website/src/app/ui/site-logo.ts
@@ -48514,142 +50861,6 @@ body {
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-```typescript
-import { Component, signal, inject, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { PersonsService } from '../../persons/services/persons-service';
-import { CompaniesService } from '../services/companies-service';
-
-@Component({
-  selector: 'pc-companies-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [grainLayout]="true"
-        [fitColumns]="true"
-        title="Companies"
-        i18n-title
-        description="Manage corporate contacts, associate people with companies, and track organization profiles."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        (rowsDeleted)="onRowsDeleted()"
-        plusIcon="add-company"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          <pc-grain-tabs />
-        </div>
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'company',
-        entityNounPlural: 'companies',
-        exportEntity: 'companies',
-        exportFileName: 'companies-export.csv',
-      },
-    }),
-  ],
-})
-export class CompaniesGrid {
-  private readonly companiesService = inject(CompaniesService);
-  private readonly personsService = inject(PersonsService);
-  private readonly router = inject(Router);
-
-  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadGrainSentence();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  constructor() {
-    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadGrainSentence();
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [people, companies] = await Promise.all([
-        this.personsService.countWithCompany(),
-        this.companiesService.count(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
-      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
-      this.totalSentence.set(`${peopleText} in ${companiesText}`);
-    } catch (err) {
-      console.error('Failed to load company grain counts', err);
-    }
-  }
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the company record. Non-editable and non-hidable identity column.
-      field: 'name',
-      headerName: 'Company Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 240,
-      minWidth: 180,
-    },
-    {
-      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
-      // the Company Name column is the door.
-      field: 'persons_count',
-      headerName: 'People',
-      editable: false,
-      width: 110,
-      minWidth: 90,
-      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
-    },
-    { field: 'website', headerName: 'Website', editable: true, width: 240 },
-    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
-  ];
-
-  /** Formats the employee count as "N people" (singular/plural). */
-  private formatPeopleCount(params: CellParams): string {
-    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-    return `${n} ${n === 1 ? 'person' : 'people'}`;
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
@@ -50830,6 +53041,20 @@ export class PublicEventComponent implements OnInit {
         </div>
       </div>
     </div>
+    } @if (!residencyAcknowledged()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-warning shadow-sm">
+        <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+        <div>
+          <span class="font-bold">Donations are paused</span>
+          <p class="text-sm mt-0.5">
+            Confirm residency restrictions in
+            <a href="/workspace/donations" class="link link-primary font-bold">Workspace → Donations</a>
+            before this form can accept gifts.
+          </p>
+        </div>
+      </div>
+    </div>
     } @if (error()) {
     <div class="mx-auto max-w-5xl mb-6">
       <div class="alert alert-error shadow-sm">
@@ -52311,6 +54536,795 @@ interface RegularNewsletterPayload {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
+```html
+<pc-detail-layout
+  [title]="pageTitle()"
+  [eyebrow]="eyebrow()"
+  [subtitle]="sentSentence()"
+  [crumbs]="crumbs()"
+  [isLoading]="!email() && !error()"
+  [error]="error()"
+  [hasRecord]="!!email()"
+  [showActions]="false"
+>
+  <div pc-title-suffix class="flex min-w-0 items-center">
+    @if (email(); as em) {
+    <pc-status-badge [type]="statusTone(em.status)">{{ statusLabel(em.status) }}</pc-status-badge>
+    }
+  </div>
+  <div pc-actions-suffix class="flex items-center gap-2">
+    @if (email()) { @if (!isUnsent()) {
+    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
+      Export report CSV
+    </button>
+    }
+    <button
+      type="button"
+      class="btn btn-primary btn-sm gap-2"
+      [disabled]="isDuplicating()"
+      (click)="duplicateNewsletter()"
+    >
+      @if (isDuplicating()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      } Duplicate newsletter
+    </button>
+    }
+  </div>
+
+  @if (email(); as em) {
+  <div class="w-full">
+    <!-- Stat tiles -->
+    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      @for (tile of tiles(); track tile.label) {
+      <div class="stats border border-base-200 bg-base-100 shadow-sm">
+        <div class="stat p-4">
+          <div class="stat-title pc-eyebrow">{{ tile.label }}</div>
+          <div class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl" [class]="tile.valueClass">
+            {{ tile.value }}
+          </div>
+          <div class="stat-desc mt-1 text-[10px] tabular-nums text-base-content/40">{{ tile.sub }}</div>
+        </div>
+      </div>
+      }
+    </div>
+
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- ============================== main column ============================== -->
+      <div class="flex flex-col gap-6 lg:col-span-2">
+        <!-- How the send resolved -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="pc-eyebrow">How the send resolved</h2>
+          @if (funnel().length > 0) {
+          <div class="mt-4 flex flex-col gap-3">
+            @for (row of funnel(); track row.label) {
+            <div class="flex items-center gap-4">
+              <span class="w-16 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+              <div class="h-2 flex-1 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-primary" [style.width.%]="row.width"></div>
+              </div>
+              <span class="w-40 shrink-0 text-right text-xs tabular-nums">
+                <span class="font-bold text-base-content">{{ row.count }}</span>
+                <span class="text-base-content/50"> · {{ row.share }}</span>
+              </span>
+            </div>
+            }
+          </div>
+          @if (report(); as rep) { @if (rep.bounces.total > 0) {
+          <div class="mt-4 flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs">
+            <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-base-content/80">
+              {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
+              }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}). Hard bounces joined
+              the suppression list and future sends skip them automatically per the
+              <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
+            </p>
+          </div>
+          } } } @else {
+          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+            <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">Nothing has been sent yet. Delivery results will appear here.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Bounced addresses -->
+        @if (report(); as rep) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">
+              Bounced addresses @if (rep.bounces.total > 0) { · {{ formatNumber(rep.bounces.total) }} }
+            </h2>
+            @if (rep.bounces.rows.length > 0) {
+            <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="exportBouncesCsv()">
+              Export {{ formatNumber(rep.bounces.total) }} bounces CSV
+            </button>
+            }
+          </div>
+          @if (bounceRowsShown().length > 0) {
+          <ul class="mt-3 divide-y divide-base-200">
+            @for (bounce of bounceRowsShown(); track bounce.email) {
+            <li class="flex items-center justify-between gap-3 py-2.5">
+              <div class="min-w-0">
+                <p class="truncate font-mono text-xs text-base-content">{{ bounce.email }}</p>
+                <p class="mt-0.5 text-[10px] text-base-content/50">
+                  {{ bounce.reason || 'No reason recorded by the provider' }}
+                </p>
+              </div>
+              <div class="flex shrink-0 items-center gap-3">
+                <pc-status-badge [type]="bounceKindTone(bounce.kind)"
+                  >{{ bounceKindLabel(bounce.kind) }}</pc-status-badge
+                >
+                @if (bounce.person; as person) {
+                <a
+                  class="link link-hover w-28 truncate text-right text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                  [routerLink]="personRoute(person)"
+                >
+                  {{ person.name }}
+                </a>
+                } @else {
+                <span class="w-28 text-right text-xs text-base-content/40">No CRM match</span>
+                }
+              </div>
+            </li>
+            }
+          </ul>
+          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            Showing {{ bounceRowsShown().length }} of {{ formatNumber(rep.bounces.total) }} · hard bounces are
+            suppressed from future sends; soft bounces are retried by the provider.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
+            <p class="text-xs text-base-content/60">No bounces. Every address accepted this send.</p>
+          </div>
+          }
+        </section>
+        }
+
+        <!-- Engagement · first 48 hours -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">Engagement · first 48 hours</h2>
+            <div class="flex items-center gap-3 text-[10px] font-semibold text-base-content/70">
+              <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Opens</span>
+              <span class="flex items-center gap-1"
+                ><span class="h-2 w-2 rounded-full bg-secondary"></span> Clicks</span
+              >
+            </div>
+          </div>
+          @if (engagementChart(); as chart) {
+          <div class="mt-4 flex h-32 items-end gap-1">
+            @for (bucket of chart; track $index) {
+            <div class="tooltip flex h-full flex-1 items-end justify-center gap-px" [attr.data-tip]="bucket.tip">
+              <div
+                class="w-1/3 rounded-t-sm bg-primary"
+                [style.height.%]="bucket.opensPct"
+                [style.minHeight.px]="bucket.opens > 0 ? 2 : 0"
+              ></div>
+              <div
+                class="w-1/3 rounded-t-sm bg-secondary"
+                [style.height.%]="bucket.clicksPct"
+                [style.minHeight.px]="bucket.clicks > 0 ? 2 : 0"
+              ></div>
+            </div>
+            }
+          </div>
+          <div class="mt-1 flex justify-between border-t border-base-200 pt-1 text-[10px] text-base-content/40">
+            <span>Send</span><span>12h</span><span>24h</span><span>36h</span><span>48h</span>
+          </div>
+          @if (opensIn24hSentence(); as sentence) {
+          <p class="mt-3 text-[10px] text-base-content/50">{{ sentence }}</p>
+          } } @else {
+          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
+            <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">
+              No hour-by-hour engagement to chart. Opens and clicks appear here as they arrive.
+            </p>
+          </div>
+          }
+        </section>
+
+        <!-- Top links clicked -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">Top links clicked</h2>
+            @if (topLinks().length > 0) {
+            <span class="text-[10px] tabular-nums text-base-content/50">{{ linksSentence() }}</span>
+            }
+          </div>
+          @if (topLinks().length > 0) {
+          <ul class="mt-3 divide-y divide-base-200">
+            @for (link of topLinks(); track link.url) {
+            <li class="flex items-center gap-4 py-2.5">
+              <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content" [title]="link.url">
+                {{ link.display }}
+              </span>
+              <div class="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-secondary" [style.width.%]="link.width"></div>
+              </div>
+              <span class="w-36 shrink-0 text-right text-xs tabular-nums text-base-content/70">
+                {{ formatNumber(link.clicks) }} clicks@if (link.people != null) { · {{ formatNumber(link.people) }}
+                people }
+              </span>
+            </li>
+            }
+          </ul>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="queue-list" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">No link clicks recorded for this send yet.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Vs previous sends -->
+        @if (comparison().length > 0) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="pc-eyebrow">Vs previous sends</h2>
+          <div class="mt-4 flex flex-col gap-4">
+            @for (row of comparison(); track row.label) {
+            <div class="flex items-center gap-4">
+              <span class="w-32 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
+              <div class="flex h-9 items-end gap-1">
+                @for (bar of row.bars; track $index) {
+                <div
+                  class="w-2.5 rounded-t-sm"
+                  [class.bg-primary]="bar.isCurrent"
+                  [class.bg-base-300]="!bar.isCurrent"
+                  [style.height.%]="bar.height"
+                ></div>
+                }
+              </div>
+              <div class="flex-1 text-right">
+                <div class="text-sm font-bold tabular-nums text-base-content">{{ row.current }}</div>
+                @if (row.delta) {
+                <div class="text-[10px] tabular-nums" [class]="row.deltaClass">{{ row.delta }}</div>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest. This send is the solid bar.
+            Deltas compare against the send before it.
+          </p>
+        </section>
+        }
+      </div>
+
+      <!-- ============================== side column ============================== -->
+      <div class="flex flex-col gap-6">
+        <!-- What to do next -->
+        @if (report(); as rep) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="pc-eyebrow">What to do next</h2>
+          <span
+            class="mt-3 block"
+            [class.tooltip]="rep.unique_clickers === 0"
+            data-tip="No one has clicked this newsletter yet"
+          >
+            <button
+              type="button"
+              class="btn btn-primary btn-sm w-full"
+              [disabled]="rep.unique_clickers === 0 || isCreatingList()"
+              (click)="createClickersList()"
+            >
+              @if (isCreatingList()) {
+              <span class="loading loading-spinner loading-xs"></span>
+              } Create list of {{ formatNumber(rep.unique_clickers) }} clickers
+            </button>
+          </span>
+          <p class="mt-2 text-[10px] text-base-content/50">
+            A static snapshot. Target the next send at the people who acted on this one.
+          </p>
+
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
+            <div>
+              <p class="text-xs font-semibold text-base-content">
+                {{ formatNumber(em.reply_count) }} {{ em.reply_count === 1 ? 'reply' : 'replies' }} landed in the Inbox
+              </p>
+              <p class="mt-0.5 text-[10px] text-base-content/50">Replies thread into conversations there</p>
+            </div>
+            <a routerLink="/inbox" class="btn btn-outline btn-secondary btn-xs shrink-0">Open Inbox</a>
+          </div>
+
+          @if (mostEngaged().length > 0) {
+          <div class="mt-4 border-t border-base-200 pt-4">
+            <h3 class="pc-eyebrow">Most engaged</h3>
+            <ul class="mt-2 flex flex-col gap-2.5">
+              @for (person of mostEngaged(); track person.email) {
+              <li class="flex items-center gap-3">
+                <span
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
+                >
+                  {{ person.initials }}
+                </span>
+                <div class="min-w-0">
+                  @if (person.person; as match) {
+                  <a
+                    class="link link-hover block truncate text-xs font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+                    [routerLink]="personRoute(match)"
+                  >
+                    {{ person.displayName }}
+                  </a>
+                  } @else {
+                  <span class="block truncate text-xs font-semibold text-base-content" [title]="person.email">
+                    {{ person.displayName }}
+                  </span>
+                  }
+                  <p class="truncate text-[10px] text-base-content/50">{{ person.summary }}</p>
+                </div>
+              </li>
+              }
+            </ul>
+          </div>
+          }
+        </section>
+
+        <!-- Audience at send -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="pc-eyebrow">Audience at send</h2>
+          @if (rep.audience.lists.length > 0) {
+          <ul class="mt-3 flex flex-col gap-2 text-xs">
+            @for (list of rep.audience.lists; track list.id) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="min-w-0 truncate text-base-content/80">
+                {{ list.mode === 'include' ? 'In list' : 'Excluding list' }} "{{ list.name }}"
+              </span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content">
+                {{ list.mode === 'include' ? '+' : '−' }}{{ formatNumber(list.members) }}
+              </span>
+            </li>
+            } @if (rep.audience.overlap_removed > 0) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="text-base-content/60">Overlap removed</span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+                −{{ formatNumber(rep.audience.overlap_removed) }}
+              </span>
+            </li>
+            } @if (rep.audience.suppressed_skipped > 0) {
+            <li class="flex items-center justify-between gap-3">
+              <span class="text-base-content/60">Previously bounced skipped (Workspace setting)</span>
+              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
+                −{{ formatNumber(rep.audience.suppressed_skipped) }}
+              </span>
+            </li>
+            }
+          </ul>
+          <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-200 pt-3 text-xs">
+            <span class="font-bold text-base-content">Total</span>
+            <span class="font-bold tabular-nums text-base-content">
+              {{ formatNumber(em.total_recipients) }} recipients
+            </span>
+          </div>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now. Lists may have
+            changed since the send.
+          </p>
+          } @else {
+          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
+            <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
+            <p class="text-xs text-base-content/60">No lists were targeted. The audience came from tag segments.</p>
+          </div>
+          }
+        </section>
+
+        <!-- Unsubscribe reasons -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">
+              Unsubscribe reasons @if (rep.unsubscribes.total > 0) { · {{ formatNumber(rep.unsubscribes.total) }} }
+            </h2>
+            @if (unsubscribeRate(); as rate) {
+            <span class="text-[10px] tabular-nums text-base-content/50">{{ rate }} of delivered</span>
+            }
+          </div>
+          @if (unsubscribeReasons().length > 0) {
+          <ul class="mt-3 flex flex-col gap-2.5">
+            @for (reason of unsubscribeReasons(); track reason.label) {
+            <li class="flex items-center gap-3 text-xs">
+              <span class="min-w-0 flex-1 truncate text-base-content/80">{{ reason.label }}</span>
+              <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-base-200">
+                <div class="h-full rounded-full bg-base-content/30" [style.width.%]="reason.width"></div>
+              </div>
+              <span class="w-6 shrink-0 text-right font-semibold tabular-nums text-base-content">
+                {{ reason.count }}
+              </span>
+            </li>
+            }
+          </ul>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            The unsubscribe page doesn't ask why yet, so reasons aren't broken down.
+          </p>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No unsubscribes from this send.</p>
+          }
+        </section>
+
+        <!-- Spam reports -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">
+              Spam reports @if (rep.spam_reports.total > 0) { · {{ formatNumber(rep.spam_reports.total) }} }
+            </h2>
+            @if (spamRate() != null) {
+            <span class="text-[10px] tabular-nums text-base-content/50"
+              >{{ formatSpamRate(spamRate()) }} of delivered</span
+            >
+            }
+          </div>
+          @if (rep.spam_reports.total > 0) { @for (row of spamRows(); track $index) {
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate font-mono text-xs text-base-content">{{ row.email }}</p>
+              @if (row.timing) {
+              <p class="mt-0.5 text-[10px] text-base-content/50">Provider feedback loop · {{ row.timing }}</p>
+              }
+            </div>
+            <pc-status-badge type="neutral">Suppressed</pc-status-badge>
+          </div>
+          }
+          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
+            Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1%. @if
+            (spamRateIsSafe()) { This send is well clear. } @else { This send is over that line. Review the audience
+            before the next send. }
+          </p>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No spam reports from this send.</p>
+          }
+        </section>
+        }
+
+        <!-- What was sent -->
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <h2 class="pc-eyebrow">What was sent</h2>
+          <div class="mt-3 flex flex-col gap-3 text-xs">
+            <div>
+              <div class="pc-eyebrow">Subject</div>
+              <p class="mt-0.5 font-semibold text-base-content">{{ em.subject || '—' }}</p>
+            </div>
+            @if (em.preview_text) {
+            <div>
+              <div class="pc-eyebrow">Preview text</div>
+              <p class="mt-0.5 text-base-content/80">{{ em.preview_text }}</p>
+            </div>
+            } @if (report()?.from; as from) {
+            <div>
+              <div class="pc-eyebrow">From</div>
+              <p class="mt-0.5 text-base-content/80">{{ from.name }} @if (from.email) { &lt;{{ from.email }}&gt; }</p>
+            </div>
+            }
+          </div>
+          @if (em.html_content || em.plain_text_content) {
+          <div
+            class="mt-3 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-xs"
+            [class.max-h-56]="!emailExpanded()"
+          >
+            @if (em.html_content) {
+            <div [innerHTML]="em.html_content"></div>
+            } @else {
+            <pre class="whitespace-pre-wrap font-sans">{{ em.plain_text_content }}</pre>
+            }
+          </div>
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-xs mt-3 w-full"
+            (click)="emailExpanded.set(!emailExpanded())"
+          >
+            {{ emailExpanded() ? 'Collapse email' : 'View sent email' }}
+          </button>
+          } @else {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No content stored for this newsletter.</p>
+          }
+        </section>
+
+        <!-- Attachments (manageable until the newsletter goes out) -->
+        @if (attachments().length > 0 || canManageAttachments()) {
+        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <h2 class="pc-eyebrow">Attachments @if (attachments().length > 0) { · {{ attachments().length }} }</h2>
+            @if (canManageAttachments()) {
+            <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
+            <button
+              type="button"
+              class="btn btn-outline btn-secondary btn-xs gap-1"
+              [disabled]="isUploadingAttachment()"
+              (click)="attachmentInput.click()"
+            >
+              @if (isUploadingAttachment()) {
+              <span class="loading loading-spinner loading-xs"></span>
+              Attaching… } @else {
+              <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
+              Attach file }
+            </button>
+            }
+          </div>
+          @if (attachments().length === 0) {
+          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No files attached to this newsletter.</p>
+          } @else {
+          <ul class="mt-2 divide-y divide-base-200">
+            @for (attachment of attachments(); track attachment.id) {
+            <li class="flex items-center justify-between gap-3 py-2">
+              <div class="min-w-0">
+                <p class="truncate text-xs font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
+                @if (attachment.size_bytes) {
+                <p class="text-[10px] text-base-content/50">{{ formatBytes(attachment.size_bytes) }}</p>
+                }
+              </div>
+              @if (canManageAttachments()) {
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-error"
+                title="Remove attachment"
+                (click)="removeAttachment(attachment)"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+              }
+            </li>
+            }
+          </ul>
+          }
+        </section>
+        }
+      </div>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Icon } from '@icons/icon';
+
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { AuthService } from '../../../auth/auth-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { NewslettersService } from '../services/newsletters-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+interface NewsletterRow {
+  bounce_count: number;
+  click_rate: number;
+  delivered_count: number;
+  has_audience: boolean;
+  has_content: boolean;
+  id: string;
+  name: string;
+  open_rate: number;
+  send_date: Date | null;
+  status: string;
+  total_recipients: number;
+  unique_clicks: number;
+  unique_opens: number;
+}
+
+interface NewsletterStats {
+  avgClickRate: number;
+  avgOpenRate: number;
+  bounces: number;
+  delivered: number;
+  sentCount: number;
+}
+
+const STATUS_TONE: Record<string, PcStatusType> = {
+  archived: 'ghost',
+  draft: 'ghost',
+  paused: 'warning',
+  queuing: 'info',
+  scheduled: 'info',
+  sending: 'info',
+  sent: 'success',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  archived: 'Archived',
+  draft: 'Draft',
+  paused: 'Paused',
+  queuing: 'Sending',
+  scheduled: 'Scheduled',
+  sending: 'Sending',
+  sent: 'Sent',
+};
+
+/** Statuses that count as "in progress" for the header sentence. */
+const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused']);
+
+/**
+ * Newsletters list page: stat tiles summarising all-time engagement, then a bespoke
+ * pc-table of campaigns. Drafts get a "Send…" action behind the danger confirm; everything
+ * else links to its report (the newsletter detail page).
+ */
+@Component({
+  selector: 'pc-newsletters-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [EmptyState, RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
+  templateUrl: './newsletters-page.html',
+})
+export class NewslettersPage {
+  private readonly svc = inject(NewslettersService);
+  private readonly auth = inject(AuthService);
+  private readonly userSignal = this.auth.getUserSignal();
+  /** Sending is blocked server-side during demo mode; sendBlocker() explains it (§2 explained-disabled). */
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+  private readonly context = inject(CampaignContextService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly rows = signal<NewsletterRow[]>([]);
+  protected readonly loaded = signal(false);
+  /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
+  protected readonly verifiedSenders = signal<string[]>([]);
+
+  /** The campaign context the current rows were loaded for; undefined = never loaded. */
+  private loadedForCampaign: string | null | undefined = undefined;
+
+  private readonly numberFormatter = new Intl.NumberFormat();
+
+  protected readonly stats = computed<NewsletterStats>(() => {
+    const sent = this.rows().filter((r) => r.status === 'sent');
+    let delivered = 0;
+    let opens = 0;
+    let clicks = 0;
+    let bounces = 0;
+    for (const r of sent) {
+      delivered += r.delivered_count;
+      opens += r.unique_opens;
+      clicks += r.unique_clicks;
+      bounces += r.bounce_count;
+    }
+    return {
+      sentCount: sent.length,
+      delivered,
+      avgOpenRate: delivered > 0 ? (opens / delivered) * 100 : 0,
+      avgClickRate: delivered > 0 ? (clicks / delivered) * 100 : 0,
+      bounces,
+    };
+  });
+
+  protected readonly headerSentence = computed<string | null>(() => {
+    if (!this.loaded()) return null;
+    const sent = this.stats().sentCount;
+    const inProgress = this.rows().filter((r) => IN_PROGRESS_STATUSES.has(r.status)).length;
+    const parts = [`${this.numberFormatter.format(sent)} campaign${sent === 1 ? '' : 's'} sent`];
+    if (inProgress > 0) parts.push(`${this.numberFormatter.format(inProgress)} in progress`);
+    return parts.join(' · ');
+  });
+
+  constructor() {
+    // Reload whenever the campaign context switches (§15) — and once on first render.
+    effect(() => {
+      const campaignId = this.context.activeCampaignId();
+      if (campaignId === this.loadedForCampaign) return;
+      this.loadedForCampaign = campaignId;
+      void untracked(() => this.reload());
+    });
+  }
+
+  protected statusLabel(status: string): string {
+    return STATUS_LABEL[status] ?? (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—');
+  }
+
+  protected statusTone(status: string): PcStatusType {
+    return STATUS_TONE[status] ?? 'ghost';
+  }
+
+  protected formatNumber(value: number): string {
+    return this.numberFormatter.format(value);
+  }
+
+  protected formatPercent(value: number): string {
+    return `${value.toFixed(1)}%`;
+  }
+
+  /**
+   * The first unmet send condition for a draft, or null when it can go out (§2 explained-disabled:
+   * the Send button never greys out silently — the tooltip names exactly what's missing).
+   */
+  protected sendBlocker(row: NewsletterRow): string | null {
+    if (this.isDemo()) {
+      return 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+    }
+    if (this.verifiedSenders().length === 0) {
+      return 'Verify a sender address under Settings → Communications before sending';
+    }
+    if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
+    if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
+    return null;
+  }
+
+  protected async sendDraft(row: NewsletterRow): Promise<void> {
+    if (this.sendBlocker(row) !== null) return;
+    const name = row.name || 'this newsletter';
+    const confirmed = await this.dialogs.confirm({
+      title: `Send "${name}"?`,
+      message: 'It goes out to everyone in its selected lists and tags right away. Sending cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Send newsletter',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this.loading.begin();
+    try {
+      await this.svc.send(row.id);
+      this.alerts.showSuccess(`"${name}" is on its way`);
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not send the newsletter'));
+    } finally {
+      end();
+    }
+  }
+
+  private async reload(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      await this.context.ensureLoaded();
+      const { rows } = await this.svc.getAll();
+      this.rows.set((rows as Record<string, unknown>[]).map((r) => this.toRow(r)));
+      this.loaded.set(true);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load newsletters'));
+    } finally {
+      end();
+    }
+    await this.loadVerifiedSenders();
+  }
+
+  private async loadVerifiedSenders(): Promise<void> {
+    try {
+      await this.settings.load();
+      this.verifiedSenders.set(this.settings.getValue<string[]>('communications.verified_emails', []) ?? []);
+    } catch {
+      // Non-fatal: with no snapshot the Send buttons stay disabled with the verify-sender tooltip.
+    }
+  }
+
+  private toRow(record: Record<string, unknown>): NewsletterRow {
+    const asNumber = (value: unknown): number => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
+    };
+    const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+    return {
+      has_audience: asText(record['target_lists']).length > 0 || asText(record['segments']).length > 0,
+      has_content:
+        asText(record['subject']).length > 0 &&
+        (asText(record['html_content']).length > 0 || asText(record['plain_text_content']).length > 0),
+      id: String(record['id']),
+      name: typeof record['name'] === 'string' ? record['name'] : '',
+      status: typeof record['status'] === 'string' ? record['status'] : 'draft',
+      total_recipients: asNumber(record['total_recipients']),
+      delivered_count: asNumber(record['delivered_count']),
+      bounce_count: asNumber(record['bounce_count']),
+      open_rate: asNumber(record['open_rate']),
+      click_rate: asNumber(record['click_rate']),
+      unique_opens: asNumber(record['unique_opens']),
+      unique_clicks: asNumber(record['unique_clicks']),
+      send_date: record['send_date'] instanceof Date ? record['send_date'] : null,
+    };
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
 ```typescript
 import { DatePipe } from '@angular/common';
@@ -53564,306 +56578,457 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </pc-card>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
-```html
-<!-- Template for persons grid -->
-<div class="flex h-full min-h-0 flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    (rowsDeleted)="onRowsDeleted()"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
-      }
-    </div>
-  </pc-datagrid>
-</div>
-
-<pc-modal-shell #confirmAddressEdit title="Address edit" icon="home">
-  <p class="py-2 font-light">
-    Addresses can only be edited in the Households Component. Would you like me to take you there?
-  </p>
-
-  <div pc-modal-footer class="flex flex-row gap-2">
-    <button class="btn btn-primary" type="button" (click)="routeToHouseholds()">
-      <pc-icon name="arrow-right-start-on-rectangle" />
-      Yes
-    </button>
-    <button class="btn btn-outline btn-accent" type="button" (click)="confirmAddressEdit.close()">
-      <pc-icon name="x-circle" />
-      Cancel
-    </button>
-  </div>
-</pc-modal-shell>
-```
-
-## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
 ```typescript
-import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
 import {
-  PLANS,
-  PURCHASABLE_PLAN_KEYS,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  planDisplayName,
-  priceLabelAt,
-  type PlanDef,
-  type PlanKey,
-  type PurchasablePlanKey,
-} from '@common';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
 
-export interface BillingDetailsSnapshot {
-  plan: string;
-  status: string;
-  endsAt: Date | null;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-  hasActiveSubscription: boolean;
-  isMockMode: boolean;
-}
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
 
-/** Shape returned by `billing.getUsage` — the tenant's live emailable-subscriber count against
- * its current plan's bracket ladder. */
-export interface BillingUsageSnapshot {
-  subscribers: number;
-  billedQuantity: number;
-  subscriberCap: number;
-  emailCap: number;
-  monthlyPrice: number;
-  tierMax: number;
-}
-
-/** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
- * slider so the two surfaces feel identical. */
-const SUBSCRIBER_SLIDER_STOPS = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-] as const;
-
-function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
-  return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
-}
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 @Component({
-  selector: 'pc-billing-settings',
-  imports: [DatePipe, Icon, StatusBadge],
-  templateUrl: './billing-settings.html',
-})
-export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly actionPending = signal(false);
-  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
-  protected readonly usage = signal<BillingUsageSnapshot | null>(null);
-
-  /** Upgrade grid: the purchasable paid tiers only (Grassroots, Movement). Free is the current
-   * plan for everyone who hasn't upgraded, and Enterprise is a contact-us footnote, not a card. */
-  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
-  protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
-
-  protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
-  protected readonly sliderIndex = signal(0);
-  protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
-  protected readonly maxSliderStop = computed(
-    () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
-  );
-
-  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" — omits the billed
-   * clause for plans with no meaningful bracket (free, enterprise). */
-  protected readonly usageSummary = computed<string | null>(() => {
-    const snapshot = this.usage();
-    const planKey = this.details()?.plan;
-    if (!snapshot || !planKey) return null;
-
-    const subscribers = `${this.formatCount(snapshot.subscribers)} emailable subscribers`;
-    if (planKey === 'free' || planKey === 'enterprise') return subscribers;
-
-    const cap = this.formatCount(snapshot.subscriberCap);
-    return `${subscribers} · billed for up to ${cap} at $${snapshot.monthlyPrice}/mo`;
-  });
-
-  protected planLabel(plan: string | null | undefined): string {
-    return planDisplayName(plan);
-  }
-
-  protected priceLabel(plan: PlanDef): string {
-    return priceLabelAt(plan, this.sliderValue());
-  }
-
-  protected formatCount(n: number): string {
-    return n.toLocaleString('en-US');
-  }
-
-  protected onSliderInput(event: Event): void {
-    const index = (event.target as HTMLInputElement).valueAsNumber;
-    if (!Number.isNaN(index)) this.sliderIndex.set(index);
-  }
-
-  ngOnInit(): void {
-    void this.initBilling();
-  }
-
-  private async initBilling() {
-    await this.loadBilling();
-
-    // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => void this.handleQueryParams(params));
-  }
-
-  protected async loadBilling() {
-    const end = this._loading.begin();
-    try {
-      const [details, usage] = await Promise.all([
-        this.api.billing.getDetails.query(),
-        this.api.billing.getUsage.query(),
-      ]);
-      this.details.set(details);
-      this.usage.set(usage);
-      this.syncSliderToUsage(usage);
-    } catch (err) {
-      console.error(err);
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
-    } finally {
-      end();
-    }
-  }
-
-  /** Snaps the slider to the tenant's live subscriber count, rounded up to the nearest stop.
-   * Falls back to the first stop when usage is unavailable or already past the highest stop. */
-  private syncSliderToUsage(usage: BillingUsageSnapshot | null | undefined): void {
-    const subscribers = usage?.subscribers;
-    if (subscribers == null) {
-      this.sliderIndex.set(0);
-      return;
-    }
-    const index = this.sliderStops.findIndex((stop) => subscribers <= stop);
-    this.sliderIndex.set(index === -1 ? this.sliderStops.length - 1 : index);
-  }
-
-  private async handleQueryParams(params: Record<string, string>): Promise<void> {
-    if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
-      await this.handleMockActivation(params['plan']);
-    } else if (params['checkout_success']) {
-      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
-      this.clearQueryParams();
-    } else if (params['mock_portal_success']) {
-      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
-      this.clearQueryParams();
-    }
-  }
-
-  protected async subscribe(plan: PlanDef) {
-    if (!isPurchasablePlan(plan.key)) return;
-    const planKey = plan.key;
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createCheckout.mutate({ plan: planKey });
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing engine.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async openPortal() {
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createPortal.mutate();
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing portal.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
-      this.actionPending.set(false);
-    }
-  }
-
-  private async handleMockActivation(plan: PurchasablePlanKey) {
-    const end = this._loading.begin();
-    try {
-      const quantity = this.mockQuantityFor(plan);
-      await this.api.billing.activateMockPlan.mutate({ plan, quantity });
-      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
-    } finally {
-      end();
-      this.clearQueryParams();
-    }
-  }
-
-  /** The bracket index (Stripe quantity) matching the tenant's current subscriber count, so mock
-   * activation lands on the same billed tier the real checkout would compute. */
-  private mockQuantityFor(plan: PlanKey): number {
-    const subscribers = this.usage()?.subscribers ?? 0;
-    return bracketIndexForSubscribers(plan, subscribers) ?? maxQuantity(plan);
-  }
-
-  protected async cancelMock() {
-    const end = this._loading.begin();
-    try {
-      await this.api.billing.cancelMockPlan.mutate();
-      this.alerts.showSuccess('Mock subscription has been canceled.');
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
-    } finally {
-      end();
-    }
-  }
-
-  private clearQueryParams() {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: {
-        mock_checkout_success: null,
-        plan: null,
-        checkout_success: null,
-        mock_portal_success: null,
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon, ModalShell],
+  templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
       },
-      queryParamsHandling: 'merge',
-    });
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+  private readonly confirmAddressEditDlg = viewChild.required<ModalShell>('confirmAddressEdit');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
   }
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor is derived from donations and volunteer/staff are first-class person
+   * status (§15), not grid segments — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
+  }
+
+  protected routeToHouseholds() {
+    this.confirmAddressEditDlg().close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    this.confirmAddressEditDlg().show();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -54051,599 +57216,6 @@ export class DomainSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
-```html
-<div class="space-y-8">
-  <!-- Stripe Connection Section -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-      <h3 class="text-lg font-semibold flex items-center gap-2">
-        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
-        Stripe Integration
-      </h3>
-      <span
-        class="badge badge-sm font-medium"
-        [class.badge-success]="stripeSecretKey().trim()"
-        [class.badge-neutral]="!stripeSecretKey().trim()"
-      >
-        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
-      </span>
-    </div>
-
-    <!-- Security Banner -->
-    <div
-      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
-    >
-      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
-      <div>
-        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
-        <p class="mt-0.5 text-base-content/70">
-          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
-          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
-        </p>
-        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="grid gap-6 md:grid-cols-2 pt-2">
-      <!-- Stripe Secret Key -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-xs font-semibold text-base-content/90"> Stripe Secret Key </label>
-        <input
-          id="stripe_secret_key"
-          type="password"
-          placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
-          [value]="stripeSecretKey()"
-          (input)="stripeSecretKey.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
-          <code class="font-mono">sk_test_</code>.
-        </p>
-      </div>
-
-      <!-- Stripe Webhook Secret -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-xs font-semibold text-base-content/90">
-          Stripe Webhook Signing Secret
-        </label>
-        <input
-          id="stripe_webhook_secret"
-          type="password"
-          placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
-          [value]="stripeWebhookSecret()"
-          (input)="stripeWebhookSecret.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Enables signature verification of incoming Stripe webhook notifications. Starts with
-          <code class="font-mono">whsec_</code>.
-        </p>
-      </div>
-    </div>
-
-    <!-- Webhook Instructions Info Card -->
-    <div class="card pc-panel p-4 mt-4 space-y-3">
-      <div class="space-y-1">
-        <h4 class="text-xs font-bold text-base-content/90 flex items-center gap-1.5">
-          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
-          Webhook Endpoint URL
-        </h4>
-        <p class="text-xs text-base-content/65 max-w-xl">
-          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
-          completion notifications. For security the token is shown only once, when you generate it.
-        </p>
-      </div>
-
-      @if (webhookToken()) {
-      <!-- Just generated — show the URL once with a copy button -->
-      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
-        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
-          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
-          Copy this URL now. It won't be shown again.
-        </p>
-        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
-            {{ webhookUrl() }}
-          </div>
-          <button type="button" class="btn btn-sm btn-outline btn-secondary shrink-0" (click)="copyWebhookUrl()">
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-            Copy URL
-          </button>
-        </div>
-      </div>
-      } @else {
-      <!-- No plaintext available (never generated, or generated in a previous session) -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
-          @if (webhookConfigured()) {
-          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
-          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
-          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
-          No webhook token yet. Generate one to get your Stripe webhook URL. }
-        </p>
-        <button
-          type="button"
-          class="btn btn-sm btn-primary shrink-0"
-          [disabled]="isRegeneratingWebhook()"
-          (click)="regenerateWebhookToken()"
-        >
-          <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
-        </button>
-      </div>
-      }
-    </div>
-  </div>
-
-  <!-- Donation Limit & Residency Restrictions Section -->
-  <div class="grid gap-6 md:grid-cols-2">
-    <!-- Donation Periods card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
-      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-        <h3 class="text-lg font-semibold flex items-center gap-2">
-          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
-          Donation Limit Periods
-        </h3>
-        <button
-          type="button"
-          class="btn btn-xs btn-primary"
-          (click)="showAddPeriod.set(true)"
-          [hidden]="showAddPeriod()"
-        >
-          <pc-icon name="plus" [size]="3"></pc-icon>
-          Add Period
-        </button>
-      </div>
-      <p class="text-xs text-base-content/60">
-        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
-        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
-        below applies.
-      </p>
-
-      <!-- Existing periods list -->
-      <div class="space-y-2">
-        @for (period of donationPeriods(); track period.id) {
-        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
-          <div class="space-y-0.5 flex-1 min-w-0">
-            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
-            <div class="text-base-content/60">
-              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
-            </div>
-            <div class="flex items-center gap-2 mt-1">
-              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
-              @if (isPeriodActive(period)) {
-              <pc-status-badge type="success">Active now</pc-status-badge>
-              } @else if (period.is_active) {
-              <pc-status-badge type="neutral">Enabled</pc-status-badge>
-              } @else {
-              <pc-status-badge type="ghost">Disabled</pc-status-badge>
-              }
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <input
-              type="checkbox"
-              class="toggle toggle-xs toggle-success"
-              [checked]="period.is_active"
-              (change)="togglePeriodActive(period)"
-              title="Enable/disable period"
-            />
-            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
-              <pc-icon name="trash" [size]="3"></pc-icon>
-            </button>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-xs text-base-content/50 italic py-2 text-center">
-          No periods defined. Using fallback annual limit.
-        </div>
-        }
-      </div>
-
-      <!-- Add period form -->
-      @if (showAddPeriod()) {
-      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-xs font-bold text-base-content/90">New Donation Period</h4>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Period Name</label>
-          <input
-            type="text"
-            class="input input-sm input-bordered bg-base-200/30"
-            placeholder="e.g. 2024 Municipal Campaign"
-            [value]="newPeriodName()"
-            (input)="newPeriodName.set($any($event.target).value)"
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">Start Date</label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodStartDate()"
-              (input)="newPeriodStartDate.set($any($event.target).value)"
-            />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodEndDate()"
-              (input)="newPeriodEndDate.set($any($event.target).value)"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Limit per Donor ($)</label>
-          <div class="relative max-w-xs">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
-            <input
-              type="number"
-              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [formField]="newPeriodLimitForm"
-            />
-          </div>
-        </div>
-        <div class="flex items-center gap-2 pt-1">
-          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
-            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
-          </button>
-          <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="showAddPeriod.set(false)">
-            Cancel
-          </button>
-        </div>
-      </div>
-      }
-
-      <!-- Fallback annual limit (used when no period is active) -->
-      <div class="border-t border-base-200 pt-4 mt-2">
-        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
-        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
-        <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-semibold">$</span>
-          <input
-            id="donation_limit"
-            type="number"
-            min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold"
-            [value]="donationLimit()"
-            (input)="donationLimit.set($any($event.target).value)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Residency restrictions card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
-        Residency Restrictions
-      </h3>
-      <p class="text-xs text-base-content/60">
-        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
-        state elections.
-      </p>
-
-      <div class="space-y-4">
-        <!-- Toggle Restriction -->
-        <label class="flex items-center gap-3 cursor-pointer py-1">
-          <input
-            id="restrict_residency"
-            type="checkbox"
-            class="toggle toggle-primary toggle-md"
-            [checked]="restrictResidency()"
-            (change)="restrictResidency.set($any($event.target).checked)"
-          />
-          <span class="text-xs font-semibold text-base-content/90"> Enforce residency restrictions </span>
-        </label>
-
-        @if (restrictResidency()) {
-        <div class="space-y-4 pt-2 animate-fade-in relative">
-          <!-- Autocomplete Allowed Countries Picker -->
-          <div class="flex flex-col gap-1.5 relative">
-            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
-            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
-              @for (cCode of selectedCountries(); track cCode) {
-              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
-                {{ getCountryName(cCode) }}
-                <button
-                  type="button"
-                  class="text-[10px] hover:text-base-content font-bold"
-                  (click)="removeCountry(cCode)"
-                >
-                  ×
-                </button>
-              </span>
-              }
-              <input
-                type="text"
-                placeholder="Type to search country..."
-                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
-                [value]="countrySearch()"
-                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
-                (focus)="showCountryDropdown.set(true)"
-                (blur)="showCountryDropdown.set(false)"
-              />
-            </div>
-
-            @if (showCountryDropdown() && availableCountriesToSelect().length) {
-            <!-- Use mousedown to prevent input blur before selecting -->
-            <ul
-              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
-            >
-              @for (c of availableCountriesToSelect(); track c.code) {
-              <li>
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
-                  (mousedown)="selectCountry(c); $event.preventDefault()"
-                >
-                  {{ c.name }} ({{ c.code }})
-                </button>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-          <!-- Allowed Province/State Checkboxes for Selected Countries -->
-          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
-          {
-          <div class="flex flex-col gap-3 p-4 pc-panel max-h-64 overflow-y-auto">
-            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
-              Allowed Provinces & States
-            </label>
-
-            @if (isCanadaSelected()) {
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (p of canadaProvinces; track p.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(p.code)"
-                    (change)="toggleRegion(p.code)"
-                  />
-                  <span>{{ p.name }} ({{ p.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">United States States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of usStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of germanyStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (r of franceRegions; track r.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(r.code)"
-                    (change)="toggleRegion(r.code)"
-                  />
-                  <span>{{ r.name }} ({{ r.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
-            isFranceSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of indiaStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            }
-          </div>
-          }
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Tax Credit Configuration -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-      Tax Credit Tiers
-    </h3>
-    <p class="text-xs text-base-content/60">
-      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
-      inside a calendar year.
-    </p>
-
-    <!-- Table of existing tiers -->
-    <div class="mt-3">
-      <pc-table [columns]="4">
-        <ng-container pcTableHead>
-          <th>Bracket Tier</th>
-          <th>Up to Limit</th>
-          <th>Credit Percentage</th>
-          <th class="text-right w-24">Actions</th>
-        </ng-container>
-        @for (tier of taxCreditTiers(); track $index) {
-        <tr>
-          <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
-          <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
-          <td>
-            <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
-          </td>
-          <td class="text-right">
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
-              (click)="removeTier($index)"
-            >
-              Delete
-            </button>
-          </td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="4" class="text-center py-6 text-base-content/50 italic">
-            No tax credit tiers defined yet. Add a tier below to set up credit calculations.
-          </td>
-        </tr>
-        }
-      </pc-table>
-    </div>
-
-    <!-- Progressive bracket summary -->
-    @if (taxCreditTiers().length) {
-    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
-      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
-        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
-        Tax Credit Bracket Summary (Plain Language)
-      </h4>
-      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
-        @for (line of taxCreditSummary(); track $index) {
-        <li>{{ line }}</li>
-        }
-      </ul>
-    </div>
-    }
-
-    <!-- Add new tier form -->
-    <div class="card pc-panel p-4 flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3">
-      <!-- Tier Limit -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
-          <input
-            id="new_limit"
-            type="number"
-            placeholder="500"
-            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
-            [formField]="newLimitForm"
-          />
-        </div>
-      </div>
-
-      <!-- Tier Rate -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
-        <div class="relative">
-          <input
-            id="new_rate"
-            type="number"
-            placeholder="75"
-            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
-            [formField]="newRateForm"
-          />
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
-        </div>
-      </div>
-
-      <!-- Add button -->
-      <button
-        type="button"
-        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
-        (click)="addTier()"
-      >
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Add Tier
-      </button>
-    </div>
-  </div>
-
-  <!-- Action buttons footer -->
-  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
-    <div>
-      @if (isSaving()) {
-      <span class="text-xs font-medium text-base-content/60 flex items-center">
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        Saving donations configuration…
-      </span>
-      }
-    </div>
-
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-xs"
-        (click)="reset()"
-        [disabled]="isSaving()"
-      >
-        Reset
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-xs"
-        (click)="save()"
-        [disabled]="isSaving()"
-      >
-        @if (isSaving()) {
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Save Changes
-      </button>
-    </div>
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
 ```typescript
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
@@ -54657,6 +57229,22 @@ import { environment } from '../../../../environments/environment';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+/** Payment processor that fulfils online donations. */
+export type DonationProcessor = 'stripe' | 'helcim';
+
+/** Where donations are processed and payment data stored, derived from the CONFIGURED (saved) processor. */
+export interface ProcessingNotice {
+  heading: string;
+  body: string;
+}
+
+export interface ResidencyContext {
+  country: string | null;
+  processor: DonationProcessor;
+  residencyAcknowledged: boolean;
+}
 
 export interface TaxCreditTier {
   limit: number;
@@ -54676,6 +57264,7 @@ export interface DonationPeriod {
   selector: 'pc-donations-settings',
   imports: [FormField, Icon, Table, StatusBadge],
   templateUrl: './donations-settings.html',
+  styleUrl: './donations-settings.css',
 })
 export class DonationsSettingsComponent implements OnInit {
   private readonly settingsSvc = inject(SettingsService);
@@ -54683,6 +57272,29 @@ export class DonationsSettingsComponent implements OnInit {
   private readonly tokenSvc = inject(TokenService);
   private readonly donationsSvc = inject(DonationsService);
   private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+
+  // Payment processor: Stripe (default) or Helcim.
+  protected readonly processor = signal<DonationProcessor>('stripe');
+  protected readonly helcimApiToken = signal('');
+  protected readonly helcimWebhookSecret = signal('');
+
+  // "Configured" reads the SAVED settings snapshot (reactive), not the live-edited fields, so the
+  // mutual-exclusion lock only reflects what is actually persisted. Exactly one may be configured.
+  protected readonly stripeConfigured = computed(
+    () => this.settingsSvc.getValue<string>('donations.stripe_secret_key', '').trim().length > 0,
+  );
+  protected readonly helcimConfigured = computed(
+    () => this.settingsSvc.getValue<string>('donations.helcim_api_token', '').trim().length > 0,
+  );
+  // Lock the OTHER option while one processor is configured — you must remove its keys to switch.
+  protected readonly stripeOptionDisabled = computed(() => this.helcimConfigured() && !this.stripeConfigured());
+  protected readonly helcimOptionDisabled = computed(() => this.stripeConfigured() && !this.helcimConfigured());
+
+  // Residency gate: donations stay paused until the tenant confirms residency restrictions once.
+  protected readonly residencyAcknowledged = signal(false);
+  protected readonly residencyContext = signal<ResidencyContext | null>(null);
 
   protected readonly stripeSecretKey = signal('');
   protected readonly stripeWebhookSecret = signal('');
@@ -54911,6 +57523,28 @@ export class DonationsSettingsComponent implements OnInit {
     );
   });
 
+  // State where donations are processed and where donor payment data is stored, driven ONLY by which
+  // processor is actually CONFIGURED (saved keys) — not the radio selection. Picking a radio while no
+  // keys are saved leaves the neutral "either country" message; only saving keys changes this.
+  protected readonly processingNotice = computed<ProcessingNotice>(() => {
+    if (this.helcimConfigured()) {
+      return {
+        heading: 'Donations are processed in Canada',
+        body: 'Donations are processed by Helcim (Canada). Donor payment data is stored in Canada.',
+      };
+    }
+    if (this.stripeConfigured()) {
+      return {
+        heading: 'Donations are processed in the United States',
+        body: 'Donations are processed by Stripe (United States). Donor payment data is stored in the US.',
+      };
+    }
+    return {
+      heading: 'Set up a payment processor to accept donations',
+      body: 'Donor payment data will be stored in the country of the processor you configure: the United States with Stripe, or Canada with Helcim. Choose one below and enter its keys to lock this in.',
+    };
+  });
+
   protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
   protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
   protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
@@ -54953,6 +57587,19 @@ export class DonationsSettingsComponent implements OnInit {
     this.loadValues();
     await this.loadPeriods();
     await this.loadWebhookStatus();
+    await this.loadResidencyContext();
+  }
+
+  private async loadResidencyContext(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const ctx = await this.donationsSvc.getResidencyContext();
+      this.residencyContext.set(ctx);
+    } catch {
+      // non-fatal — the disclaimers simply stay in their fail-safe (shown) state
+    } finally {
+      end();
+    }
   }
 
   private async loadWebhookStatus(): Promise<void> {
@@ -55059,8 +57706,19 @@ export class DonationsSettingsComponent implements OnInit {
   private loadValues() {
     this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
     this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.processor.set(this.settingsSvc.getValue<DonationProcessor>('donations.processor', 'stripe'));
+    this.helcimApiToken.set(this.settingsSvc.getValue<string>('donations.helcim_api_token', ''));
+    this.helcimWebhookSecret.set(this.settingsSvc.getValue<string>('donations.helcim_webhook_secret', ''));
+    // When exactly one processor is configured, it is the only valid selection — force it so the UI
+    // can never show the locked processor's card.
+    if (this.stripeConfigured() && !this.helcimConfigured()) {
+      this.processor.set('stripe');
+    } else if (this.helcimConfigured() && !this.stripeConfigured()) {
+      this.processor.set('helcim');
+    }
     this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
     this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+    this.residencyAcknowledged.set(this.settingsSvc.getValue<boolean>('donations.residency_acknowledged', false));
 
     // Load countries
     const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
@@ -55171,22 +57829,98 @@ export class DonationsSettingsComponent implements OnInit {
     this.alerts.showSuccess('Settings reset to saved values');
   }
 
+  /** Guarded processor pick — a locked option (the other one is configured) cannot be selected. */
+  protected selectProcessor(next: DonationProcessor) {
+    if (next === 'stripe' && this.stripeOptionDisabled()) return;
+    if (next === 'helcim' && this.helcimOptionDisabled()) return;
+    this.processor.set(next);
+  }
+
+  /** Clear the saved Stripe keys (and its webhook secret), re-enabling the Helcim option. */
+  protected async removeStripeConfig() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Stripe configuration?',
+      message: 'Donations will stop until you configure a processor. This clears your saved Stripe keys.',
+      confirmText: 'Remove Stripe keys',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.settingsSvc.upsert([
+        { key: 'donations.stripe_secret_key', value: '' },
+        { key: 'donations.stripe_webhook_secret', value: '' },
+      ]);
+      this.stripeSecretKey.set('');
+      this.stripeWebhookSecret.set('');
+      this.alerts.showSuccess('Stripe configuration removed');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to remove Stripe configuration',
+      );
+    }
+  }
+
+  /** Clear the saved Helcim keys (and its webhook secret), re-enabling the Stripe option. */
+  protected async removeHelcimConfig() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Helcim configuration?',
+      message: 'Donations will stop until you configure a processor. This clears your saved Helcim keys.',
+      confirmText: 'Remove Helcim keys',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.settingsSvc.upsert([
+        { key: 'donations.helcim_api_token', value: '' },
+        { key: 'donations.helcim_webhook_secret', value: '' },
+      ]);
+      this.helcimApiToken.set('');
+      this.helcimWebhookSecret.set('');
+      this.alerts.showSuccess('Helcim configuration removed');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to remove Helcim configuration',
+      );
+    }
+  }
+
   protected async save() {
     this.isSaving.set(true);
     try {
+      // Only the SELECTED processor's keys are written; the other's are cleared so exactly one
+      // processor is ever configured (the mutual-exclusion contract the UI enforces).
+      const isStripe = this.processor() === 'stripe';
       const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.processor', value: this.processor() },
+        { key: 'donations.stripe_secret_key', value: isStripe ? this.stripeSecretKey() : '' },
+        { key: 'donations.stripe_webhook_secret', value: isStripe ? this.stripeWebhookSecret() : '' },
+        { key: 'donations.helcim_api_token', value: isStripe ? '' : this.helcimApiToken() },
+        { key: 'donations.helcim_webhook_secret', value: isStripe ? '' : this.helcimWebhookSecret() },
         { key: 'donations.limit', value: Number(this.donationLimit()) },
         { key: 'donations.restrict_residency', value: this.restrictResidency() },
         { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
         { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
         { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        // Saving the residency card — restricting or allowing everyone — is the explicit choice that
+        // lifts the "donations paused" gate, so record the acknowledgment alongside it.
+        { key: 'donations.residency_acknowledged', value: true },
         // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
         // shown once by regenerateWebhookToken(), never round-tripped through the client.
       ];
 
       await this.settingsSvc.upsert(entries);
+      // Mirror the "clear the other processor" write into the live fields so the UI state matches.
+      if (isStripe) {
+        this.helcimApiToken.set('');
+        this.helcimWebhookSecret.set('');
+      } else {
+        this.stripeSecretKey.set('');
+        this.stripeWebhookSecret.set('');
+      }
+      this.residencyAcknowledged.set(true);
+      this.residencyContext.update((ctx) => (ctx ? { ...ctx, residencyAcknowledged: true } : ctx));
       this.alerts.showSuccess('Donations configuration saved successfully');
     } catch (err) {
       this.alerts.showError(
@@ -56716,137 +59450,6 @@ export class TaskView {
       .join(' ');
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h2 class="sr-only">Tasks</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
-      }
-    </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import
-      </button>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
-        <pc-icon name="view-kanban" [size]="4"></pc-icon>
-        Open board
-      </button>
-      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        New task
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs with counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
-
-  @if (loaded() && !filtered().length) {
-  <div class="flex flex-col items-center gap-3 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    @switch (tab()) { @case ('all') {
-    <span class="text-base font-medium">No tasks yet</span>
-    } @case ('mine') {
-    <span class="text-base font-medium">Nothing assigned to you yet</span>
-    } @case ('unassigned') {
-    <span class="text-base font-medium">Every open task has an owner</span>
-    } @case ('done') {
-    <span class="text-base font-medium">Nothing completed yet</span>
-    } }
-    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New task
-    </button>
-  </div>
-  } @else {
-  <div class="flex flex-col gap-5">
-    @for (group of groups(); track group.key) {
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2 px-1">
-        <span
-          class="pc-eyebrow"
-          [class.text-error]="group.meta.tone === 'error'"
-          [class.text-warning]="group.meta.tone === 'warning'"
-          [class.text-info]="group.meta.tone === 'info'"
-          [class.text-base-content/50]="group.meta.tone === 'neutral'"
-        >
-          {{ group.meta.label }}
-        </span>
-        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
-      </div>
-
-      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
-        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle shrink-0"
-            [class.text-success]="t.status === 'done'"
-            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
-            (click)="toggleDone(t)"
-          >
-            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
-          </button>
-
-          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
-            <div
-              class="truncate text-xs font-medium"
-              [class.line-through]="t.status === 'done'"
-              [class.opacity-50]="t.status === 'done'"
-            >
-              {{ t.name }}
-            </div>
-            @if (reason) {
-            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
-            }
-          </div>
-
-          @if (t.priority) {
-          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (badge) {
-          <span
-            class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="badge.tone === 'error'"
-            [class.badge-warning]="badge.tone === 'warning'"
-          >
-            {{ badge.text }}
-          </span>
-          } @if (t.due_at) {
-          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
-            >{{ dateLabel(t.due_at) }}</span
-          >
-          } @if (t.assigned_to) {
-          <span
-            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-            [attr.title]="assignee"
-            >{{ assigneeInitial(t.assigned_to) }}</span
-          >
-          } @else {
-          <button
-            type="button"
-            class="badge badge-outline shrink-0 border-dashed text-xs"
-            title="Take this task. One click assigns it to you"
-            (click)="takeTask(t); $event.stopPropagation()"
-          >
-            Unassigned
-          </button>
-          }
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
@@ -60512,644 +63115,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import {
-  companyRecordIdResolver,
-  householdRecordIdResolver,
-  personRecordIdResolver,
-} from './services/record-slug.resolver';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'dashboard',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-    // `breadcrumb` feeds BreadcrumbDefaultsService: every route publishes a navbar
-    // trail on NavigationEnd, so no page ever shows an empty or stale strip.
-    data: { breadcrumb: 'Dashboard' },
-  },
-  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
-  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'people',
-    data: { breadcrumb: 'People' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New person' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-        // Slug-aware: the URL may carry /people/amira-hassan; the component's
-        // `id` input always receives the numeric id (route data wins over params).
-        resolve: { id: personRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: personRecordIdResolver },
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    data: { breadcrumb: 'Households' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New household' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-        resolve: { id: householdRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: householdRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    data: { breadcrumb: 'Duplicates' },
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-        data: { breadcrumb: 'People' },
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-        data: { breadcrumb: 'Households' },
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-        data: { breadcrumb: 'Companies' },
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-    data: { shouldReuse: true, key: 'tagsadminroot', breadcrumb: 'Tags' },
-  },
-
-  {
-    path: 'issues',
-    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-    data: { shouldReuse: true, key: 'issuesadminroot', breadcrumb: 'Issues' },
-  },
-
-  {
-    path: 'lists',
-    data: { breadcrumb: 'Lists' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new', breadcrumb: 'New list' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit', breadcrumb: 'Edit list' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    data: { breadcrumb: 'Newsletters' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New newsletter' },
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'automations',
-    data: { breadcrumb: 'Automations' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-        data: { breadcrumb: 'New automation' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
-  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    data: { breadcrumb: 'Donations' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot', breadcrumb: 'Monthly pledges' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-    data: { breadcrumb: 'Inbox' },
-  },
-  {
-    path: 'tasks',
-    data: { breadcrumb: 'Tasks' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
-        data: { shouldReuse: true, key: 'taskslistroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-        data: { breadcrumb: 'New task' },
-      },
-      // Must precede ':id' — otherwise the wildcard param route would swallow it.
-      {
-        path: 'board',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-        data: { shouldReuse: true, key: 'tasksboardroot', breadcrumb: 'Board' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
-  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
-
-  {
-    path: 'canvassing',
-    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
-    data: { breadcrumb: 'Canvassing' },
-  },
-
-  {
-    path: 'campaigns',
-    data: { breadcrumb: 'Campaigns' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'new', breadcrumb: 'New campaign' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-
-  {
-    path: 'teams',
-    data: { breadcrumb: 'Teams' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new', breadcrumb: 'New team' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'deliveries',
-    data: { breadcrumb: 'Deliveries' },
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
-        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
-      },
-      {
-        path: 'plan',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
-        data: { breadcrumb: 'Plan routes' },
-      },
-      {
-        path: 'routes',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
-        data: { breadcrumb: 'Routes' },
-      },
-      {
-        path: 'routes/:id',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
-        // Default until the page loads and publishes the route's name itself.
-        data: { breadcrumb: [{ label: 'Routes', route: '/deliveries/routes' }] },
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    data: { breadcrumb: 'Users' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        // View and edit merged into one page (approved 2026-07-10 design) — the
-        // unsaved-changes guard now protects the view, and old edit links redirect.
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      { path: ':id/edit', redirectTo: ':id' },
-    ],
-  },
-  {
-    // Companion access approvals: volunteers who verified their contact and
-    // are waiting for an admin to unlock their turf/route link.
-    path: 'volunteer-access',
-    canActivate: [roleGuard],
-    loadComponent: () =>
-      import('./experiences/volunteer-access/ui/volunteer-access-page').then((m) => m.VolunteerAccessPage),
-    data: { breadcrumb: 'Volunteer access' },
-  },
-  {
-    path: 'forms',
-    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-        // Flat route that conceptually nests under Donations — pre-built trail.
-        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'New donation page' }] },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donations' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'Edit donation page' }] },
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    data: { breadcrumb: 'Settings' },
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'workspace',
-    canActivate: [roleGuard],
-    data: { breadcrumb: 'Workspace' },
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'workspace' },
-      },
-    ],
-  },
-  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
-  {
-    path: 'configuration',
-    redirectTo: '/workspace',
-    pathMatch: 'prefix',
-  },
-  {
-    path: 'billing',
-    redirectTo: '/workspace/billing',
-    pathMatch: 'full',
-  },
-  // Back-compat: Files moved into Workspace settings → Storage.
-  {
-    path: 'files',
-    redirectTo: '/workspace/storage',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-    data: { breadcrumb: 'Profile' },
-  },
-  {
-    path: 'imports/new',
-    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
-    // Flat route that conceptually nests under the Imports tab of the history page.
-    data: { breadcrumb: [{ label: 'Imports', route: '/imports' }, { label: 'New import' }] },
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-    // Default matches the page's initial tab — the page publishes the tab-aware
-    // crumb ("Imports"/"Exports") itself on every tab switch.
-    data: { breadcrumb: 'Imports' },
-  },
-  {
-    // Wave 1E (spec §17): Exports folded into the Import/export History page's
-    // Exports tab — redirect the old standalone route rather than 404 stale links.
-    path: 'exports',
-    redirectTo: '/imports',
-    pathMatch: 'full',
-  },
-  {
-    path: 'companies',
-    data: { breadcrumb: 'Companies' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New company' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-        resolve: { id: companyRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: companyRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'activity',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-    data: { breadcrumb: 'Activity' },
-  },
-  // Back-compat: old /activities links redirect to /activity.
-  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
-  {
-    path: 'help',
-    data: { breadcrumb: 'Help' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
-      },
-    ],
-  },
-];
-```
-
-## File: apps/website/src/app/pricing/pricing-page.ts
-```typescript
-import { Component, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { FEATURE_MATRIX, PLANS, priceLabelAt } from '@common';
-import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-];
-
-/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
-const DEFAULT_STOP_INDEX = 1;
-const DEFAULT_STOP = 2_500;
-
-/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
-type MatrixPlanKey = keyof FeatureMatrixRow['values'];
-
-function isMatrixPlanKey(key: string): key is MatrixPlanKey {
-  return key === 'free' || key === 'grassroots' || key === 'movement';
-}
-
-@Component({
-  selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
-  templateUrl: './pricing-page.html',
-})
-export class PricingPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-  protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
-
-  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
-  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
-  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
-  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
-
-  protected onSlide(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLInputElement) {
-      this.stopIndex.set(Number(target.value));
-    }
-  }
-
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
-  protected priceLabel(plan: PlanDef): string {
-    const label = priceLabelAt(plan, this.subscribers());
-    const amount = /^\$(\d+)$/.exec(label)?.[1];
-    return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
-  }
-
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
-  protected overMax(plan: PlanDef): boolean {
-    return priceLabelAt(plan, this.subscribers()) === 'Contact us';
-  }
-
-  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
-  protected maxSubscribersLabel(plan: PlanDef): string {
-    const brackets = plan.pricing?.brackets;
-    const last = brackets?.[brackets.length - 1];
-    return (last?.upTo ?? 0).toLocaleString('en-US');
-  }
-
-  /** One matrix cell: true = included, false = not included, string = text value. */
-  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
-    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
-  }
-}
-```
-
 ## File: apps/website/src/app/ui/site-footer.ts
 ```typescript
 import { Component } from '@angular/core';
@@ -63246,6 +65211,659 @@ export class EventViewComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import type { PcIconNameType } from '@icons/icons.index';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { FORM_TEMPLATES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { Table } from '@uxcommon/components/table/table';
+import { Icon } from '@icons/icon';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
+import { FormRenderComponent } from './form-render';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+import { publicPageUrl } from '../../../shared/public-pages';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+interface TemplateCard {
+  type: FormType;
+  icon: PcIconNameType;
+  title: string;
+  description: string;
+}
+
+/** Step-1 cards that leave the Forms flow for a dedicated builder (fundraising/event/shift). */
+interface BuilderCard {
+  icon: PcIconNameType;
+  title: string;
+  description: string;
+  cta: string;
+  route: string;
+}
+
+const DEFAULT_TEMPLATE_CARD: TemplateCard = {
+  type: 'signup',
+  icon: 'user-plus',
+  title: 'Signup',
+  description: 'Name, email, phone and availability. Grow your volunteer roster.',
+};
+
+/** Step-1 cards of the New-form flow — same card idiom as the automation trigger picker. */
+const TEMPLATE_CARDS: readonly TemplateCard[] = [
+  DEFAULT_TEMPLATE_CARD,
+  {
+    type: 'pledge',
+    icon: 'banknotes',
+    title: 'Pledge',
+    description: 'Name, email and an amount. Collect commitments to give.',
+  },
+  {
+    type: 'rsvp',
+    icon: 'ticket',
+    title: 'RSVP',
+    description: 'Name, email and seats. Count heads before an event.',
+  },
+  {
+    type: 'request',
+    icon: 'map-pin',
+    title: 'Request',
+    description: 'Name, email, address and notes. Take requests like yard signs.',
+  },
+  {
+    type: 'survey',
+    icon: 'chat-bubble-bottom-center-text',
+    title: 'Survey',
+    description: 'Name, issues and an open answer. Hear what people think.',
+  },
+];
+
+const BUILDER_CARDS: readonly BuilderCard[] = [
+  {
+    icon: 'document-currency-dollar',
+    title: 'Fundraising form',
+    description: 'A public giving page with preset amounts. Donations create donor records.',
+    cta: 'Create a fundraising form',
+    route: '/donation-pages/add',
+  },
+  {
+    icon: 'ticket',
+    title: 'Event page',
+    description: 'An event with its own public page. RSVPs and attendance in one place.',
+    cta: 'Create an event page',
+    route: '/events/pages/add',
+  },
+  {
+    icon: 'add-schedule',
+    title: 'Volunteer shift',
+    description: 'A signup slot with a time and place. Hours land on volunteer profiles.',
+    cta: 'Create a volunteer shift',
+    route: '/events/shifts/add',
+  },
+];
+
+@Component({
+  selector: 'pc-forms-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    StatusBadge,
+    Icon,
+    FormRenderComponent,
+    RouterLink,
+    NgTemplateOutlet,
+    DatePipe,
+    Table,
+    GridHeaderComponent,
+    EmptyState,
+    ModalShell,
+  ],
+  templateUrl: './forms-page.html',
+})
+export class FormsPageComponent implements OnInit {
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly router = inject(Router);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly confirm = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly forms = signal<FormDetail[]>([]);
+  protected readonly selectedId = signal<string | null>(null);
+  protected readonly mode = signal<'browse' | 'edit' | 'create'>('browse');
+  protected readonly tab = signal<'form' | 'responses'>('form');
+  protected readonly archivedOpen = signal(false);
+  protected readonly mutating = signal(false);
+  protected readonly orgName = signal('Your organization');
+  protected readonly lists = signal<{ id: string; name: string }[]>([]);
+
+  protected readonly submissions = signal<FormSubmissionRow[]>([]);
+  protected readonly submissionsTotal = signal(0);
+  protected readonly submissionsLoading = signal(false);
+
+  // New-form flow state (mode 'create': step 1 picks a template card, step 2 names it).
+  protected readonly newFormName = signal('');
+  protected readonly newFormType = signal<FormType>('signup');
+  protected readonly newFormStep = signal<1 | 2>(1);
+  protected readonly newFormError = signal<string | null>(null);
+  protected readonly creating = signal(false);
+  private readonly embedDialog = viewChild<ModalShell>('embedDialog');
+  private readonly confirmEmailDialog = viewChild<ModalShell>('confirmEmailDialog');
+
+  protected readonly templateCards = TEMPLATE_CARDS;
+  protected readonly builderCards = BUILDER_CARDS;
+  protected readonly chosenTemplate = computed(
+    () => TEMPLATE_CARDS.find((c) => c.type === this.newFormType()) ?? DEFAULT_TEMPLATE_CARD,
+  );
+
+  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
+  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
+  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
+
+  protected readonly totalSubmissions = computed(() =>
+    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
+  );
+
+  protected readonly countSentence = computed(() => {
+    const total = this.forms().length;
+    const subs = this.totalSubmissions();
+    const archived = this.archivedForms().length;
+    const parts = [
+      `${total} ${total === 1 ? 'form' : 'forms'}`,
+      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
+    ];
+    if (archived > 0) parts.push(`${archived} archived`);
+    return parts.join(' · ');
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const form = this.selected();
+    if (!form?.slug) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
+  });
+
+  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
+  private pendingPatch: UpdateFormType = {};
+
+  public ngOnInit(): void {
+    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────
+
+  private async loadForms(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const rows = await this.formsSvc.listForms();
+      this.forms.set(rows);
+      const first = rows[0];
+      if (!this.selectedId() && first) {
+        this.selectedId.set(first.id);
+      }
+    } catch {
+      this.alerts.showError('Could not load your forms. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadOrg(): Promise<void> {
+    try {
+      await this.settings.load();
+      const name = this.settings.getValue<string>('organization.name', '');
+      if (name) this.orgName.set(name);
+    } catch {
+      /* org name is decorative; fall back to the default */
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAllWithCounts();
+      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
+      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
+    } catch {
+      /* audience list picker degrades gracefully to empty */
+    }
+  }
+
+  // ── Selection / navigation ─────────────────────────────────────────────
+
+  protected select(id: string): void {
+    if (this.selectedId() === id) return;
+    this.selectedId.set(id);
+    this.tab.set('form');
+    this.submissions.set([]);
+    this.submissionsTotal.set(0);
+  }
+
+  protected setTab(tab: 'form' | 'responses'): void {
+    this.tab.set(tab);
+    if (tab === 'responses') void this.loadSubmissions();
+  }
+
+  protected enterEdit(): void {
+    if (!this.selected()) return;
+    this.mode.set('edit');
+    this.tab.set('form');
+  }
+
+  protected exitEdit(): void {
+    this.mode.set('browse');
+  }
+
+  protected toggleArchived(): void {
+    this.archivedOpen.update((v) => !v);
+  }
+
+  // ── Status verbs ───────────────────────────────────────────────────────
+
+  protected async publish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.publish(id),
+      (f) => `Published “${f.name}”. The link now accepts responses.`,
+    );
+  }
+
+  protected async unpublish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.unpublish(id),
+      (f) => `Unpublished “${f.name}”. The public link is paused.`,
+    );
+  }
+
+  protected async archiveForm(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.archive(id),
+      (f) => `Archived “${f.name}”. The public link now shows a closed notice.`,
+    );
+    this.mode.set('browse');
+  }
+
+  protected async restore(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.restore(id),
+      (f) => `Restored “${f.name}” as a draft.`,
+    );
+  }
+
+  private async runVerb(
+    action: (id: string) => Promise<FormDetail>,
+    message: (f: FormDetail) => string,
+  ): Promise<void> {
+    const id = this.selectedId();
+    if (!id || this.mutating()) return;
+    this.mutating.set(true);
+    try {
+      const updated = await action(id);
+      this.replaceForm(updated);
+      this.alerts.showSuccess(message(updated));
+    } catch {
+      this.alerts.showError('That action didn’t go through. Please try again.');
+    } finally {
+      this.mutating.set(false);
+    }
+  }
+
+  // ── New form flow (create mode) ────────────────────────────────────────
+
+  protected openNewForm(): void {
+    this.newFormName.set('');
+    this.newFormType.set('signup');
+    this.newFormStep.set(1);
+    this.newFormError.set(null);
+    this.mode.set('create');
+  }
+
+  protected cancelNewForm(): void {
+    this.mode.set('browse');
+  }
+
+  protected selectTemplate(type: FormType): void {
+    this.newFormType.set(type);
+    this.newFormError.set(null);
+    this.newFormStep.set(2);
+  }
+
+  protected backToTemplates(): void {
+    this.newFormStep.set(1);
+  }
+
+  protected openBuilder(card: BuilderCard): void {
+    void this.router.navigateByUrl(card.route);
+  }
+
+  protected async createForm(): Promise<void> {
+    const name = this.newFormName().trim();
+    if (!name) {
+      this.newFormError.set('Give your form a name so you can find it later.');
+      return;
+    }
+    if (this.creating()) return;
+    this.creating.set(true);
+    try {
+      const type = this.newFormType();
+      const created = await this.formsSvc.createForm({ name, type });
+      this.forms.update((list) => [created, ...list]);
+      this.selectedId.set(created.id);
+      this.mode.set('edit');
+      this.tab.set('form');
+      this.alerts.showSuccess(
+        `Draft created from the ${this.chosenTemplate().title} template. Adjust its fields, then publish.`,
+      );
+    } catch {
+      this.newFormError.set('Could not create the form. Please try again.');
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  // ── Live editing (debounced patch) ─────────────────────────────────────
+
+  protected editName(value: string): void {
+    this.patch({ name: value });
+  }
+
+  protected editDescription(value: string): void {
+    this.patch({ description: value });
+  }
+
+  protected editRedirect(value: string): void {
+    this.patch({ redirect_url: value });
+  }
+
+  protected editSubmitLabel(value: string): void {
+    this.patch({ submit_label: value });
+  }
+
+  protected toggleConfirmEmail(on: boolean): void {
+    this.patch({ confirm_email_on: on });
+  }
+
+  protected toggleNotifyTeam(on: boolean): void {
+    this.patch({ notify_team_on: on });
+  }
+
+  protected toggleField(key: string, on: boolean): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email stays on every form. It’s how each response is matched to a person.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
+    this.patch({ fields });
+  }
+
+  protected toggleRequired(key: string): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email is always required. A response can’t create a person without it.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
+    this.patch({ fields });
+  }
+
+  protected addTag(raw: string): void {
+    const form = this.selected();
+    if (!form) return;
+    const tag = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    if (!tag) return;
+    if (form.target_tags.includes(tag)) {
+      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
+      return;
+    }
+    this.patch({ target_tags: [...form.target_tags, tag] });
+  }
+
+  protected removeTag(tag: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
+  }
+
+  protected addList(id: string): void {
+    const form = this.selected();
+    if (!form || !id || form.target_lists.includes(id)) return;
+    this.patch({ target_lists: [...form.target_lists, id] });
+  }
+
+  protected removeList(id: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
+  }
+
+  protected listName(id: string): string {
+    return this.lists().find((l) => l.id === id)?.name ?? id;
+  }
+
+  private patch(p: UpdateFormType): void {
+    const form = this.selected();
+    if (!form) return;
+    // Optimistic local update so the preview reflects the change immediately.
+    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
+    Object.assign(this.pendingPatch, p);
+    this.saveDebounced();
+  }
+
+  private async flushPatch(): Promise<void> {
+    const id = this.selectedId();
+    const patch = this.pendingPatch;
+    this.pendingPatch = {};
+    if (!id || Object.keys(patch).length === 0) return;
+    try {
+      const updated = await this.formsSvc.updateLive(id, patch);
+      this.replaceForm(updated);
+    } catch {
+      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
+    }
+  }
+
+  // ── Archive / delete (edit mode) ───────────────────────────────────────
+
+  protected canDelete(form: FormDetail): boolean {
+    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
+  }
+
+  protected async deleteDraft(): Promise<void> {
+    const form = this.selected();
+    if (!form || !this.canDelete(form)) return;
+    const ok = await this.confirm.confirm({
+      title: `Delete “${form.name}”?`,
+      message: 'This draft has no responses. Deleting it can’t be undone; archiving is the reversible option.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.formsSvc.deleteDraft(form.id);
+      this.forms.update((list) => list.filter((f) => f.id !== form.id));
+      this.selectedId.set(this.forms()[0]?.id ?? null);
+      this.mode.set('browse');
+      this.alerts.showSuccess(`Deleted “${form.name}”.`);
+    } catch {
+      this.alerts.showError('Could not delete the form. Please try again.');
+    }
+  }
+
+  // ── Public link ────────────────────────────────────────────────────────
+
+  protected openPublicLink(): void {
+    const url = this.publicUrl();
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  protected async copyLink(): Promise<void> {
+    const url = this.publicUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Public link copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy the link. Copy it manually from the address bar.');
+    }
+  }
+
+  // ── Embed dialog ───────────────────────────────────────────────────────
+
+  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
+  protected readonly embedCode = computed(() =>
+    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
+  );
+
+  protected openEmbed(): void {
+    this.embedMode.set('iframe');
+    this.embedDialog()?.show();
+  }
+
+  protected closeEmbed(): void {
+    this.embedDialog()?.close();
+  }
+
+  protected async copyEmbed(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.embedCode());
+      this.alerts.showSuccess('Embed code copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy. Select the code and copy it manually.');
+    }
+  }
+
+  private iframeSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
+  }
+
+  private rawHtmlSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
+    const lines: string[] = [`<form action="${action}" method="POST">`];
+    for (const field of form.fields.filter((f) => f.on)) {
+      const req = field.required ? ' required' : '';
+      const star = field.required ? ' *' : '';
+      const label = this.escapeAttr(field.label);
+      if (field.type === 'area') {
+        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
+      } else if (field.type === 'select') {
+        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
+        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
+        lines.push(`  </select></label>`);
+      } else if (field.type === 'checks') {
+        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
+        for (const opt of field.options ?? []) {
+          lines.push(
+            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
+          );
+        }
+        lines.push(`  </fieldset>`);
+      } else {
+        const type = field.key === 'email' ? 'email' : 'text';
+        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
+      }
+    }
+    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
+    lines.push(`</form>`);
+    return lines.join('\n');
+  }
+
+  private escapeAttr(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Confirmation-email dialog ──────────────────────────────────────────
+
+  protected readonly confirmSubjectDraft = signal('');
+  protected readonly confirmBodyDraft = signal('');
+
+  protected openConfirmEmail(): void {
+    const form = this.selected();
+    if (!form) return;
+    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
+    this.confirmBodyDraft.set(form.confirm_body ?? '');
+    this.confirmEmailDialog()?.show();
+  }
+
+  protected closeConfirmEmail(): void {
+    this.confirmEmailDialog()?.close();
+  }
+
+  protected saveConfirmEmail(): void {
+    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
+    this.closeConfirmEmail();
+    this.alerts.showSuccess('Confirmation email updated.');
+  }
+
+  // ── Responses ──────────────────────────────────────────────────────────
+
+  private async loadSubmissions(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.submissionsLoading.set(true);
+    try {
+      const res = await this.formsSvc.getSubmissions(id);
+      this.submissions.set(res.items);
+      this.submissionsTotal.set(res.total);
+    } catch {
+      this.alerts.showError('Could not load responses. Please try again.');
+    } finally {
+      this.submissionsLoading.set(false);
+    }
+  }
+
+  protected answerSummary(row: FormSubmissionRow): string {
+    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(row.answers)) {
+      if (skip.has(key) || value == null || value === '') continue;
+      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
+      if (parts.length >= 2) break;
+    }
+    return parts.join(' · ');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  protected requiredFieldsPresent(form: FormDetail): boolean {
+    return form.fields.some((f) => f.on && f.required);
+  }
+
+  private replaceForm(updated: FormDetail): void {
+    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
+  }
+
+  protected typeChip(type: FormType | null): string {
+    if (!type) return 'Form';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
+  protected templateSubmitLabel(type: FormType): string {
+    return FORM_TEMPLATES[type].submitLabel;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/households/ui/household-view.html
 ```html
 <pc-detail-layout
@@ -63416,908 +66034,708 @@ export class EventViewComponent {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
+    @if (tab() === 'imports') {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
+      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+      <span>Import CSV</span>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <span>New export</span>
+    </button>
+    }
+  </pc-grid-header>
 
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
+  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
 
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        [grainLayout]="!inline()"
-        [fitColumns]="true"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        (rowsDeleted)="onRowsDeleted()"
-        [rowCanSelect]="rowCanSelectFn"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          @if (!inline()) {
-            <pc-grain-tabs />
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <pc-table [columns]="7">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>Type</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Outcome</th>
+        <th>Tags applied</th>
+        <th class="text-right">Actions</th>
+      </ng-container>
+
+      @for (item of items(); track item.id) {
+      <tr>
+        <td>
+          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
+          <div class="text-xs text-base-content/60">
+            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+        </td>
+        <td>
+          @if (item.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
           }
-        </div>
-        @if (!inline() && unhoused().count > 0) {
-          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+        </td>
+        <td>
+          @switch (item.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Pending</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <div class="text-xs text-base-content">
+            <div>{{ item.insertedCount }} imported</div>
+            @if (item.mergedCount > 0) {
+            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+            } @if (item.skippedCount > 0) {
+            <div class="text-xs text-base-content/60 flex items-center gap-1">
+              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                download reasons
+              </button>
+              }
+            </div>
+            } @if (item.errorCount > 0) {
+            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+            }
+          </div>
+          } @case ('failed') {
+          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
+            Failed
+          </pc-status-badge>
+          } }
+        </td>
+        <td>
+          @if (item.tagsApplied.length > 0) {
+          <div class="flex flex-wrap gap-1">
+            @for (tag of item.tagsApplied; track tag) {
+            <span class="badge badge-outline text-xs">{{ tag }}</span>
+            }
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (item.canDownloadSource) {
             <button
               type="button"
-              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
-              (click)="openUnhoused()"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download original file"
+              (click)="downloadSource(item)"
             >
-              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
             </button>
-            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household: no address, or one that can't be
-            matched to a door.
-          </p>
-        }
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'household',
-        entityNounPlural: 'households',
-        exportEntity: 'households',
-        exportFileName: 'households-export.csv',
-      },
-    }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly router = inject(Router);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the household record: a generated address string, just like
-      // the People grid's combined Name column. People count rides along as a muted subtitle.
-      field: 'household',
-      headerName: 'Household',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 260,
-      minWidth: 180,
-      valueGetter: (params: CellParams) => this.addressString(params.data),
-      doorSubtitle: (params: CellParams) => {
-        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-        return `${n} ${n === 1 ? 'person' : 'people'}`;
-      },
-    },
-    {
-      field: 'members',
-      headerName: 'Members',
-      editable: false,
-      // Grows to fill leftover width when no notes/description column is visible.
-      flex: true,
-      width: 320,
-      minWidth: 200,
-      // Each member name is a link to their person card. The renderer output is
-      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
-      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
-      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
-    },
-    { field: 'city', headerName: 'City', editable: true, width: 150 },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    {
-      field: 'updated_at',
-      headerName: 'Last touch',
-      editable: false,
-      minWidth: 120,
-      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      hide: true,
-      width: 280,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** People with no matchable address (the placeholder household) — footer note + link target. */
-  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
-    count: 0,
-    household_id: null,
-  });
-
-  public ngOnInit(): void {
-    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
-    // keep full contrast — they're a second focal point (the People-grain of the household).
-    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-  }
-
-  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  private async loadUnhoused(): Promise<void> {
-    try {
-      this.unhoused.set(await this.householdsService.getUnhoused());
-    } catch (err) {
-      console.error('Failed to load unhoused people count', err);
-    }
-  }
-
-  /** Opens the placeholder household, whose detail view lists everyone with no address. */
-  protected openUnhoused(): void {
-    const id = this.unhoused().household_id;
-    if (id) void this.router.navigate(['/households', id]);
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [total, wards] = await Promise.all([
-        this.householdsService.count(),
-        this.householdsService.countDistinctWards(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
-      // Ward data comes from geocoding; until any exists, fall back to a plain total.
-      this.totalSentence.set(
-        wards > 0
-          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
-          : `${households} total`,
-      );
-    } catch (err) {
-      console.error('Failed to load household grain counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  /** Renders member names as person-card links; a comma separator keeps them on one line. */
-  private renderMembers(value: unknown): string {
-    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
-    const links = members
-      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
-      .map((m) => {
-        const id = this.escapeHtml(String(m.id));
-        const name = this.escapeHtml(String(m.name));
-        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
-      });
-    if (!links.length) return '';
-    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
-    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
-  }
-
-  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
-  private onMemberClicked(event: Event | undefined): void {
-    const target = event?.target;
-    if (!(target instanceof HTMLElement)) return;
-    const anchor = target.closest('[data-person-id]');
-    const id = anchor?.getAttribute('data-person-id');
-    if (id) void this.router.navigate(['/people', id]);
-  }
-
-  private escapeHtml(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  /** Street number + name for the Household door column (city has its own column). */
-  private addressString(data: unknown): string {
-    const d = data as Record<string, unknown> | undefined;
-    if (!d) return '';
-    if (d['is_placeholder']) return 'People with no addresses';
-    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
-  }
-
-  /** Compact relative "last touch" — matches the household view's low-chrome style. */
-  private formatLastTouch(value: unknown): string {
-    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/import-wizard.html
-```html
-<div class="p-6 max-w-4xl mx-auto">
-  <!-- Where am I? / Where was I? -->
-  <div class="mb-6">
-    <p class="pc-eyebrow">Import / export</p>
-    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import {{ config().noun }} from CSV</h1>
-    <p class="text-sm text-base-content/60 mt-1">{{ config().subtitle }}</p>
-  </div>
-
-  <!-- Step indicator -->
-  <ul class="steps steps-horizontal w-full mb-8">
-    @for (s of stepOrder; track s; let idx = $index) {
-    <li
-      class="step"
-      [class.step-primary]="idx <= currentStepIndex()"
-      [class.cursor-pointer]="canReachStep(s)"
-      (click)="canReachStep(s) && goToStep(s)"
-    >
-      {{ stepLabels[s] }}
-    </li>
-    }
-  </ul>
-
-  <!-- ============ UPLOAD ============ -->
-  @if (step() === 'upload') {
-  <div class="flex flex-col gap-4">
-    <!-- What are you importing? -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="pc-eyebrow">What are you importing?</p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          @for (t of entityTypes; track t) {
-          <button
-            type="button"
-            class="rounded-lg border p-3 text-left transition-colors duration-150 cursor-pointer flex flex-col gap-1.5"
-            [class.border-primary]="entity() === t"
-            [class.bg-primary/5]="entity() === t"
-            [class.border-base-300]="entity() !== t"
-            (click)="setEntity(t)"
-          >
-            <span class="flex items-center gap-2">
-              <pc-icon [name]="configs[t].icon" class="text-primary" [size]="5"></pc-icon>
-              <span class="text-sm font-medium text-base-content">{{ configs[t].label }}</span>
-              @if (entity() === t) {
-              <pc-icon name="check-circle" class="text-primary ml-auto" [size]="4"></pc-icon>
-              }
-            </span>
-            <span class="text-xs text-base-content/60">{{ configs[t].description }}</span>
-          </button>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-4">
-        @if (!fileName()) {
-        <div
-          class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
-          [class.border-primary]="dragOver()"
-          [class.bg-primary/5]="dragOver()"
-          [class.border-base-300]="!dragOver()"
-          (dragover)="onDragOver($event)"
-          (dragleave)="onDragLeave()"
-          (drop)="onDrop($event)"
-        >
-          <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
-          <label class="btn btn-primary gap-2 cursor-pointer">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Drop a CSV here, or click to browse
-            <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
-          </label>
-          @if (parsing()) {
-          <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
-            <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
-            Reading and parsing the file…
-          </p>
-          }
-        </div>
-        <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
-          <li>First row must have column headers. They drive the automatic mapping on the next step.</li>
-          @if (config().supportsEmailReview) {
-          <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
-          } @if (config().reviewNote) {
-          <li>{{ config().reviewNote }}</li>
-          }
-          <li>UTF-8 and Excel both work.</li>
-        </ul>
-        } @else {
-        <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
-          <div class="flex items-center gap-3 min-w-0">
-            <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
-            <span class="font-mono text-sm text-base-content truncate">
-              {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
-            </span>
-          </div>
-          <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
-        </div>
-        <div class="flex justify-end">
-          <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
-            Continue to column mapping
-            <pc-icon name="chevron-right" [size]="4"></pc-icon>
-          </button>
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- ============ MAP COLUMNS ============ -->
-  @if (step() === 'map') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      <p class="text-sm text-base-content/70">
-        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
-        matching by the header row
-      </p>
-
-      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
-        @for (header of headers(); track header; let idx = $index) {
-        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
-          <div class="flex-1 min-w-0">
-            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
-            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
-          </div>
-          <div class="flex items-center gap-2">
-            <select
-              class="select select-bordered select-sm w-56"
-              [value]="mapping()[idx] || ''"
-              (change)="setMapping(idx, $any($event.target).value)"
-            >
-              <!-- [selected] on the options, not just [value] on the select: the select's
-                   value is assigned before the @for options exist in the DOM, so an
-                   auto-mapped field would otherwise render as unselected. -->
-              <option value="" [selected]="!mapping()[idx]">— Skip this column —</option>
-              @for (field of config().mappableFields; track field) {
-              <option [value]="field" [selected]="mapping()[idx] === field">
-                {{ config().fieldLabels[field] ?? field }}
-              </option>
-              }
-            </select>
-            @if (!mapping()[idx]) {
-            <span class="badge badge-ghost text-xs">Skipped</span>
             }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              (click)="openDeleteDialog(item, deleteDialog)"
+              [disabled]="deleting()"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
           </div>
-        </div>
-        }
-      </div>
-
-      @if (mappedColumnCount() > 0 && missingRequiredFields().length > 0) {
-      <div class="alert bg-warning/10 border border-warning/30 gap-2 text-sm text-base-content">
-        <pc-icon name="exclamation-triangle" class="text-warning" [size]="5"></pc-icon>
-        <span>Map a column to {{ missingRequiredFieldLabels() }} to continue. Rows without one can't be imported.</span>
-      </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="7" class="text-center py-12 text-base-content/50">
+          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1 mb-3">
+            Bring in people, companies, households or tasks from a spreadsheet to get started.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import CSV
+          </button>
+        </td>
+      </tr>
       }
+    </pc-table>
 
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button type="button" class="btn btn-primary gap-2" [disabled]="!canContinueToReview()" (click)="goToReview()">
-          Continue to review
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
   </div>
   }
 
-  <!-- ============ REVIEW ============ -->
-  @if (step() === 'review') {
-  <div class="flex flex-col gap-4">
-    @if (checkingDuplicates()) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body items-center py-10">
-        <progress class="progress progress-primary w-64"></progress>
-        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
-      </div>
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
+        Go to People
+      </button>
     </div>
-    } @else {
-    <!-- What will happen, in numbers -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-2">
-        <p class="text-sm text-base-content">
-          <span class="font-medium">{{ finalRowCount() }}</span> of {{ rowCount() }} rows will be imported as {{
-          config().noun }}
-        </p>
-        @if (missingRequiredRowCount() > 0) {
-        <p class="text-xs text-base-content/60">
-          {{ missingRequiredRowCount() }} rows are missing {{ missingRequiredFieldLabels() || 'a required field' }} and
-          will be skipped
-        </p>
-        } @if (config().reviewNote) {
-        <p class="text-xs text-base-content/60">{{ config().reviewNote }}</p>
-        }
-      </div>
-    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
 
-    @if (config().supportsEmailReview) { @if (reviewIsClean()) {
-    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
-      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
-      <span>No duplicate emails and no email problems found in this file.</span>
-    </div>
-    } @if (duplicateMatches().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="pc-eyebrow">{{ duplicateRowCount() }} rows match people you already have</p>
-        <ul class="space-y-1">
-          @for (match of duplicateMatches(); track match.person_id) {
-          <li class="text-sm flex items-center gap-2">
-            <span class="font-mono text-base-content/70">{{ match.email }}</span>
-            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
-            @if (match.slug) {
-            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
-              >{{ match.name }}</a
+    <pc-table [columns]="5">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Contents</th>
+        <th class="text-right">Download</th>
+      </ng-container>
+
+      @for (job of exportJobs(); track job.id) {
+      <tr>
+        <td>
+          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+        </td>
+        <td>
+          @if (job.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (job.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Queued</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          } @default {
+          <pc-status-badge type="error">Failed</pc-status-badge>
+          } }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (job.status === 'completed') { @if (isExpired(job)) {
+            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
+            } @else if (job.downloadable) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download CSV"
+              (click)="downloadExportJob(job)"
             >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
             } @else {
-            <span class="text-base-content">{{ match.name }}</span>
-            }
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'merge'"
-              (change)="duplicateDecision.set('merge')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Merge into existing</span>
-              <span class="block text-xs text-base-content/60">
-                Recommended: fills blank fields, never overwrites
-              </span>
+            <span
+              class="text-xs text-base-content/40 mr-2"
+              title="Downloaded directly to your device, not stored on the server"
+            >
+              Downloaded
             </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'skip'"
-              (change)="duplicateDecision.set('skip')"
-            />
-            <span class="text-sm font-medium text-base-content">
-              Skip the {{ duplicateRowCount() }} duplicate rows
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="duplicateDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="duplicateDecision() === 'import_new'"
-              (change)="duplicateDecision.set('import_new')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import as new anyway</span>
-              <span class="block text-xs text-base-content/60">
-                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    } @if (badEmailRows().length > 0) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-3">
-        <p class="pc-eyebrow">{{ badEmailRows().length }} rows have email problems</p>
-        <ul class="space-y-1">
-          @for (row of badEmailRows(); track row.idx) {
-          <li class="text-sm">
-            <span class="text-base-content/60">Row {{ row.idx }}:</span>
-            <span class="font-mono text-base-content">{{ row.email }}</span>
-          </li>
-          }
-        </ul>
-
-        <div class="form-control gap-2 mt-2">
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'skip'"
-              (change)="badEmailDecision.set('skip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
-              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="badEmailDecision"
-              class="radio radio-primary radio-sm mt-1"
-              [checked]="badEmailDecision() === 'strip'"
-              (change)="badEmailDecision.set('strip')"
-            />
-            <span class="text-sm">
-              <span class="font-medium text-base-content">Import without an email</span>
-              <span class="block text-xs text-base-content/60">
-                They can't receive newsletters until an email is added
-              </span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-    } }
-
-    <!-- Tags / list options -->
-    @if (config().supportsTags || config().supportsList) {
-    <div class="card bg-base-100 border border-base-300 shadow-xl">
-      <div class="card-body gap-4">
-        @if (config().supportsTags) {
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Tag everything in this import (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            placeholder="Comma separated e.g. donor, canvass-2026"
-            [value]="tagsText()"
-            (input)="tagsText.set($any($event.target).value)"
-          />
-        </label>
-        } @if (config().supportsList) {
-        <label class="form-control gap-1">
-          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
-          <input
-            type="text"
-            class="input input-bordered"
-            list="existing-static-lists"
-            placeholder="New or existing list name"
-            [value]="listName()"
-            (input)="listName.set($any($event.target).value)"
-          />
-          <datalist id="existing-static-lists">
-            @for (name of existingListNames(); track name) {
-            <option [value]="name"></option>
-            }
-          </datalist>
-        </label>
-        }
-      </div>
-    </div>
-    }
-
-    <div class="flex justify-between">
-      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
-        Continue to import
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-    }
-  </div>
-  }
-
-  <!-- ============ CONFIRM & RUN ============ -->
-  @if (step() === 'confirm') {
-  <div class="card bg-base-100 border border-base-300 shadow-xl">
-    <div class="card-body gap-4">
-      @let r = run(); @switch (r.status) { @case ('idle') {
-      <div class="space-y-2 text-sm text-base-content">
-        <p class="font-mono text-base-content/70">
-          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
-        </p>
-        <ul class="list-disc list-inside text-base-content/70 space-y-1">
-          <li>Importing as {{ config().noun }}</li>
-          @if (config().supportsEmailReview) {
-          <li>
-            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
-            'skip duplicate rows' : 'import as new anyway' }}
-          </li>
-          @if (badEmailRows().length > 0) {
-          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
-          } } @if (missingRequiredRowCount() > 0) {
-          <li>{{ missingRequiredRowCount() }} rows missing {{ missingRequiredFieldLabels() }} will be skipped</li>
-          } @if (parsedTags().length > 0 && config().supportsTags) {
-          <li>Tags: {{ parsedTags().join(', ') }}</li>
-          } @if (listName().trim() && config().supportsList) {
-          <li>Added to list: {{ listName().trim() }}</li>
-          }
-        </ul>
-        <p class="text-base-content/60">
-          The import runs in the background. Once started you can navigate away, and it lands in import history and the
-          Activity log.
-        </p>
-      </div>
-      <div class="flex justify-between">
-        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          Back
-        </button>
-        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-          Import {{ finalRowCount() }} {{ config().noun }}
-        </button>
-      </div>
-      } @case ('running') {
-      <div class="flex flex-col items-center gap-3 py-10">
-        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
-        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
-        <p class="text-sm text-base-content/60">{{ runningHint() }}</p>
-        <p class="text-sm text-base-content/60">
-          You can leave this page. The import keeps running in the background and its result lands in import history.
-        </p>
-        <button type="button" class="btn btn-ghost btn-sm gap-2 mt-2" (click)="backToHistory()">
-          <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
-          Go to import history
-        </button>
-      </div>
-      } @case ('done') {
-      <div class="flex flex-col gap-4">
-        <div class="flex items-center gap-3">
-          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
-          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} {{ config().noun }}</h2>
-        </div>
-        <ul class="text-sm text-base-content/70 space-y-1">
-          <li>{{ r.inserted }} imported</li>
-          @if (r.merged > 0) {
-          <li>{{ r.merged }} merged into existing people</li>
-          } @if (r.skipped > 0) {
-          <li>{{ r.skipped }} skipped</li>
-          } @if (r.errors > 0) {
-          <li class="text-error">{{ r.errors }} errors</li>
-          } @if (r.tag) {
-          <li>Tagged {{ r.tag }}</li>
-          }
-        </ul>
-        <div class="flex flex-wrap gap-2 mt-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="viewImported()">
-            <pc-icon [name]="config().icon" [size]="4"></pc-icon>
-            View imported {{ config().noun }}
-          </button>
-          <button type="button" class="btn btn-outline btn-secondary gap-2" (click)="startOver()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import another file
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
-            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
-            Back to import history
-          </button>
-        </div>
-      </div>
-      } @case ('error') {
-      <div class="flex flex-col gap-4">
-        <div class="alert alert-error gap-2">
-          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-          <span>{{ r.message }}</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            Try again
-          </button>
-          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
-        </div>
-      </div>
-      } }
-    </div>
+            } }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              title="Delete export"
+              (click)="deleteExportJob(job)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="5" class="text-center py-12 text-base-content/50">
+          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
+          </p>
+        </td>
+      </tr>
+      }
+    </pc-table>
   </div>
   }
 </div>
+
+<pc-modal-shell
+  #deleteDialog
+  title="Delete import"
+  icon="trash"
+  [dismissible]="!deleting()"
+  (closed)="pendingDelete.set(null)"
+>
+  @if (pendingDelete(); as item) {
+  <p class="text-sm text-base-content/70 mt-2">
+    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+    records created by this import:
+  </p>
+
+  <div class="space-y-3 mt-4">
+    @if (item.contactCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deletePeople()"
+        (change)="deletePeople.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+    </label>
+    } @if (item.householdCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteHouseholds()"
+        (change)="deleteHouseholds.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+    </label>
+    } @if (item.companyCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteCompanies()"
+        (change)="deleteCompanies.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+    </label>
+    } @if (item.taskCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteTasks()"
+        (change)="deleteTasks.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+    </label>
+    }
+  </div>
+  }
+
+  <div pc-modal-footer class="flex gap-2">
+    <button
+      type="button"
+      class="btn btn-outline btn-accent"
+      (click)="closeDeleteDialog(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="btn btn-outline btn-error gap-2"
+      (click)="confirmDelete(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      Delete
+    </button>
+  </div>
+</pc-modal-shell>
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
+```typescript
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { environment } from '../../../../environments/environment';
+import { ExportsService } from '../../exports/services/exports-service';
+import { ImportsService } from '../services/imports-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+/**
+ * Import/export History page (spec §17). Folds the old standalone Exports
+ * Manager page into an "Imports N / Exports N" tabbed view — one history
+ * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
+ */
+type HistoryTab = 'imports' | 'exports';
+
+@Component({
+  selector: 'pc-imports-page',
+  imports: [Icon, TabBar, Table, GridHeaderComponent, ModalShell, StatusBadge],
+  templateUrl: './imports-page.html',
+})
+export class ImportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly imports = inject(ImportsService);
+  private readonly exports = inject(ExportsService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  protected readonly tab = signal<HistoryTab>('imports');
+
+  protected readonly historyTabs = computed<PcTabOption[]>(() => [
+    { id: 'imports', label: 'Imports', badge: this.itemCount() },
+    { id: 'exports', label: 'Exports', badge: this.exportCount() },
+  ]);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  private isLoadActive = false;
+  protected readonly deleting = signal(false);
+  protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
+  protected readonly pendingDelete = signal<ImportListItem | null>(null);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
+  protected readonly importsThisYear = computed(
+    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly recordsCreatedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.insertedCount, 0),
+  );
+  protected readonly duplicatesMergedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+  protected readonly historySentence = computed(
+    () =>
+      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
+      `${this.duplicatesMergedThisYear()} duplicates merged`,
+  );
+
+  /** data_imports.source → the label the Type column shows. */
+  protected sourceLabel(source: string): string {
+    switch (source) {
+      case 'persons':
+        return 'People';
+      case 'companies':
+        return 'Companies';
+      case 'households':
+        return 'Households';
+      case 'tasks':
+        return 'Tasks';
+      default:
+        return source || '—';
+    }
+  }
+
+  private pollInterval: ReturnType<typeof setInterval> | undefined;
+
+  // --- Exports tab ---
+  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
+  protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsThisYear = computed(
+    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly exportsSentence = computed(
+    () =>
+      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
+      `files stay downloadable for 30 days · every export lands in the Activity log`,
+  );
+  protected readonly exportsLoading = createLoadingGate();
+  protected readonly showNewExportInfo = signal(false);
+
+  constructor() {
+    void this.load();
+
+    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
+    // (overrides the route's static default; effects flush after NavigationEnd,
+    // so this wins).
+    effect(() => {
+      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
+    });
+
+    // Reset checkbox when dialog closes
+    effect(() => {
+      const item = this.pendingDelete();
+      if (!item) {
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
+      }
+    });
+
+    this.startPolling();
+
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
+  }
+
+  protected switchTab(tab: string): void {
+    if (tab !== 'imports' && tab !== 'exports') return;
+    this.tab.set(tab);
+    if (tab === 'exports') {
+      void this.loadExports();
+    }
+  }
+
+  private startPolling() {
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
+
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
+      }
+    }
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = undefined;
+    }
+  }
+
+  protected formatDate(value: Date | string) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value instanceof Date ? value : new Date(value));
+    } catch {
+      return value ? String(value) : '—';
+    }
+  }
+
+  protected formatFileSize(bytes: number | null): string | null {
+    if (bytes == null) return null;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  protected startNewImport(): void {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected openDeleteDialog(item: ImportListItem, dialog: ModalShell) {
+    if (this.deleting()) return;
+    this.pendingDelete.set(item);
+    dialog.show();
+  }
+
+  protected closeDeleteDialog(dialog: ModalShell) {
+    dialog.close();
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(dialog: ModalShell) {
+    const item = this.pendingDelete();
+    if (!item || this.deleting()) return;
+
+    this.deleting.set(true);
+    try {
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
+      this.alerts.showSuccess('Import deleted');
+      await this.load();
+      this.closeDeleteDialog(dialog);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
+      this.alerts.showError(message);
+    } finally {
+      this.deleting.set(false);
+    }
+  }
+
+  protected downloadSource(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
+  }
+
+  protected downloadSkipped(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(
+      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
+      token,
+      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
+    );
+  }
+
+  private async load() {
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const list = await this.imports.list();
+      this.items.set(list ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.isLoadActive = false;
+      end();
+    }
+  }
+
+  // --- Exports tab ---
+
+  protected toggleNewExportInfo(): void {
+    this.showNewExportInfo.update((v) => !v);
+  }
+
+  protected goToPeopleGrid(): void {
+    void this.router.navigate(['/people']);
+  }
+
+  protected formatExportDate(dateStr: string) {
+    return this.formatDate(dateStr);
+  }
+
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
+  }
+
+  protected async downloadExportJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alerts.showError('This export has expired (30+ days old).');
+      return;
+    }
+    if (job.status !== 'completed') {
+      this.alerts.showError('Export is not ready yet.');
+      return;
+    }
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alerts.showError('Failed to download export');
+    }
+  }
+
+  protected async deleteExportJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete export',
+      message: `Delete "${job.file_name}"? This removes the file from the server. It cannot be undone.`,
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.exports.delete(job.id);
+      this.alerts.showSuccess('Export deleted successfully.');
+      await this.loadExports();
+    } catch {
+      this.alerts.showError('Failed to delete export. Please try again.');
+    }
+  }
+
+  private async loadExports() {
+    const end = this.exportsLoading.begin();
+    try {
+      const list = await this.exports.list();
+      this.exportJobs.set(list ?? []);
+    } catch {
+      this.alerts.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
@@ -64937,942 +67355,6 @@ export class HouseholdsGrid implements OnInit {
     </div>
   </main>
 </div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
-```html
-<pc-detail-layout
-  [title]="pageTitle()"
-  [eyebrow]="eyebrow()"
-  [subtitle]="sentSentence()"
-  [crumbs]="crumbs()"
-  [isLoading]="!email() && !error()"
-  [error]="error()"
-  [hasRecord]="!!email()"
-  [showActions]="false"
->
-  <div pc-title-suffix class="flex min-w-0 items-center">
-    @if (email(); as em) {
-    <pc-status-badge [type]="statusTone(em.status)">{{ statusLabel(em.status) }}</pc-status-badge>
-    }
-  </div>
-  <div pc-actions-suffix class="flex items-center gap-2">
-    @if (email()) { @if (!isUnsent()) {
-    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
-      Export report CSV
-    </button>
-    }
-    <button
-      type="button"
-      class="btn btn-primary btn-sm gap-2"
-      [disabled]="isDuplicating()"
-      (click)="duplicateNewsletter()"
-    >
-      @if (isDuplicating()) {
-      <span class="loading loading-spinner loading-xs"></span>
-      } @else {
-      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-      } Duplicate newsletter
-    </button>
-    }
-  </div>
-
-  @if (email(); as em) {
-  <div class="w-full">
-    <!-- Stat tiles -->
-    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-      @for (tile of tiles(); track tile.label) {
-      <div class="stats border border-base-200 bg-base-100 shadow-sm">
-        <div class="stat p-4">
-          <div class="stat-title pc-eyebrow">{{ tile.label }}</div>
-          <div class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl" [class]="tile.valueClass">
-            {{ tile.value }}
-          </div>
-          <div class="stat-desc mt-1 text-[10px] tabular-nums text-base-content/40">{{ tile.sub }}</div>
-        </div>
-      </div>
-      }
-    </div>
-
-    <div class="grid items-start gap-6 lg:grid-cols-3">
-      <!-- ============================== main column ============================== -->
-      <div class="flex flex-col gap-6 lg:col-span-2">
-        <!-- How the send resolved -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 class="pc-eyebrow">How the send resolved</h2>
-          @if (funnel().length > 0) {
-          <div class="mt-4 flex flex-col gap-3">
-            @for (row of funnel(); track row.label) {
-            <div class="flex items-center gap-4">
-              <span class="w-16 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
-              <div class="h-2 flex-1 overflow-hidden rounded-full bg-base-200">
-                <div class="h-full rounded-full bg-primary" [style.width.%]="row.width"></div>
-              </div>
-              <span class="w-40 shrink-0 text-right text-xs tabular-nums">
-                <span class="font-bold text-base-content">{{ row.count }}</span>
-                <span class="text-base-content/50"> · {{ row.share }}</span>
-              </span>
-            </div>
-            }
-          </div>
-          @if (report(); as rep) { @if (rep.bounces.total > 0) {
-          <div class="mt-4 flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs">
-            <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-base-content/80">
-              {{ formatNumber(rep.bounces.total) }} addresses bounced ({{ rep.bounces.hard }} hard · {{ rep.bounces.soft
-              }} soft{{ rep.bounces.dropped > 0 ? ' · ' + rep.bounces.dropped + ' dropped' : '' }}). Hard bounces joined
-              the suppression list and future sends skip them automatically per the
-              <a routerLink="/workspace" class="link underline-offset-2">Workspace setting</a>.
-            </p>
-          </div>
-          } } } @else {
-          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
-            <pc-icon name="paper-airplane" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">Nothing has been sent yet. Delivery results will appear here.</p>
-          </div>
-          }
-        </section>
-
-        <!-- Bounced addresses -->
-        @if (report(); as rep) {
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">
-              Bounced addresses @if (rep.bounces.total > 0) { · {{ formatNumber(rep.bounces.total) }} }
-            </h2>
-            @if (rep.bounces.rows.length > 0) {
-            <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="exportBouncesCsv()">
-              Export {{ formatNumber(rep.bounces.total) }} bounces CSV
-            </button>
-            }
-          </div>
-          @if (bounceRowsShown().length > 0) {
-          <ul class="mt-3 divide-y divide-base-200">
-            @for (bounce of bounceRowsShown(); track bounce.email) {
-            <li class="flex items-center justify-between gap-3 py-2.5">
-              <div class="min-w-0">
-                <p class="truncate font-mono text-xs text-base-content">{{ bounce.email }}</p>
-                <p class="mt-0.5 text-[10px] text-base-content/50">
-                  {{ bounce.reason || 'No reason recorded by the provider' }}
-                </p>
-              </div>
-              <div class="flex shrink-0 items-center gap-3">
-                <pc-status-badge [type]="bounceKindTone(bounce.kind)"
-                  >{{ bounceKindLabel(bounce.kind) }}</pc-status-badge
-                >
-                @if (bounce.person; as person) {
-                <a
-                  class="link link-hover w-28 truncate text-right text-xs text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-                  [routerLink]="personRoute(person)"
-                >
-                  {{ person.name }}
-                </a>
-                } @else {
-                <span class="w-28 text-right text-xs text-base-content/40">No CRM match</span>
-                }
-              </div>
-            </li>
-            }
-          </ul>
-          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-            Showing {{ bounceRowsShown().length }} of {{ formatNumber(rep.bounces.total) }} · hard bounces are
-            suppressed from future sends; soft bounces are retried by the provider.
-          </p>
-          } @else {
-          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-            <pc-icon name="check-circle" [size]="6" class="text-success/60"></pc-icon>
-            <p class="text-xs text-base-content/60">No bounces. Every address accepted this send.</p>
-          </div>
-          }
-        </section>
-        }
-
-        <!-- Engagement · first 48 hours -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">Engagement · first 48 hours</h2>
-            <div class="flex items-center gap-3 text-[10px] font-semibold text-base-content/70">
-              <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Opens</span>
-              <span class="flex items-center gap-1"
-                ><span class="h-2 w-2 rounded-full bg-secondary"></span> Clicks</span
-              >
-            </div>
-          </div>
-          @if (engagementChart(); as chart) {
-          <div class="mt-4 flex h-32 items-end gap-1">
-            @for (bucket of chart; track $index) {
-            <div class="tooltip flex h-full flex-1 items-end justify-center gap-px" [attr.data-tip]="bucket.tip">
-              <div
-                class="w-1/3 rounded-t-sm bg-primary"
-                [style.height.%]="bucket.opensPct"
-                [style.minHeight.px]="bucket.opens > 0 ? 2 : 0"
-              ></div>
-              <div
-                class="w-1/3 rounded-t-sm bg-secondary"
-                [style.height.%]="bucket.clicksPct"
-                [style.minHeight.px]="bucket.clicks > 0 ? 2 : 0"
-              ></div>
-            </div>
-            }
-          </div>
-          <div class="mt-1 flex justify-between border-t border-base-200 pt-1 text-[10px] text-base-content/40">
-            <span>Send</span><span>12h</span><span>24h</span><span>36h</span><span>48h</span>
-          </div>
-          @if (opensIn24hSentence(); as sentence) {
-          <p class="mt-3 text-[10px] text-base-content/50">{{ sentence }}</p>
-          } } @else {
-          <div class="mt-4 flex flex-col items-center gap-2 py-8 text-center">
-            <pc-icon name="presentation-chart-line" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">
-              No hour-by-hour engagement to chart. Opens and clicks appear here as they arrive.
-            </p>
-          </div>
-          }
-        </section>
-
-        <!-- Top links clicked -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">Top links clicked</h2>
-            @if (topLinks().length > 0) {
-            <span class="text-[10px] tabular-nums text-base-content/50">{{ linksSentence() }}</span>
-            }
-          </div>
-          @if (topLinks().length > 0) {
-          <ul class="mt-3 divide-y divide-base-200">
-            @for (link of topLinks(); track link.url) {
-            <li class="flex items-center gap-4 py-2.5">
-              <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content" [title]="link.url">
-                {{ link.display }}
-              </span>
-              <div class="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-base-200">
-                <div class="h-full rounded-full bg-secondary" [style.width.%]="link.width"></div>
-              </div>
-              <span class="w-36 shrink-0 text-right text-xs tabular-nums text-base-content/70">
-                {{ formatNumber(link.clicks) }} clicks@if (link.people != null) { · {{ formatNumber(link.people) }}
-                people }
-              </span>
-            </li>
-            }
-          </ul>
-          } @else {
-          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-            <pc-icon name="queue-list" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">No link clicks recorded for this send yet.</p>
-          </div>
-          }
-        </section>
-
-        <!-- Vs previous sends -->
-        @if (comparison().length > 0) {
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 class="pc-eyebrow">Vs previous sends</h2>
-          <div class="mt-4 flex flex-col gap-4">
-            @for (row of comparison(); track row.label) {
-            <div class="flex items-center gap-4">
-              <span class="w-32 shrink-0 text-xs text-base-content/70">{{ row.label }}</span>
-              <div class="flex h-9 items-end gap-1">
-                @for (bar of row.bars; track $index) {
-                <div
-                  class="w-2.5 rounded-t-sm"
-                  [class.bg-primary]="bar.isCurrent"
-                  [class.bg-base-300]="!bar.isCurrent"
-                  [style.height.%]="bar.height"
-                ></div>
-                }
-              </div>
-              <div class="flex-1 text-right">
-                <div class="text-sm font-bold tabular-nums text-base-content">{{ row.current }}</div>
-                @if (row.delta) {
-                <div class="text-[10px] tabular-nums" [class]="row.deltaClass">{{ row.delta }}</div>
-                }
-              </div>
-            </div>
-            }
-          </div>
-          <p class="mt-4 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-            The last {{ previousSendCount() + 1 }} sends in this campaign, oldest to newest. This send is the solid bar.
-            Deltas compare against the send before it.
-          </p>
-        </section>
-        }
-      </div>
-
-      <!-- ============================== side column ============================== -->
-      <div class="flex flex-col gap-6">
-        <!-- What to do next -->
-        @if (report(); as rep) {
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 class="pc-eyebrow">What to do next</h2>
-          <span
-            class="mt-3 block"
-            [class.tooltip]="rep.unique_clickers === 0"
-            data-tip="No one has clicked this newsletter yet"
-          >
-            <button
-              type="button"
-              class="btn btn-primary btn-sm w-full"
-              [disabled]="rep.unique_clickers === 0 || isCreatingList()"
-              (click)="createClickersList()"
-            >
-              @if (isCreatingList()) {
-              <span class="loading loading-spinner loading-xs"></span>
-              } Create list of {{ formatNumber(rep.unique_clickers) }} clickers
-            </button>
-          </span>
-          <p class="mt-2 text-[10px] text-base-content/50">
-            A static snapshot. Target the next send at the people who acted on this one.
-          </p>
-
-          <div class="mt-4 flex items-center justify-between gap-3 border-t border-base-200 pt-4">
-            <div>
-              <p class="text-xs font-semibold text-base-content">
-                {{ formatNumber(em.reply_count) }} {{ em.reply_count === 1 ? 'reply' : 'replies' }} landed in the Inbox
-              </p>
-              <p class="mt-0.5 text-[10px] text-base-content/50">Replies thread into conversations there</p>
-            </div>
-            <a routerLink="/inbox" class="btn btn-outline btn-secondary btn-xs shrink-0">Open Inbox</a>
-          </div>
-
-          @if (mostEngaged().length > 0) {
-          <div class="mt-4 border-t border-base-200 pt-4">
-            <h3 class="pc-eyebrow">Most engaged</h3>
-            <ul class="mt-2 flex flex-col gap-2.5">
-              @for (person of mostEngaged(); track person.email) {
-              <li class="flex items-center gap-3">
-                <span
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary"
-                >
-                  {{ person.initials }}
-                </span>
-                <div class="min-w-0">
-                  @if (person.person; as match) {
-                  <a
-                    class="link link-hover block truncate text-xs font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
-                    [routerLink]="personRoute(match)"
-                  >
-                    {{ person.displayName }}
-                  </a>
-                  } @else {
-                  <span class="block truncate text-xs font-semibold text-base-content" [title]="person.email">
-                    {{ person.displayName }}
-                  </span>
-                  }
-                  <p class="truncate text-[10px] text-base-content/50">{{ person.summary }}</p>
-                </div>
-              </li>
-              }
-            </ul>
-          </div>
-          }
-        </section>
-
-        <!-- Audience at send -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 class="pc-eyebrow">Audience at send</h2>
-          @if (rep.audience.lists.length > 0) {
-          <ul class="mt-3 flex flex-col gap-2 text-xs">
-            @for (list of rep.audience.lists; track list.id) {
-            <li class="flex items-center justify-between gap-3">
-              <span class="min-w-0 truncate text-base-content/80">
-                {{ list.mode === 'include' ? 'In list' : 'Excluding list' }} "{{ list.name }}"
-              </span>
-              <span class="shrink-0 font-semibold tabular-nums text-base-content">
-                {{ list.mode === 'include' ? '+' : '−' }}{{ formatNumber(list.members) }}
-              </span>
-            </li>
-            } @if (rep.audience.overlap_removed > 0) {
-            <li class="flex items-center justify-between gap-3">
-              <span class="text-base-content/60">Overlap removed</span>
-              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
-                −{{ formatNumber(rep.audience.overlap_removed) }}
-              </span>
-            </li>
-            } @if (rep.audience.suppressed_skipped > 0) {
-            <li class="flex items-center justify-between gap-3">
-              <span class="text-base-content/60">Previously bounced skipped (Workspace setting)</span>
-              <span class="shrink-0 font-semibold tabular-nums text-base-content/60">
-                −{{ formatNumber(rep.audience.suppressed_skipped) }}
-              </span>
-            </li>
-            }
-          </ul>
-          <div class="mt-3 flex items-center justify-between gap-3 border-t border-base-200 pt-3 text-xs">
-            <span class="font-bold text-base-content">Total</span>
-            <span class="font-bold tabular-nums text-base-content">
-              {{ formatNumber(em.total_recipients) }} recipients
-            </span>
-          </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
-            @if (audienceSinceSend(); as since) { {{ since }} } List counts reflect membership now. Lists may have
-            changed since the send.
-          </p>
-          } @else {
-          <div class="mt-3 flex flex-col items-center gap-2 py-6 text-center">
-            <pc-icon name="user-group" [size]="6" class="text-base-content/30"></pc-icon>
-            <p class="text-xs text-base-content/60">No lists were targeted. The audience came from tag segments.</p>
-          </div>
-          }
-        </section>
-
-        <!-- Unsubscribe reasons -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">
-              Unsubscribe reasons @if (rep.unsubscribes.total > 0) { · {{ formatNumber(rep.unsubscribes.total) }} }
-            </h2>
-            @if (unsubscribeRate(); as rate) {
-            <span class="text-[10px] tabular-nums text-base-content/50">{{ rate }} of delivered</span>
-            }
-          </div>
-          @if (unsubscribeReasons().length > 0) {
-          <ul class="mt-3 flex flex-col gap-2.5">
-            @for (reason of unsubscribeReasons(); track reason.label) {
-            <li class="flex items-center gap-3 text-xs">
-              <span class="min-w-0 flex-1 truncate text-base-content/80">{{ reason.label }}</span>
-              <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-base-200">
-                <div class="h-full rounded-full bg-base-content/30" [style.width.%]="reason.width"></div>
-              </div>
-              <span class="w-6 shrink-0 text-right font-semibold tabular-nums text-base-content">
-                {{ reason.count }}
-              </span>
-            </li>
-            }
-          </ul>
-          <p class="mt-3 text-[10px] text-base-content/50">
-            The unsubscribe page doesn't ask why yet, so reasons aren't broken down.
-          </p>
-          } @else {
-          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No unsubscribes from this send.</p>
-          }
-        </section>
-
-        <!-- Spam reports -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">
-              Spam reports @if (rep.spam_reports.total > 0) { · {{ formatNumber(rep.spam_reports.total) }} }
-            </h2>
-            @if (spamRate() != null) {
-            <span class="text-[10px] tabular-nums text-base-content/50"
-              >{{ formatSpamRate(spamRate()) }} of delivered</span
-            >
-            }
-          </div>
-          @if (rep.spam_reports.total > 0) { @for (row of spamRows(); track $index) {
-          <div class="mt-3 flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate font-mono text-xs text-base-content">{{ row.email }}</p>
-              @if (row.timing) {
-              <p class="mt-0.5 text-[10px] text-base-content/50">Provider feedback loop · {{ row.timing }}</p>
-              }
-            </div>
-            <pc-status-badge type="neutral">Suppressed</pc-status-badge>
-          </div>
-          }
-          <p class="mt-3 border-t border-base-200 pt-3 text-[10px] text-base-content/50">
-            Reporters are suppressed from every future send automatically. Providers throttle senders above 0.1%. @if
-            (spamRateIsSafe()) { This send is well clear. } @else { This send is over that line. Review the audience
-            before the next send. }
-          </p>
-          } @else {
-          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No spam reports from this send.</p>
-          }
-        </section>
-        }
-
-        <!-- What was sent -->
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <h2 class="pc-eyebrow">What was sent</h2>
-          <div class="mt-3 flex flex-col gap-3 text-xs">
-            <div>
-              <div class="pc-eyebrow">Subject</div>
-              <p class="mt-0.5 font-semibold text-base-content">{{ em.subject || '—' }}</p>
-            </div>
-            @if (em.preview_text) {
-            <div>
-              <div class="pc-eyebrow">Preview text</div>
-              <p class="mt-0.5 text-base-content/80">{{ em.preview_text }}</p>
-            </div>
-            } @if (report()?.from; as from) {
-            <div>
-              <div class="pc-eyebrow">From</div>
-              <p class="mt-0.5 text-base-content/80">{{ from.name }} @if (from.email) { &lt;{{ from.email }}&gt; }</p>
-            </div>
-            }
-          </div>
-          @if (em.html_content || em.plain_text_content) {
-          <div
-            class="mt-3 overflow-auto rounded border border-base-200 bg-base-200/20 p-3 text-xs"
-            [class.max-h-56]="!emailExpanded()"
-          >
-            @if (em.html_content) {
-            <div [innerHTML]="em.html_content"></div>
-            } @else {
-            <pre class="whitespace-pre-wrap font-sans">{{ em.plain_text_content }}</pre>
-            }
-          </div>
-          <button
-            type="button"
-            class="btn btn-outline btn-secondary btn-xs mt-3 w-full"
-            (click)="emailExpanded.set(!emailExpanded())"
-          >
-            {{ emailExpanded() ? 'Collapse email' : 'View sent email' }}
-          </button>
-          } @else {
-          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No content stored for this newsletter.</p>
-          }
-        </section>
-
-        <!-- Attachments (manageable until the newsletter goes out) -->
-        @if (attachments().length > 0 || canManageAttachments()) {
-        <section class="rounded border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div class="flex items-center justify-between gap-3">
-            <h2 class="pc-eyebrow">Attachments @if (attachments().length > 0) { · {{ attachments().length }} }</h2>
-            @if (canManageAttachments()) {
-            <input #attachmentInput type="file" class="hidden" (change)="onAttachmentSelected($event)" />
-            <button
-              type="button"
-              class="btn btn-outline btn-secondary btn-xs gap-1"
-              [disabled]="isUploadingAttachment()"
-              (click)="attachmentInput.click()"
-            >
-              @if (isUploadingAttachment()) {
-              <span class="loading loading-spinner loading-xs"></span>
-              Attaching… } @else {
-              <pc-icon name="cloud-arrow-up" [size]="4"></pc-icon>
-              Attach file }
-            </button>
-            }
-          </div>
-          @if (attachments().length === 0) {
-          <p class="mt-3 py-4 text-center text-xs text-base-content/60">No files attached to this newsletter.</p>
-          } @else {
-          <ul class="mt-2 divide-y divide-base-200">
-            @for (attachment of attachments(); track attachment.id) {
-            <li class="flex items-center justify-between gap-3 py-2">
-              <div class="min-w-0">
-                <p class="truncate text-xs font-medium" [title]="attachment.filename">{{ attachment.filename }}</p>
-                @if (attachment.size_bytes) {
-                <p class="text-[10px] text-base-content/50">{{ formatBytes(attachment.size_bytes) }}</p>
-                }
-              </div>
-              @if (canManageAttachments()) {
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-error"
-                title="Remove attachment"
-                (click)="removeAttachment(attachment)"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
-              }
-            </li>
-            }
-          </ul>
-          }
-        </section>
-        }
-      </div>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.html
-```html
-<div class="mx-auto w-full max-w-7xl p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Newsletters" [totalSentence]="headerSentence()">
-    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New newsletter
-    </a>
-  </pc-grid-header>
-
-  <!-- All-time engagement stat tiles -->
-  <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Sent campaigns</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatNumber(stats().sentCount) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">All time</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Delivered</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatNumber(stats().delivered) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Successful deliveries</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Avg open rate</div>
-        <div
-          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
-          [class.text-success]="stats().avgOpenRate > 0"
-          [class.text-base-content]="stats().avgOpenRate === 0"
-        >
-          {{ formatPercent(stats().avgOpenRate) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Opens per delivery</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Avg click rate</div>
-        <div class="stat-value mt-1 text-xl font-extrabold tabular-nums text-base-content sm:text-2xl">
-          {{ formatPercent(stats().avgClickRate) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Clicks per delivery</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Bounces</div>
-        <div
-          class="stat-value mt-1 text-xl font-extrabold tabular-nums sm:text-2xl"
-          [class.text-warning]="stats().bounces > 0"
-          [class.text-base-content]="stats().bounces === 0"
-        >
-          {{ formatNumber(stats().bounces) }}
-        </div>
-        <div class="stat-desc mt-1 text-[10px] text-base-content/40">Auto-skipped on next send</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Campaign table -->
-  <pc-table [loading]="loading.visible()" [columns]="7">
-    <ng-container pcTableHead>
-      <th>Campaign</th>
-      <th>Status</th>
-      <th>Audience</th>
-      <th>Open</th>
-      <th>Click</th>
-      <th>Date</th>
-      <th class="w-28"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="7" class="px-6">
-        <pc-empty-state icon="megaphone" [bordered]="false" title="No newsletters in this workspace yet">
-          <a routerLink="add" class="btn btn-primary btn-sm gap-2">
-            <pc-icon name="plus" [size]="4"></pc-icon>
-            New newsletter
-          </a>
-        </pc-empty-state>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <span class="font-semibold text-base-content">{{ row.name || 'Untitled newsletter' }}</span>
-      </td>
-      <td>
-        <pc-status-badge [type]="statusTone(row.status)">{{ statusLabel(row.status) }}</pc-status-badge>
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.total_recipients > 0) { {{ formatNumber(row.total_recipients) }} recipients } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.status === 'sent') { {{ formatPercent(row.open_rate) }} } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="tabular-nums text-base-content/70">
-        @if (row.status === 'sent') { {{ formatPercent(row.click_rate) }} } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        @if (row.send_date) { {{ row.send_date | date: (row.status === 'scheduled' ? 'MMM d, h:mm a' : 'MMM d, y') }} }
-        @else {
-        <span class="text-base-content/40">Not scheduled</span>
-        }
-      </td>
-      <td class="text-right">
-        <!-- A report only exists once a send is (or was) underway. -->
-        @if (row.status === 'draft') {
-        <span class="tooltip-left" [class.tooltip]="sendBlocker(row) !== null" [attr.data-tip]="sendBlocker(row)">
-          <button
-            type="button"
-            class="btn btn-primary btn-xs"
-            [disabled]="sendBlocker(row) !== null"
-            (click)="sendDraft(row)"
-          >
-            Send…
-          </button>
-        </span>
-        } @else if (row.status !== 'scheduled') {
-        <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
-        }
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Icon } from '@icons/icon';
-
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { AuthService } from '../../../auth/auth-service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { NewslettersService } from '../services/newsletters-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-interface NewsletterRow {
-  bounce_count: number;
-  click_rate: number;
-  delivered_count: number;
-  has_audience: boolean;
-  has_content: boolean;
-  id: string;
-  name: string;
-  open_rate: number;
-  send_date: Date | null;
-  status: string;
-  total_recipients: number;
-  unique_clicks: number;
-  unique_opens: number;
-}
-
-interface NewsletterStats {
-  avgClickRate: number;
-  avgOpenRate: number;
-  bounces: number;
-  delivered: number;
-  sentCount: number;
-}
-
-const STATUS_TONE: Record<string, PcStatusType> = {
-  archived: 'ghost',
-  draft: 'ghost',
-  paused: 'warning',
-  queuing: 'info',
-  scheduled: 'info',
-  sending: 'info',
-  sent: 'success',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  archived: 'Archived',
-  draft: 'Draft',
-  paused: 'Paused',
-  queuing: 'Sending',
-  scheduled: 'Scheduled',
-  sending: 'Sending',
-  sent: 'Sent',
-};
-
-/** Statuses that count as "in progress" for the header sentence. */
-const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused']);
-
-/**
- * Newsletters list page: stat tiles summarising all-time engagement, then a bespoke
- * pc-table of campaigns. Drafts get a "Send…" action behind the danger confirm; everything
- * else links to its report (the newsletter detail page).
- */
-@Component({
-  selector: 'pc-newsletters-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
-  templateUrl: './newsletters-page.html',
-})
-export class NewslettersPage {
-  private readonly svc = inject(NewslettersService);
-  private readonly auth = inject(AuthService);
-  private readonly userSignal = this.auth.getUserSignal();
-  /** Sending is blocked server-side during demo mode; sendBlocker() explains it (§2 explained-disabled). */
-  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
-  private readonly context = inject(CampaignContextService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly rows = signal<NewsletterRow[]>([]);
-  protected readonly loaded = signal(false);
-  /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
-  protected readonly verifiedSenders = signal<string[]>([]);
-
-  /** The campaign context the current rows were loaded for; undefined = never loaded. */
-  private loadedForCampaign: string | null | undefined = undefined;
-
-  private readonly numberFormatter = new Intl.NumberFormat();
-
-  protected readonly stats = computed<NewsletterStats>(() => {
-    const sent = this.rows().filter((r) => r.status === 'sent');
-    let delivered = 0;
-    let opens = 0;
-    let clicks = 0;
-    let bounces = 0;
-    for (const r of sent) {
-      delivered += r.delivered_count;
-      opens += r.unique_opens;
-      clicks += r.unique_clicks;
-      bounces += r.bounce_count;
-    }
-    return {
-      sentCount: sent.length,
-      delivered,
-      avgOpenRate: delivered > 0 ? (opens / delivered) * 100 : 0,
-      avgClickRate: delivered > 0 ? (clicks / delivered) * 100 : 0,
-      bounces,
-    };
-  });
-
-  protected readonly headerSentence = computed<string | null>(() => {
-    if (!this.loaded()) return null;
-    const sent = this.stats().sentCount;
-    const inProgress = this.rows().filter((r) => IN_PROGRESS_STATUSES.has(r.status)).length;
-    const parts = [`${this.numberFormatter.format(sent)} campaign${sent === 1 ? '' : 's'} sent`];
-    if (inProgress > 0) parts.push(`${this.numberFormatter.format(inProgress)} in progress`);
-    return parts.join(' · ');
-  });
-
-  constructor() {
-    // Reload whenever the campaign context switches (§15) — and once on first render.
-    effect(() => {
-      const campaignId = this.context.activeCampaignId();
-      if (campaignId === this.loadedForCampaign) return;
-      this.loadedForCampaign = campaignId;
-      void untracked(() => this.reload());
-    });
-  }
-
-  protected statusLabel(status: string): string {
-    return STATUS_LABEL[status] ?? (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—');
-  }
-
-  protected statusTone(status: string): PcStatusType {
-    return STATUS_TONE[status] ?? 'ghost';
-  }
-
-  protected formatNumber(value: number): string {
-    return this.numberFormatter.format(value);
-  }
-
-  protected formatPercent(value: number): string {
-    return `${value.toFixed(1)}%`;
-  }
-
-  /**
-   * The first unmet send condition for a draft, or null when it can go out (§2 explained-disabled:
-   * the Send button never greys out silently — the tooltip names exactly what's missing).
-   */
-  protected sendBlocker(row: NewsletterRow): string | null {
-    if (this.isDemo()) {
-      return 'Sending is locked during the demo. Choose a plan, then exit demo mode';
-    }
-    if (this.verifiedSenders().length === 0) {
-      return 'Verify a sender address under Settings → Communications before sending';
-    }
-    if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
-    if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
-    return null;
-  }
-
-  protected async sendDraft(row: NewsletterRow): Promise<void> {
-    if (this.sendBlocker(row) !== null) return;
-    const name = row.name || 'this newsletter';
-    const confirmed = await this.dialogs.confirm({
-      title: `Send "${name}"?`,
-      message: 'It goes out to everyone in its selected lists and tags right away. Sending cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Send newsletter',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    const end = this.loading.begin();
-    try {
-      await this.svc.send(row.id);
-      this.alerts.showSuccess(`"${name}" is on its way`);
-      await this.reload();
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not send the newsletter'));
-    } finally {
-      end();
-    }
-  }
-
-  private async reload(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      await this.context.ensureLoaded();
-      const { rows } = await this.svc.getAll();
-      this.rows.set((rows as Record<string, unknown>[]).map((r) => this.toRow(r)));
-      this.loaded.set(true);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not load newsletters'));
-    } finally {
-      end();
-    }
-    await this.loadVerifiedSenders();
-  }
-
-  private async loadVerifiedSenders(): Promise<void> {
-    try {
-      await this.settings.load();
-      this.verifiedSenders.set(this.settings.getValue<string[]>('communications.verified_emails', []) ?? []);
-    } catch {
-      // Non-fatal: with no snapshot the Send buttons stay disabled with the verify-sender tooltip.
-    }
-  }
-
-  private toRow(record: Record<string, unknown>): NewsletterRow {
-    const asNumber = (value: unknown): number => {
-      const num = Number(value);
-      return Number.isFinite(num) ? num : 0;
-    };
-    const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-    return {
-      has_audience: asText(record['target_lists']).length > 0 || asText(record['segments']).length > 0,
-      has_content:
-        asText(record['subject']).length > 0 &&
-        (asText(record['html_content']).length > 0 || asText(record['plain_text_content']).length > 0),
-      id: String(record['id']),
-      name: typeof record['name'] === 'string' ? record['name'] : '',
-      status: typeof record['status'] === 'string' ? record['status'] : 'draft',
-      total_recipients: asNumber(record['total_recipients']),
-      delivered_count: asNumber(record['delivered_count']),
-      bounce_count: asNumber(record['bounce_count']),
-      open_rate: asNumber(record['open_rate']),
-      click_rate: asNumber(record['click_rate']),
-      unique_opens: asNumber(record['unique_opens']),
-      unique_clicks: asNumber(record['unique_clicks']),
-      send_date: record['send_date'] instanceof Date ? record['send_date'] : null,
-    };
-  }
 }
 ```
 
@@ -66650,6 +68132,1034 @@ export class PersonView {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import {
+  PLANS,
+  PURCHASABLE_PLAN_KEYS,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  planDisplayName,
+  priceLabelAt,
+  type PlanDef,
+  type PlanKey,
+  type PurchasablePlanKey,
+} from '@common';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+export interface BillingDetailsSnapshot {
+  plan: string;
+  status: string;
+  endsAt: Date | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  hasActiveSubscription: boolean;
+  isMockMode: boolean;
+}
+
+/** Shape returned by `billing.getUsage` — the tenant's live emailable-subscriber count against
+ * its current plan's bracket ladder. */
+export interface BillingUsageSnapshot {
+  subscribers: number;
+  billedQuantity: number;
+  subscriberCap: number;
+  emailCap: number;
+  monthlyPrice: number;
+  tierMax: number;
+}
+
+/** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
+ * slider so the two surfaces feel identical. */
+const SUBSCRIBER_SLIDER_STOPS = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+] as const;
+
+function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
+  return value != null && (PURCHASABLE_PLAN_KEYS as readonly string[]).includes(value);
+}
+
+@Component({
+  selector: 'pc-billing-settings',
+  imports: [DatePipe, Icon, StatusBadge],
+  templateUrl: './billing-settings.html',
+})
+export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly actionPending = signal(false);
+  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
+  protected readonly usage = signal<BillingUsageSnapshot | null>(null);
+
+  /** Upgrade grid: the purchasable paid tiers only (Grassroots, Movement). Free is the current
+   * plan for everyone who hasn't upgraded, and Enterprise is a contact-us footnote, not a card. */
+  protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
+  protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
+
+  protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
+  protected readonly sliderIndex = signal(0);
+  protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
+  protected readonly maxSliderStop = computed(
+    () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
+  );
+
+  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" — omits the billed
+   * clause for plans with no meaningful bracket (free, enterprise). */
+  protected readonly usageSummary = computed<string | null>(() => {
+    const snapshot = this.usage();
+    const planKey = this.details()?.plan;
+    if (!snapshot || !planKey) return null;
+
+    const subscribers = `${this.formatCount(snapshot.subscribers)} emailable subscribers`;
+    if (planKey === 'free' || planKey === 'enterprise') return subscribers;
+
+    const cap = this.formatCount(snapshot.subscriberCap);
+    return `${subscribers} · billed for up to ${cap} at $${snapshot.monthlyPrice}/mo`;
+  });
+
+  protected planLabel(plan: string | null | undefined): string {
+    return planDisplayName(plan);
+  }
+
+  protected priceLabel(plan: PlanDef): string {
+    return priceLabelAt(plan, this.sliderValue());
+  }
+
+  protected formatCount(n: number): string {
+    return n.toLocaleString('en-US');
+  }
+
+  protected onSliderInput(event: Event): void {
+    const index = (event.target as HTMLInputElement).valueAsNumber;
+    if (!Number.isNaN(index)) this.sliderIndex.set(index);
+  }
+
+  ngOnInit(): void {
+    void this.initBilling();
+  }
+
+  private async initBilling() {
+    await this.loadBilling();
+
+    // Listen to query params for mock successes or redirect callbacks
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => void this.handleQueryParams(params));
+  }
+
+  protected async loadBilling() {
+    const end = this._loading.begin();
+    try {
+      const [details, usage] = await Promise.all([
+        this.api.billing.getDetails.query(),
+        this.api.billing.getUsage.query(),
+      ]);
+      this.details.set(details);
+      this.usage.set(usage);
+      this.syncSliderToUsage(usage);
+    } catch (err) {
+      console.error(err);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
+    } finally {
+      end();
+    }
+  }
+
+  /** Snaps the slider to the tenant's live subscriber count, rounded up to the nearest stop.
+   * Falls back to the first stop when usage is unavailable or already past the highest stop. */
+  private syncSliderToUsage(usage: BillingUsageSnapshot | null | undefined): void {
+    const subscribers = usage?.subscribers;
+    if (subscribers == null) {
+      this.sliderIndex.set(0);
+      return;
+    }
+    const index = this.sliderStops.findIndex((stop) => subscribers <= stop);
+    this.sliderIndex.set(index === -1 ? this.sliderStops.length - 1 : index);
+  }
+
+  private async handleQueryParams(params: Record<string, string>): Promise<void> {
+    if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
+      await this.handleMockActivation(params['plan']);
+    } else if (params['checkout_success']) {
+      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
+      this.clearQueryParams();
+    } else if (params['mock_portal_success']) {
+      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
+      this.clearQueryParams();
+    }
+  }
+
+  protected async subscribe(plan: PlanDef) {
+    if (!isPurchasablePlan(plan.key)) return;
+    const planKey = plan.key;
+    this.actionPending.set(true);
+    try {
+      const res = await this.api.billing.createCheckout.mutate({ plan: planKey });
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing engine.');
+      }
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
+      this.actionPending.set(false);
+    }
+  }
+
+  protected async openPortal() {
+    this.actionPending.set(true);
+    try {
+      const res = await this.api.billing.createPortal.mutate();
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing portal.');
+      }
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
+      this.actionPending.set(false);
+    }
+  }
+
+  private async handleMockActivation(plan: PurchasablePlanKey) {
+    const end = this._loading.begin();
+    try {
+      const quantity = this.mockQuantityFor(plan);
+      await this.api.billing.activateMockPlan.mutate({ plan, quantity });
+      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
+    } finally {
+      end();
+      this.clearQueryParams();
+    }
+  }
+
+  /** The bracket index (Stripe quantity) matching the tenant's current subscriber count, so mock
+   * activation lands on the same billed tier the real checkout would compute. */
+  private mockQuantityFor(plan: PlanKey): number {
+    const subscribers = this.usage()?.subscribers ?? 0;
+    return bracketIndexForSubscribers(plan, subscribers) ?? maxQuantity(plan);
+  }
+
+  protected async cancelMock() {
+    const end = this._loading.begin();
+    try {
+      await this.api.billing.cancelMockPlan.mutate();
+      this.alerts.showSuccess('Mock subscription has been canceled.');
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
+    } finally {
+      end();
+    }
+  }
+
+  private clearQueryParams() {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        mock_checkout_success: null,
+        plan: null,
+        checkout_success: null,
+        mock_portal_success: null,
+      },
+      queryParamsHandling: 'merge',
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
+```html
+<div class="space-y-8">
+  <!-- Compliance Disclaimer (top priority) -->
+  <div
+    class="alert alert-info text-xs rounded-xl p-3 border-info/30 bg-info/5 text-info-content shadow-sm flex items-start gap-3"
+  >
+    <pc-icon name="information-circle" [size]="5" class="shrink-0 mt-0.5 text-info"></pc-icon>
+    <div>
+      <strong class="font-semibold">Compliance is your responsibility</strong>
+      <p class="mt-0.5 text-base-content/70">
+        You are solely responsible for ensuring that your donation collection, contribution limits, residency rules, and
+        tax-receipting comply with the campaign finance and charitable-solicitation laws that apply to you and your
+        contributors. pplCRM is a software platform only — the settings below are tools you configure, and we make no
+        representation or warranty that any configuration satisfies your legal obligations. When in doubt, consult a
+        qualified legal or compliance advisor.
+      </p>
+    </div>
+  </div>
+
+  <!-- Donations paused: residency not yet acknowledged (fail-closed gate) -->
+  @if (!residencyAcknowledged()) {
+  <div class="alert alert-warning shadow-sm">
+    <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+    <div>
+      <span class="font-bold">Donations are paused</span>
+      <p class="text-xs mt-0.5">
+        Confirm your residency restrictions below before this organization can accept donations.
+      </p>
+    </div>
+  </div>
+  }
+
+  <!-- Payment processor selector -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+      Payment processor
+    </h3>
+    <!-- Where donations are processed / where donor payment data is stored — driven by the CONFIGURED (saved) processor -->
+    <div class="alert alert-info shadow-sm">
+      <pc-icon name="information-circle" [size]="5"></pc-icon>
+      <div>
+        <span class="font-bold">{{ processingNotice().heading }}</span>
+        <p class="text-xs mt-0.5">{{ processingNotice().body }}</p>
+      </div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-3">
+      <label
+        class="flex items-start gap-3 flex-1 rounded-lg border p-4 transition-colors"
+        [class.border-primary]="processor() === 'stripe'"
+        [class.border-base-200]="processor() !== 'stripe'"
+        [class.cursor-pointer]="!stripeOptionDisabled()"
+        [class.cursor-not-allowed]="stripeOptionDisabled()"
+        [class.opacity-60]="stripeOptionDisabled()"
+      >
+        <input
+          type="radio"
+          name="donation_processor"
+          class="radio radio-primary radio-sm mt-0.5"
+          [checked]="processor() === 'stripe'"
+          [disabled]="stripeOptionDisabled()"
+          (change)="selectProcessor('stripe')"
+        />
+        <div>
+          <span class="text-xs font-semibold text-base-content/90">Stripe (US-based)</span>
+          <p class="text-[11px] text-base-content/60 mt-0.5">
+            Processes and stores donor data in the United States. One-time and monthly (recurring) donations.
+          </p>
+          @if (stripeOptionDisabled()) {
+          <p class="text-[11px] text-warning mt-1 flex items-center gap-1">
+            <pc-icon name="lock-closed" [size]="3"></pc-icon>
+            Remove your Helcim configuration first to switch.
+          </p>
+          }
+        </div>
+      </label>
+      <label
+        class="flex items-start gap-3 flex-1 rounded-lg border p-4 transition-colors"
+        [class.border-primary]="processor() === 'helcim'"
+        [class.border-base-200]="processor() !== 'helcim'"
+        [class.cursor-pointer]="!helcimOptionDisabled()"
+        [class.cursor-not-allowed]="helcimOptionDisabled()"
+        [class.opacity-60]="helcimOptionDisabled()"
+      >
+        <input
+          type="radio"
+          name="donation_processor"
+          class="radio radio-primary radio-sm mt-0.5"
+          [checked]="processor() === 'helcim'"
+          [disabled]="helcimOptionDisabled()"
+          (change)="selectProcessor('helcim')"
+        />
+        <div>
+          <span class="text-xs font-semibold text-base-content/90">Helcim (Canada-based)</span>
+          <p class="text-[11px] text-base-content/60 mt-0.5">
+            Processes and stores donor data in Canada. One-time donations only.
+          </p>
+          @if (helcimOptionDisabled()) {
+          <p class="text-[11px] text-warning mt-1 flex items-center gap-1">
+            <pc-icon name="lock-closed" [size]="3"></pc-icon>
+            Remove your Stripe configuration first to switch.
+          </p>
+          }
+        </div>
+      </label>
+    </div>
+  </div>
+
+  @if (processor() === 'stripe') {
+  <!-- Stripe Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between gap-2">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Stripe Integration
+      </h3>
+      <div class="flex items-center gap-2">
+        <span
+          class="badge badge-sm font-medium"
+          [class.badge-success]="stripeSecretKey().trim()"
+          [class.badge-neutral]="!stripeSecretKey().trim()"
+        >
+          {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
+        </span>
+        @if (stripeConfigured()) {
+        <button type="button" class="btn btn-xs btn-outline btn-error" (click)="removeStripeConfig()">
+          <pc-icon name="trash" [size]="3"></pc-icon>
+          Remove keys
+        </button>
+        }
+      </div>
+    </div>
+
+    <!-- Security Banner -->
+    <div
+      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
+      <div>
+        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
+        <p class="mt-0.5 text-base-content/70">
+          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
+          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
+        </p>
+        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Stripe Secret Key -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_secret_key" class="text-xs font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <input
+          id="stripe_secret_key"
+          type="password"
+          placeholder="sk_live_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="stripeSecretKey()"
+          (input)="stripeSecretKey.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
+          <code class="font-mono">sk_test_</code>.
+        </p>
+      </div>
+
+      <!-- Stripe Webhook Secret -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_webhook_secret" class="text-xs font-semibold text-base-content/90">
+          Stripe Webhook Signing Secret
+        </label>
+        <input
+          id="stripe_webhook_secret"
+          type="password"
+          placeholder="whsec_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="stripeWebhookSecret()"
+          (input)="stripeWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Stripe webhook notifications. Starts with
+          <code class="font-mono">whsec_</code>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Webhook Instructions Info Card -->
+    <div class="card pc-panel p-4 mt-4 space-y-3">
+      <div class="space-y-1">
+        <h4 class="text-xs font-bold text-base-content/90 flex items-center gap-1.5">
+          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
+          Webhook Endpoint URL
+        </h4>
+        <p class="text-xs text-base-content/65 max-w-xl">
+          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
+          completion notifications. For security the token is shown only once, when you generate it.
+        </p>
+      </div>
+
+      @if (webhookToken()) {
+      <!-- Just generated — show the URL once with a copy button -->
+      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          Copy this URL now. It won't be shown again.
+        </p>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
+            {{ webhookUrl() }}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline btn-secondary shrink-0" (click)="copyWebhookUrl()">
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+            Copy URL
+          </button>
+        </div>
+      </div>
+      } @else {
+      <!-- No plaintext available (never generated, or generated in a previous session) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
+          @if (webhookConfigured()) {
+          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
+          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
+          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
+          No webhook token yet. Generate one to get your Stripe webhook URL. }
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary shrink-0"
+          [disabled]="isRegeneratingWebhook()"
+          (click)="regenerateWebhookToken()"
+        >
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+  } @else {
+  <!-- Helcim Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between gap-2">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Helcim Integration
+      </h3>
+      <div class="flex items-center gap-2">
+        <span
+          class="badge badge-sm font-medium"
+          [class.badge-success]="helcimApiToken().trim()"
+          [class.badge-neutral]="!helcimApiToken().trim()"
+        >
+          {{ helcimApiToken().trim() ? 'Connected' : 'Not Configured' }}
+        </span>
+        @if (helcimConfigured()) {
+        <button type="button" class="btn btn-xs btn-outline btn-error" (click)="removeHelcimConfig()">
+          <pc-icon name="trash" [size]="3"></pc-icon>
+          Remove keys
+        </button>
+        }
+      </div>
+    </div>
+
+    <div
+      class="alert alert-info text-xs rounded-xl p-3 border-info/30 bg-info/5 text-info-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="information-circle" [size]="5" class="shrink-0 mt-0.5 text-info"></pc-icon>
+      <div>
+        <strong class="font-semibold">Helcim processes one-time donations only</strong>
+        <p class="mt-0.5 text-base-content/70">
+          Monthly (recurring) donations still require Stripe. Switch back to Stripe if you need recurring pledges.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Helcim API Token -->
+      <div class="flex flex-col gap-1.5">
+        <label for="helcim_api_token" class="text-xs font-semibold text-base-content/90">Helcim API Token</label>
+        <input
+          id="helcim_api_token"
+          type="password"
+          placeholder="Enter your Helcim API token"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="helcimApiToken()"
+          (input)="helcimApiToken.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Helcim. Find it in your Helcim account under API access.
+        </p>
+      </div>
+
+      <!-- Helcim Webhook Verifier Token -->
+      <div class="flex flex-col gap-1.5">
+        <label for="helcim_webhook_secret" class="text-xs font-semibold text-base-content/90">
+          Helcim Webhook Verifier Token
+        </label>
+        <input
+          id="helcim_webhook_secret"
+          type="password"
+          placeholder="Enter your Helcim webhook verifier token"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="helcimWebhookSecret()"
+          (input)="helcimWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Helcim webhook notifications.
+        </p>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- Donation Limit & Residency Restrictions Section -->
+  <div class="grid gap-6 md:grid-cols-2">
+    <!-- Donation Periods card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
+      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+        <h3 class="text-lg font-semibold flex items-center gap-2">
+          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
+          Donation Limit Periods
+        </h3>
+        <button
+          type="button"
+          class="btn btn-xs btn-primary"
+          (click)="showAddPeriod.set(true)"
+          [hidden]="showAddPeriod()"
+        >
+          <pc-icon name="plus" [size]="3"></pc-icon>
+          Add Period
+        </button>
+      </div>
+      <p class="text-xs text-base-content/60">
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
+        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
+        below applies.
+      </p>
+
+      <!-- Existing periods list -->
+      <div class="space-y-2">
+        @for (period of donationPeriods(); track period.id) {
+        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
+          <div class="space-y-0.5 flex-1 min-w-0">
+            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
+            <div class="text-base-content/60">
+              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
+              @if (isPeriodActive(period)) {
+              <pc-status-badge type="success">Active now</pc-status-badge>
+              } @else if (period.is_active) {
+              <pc-status-badge type="neutral">Enabled</pc-status-badge>
+              } @else {
+              <pc-status-badge type="ghost">Disabled</pc-status-badge>
+              }
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <input
+              type="checkbox"
+              class="toggle toggle-xs toggle-success"
+              [checked]="period.is_active"
+              (change)="togglePeriodActive(period)"
+              title="Enable/disable period"
+            />
+            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
+              <pc-icon name="trash" [size]="3"></pc-icon>
+            </button>
+          </div>
+        </div>
+        } @empty {
+        <div class="text-xs text-base-content/50 italic py-2 text-center">
+          No periods defined. Using fallback annual limit.
+        </div>
+        }
+      </div>
+
+      <!-- Add period form -->
+      @if (showAddPeriod()) {
+      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
+        <h4 class="text-xs font-bold text-base-content/90">New Donation Period</h4>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Period Name</label>
+          <input
+            type="text"
+            class="input input-sm input-bordered bg-base-200/30"
+            placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()"
+            (input)="newPeriodName.set($any($event.target).value)"
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">Start Date</label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()"
+              (input)="newPeriodStartDate.set($any($event.target).value)"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()"
+              (input)="newPeriodEndDate.set($any($event.target).value)"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Limit per Donor ($)</label>
+          <div class="relative max-w-xs">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
+            <input
+              type="number"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full no-spinner"
+              [formField]="newPeriodLimitForm"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
+          </button>
+          <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="showAddPeriod.set(false)">
+            Cancel
+          </button>
+        </div>
+      </div>
+      }
+
+      <!-- Fallback annual limit (used when no period is active) -->
+      <div class="border-t border-base-200 pt-4 mt-2">
+        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
+        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
+        <div class="relative max-w-xs">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-semibold">$</span>
+          <input
+            id="donation_limit"
+            type="number"
+            min="1"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold no-spinner"
+            [value]="donationLimit()"
+            (input)="donationLimit.set($any($event.target).value)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Residency restrictions card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
+        Residency Restrictions
+      </h3>
+      <p class="text-xs text-base-content/60">
+        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
+        state elections.
+      </p>
+
+      <div class="space-y-4">
+        <!-- Toggle Restriction -->
+        <label class="flex items-center gap-3 cursor-pointer py-1">
+          <input
+            id="restrict_residency"
+            type="checkbox"
+            class="toggle toggle-primary toggle-md"
+            [checked]="restrictResidency()"
+            (change)="restrictResidency.set($any($event.target).checked)"
+          />
+          <span class="text-xs font-semibold text-base-content/90"> Enforce residency restrictions </span>
+        </label>
+
+        @if (restrictResidency()) {
+        <div class="space-y-4 pt-2 animate-fade-in relative">
+          <!-- Autocomplete Allowed Countries Picker -->
+          <div class="flex flex-col gap-1.5 relative">
+            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
+            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
+              @for (cCode of selectedCountries(); track cCode) {
+              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
+                {{ getCountryName(cCode) }}
+                <button
+                  type="button"
+                  class="text-[10px] hover:text-base-content font-bold"
+                  (click)="removeCountry(cCode)"
+                >
+                  ×
+                </button>
+              </span>
+              }
+              <input
+                type="text"
+                placeholder="Type to search country..."
+                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
+                [value]="countrySearch()"
+                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
+                (focus)="showCountryDropdown.set(true)"
+                (blur)="showCountryDropdown.set(false)"
+              />
+            </div>
+
+            @if (showCountryDropdown() && availableCountriesToSelect().length) {
+            <!-- Use mousedown to prevent input blur before selecting -->
+            <ul
+              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
+            >
+              @for (c of availableCountriesToSelect(); track c.code) {
+              <li>
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
+                  (mousedown)="selectCountry(c); $event.preventDefault()"
+                >
+                  {{ c.name }} ({{ c.code }})
+                </button>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+          <!-- Allowed Province/State Checkboxes for Selected Countries -->
+          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
+          {
+          <div class="flex flex-col gap-3 p-4 pc-panel max-h-64 overflow-y-auto">
+            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
+              Allowed Provinces & States
+            </label>
+
+            @if (isCanadaSelected()) {
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (p of canadaProvinces; track p.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(p.code)"
+                    (change)="toggleRegion(p.code)"
+                  />
+                  <span>{{ p.name }} ({{ p.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">United States States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of usStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of germanyStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (r of franceRegions; track r.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(r.code)"
+                    (change)="toggleRegion(r.code)"
+                  />
+                  <span>{{ r.name }} ({{ r.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
+            isFranceSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of indiaStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Credit Configuration -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+      Tax Credit Tiers
+    </h3>
+    <p class="text-xs text-base-content/60">
+      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
+      inside a calendar year.
+    </p>
+
+    <!-- Table of existing tiers -->
+    <div class="mt-3">
+      <pc-table [columns]="4">
+        <ng-container pcTableHead>
+          <th>Bracket Tier</th>
+          <th>Up to Limit</th>
+          <th>Credit Percentage</th>
+          <th class="text-right w-24">Actions</th>
+        </ng-container>
+        @for (tier of taxCreditTiers(); track $index) {
+        <tr>
+          <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
+          <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
+          <td>
+            <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
+          </td>
+          <td class="text-right">
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
+              (click)="removeTier($index)"
+            >
+              Delete
+            </button>
+          </td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="4" class="text-center py-6 text-base-content/50 italic">
+            No tax credit tiers defined yet. Add a tier below to set up credit calculations.
+          </td>
+        </tr>
+        }
+      </pc-table>
+    </div>
+
+    <!-- Progressive bracket summary -->
+    @if (taxCreditTiers().length) {
+    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
+      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
+        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
+        Tax Credit Bracket Summary (Plain Language)
+      </h4>
+      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
+        @for (line of taxCreditSummary(); track $index) {
+        <li>{{ line }}</li>
+        }
+      </ul>
+    </div>
+    }
+
+    <!-- Add new tier form -->
+    <div class="card pc-panel p-4 mt-3 flex flex-col sm:flex-row sm:items-end gap-4">
+      <!-- Tier Limit -->
+      <div class="flex flex-col gap-1.5 w-full sm:flex-1">
+        <label for="new_limit" class="text-xs font-semibold text-base-content/95">Bracket upper limit ($)</label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
+          <input
+            id="new_limit"
+            type="number"
+            placeholder="500"
+            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold no-spinner"
+            [formField]="newLimitForm"
+          />
+        </div>
+      </div>
+
+      <!-- Tier Rate -->
+      <div class="flex flex-col gap-1.5 w-full sm:flex-1">
+        <label for="new_rate" class="text-xs font-semibold text-base-content/95">Credit percentage (%)</label>
+        <div class="relative">
+          <input
+            id="new_rate"
+            type="number"
+            placeholder="75"
+            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold no-spinner"
+            [formField]="newRateForm"
+          />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
+        </div>
+      </div>
+
+      <!-- Add button -->
+      <button type="button" class="btn btn-sm btn-primary w-full sm:w-auto font-semibold" (click)="addTier()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Add tier
+      </button>
+    </div>
+  </div>
+
+  <!-- Action buttons footer -->
+  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
+    <div>
+      @if (isSaving()) {
+      <span class="text-xs font-medium text-base-content/60 flex items-center">
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        Saving donations configuration…
+      </span>
+      }
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-xs"
+        (click)="reset()"
+        [disabled]="isSaving()"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[120px] font-semibold text-xs"
+        (click)="save()"
+        [disabled]="isSaving()"
+      >
+        @if (isSaving()) {
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        } Save Changes
+      </button>
+    </div>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
@@ -67775,313 +70285,6 @@ export class DemoModeCard {
 </div>
 ```
 
-## File: apps/website/src/app/faq/faq-page.ts
-```typescript
-import { Component } from '@angular/core';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'In your region. Canadian organizations’ data stays in Canada, EU organizations’ data stays in the EU, and so on. It doesn’t cross borders for processing or backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
-```
-
-## File: apps/website/src/app/pricing/pricing-page.html
-```html
-<pc-site-header variant="solid" />
-
-<!-- Hero -->
-<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
-  <div class="mx-auto max-w-[760px] text-center">
-    <div class="eyebrow">Pricing</div>
-    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
-    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
-      Start free forever with unlimited contacts and households on every plan. You pay only for features and email
-      subscribers, never for the size of your list.
-    </p>
-  </div>
-</section>
-
-<!-- Plan comparison -->
-<section class="px-5 py-14 sm:px-8">
-  <div class="site-wrap mb-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-center text-[14px]">
-    <span class="font-semibold text-primary">Unlimited contacts &amp; households on every plan.</span>
-    <span class="text-base-content/70">
-      Most tools charge for every contact you store; we never do. Plans differ only in features and email
-      subscribers.</span
-    >
-  </div>
-
-  <!-- Subscriber slider: the one input that re-prices every column below. -->
-  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
-    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
-        How many email subscribers do you have?
-      </label>
-      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
-    </div>
-    <input
-      id="subscriber-slider"
-      type="range"
-      min="0"
-      [max]="maxStopIndex"
-      step="1"
-      class="range range-primary range-sm mt-4 w-full"
-      [value]="stopIndex()"
-      (input)="onSlide($event)"
-    />
-    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
-      <span>1,000</span>
-      <span>200,000</span>
-    </div>
-  </div>
-
-  <!-- Comparison table -->
-  <div class="site-wrap mt-4 overflow-x-auto rounded-xl border border-line bg-base-100">
-    <table class="w-full min-w-[680px] border-separate border-spacing-0">
-      <thead>
-        <tr>
-          <th class="sticky left-0 z-[2] w-[220px] border-b border-line bg-base-100 px-5 py-5 text-left align-bottom">
-            <div class="text-[15px] font-semibold">Compare plans</div>
-            <div class="mt-1 text-[12.5px] font-normal text-base-content/50">
-              Prices shown at {{ subscribersLabel() }} subscribers
-            </div>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <th
-            class="min-w-[180px] border-b border-line px-4 py-5 text-left align-top"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            <div class="h-6">
-              @if (tier.featured) {
-              <span class="inline-block rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary">
-                Best value
-              </span>
-              }
-            </div>
-            <div class="mt-1 text-[16px] font-semibold">{{ tier.name }}</div>
-            <p class="mt-1 min-h-[57px] text-[12.5px] font-normal leading-snug text-base-content/60">
-              {{ tier.blurb }}
-            </p>
-            <div class="mt-3 min-h-[52px]">
-              @if (!overMax(tier)) {
-              <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
-              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
-              } @else if (tier.key === 'free') {
-              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">$0</div>
-              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
-              } @else {
-              <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
-              <div class="mt-2 text-[12px] font-normal text-base-content/50">
-                For more than {{ maxSubscribersLabel(tier) }} subscribers
-              </div>
-              }
-            </div>
-            <a
-              [href]="signupUrl"
-              class="mt-4 block rounded-field px-4 py-2.5 text-center text-[13.5px] font-semibold"
-              [class]="
-                tier.featured
-                  ? 'btn btn-primary rounded-field'
-                  : 'border border-line text-base-content hover:border-primary hover:text-primary'
-              "
-              >Start free</a
-            >
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (group of matrix; track group.category; let groupLast = $last) {
-        <tr>
-          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-7 text-left">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-              {{ group.category }}
-            </span>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <td class="pb-2 pt-7" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
-          }
-        </tr>
-        @for (row of group.rows; track row.label; let rowLast = $last) {
-        <tr>
-          <th
-            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
-            [class.border-b]="!(groupLast && rowLast)"
-          >
-            {{ row.label }}
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
-               past the overflow-x wrapper on small screens. -->
-          <td
-            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
-            [class.border-b]="!(groupLast && rowLast)"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            @let value = matrixValue(row, tier); @if (value === true) {
-            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="sr-only">Included</span>
-            } @else if (value === false) {
-            <span class="text-base-content/30" aria-hidden="true">—</span>
-            <span class="sr-only">Not included</span>
-            } @else { {{ value }} }
-          </td>
-          }
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
-    Need more than 200,000 subscribers, SSO or custom contracts?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
-  </p>
-
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> —
-    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">or read the FAQ</a>.
-  </p>
-</section>
-
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8">
-  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
-    Every plan starts on sample data.
-  </h2>
-  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-    <a
-      [href]="mailto"
-      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
-    >
-      Book a 15-minute walkthrough
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
-```
-
 ## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
 ```html
 <div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
@@ -68998,1815 +71201,714 @@ export class DeliveriesRoutes implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import type { PcIconNameType } from '@icons/icons.index';
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { Table } from '@uxcommon/components/table/table';
-import { Icon } from '@icons/icon';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
-import { FormRenderComponent } from './form-render';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
-import { publicPageUrl } from '../../../shared/public-pages';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-interface TemplateCard {
-  type: FormType;
-  icon: PcIconNameType;
-  title: string;
-  description: string;
-}
-
-/** Step-1 cards that leave the Forms flow for a dedicated builder (fundraising/event/shift). */
-interface BuilderCard {
-  icon: PcIconNameType;
-  title: string;
-  description: string;
-  cta: string;
-  route: string;
-}
-
-const DEFAULT_TEMPLATE_CARD: TemplateCard = {
-  type: 'signup',
-  icon: 'user-plus',
-  title: 'Signup',
-  description: 'Name, email, phone and availability. Grow your volunteer roster.',
-};
-
-/** Step-1 cards of the New-form flow — same card idiom as the automation trigger picker. */
-const TEMPLATE_CARDS: readonly TemplateCard[] = [
-  DEFAULT_TEMPLATE_CARD,
-  {
-    type: 'pledge',
-    icon: 'banknotes',
-    title: 'Pledge',
-    description: 'Name, email and an amount. Collect commitments to give.',
-  },
-  {
-    type: 'rsvp',
-    icon: 'ticket',
-    title: 'RSVP',
-    description: 'Name, email and seats. Count heads before an event.',
-  },
-  {
-    type: 'request',
-    icon: 'map-pin',
-    title: 'Request',
-    description: 'Name, email, address and notes. Take requests like yard signs.',
-  },
-  {
-    type: 'survey',
-    icon: 'chat-bubble-bottom-center-text',
-    title: 'Survey',
-    description: 'Name, issues and an open answer. Hear what people think.',
-  },
-];
-
-const BUILDER_CARDS: readonly BuilderCard[] = [
-  {
-    icon: 'document-currency-dollar',
-    title: 'Fundraising form',
-    description: 'A public giving page with preset amounts. Donations create donor records.',
-    cta: 'Create a fundraising form',
-    route: '/donation-pages/add',
-  },
-  {
-    icon: 'ticket',
-    title: 'Event page',
-    description: 'An event with its own public page. RSVPs and attendance in one place.',
-    cta: 'Create an event page',
-    route: '/events/pages/add',
-  },
-  {
-    icon: 'add-schedule',
-    title: 'Volunteer shift',
-    description: 'A signup slot with a time and place. Hours land on volunteer profiles.',
-    cta: 'Create a volunteer shift',
-    route: '/events/shifts/add',
-  },
-];
-
-@Component({
-  selector: 'pc-forms-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    StatusBadge,
-    Icon,
-    FormRenderComponent,
-    RouterLink,
-    NgTemplateOutlet,
-    DatePipe,
-    Table,
-    GridHeaderComponent,
-    EmptyState,
-    ModalShell,
-  ],
-  templateUrl: './forms-page.html',
-})
-export class FormsPageComponent implements OnInit {
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly router = inject(Router);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly confirm = inject(ConfirmDialogService);
-  private readonly auth = inject(AuthService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly forms = signal<FormDetail[]>([]);
-  protected readonly selectedId = signal<string | null>(null);
-  protected readonly mode = signal<'browse' | 'edit' | 'create'>('browse');
-  protected readonly tab = signal<'form' | 'responses'>('form');
-  protected readonly archivedOpen = signal(false);
-  protected readonly mutating = signal(false);
-  protected readonly orgName = signal('Your organization');
-  protected readonly lists = signal<{ id: string; name: string }[]>([]);
-
-  protected readonly submissions = signal<FormSubmissionRow[]>([]);
-  protected readonly submissionsTotal = signal(0);
-  protected readonly submissionsLoading = signal(false);
-
-  // New-form flow state (mode 'create': step 1 picks a template card, step 2 names it).
-  protected readonly newFormName = signal('');
-  protected readonly newFormType = signal<FormType>('signup');
-  protected readonly newFormStep = signal<1 | 2>(1);
-  protected readonly newFormError = signal<string | null>(null);
-  protected readonly creating = signal(false);
-  private readonly embedDialog = viewChild<ModalShell>('embedDialog');
-  private readonly confirmEmailDialog = viewChild<ModalShell>('confirmEmailDialog');
-
-  protected readonly templateCards = TEMPLATE_CARDS;
-  protected readonly builderCards = BUILDER_CARDS;
-  protected readonly chosenTemplate = computed(
-    () => TEMPLATE_CARDS.find((c) => c.type === this.newFormType()) ?? DEFAULT_TEMPLATE_CARD,
-  );
-
-  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
-  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
-  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
-
-  protected readonly totalSubmissions = computed(() =>
-    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
-  );
-
-  protected readonly countSentence = computed(() => {
-    const total = this.forms().length;
-    const subs = this.totalSubmissions();
-    const archived = this.archivedForms().length;
-    const parts = [
-      `${total} ${total === 1 ? 'form' : 'forms'}`,
-      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
-    ];
-    if (archived > 0) parts.push(`${archived} archived`);
-    return parts.join(' · ');
-  });
-
-  protected readonly publicUrl = computed(() => {
-    const form = this.selected();
-    if (!form?.slug) return '';
-    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
-  });
-
-  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
-  private pendingPatch: UpdateFormType = {};
-
-  public ngOnInit(): void {
-    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
-  }
-
-  // ── Loading ────────────────────────────────────────────────────────────
-
-  private async loadForms(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const rows = await this.formsSvc.listForms();
-      this.forms.set(rows);
-      const first = rows[0];
-      if (!this.selectedId() && first) {
-        this.selectedId.set(first.id);
-      }
-    } catch {
-      this.alerts.showError('Could not load your forms. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadOrg(): Promise<void> {
-    try {
-      await this.settings.load();
-      const name = this.settings.getValue<string>('organization.name', '');
-      if (name) this.orgName.set(name);
-    } catch {
-      /* org name is decorative; fall back to the default */
-    }
-  }
-
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAllWithCounts();
-      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
-      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
-    } catch {
-      /* audience list picker degrades gracefully to empty */
-    }
-  }
-
-  // ── Selection / navigation ─────────────────────────────────────────────
-
-  protected select(id: string): void {
-    if (this.selectedId() === id) return;
-    this.selectedId.set(id);
-    this.tab.set('form');
-    this.submissions.set([]);
-    this.submissionsTotal.set(0);
-  }
-
-  protected setTab(tab: 'form' | 'responses'): void {
-    this.tab.set(tab);
-    if (tab === 'responses') void this.loadSubmissions();
-  }
-
-  protected enterEdit(): void {
-    if (!this.selected()) return;
-    this.mode.set('edit');
-    this.tab.set('form');
-  }
-
-  protected exitEdit(): void {
-    this.mode.set('browse');
-  }
-
-  protected toggleArchived(): void {
-    this.archivedOpen.update((v) => !v);
-  }
-
-  // ── Status verbs ───────────────────────────────────────────────────────
-
-  protected async publish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.publish(id),
-      (f) => `Published “${f.name}”. The link now accepts responses.`,
-    );
-  }
-
-  protected async unpublish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.unpublish(id),
-      (f) => `Unpublished “${f.name}”. The public link is paused.`,
-    );
-  }
-
-  protected async archiveForm(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.archive(id),
-      (f) => `Archived “${f.name}”. The public link now shows a closed notice.`,
-    );
-    this.mode.set('browse');
-  }
-
-  protected async restore(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.restore(id),
-      (f) => `Restored “${f.name}” as a draft.`,
-    );
-  }
-
-  private async runVerb(
-    action: (id: string) => Promise<FormDetail>,
-    message: (f: FormDetail) => string,
-  ): Promise<void> {
-    const id = this.selectedId();
-    if (!id || this.mutating()) return;
-    this.mutating.set(true);
-    try {
-      const updated = await action(id);
-      this.replaceForm(updated);
-      this.alerts.showSuccess(message(updated));
-    } catch {
-      this.alerts.showError('That action didn’t go through. Please try again.');
-    } finally {
-      this.mutating.set(false);
-    }
-  }
-
-  // ── New form flow (create mode) ────────────────────────────────────────
-
-  protected openNewForm(): void {
-    this.newFormName.set('');
-    this.newFormType.set('signup');
-    this.newFormStep.set(1);
-    this.newFormError.set(null);
-    this.mode.set('create');
-  }
-
-  protected cancelNewForm(): void {
-    this.mode.set('browse');
-  }
-
-  protected selectTemplate(type: FormType): void {
-    this.newFormType.set(type);
-    this.newFormError.set(null);
-    this.newFormStep.set(2);
-  }
-
-  protected backToTemplates(): void {
-    this.newFormStep.set(1);
-  }
-
-  protected openBuilder(card: BuilderCard): void {
-    void this.router.navigateByUrl(card.route);
-  }
-
-  protected async createForm(): Promise<void> {
-    const name = this.newFormName().trim();
-    if (!name) {
-      this.newFormError.set('Give your form a name so you can find it later.');
-      return;
-    }
-    if (this.creating()) return;
-    this.creating.set(true);
-    try {
-      const type = this.newFormType();
-      const created = await this.formsSvc.createForm({ name, type });
-      this.forms.update((list) => [created, ...list]);
-      this.selectedId.set(created.id);
-      this.mode.set('edit');
-      this.tab.set('form');
-      this.alerts.showSuccess(
-        `Draft created from the ${this.chosenTemplate().title} template. Adjust its fields, then publish.`,
-      );
-    } catch {
-      this.newFormError.set('Could not create the form. Please try again.');
-    } finally {
-      this.creating.set(false);
-    }
-  }
-
-  // ── Live editing (debounced patch) ─────────────────────────────────────
-
-  protected editName(value: string): void {
-    this.patch({ name: value });
-  }
-
-  protected editDescription(value: string): void {
-    this.patch({ description: value });
-  }
-
-  protected editRedirect(value: string): void {
-    this.patch({ redirect_url: value });
-  }
-
-  protected editSubmitLabel(value: string): void {
-    this.patch({ submit_label: value });
-  }
-
-  protected toggleConfirmEmail(on: boolean): void {
-    this.patch({ confirm_email_on: on });
-  }
-
-  protected toggleNotifyTeam(on: boolean): void {
-    this.patch({ notify_team_on: on });
-  }
-
-  protected toggleField(key: string, on: boolean): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email stays on every form. It’s how each response is matched to a person.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
-    this.patch({ fields });
-  }
-
-  protected toggleRequired(key: string): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email is always required. A response can’t create a person without it.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
-    this.patch({ fields });
-  }
-
-  protected addTag(raw: string): void {
-    const form = this.selected();
-    if (!form) return;
-    const tag = raw
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
-    if (!tag) return;
-    if (form.target_tags.includes(tag)) {
-      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
-      return;
-    }
-    this.patch({ target_tags: [...form.target_tags, tag] });
-  }
-
-  protected removeTag(tag: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
-  }
-
-  protected addList(id: string): void {
-    const form = this.selected();
-    if (!form || !id || form.target_lists.includes(id)) return;
-    this.patch({ target_lists: [...form.target_lists, id] });
-  }
-
-  protected removeList(id: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
-  }
-
-  protected listName(id: string): string {
-    return this.lists().find((l) => l.id === id)?.name ?? id;
-  }
-
-  private patch(p: UpdateFormType): void {
-    const form = this.selected();
-    if (!form) return;
-    // Optimistic local update so the preview reflects the change immediately.
-    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
-    Object.assign(this.pendingPatch, p);
-    this.saveDebounced();
-  }
-
-  private async flushPatch(): Promise<void> {
-    const id = this.selectedId();
-    const patch = this.pendingPatch;
-    this.pendingPatch = {};
-    if (!id || Object.keys(patch).length === 0) return;
-    try {
-      const updated = await this.formsSvc.updateLive(id, patch);
-      this.replaceForm(updated);
-    } catch {
-      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
-    }
-  }
-
-  // ── Archive / delete (edit mode) ───────────────────────────────────────
-
-  protected canDelete(form: FormDetail): boolean {
-    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
-  }
-
-  protected async deleteDraft(): Promise<void> {
-    const form = this.selected();
-    if (!form || !this.canDelete(form)) return;
-    const ok = await this.confirm.confirm({
-      title: `Delete “${form.name}”?`,
-      message: 'This draft has no responses. Deleting it can’t be undone; archiving is the reversible option.',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    try {
-      await this.formsSvc.deleteDraft(form.id);
-      this.forms.update((list) => list.filter((f) => f.id !== form.id));
-      this.selectedId.set(this.forms()[0]?.id ?? null);
-      this.mode.set('browse');
-      this.alerts.showSuccess(`Deleted “${form.name}”.`);
-    } catch {
-      this.alerts.showError('Could not delete the form. Please try again.');
-    }
-  }
-
-  // ── Public link ────────────────────────────────────────────────────────
-
-  protected openPublicLink(): void {
-    const url = this.publicUrl();
-    if (url) window.open(url, '_blank', 'noopener');
-  }
-
-  protected async copyLink(): Promise<void> {
-    const url = this.publicUrl();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Public link copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy the link. Copy it manually from the address bar.');
-    }
-  }
-
-  // ── Embed dialog ───────────────────────────────────────────────────────
-
-  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
-  protected readonly embedCode = computed(() =>
-    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
-  );
-
-  protected openEmbed(): void {
-    this.embedMode.set('iframe');
-    this.embedDialog()?.show();
-  }
-
-  protected closeEmbed(): void {
-    this.embedDialog()?.close();
-  }
-
-  protected async copyEmbed(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(this.embedCode());
-      this.alerts.showSuccess('Embed code copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy. Select the code and copy it manually.');
-    }
-  }
-
-  private iframeSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
-  }
-
-  private rawHtmlSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
-    const lines: string[] = [`<form action="${action}" method="POST">`];
-    for (const field of form.fields.filter((f) => f.on)) {
-      const req = field.required ? ' required' : '';
-      const star = field.required ? ' *' : '';
-      const label = this.escapeAttr(field.label);
-      if (field.type === 'area') {
-        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
-      } else if (field.type === 'select') {
-        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
-        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
-        lines.push(`  </select></label>`);
-      } else if (field.type === 'checks') {
-        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
-        for (const opt of field.options ?? []) {
-          lines.push(
-            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
-          );
-        }
-        lines.push(`  </fieldset>`);
-      } else {
-        const type = field.key === 'email' ? 'email' : 'text';
-        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
-      }
-    }
-    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
-    lines.push(`</form>`);
-    return lines.join('\n');
-  }
-
-  private escapeAttr(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  // ── Confirmation-email dialog ──────────────────────────────────────────
-
-  protected readonly confirmSubjectDraft = signal('');
-  protected readonly confirmBodyDraft = signal('');
-
-  protected openConfirmEmail(): void {
-    const form = this.selected();
-    if (!form) return;
-    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
-    this.confirmBodyDraft.set(form.confirm_body ?? '');
-    this.confirmEmailDialog()?.show();
-  }
-
-  protected closeConfirmEmail(): void {
-    this.confirmEmailDialog()?.close();
-  }
-
-  protected saveConfirmEmail(): void {
-    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
-    this.closeConfirmEmail();
-    this.alerts.showSuccess('Confirmation email updated.');
-  }
-
-  // ── Responses ──────────────────────────────────────────────────────────
-
-  private async loadSubmissions(): Promise<void> {
-    const id = this.selectedId();
-    if (!id) return;
-    this.submissionsLoading.set(true);
-    try {
-      const res = await this.formsSvc.getSubmissions(id);
-      this.submissions.set(res.items);
-      this.submissionsTotal.set(res.total);
-    } catch {
-      this.alerts.showError('Could not load responses. Please try again.');
-    } finally {
-      this.submissionsLoading.set(false);
-    }
-  }
-
-  protected answerSummary(row: FormSubmissionRow): string {
-    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
-    const parts: string[] = [];
-    for (const [key, value] of Object.entries(row.answers)) {
-      if (skip.has(key) || value == null || value === '') continue;
-      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
-      if (parts.length >= 2) break;
-    }
-    return parts.join(' · ');
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────
-
-  protected requiredFieldsPresent(form: FormDetail): boolean {
-    return form.fields.some((f) => f.on && f.required);
-  }
-
-  private replaceForm(updated: FormDetail): void {
-    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  protected typeChip(type: FormType | null): string {
-    if (!type) return 'Form';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-
-  protected templateSubmitLabel(type: FormType): string {
-    return FORM_TEMPLATES[type].submitLabel;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
 ```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
-    @if (tab() === 'imports') {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
-      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-      <span>Import CSV</span>
-    </button>
-    } @else {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <span>New export</span>
-    </button>
-    }
-  </pc-grid-header>
+<!-- Preview panel (shared by browse + edit) ---------------------------------->
+<ng-template #previewPanel let-showEdit="showEdit">
+  @if (selected(); as form) {
+  <div class="pc-panel">
+    <!-- Actions row -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
+      <div class="join">
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'form'"
+          [class.text-neutral-500]="tab() !== 'form'"
+          (click)="setTab('form')"
+          type="button"
+        >
+          Form
+        </button>
+        <button
+          class="btn join-item btn-sm"
+          [class.bg-base-100]="tab() === 'responses'"
+          [class.text-neutral-500]="tab() !== 'responses'"
+          (click)="setTab('responses')"
+          type="button"
+        >
+          Responses
+          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
+        </button>
+      </div>
 
-  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
+      <div class="flex items-center gap-2">
+        @if (showEdit) {
+        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          Edit form
+        </button>
+        } @switch (form.status) { @case ('draft') {
+        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
+          Publish
+        </button>
+        } @case ('published') {
+        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+          Unpublish
+        </button>
+        } @case ('archived') {
+        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
+          Restore
+        </button>
+        } }
+      </div>
+    </div>
 
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
+    <!-- Public link row -->
+    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
+      <span class="pc-eyebrow">Public link</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openPublicLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
+          type="button"
+          aria-label="Open public page"
+        >
+          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="copyLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
+          type="button"
+          aria-label="Copy public link"
+        >
+          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openEmbed()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
+          type="button"
+          aria-label="Embed form"
+        >
+          <pc-icon name="file-code" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- State banner -->
+    @if (form.status === 'draft') {
+    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
+      Draft: only your team can see this preview. Publish to accept responses.
+    </div>
+    } @else if (form.status === 'archived') {
+    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
+      Archived: the public link shows a closed notice. Restore to edit or publish again.
     </div>
     }
 
-    <pc-table [columns]="7">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>Type</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Outcome</th>
-        <th>Tags applied</th>
-        <th class="text-right">Actions</th>
-      </ng-container>
-
-      @for (item of items(); track item.id) {
-      <tr>
-        <td>
-          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
-          <div class="text-xs text-base-content/60">
-            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-          </div>
-        </td>
-        <td>
-          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-        </td>
-        <td>
-          @if (item.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (item.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Pending</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <div class="text-xs text-base-content">
-            <div>{{ item.insertedCount }} imported</div>
-            @if (item.mergedCount > 0) {
-            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-            } @if (item.skippedCount > 0) {
-            <div class="text-xs text-base-content/60 flex items-center gap-1">
-              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                download reasons
-              </button>
-              }
-            </div>
-            } @if (item.errorCount > 0) {
-            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-            }
-          </div>
-          } @case ('failed') {
-          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
-            Failed
-          </pc-status-badge>
-          } }
-        </td>
-        <td>
-          @if (item.tagsApplied.length > 0) {
-          <div class="flex flex-wrap gap-1">
-            @for (tag of item.tagsApplied; track tag) {
-            <span class="badge badge-outline text-xs">{{ tag }}</span>
-            }
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (item.canDownloadSource) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download original file"
-              (click)="downloadSource(item)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              (click)="openDeleteDialog(item, deleteDialog)"
-              [disabled]="deleting()"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="7" class="text-center py-12 text-base-content/50">
-          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1 mb-3">
-            Bring in people, companies, households or tasks from a spreadsheet to get started.
-          </p>
-          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import CSV
-          </button>
-        </td>
-      </tr>
+    <!-- Tab content -->
+    @if (tab() === 'form') {
+    <div class="bg-base-200/40 p-8">
+      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
+    </div>
+    } @else {
+    <div class="p-4">
+      @if (submissionsLoading()) {
+      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      } @else if (submissions().length > 0) {
+      <pc-table [columns]="3">
+        <ng-container pcTableHead>
+          <th>Person</th>
+          <th>Submitted</th>
+          <th>Answers</th>
+        </ng-container>
+        @for (row of submissions(); track row.id) {
+        <tr>
+          <td>
+            <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
+              {{ row.person_name || 'View person' }}
+            </a>
+          </td>
+          <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
+          <td class="text-base-content/70">{{ answerSummary(row) }}</td>
+        </tr>
+        }
+      </pc-table>
+      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
+        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
+      </div>
+      <p class="mt-2 px-1 text-xs text-base-content/50">
+        Each response created or updated a person, applied the form’s tags and joined its lists.
+      </p>
+      } @else {
+      <div class="flex flex-col items-center gap-2 py-12 text-center">
+        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
+        @switch (form.status) { @case ('draft') {
+        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
+        } @case ('published') {
+        <p class="text-sm text-base-content/60">
+          Share the link to start collecting responses. Each one becomes a person.
+        </p>
+        } @case ('archived') {
+        <p class="text-sm text-base-content/60">No responses yet. Anything collected stayed on people’s records.</p>
+        } }
+      </div>
       }
-    </pc-table>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
-    </p>
+    </div>
+    }
   </div>
   }
+</ng-template>
 
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
-        Go to People
-      </button>
+<!-- Page ---------------------------------------------------------------------->
+@if (loading() && forms().length === 0) {
+<div class="flex flex-col gap-4 p-4">
+  <div class="skeleton h-10 w-48"></div>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <div class="flex flex-col gap-3">
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
     </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    }
+    <div class="skeleton h-96 w-full"></div>
+  </div>
+</div>
+} @else if (mode() === 'browse') {
+<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Forms" [totalSentence]="countSentence()">
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </pc-grid-header>
 
-    <pc-table [columns]="5">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Contents</th>
-        <th class="text-right">Download</th>
-      </ng-container>
-
-      @for (job of exportJobs(); track job.id) {
-      <tr>
-        <td>
-          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-        </td>
-        <td>
-          @if (job.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (job.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Queued</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-          } @default {
-          <pc-status-badge type="error">Failed</pc-status-badge>
-          } }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (job.status === 'completed') { @if (isExpired(job)) {
-            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
-            } @else if (job.downloadable) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download CSV"
-              (click)="downloadExportJob(job)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            } @else {
-            <span
-              class="text-xs text-base-content/40 mr-2"
-              title="Downloaded directly to your device, not stored on the server"
-            >
-              Downloaded
-            </span>
-            } }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              title="Delete export"
-              (click)="deleteExportJob(job)"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="5" class="text-center py-12 text-base-content/50">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1">
-            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
-          </p>
-        </td>
-      </tr>
+  @if (forms().length === 0) {
+  <pc-empty-state
+    icon="clipboard-document-list"
+    title="No forms yet. Create one to start collecting signups, RSVPs and more."
+  >
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </pc-empty-state>
+  } @else {
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+    <!-- Left rail -->
+    <div class="flex flex-col gap-1 divide-y divide-base-200">
+      @for (form of activeForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
+        [class.border-primary]="form.id === selectedId()"
+        [class.bg-primary/10]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
+            >{{ form.name }}</span
+          >
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <pc-status-badge class="shrink-0" [type]="form.status === 'published' ? 'success' : 'ghost'">
+            {{ form.status === 'published' ? 'Published' : 'Draft' }}
+          </pc-status-badge>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
+          form.updated_at | date: 'MMM d' }}
+        </span>
+      </button>
       }
-    </pc-table>
+
+      <button
+        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
+        (click)="toggleArchived()"
+        type="button"
+      >
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
+        Archived ({{ archivedForms().length }})
+      </button>
+      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
+      <button
+        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.text-primary]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="truncate text-sm font-medium">{{ form.name }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <pc-status-badge type="ghost" class="shrink-0">Archived</pc-status-badge>
+        </div>
+        <span class="text-base-content/60 text-xs tabular-nums">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+        </span>
+      </button>
+      } } @if (archivedOpen() && archivedForms().length === 0) {
+      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
+      }
+
+      <p class="mt-2 px-1 text-xs text-base-content/40">
+        Responses land in People with the form’s tag applied. No copy-paste step.
+      </p>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
   </div>
   }
 </div>
+} @else if (mode() === 'create') {
+<!-- ── Create mode — pick a template card, then name it (stepper) ───────── -->
+<div class="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
+  <div>
+    <button
+      class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
+      (click)="cancelNewForm()"
+      type="button"
+    >
+      <pc-icon name="arrow-left" [size]="3"></pc-icon>
+      All forms
+    </button>
+    <div class="flex items-center gap-3">
+      <div class="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <pc-icon name="add-form" [size]="5"></pc-icon>
+      </div>
+      <div>
+        <h2 class="text-xl font-semibold">New form</h2>
+        <p class="text-base-content/60 mt-0.5 text-sm">
+          Every form collects an email, so each response becomes a person.
+        </p>
+      </div>
+    </div>
+  </div>
 
-<pc-modal-shell
-  #deleteDialog
-  title="Delete import"
-  icon="trash"
-  [dismissible]="!deleting()"
-  (closed)="pendingDelete.set(null)"
->
-  @if (pendingDelete(); as item) {
-  <p class="text-sm text-base-content/70 mt-2">
-    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-    records created by this import:
-  </p>
+  <!-- Stepper -->
+  <ol class="flex w-full items-center text-sm">
+    <li class="flex flex-1 cursor-pointer items-center gap-2" (click)="backToTemplates()">
+      <div class="flex h-7 w-7 items-center justify-center rounded-full bg-primary">
+        <span class="font-bold text-base-100">1</span>
+      </div>
+      <span class="font-medium">Template</span>
+    </li>
+    <div
+      class="mx-2 h-0.5 flex-1"
+      [class.bg-primary]="newFormStep() > 1"
+      [class.bg-base-300]="newFormStep() <= 1"
+    ></div>
+    <li class="flex flex-1 items-center gap-2">
+      <div
+        class="flex h-7 w-7 items-center justify-center rounded-full"
+        [class.bg-primary]="newFormStep() >= 2"
+        [class.bg-base-300]="newFormStep() < 2"
+      >
+        <span class="font-bold text-base-100">2</span>
+      </div>
+      <span class="font-medium">Name</span>
+    </li>
+  </ol>
 
-  <div class="space-y-3 mt-4">
-    @if (item.contactCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+  <!-- Step 1: template cards -->
+  @if (newFormStep() === 1) {
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    @for (card of templateCards; track card.type) {
+    <button
+      type="button"
+      (click)="selectTemplate(card.type)"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deletePeople()"
-        (change)="deletePeople.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-    </label>
-    } @if (item.householdCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+      <div
+        class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
+      >
+        <pc-icon [name]="card.icon" [size]="5"></pc-icon>
+      </div>
+      <div class="flex flex-col gap-1">
+        <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
+        <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
+      </div>
+      <span class="mt-1 text-xs font-semibold text-primary">Select template →</span>
+    </button>
+    }
+    <!-- Same grid, same card — these open their dedicated builders -->
+    @for (card of builderCards; track card.route) {
+    <button
+      type="button"
+      (click)="openBuilder(card)"
+      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
     >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteHouseholds()"
-        (change)="deleteHouseholds.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-    </label>
-    } @if (item.companyCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteCompanies()"
-        (change)="deleteCompanies.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-    </label>
-    } @if (item.taskCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteTasks()"
-        (change)="deleteTasks.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-    </label>
+      <div
+        class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
+      >
+        <pc-icon [name]="card.icon" [size]="5"></pc-icon>
+      </div>
+      <div class="flex flex-col gap-1">
+        <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
+        <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
+      </div>
+      <span class="mt-1 text-xs font-semibold text-primary">{{ card.cta }} →</span>
+    </button>
     }
   </div>
   }
 
-  <div pc-modal-footer class="flex gap-2">
+  <!-- Step 2: name the draft -->
+  @if (newFormStep() === 2) {
+  <div class="mx-auto flex w-full max-w-md flex-col gap-4">
+    <!-- Chosen template summary -->
+    <div class="rounded-2xl border-y border-r border-l-4 border-base-300 border-l-primary bg-base-100 p-4">
+      <div class="flex items-center justify-between">
+        <span class="pc-eyebrow">Template</span>
+        <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="backToTemplates()">Change</button>
+      </div>
+      <div class="mt-2 flex items-center gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <pc-icon [name]="chosenTemplate().icon" [size]="5"></pc-icon>
+        </div>
+        <div class="flex flex-col">
+          <span class="text-sm font-semibold text-base-content">{{ chosenTemplate().title }}</span>
+          <span class="text-xs text-base-content/60">{{ chosenTemplate().description }}</span>
+        </div>
+      </div>
+    </div>
+
+    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Form name</span>
+        <input
+          class="input input-bordered w-full"
+          [class.input-error]="!!newFormError()"
+          [value]="newFormName()"
+          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
+          placeholder="June phone bank signup"
+          autofocus
+        />
+        @if (newFormError()) {
+        <span class="flex items-center gap-1 text-xs text-error">
+          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+          {{ newFormError() }}
+        </span>
+        }
+        <span class="text-xs text-base-content/50"
+          >Starts as a draft with the template’s fields. Publish when it’s ready.</span
+        >
+      </label>
+
+      <div class="flex items-center justify-between">
+        <button class="btn" type="button" (click)="backToTemplates()">Back</button>
+        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
+      </div>
+    </form>
+  </div>
+  }
+</div>
+} @else if (selected(); as form) {
+<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <button
+        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
+        (click)="exitEdit()"
+        type="button"
+      >
+        <pc-icon name="arrow-left" [size]="3"></pc-icon>
+        All forms
+      </button>
+      <div class="flex items-center gap-2">
+        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
+        <span class="badge badge-info badge-xs">Editing</span>
+      </div>
+      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly. Nothing to save.</p>
+    </div>
+    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
+      Done editing
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+    <!-- Settings column -->
+    <div class="flex flex-col gap-6">
+      <!-- FORM -->
+      <section class="flex flex-col gap-3">
+        <h2 class="pc-eyebrow">Form</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Form name</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.name"
+            (input)="editName($any($event.target).value)"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Public description</span>
+          <textarea
+            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
+            (input)="editDescription($any($event.target).value)"
+          >
+{{ form.description }}</textarea
+          >
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.redirect_url ?? ''"
+            (input)="editRedirect($any($event.target).value)"
+            placeholder="https://…"
+          />
+          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Submit button label</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.submit_label ?? ''"
+            (input)="editSubmitLabel($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <!-- AFTER SUBMIT -->
+      <section class="flex flex-col gap-3">
+        <h2 class="pc-eyebrow">After submit</h2>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.send_confirmation"
+            (change)="toggleConfirmEmail($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Confirmation email</span>
+            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
+            @if (form.send_confirmation) {
+            <button
+              class="mt-1 self-start text-xs text-primary hover:underline"
+              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
+              type="button"
+            >
+              Edit the confirmation email
+            </button>
+            }
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.notify_team_on"
+            (change)="toggleNotifyTeam($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Notify the team</span>
+            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
+          </span>
+        </label>
+      </section>
+
+      <!-- FIELDS -->
+      <section class="flex flex-col gap-2">
+        <h2 class="pc-eyebrow">Fields</h2>
+        @for (field of form.fields; track field.key) {
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            [checked]="field.on"
+            [disabled]="field.key === 'email'"
+            (change)="toggleField(field.key, $any($event.target).checked)"
+          />
+          <span
+            class="flex-1 text-sm text-base-content"
+            [class.text-base-content]="field.on"
+            [class.text-base-content/40]="!field.on"
+          >
+            {{ field.label }}
+          </span>
+          <button
+            class="badge badge-sm"
+            [class.badge-primary]="field.required"
+            [class.badge-ghost]="!field.required"
+            (click)="toggleRequired(field.key)"
+            type="button"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+        </div>
+        }
+        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+      </section>
+
+      <!-- AUDIENCE -->
+      <section class="flex flex-col gap-3">
+        <h2 class="pc-eyebrow">Audience</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
+          <select
+            class="select select-bordered select-sm w-full"
+            (change)="addList($any($event.target).value); $any($event.target).value = ''"
+          >
+            <option value="">Choose a list…</option>
+            @for (list of lists(); track list.id) {
+            <option [value]="list.id">{{ list.name }}</option>
+            }
+          </select>
+        </label>
+        @if (form.target_lists.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (id of form.target_lists; track id) {
+          <span class="badge badge-outline gap-1">
+            {{ listName(id) }}
+            <button (click)="removeList(id)" type="button" aria-label="Remove list">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            placeholder="Add a tag, press Enter"
+            #tagInput
+            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
+          />
+        </label>
+        @if (form.target_tags.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (tag of form.target_tags; track tag) {
+          <span class="badge badge-primary badge-outline gap-1">
+            {{ tag }}
+            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+        <p class="text-xs text-base-content/50">
+          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
+          applied automatically.
+        </p>
+      </section>
+
+      <!-- ARCHIVE -->
+      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
+        <h2 class="pc-eyebrow">Archive</h2>
+        @if (canDelete(form)) {
+        <p class="text-xs text-base-content/60">
+          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
+        </p>
+        } @else {
+        <p class="text-xs text-base-content/60">
+          Forms with responses are archived, never deleted. Receipts and person timelines keep pointing at them.
+        </p>
+        }
+        <div class="flex gap-2">
+          @if (form.status !== 'archived') {
+          <button
+            class="btn btn-outline btn-warning btn-sm gap-1"
+            (click)="archiveForm()"
+            [disabled]="mutating()"
+            type="button"
+          >
+            <pc-icon name="archive-box" [size]="4"></pc-icon>
+            Archive form
+          </button>
+          } @if (canDelete(form)) {
+          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
+            <pc-icon name="trash-forever" [size]="4"></pc-icon>
+            Delete draft
+          </button>
+          }
+        </div>
+      </section>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
+  </div>
+</div>
+}
+
+<!-- Embed dialog -------------------------------------------------------------->
+<pc-modal-shell #embedDialog title="Embed this form" icon="file-code" [boxClass]="'max-w-2xl'">
+  <div class="join mb-3">
     <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'iframe'"
+      (click)="embedMode.set('iframe')"
       type="button"
-      class="btn btn-outline btn-accent"
-      (click)="closeDeleteDialog(deleteDialog)"
-      [disabled]="deleting()"
     >
-      Cancel
+      Embed (iframe)
     </button>
     <button
+      class="btn join-item btn-sm"
+      [class.btn-active]="embedMode() === 'html'"
+      (click)="embedMode.set('html')"
       type="button"
-      class="btn btn-outline btn-error gap-2"
-      (click)="confirmDelete(deleteDialog)"
-      [disabled]="deleting()"
     >
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      Delete
+      Raw HTML form
+    </button>
+  </div>
+
+  <p class="mb-2 text-xs text-base-content/60">
+    @if (embedMode() === 'iframe') { Drops the hosted form into any page. Updates automatically when you edit the form.
+    } @else { A plain HTML form posting straight to pplCRM. Reflects the form’s currently enabled fields. }
+  </p>
+
+  <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+  >
+
+  <div pc-modal-footer>
+    <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      Copy code
     </button>
   </div>
 </pc-modal-shell>
-```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
-```typescript
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { Table } from '@uxcommon/components/table/table';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
-import { ExportsService } from '../../exports/services/exports-service';
-import { ImportsService } from '../services/imports-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-/**
- * Import/export History page (spec §17). Folds the old standalone Exports
- * Manager page into an "Imports N / Exports N" tabbed view — one history
- * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
- */
-type HistoryTab = 'imports' | 'exports';
-
-@Component({
-  selector: 'pc-imports-page',
-  imports: [Icon, TabBar, Table, GridHeaderComponent, ModalShell, StatusBadge],
-  templateUrl: './imports-page.html',
-})
-export class ImportsPage {
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly imports = inject(ImportsService);
-  private readonly exports = inject(ExportsService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  protected readonly tab = signal<HistoryTab>('imports');
-
-  protected readonly historyTabs = computed<PcTabOption[]>(() => [
-    { id: 'imports', label: 'Imports', badge: this.itemCount() },
-    { id: 'exports', label: 'Exports', badge: this.exportCount() },
-  ]);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  private isLoadActive = false;
-  protected readonly deleting = signal(false);
-  protected readonly items = signal<ImportListItem[]>([]);
-  protected readonly itemCount = computed(() => this.items().length);
-  protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deletePeople = signal(false);
-  protected readonly deleteHouseholds = signal(false);
-  protected readonly deleteCompanies = signal(false);
-  protected readonly deleteTasks = signal(false);
-  protected readonly error = signal<string | null>(null);
-
-  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
-  protected readonly importsThisYear = computed(
-    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly recordsCreatedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.insertedCount, 0),
-  );
-  protected readonly duplicatesMergedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.mergedCount, 0),
-  );
-  protected readonly historySentence = computed(
-    () =>
-      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
-      `${this.duplicatesMergedThisYear()} duplicates merged`,
-  );
-
-  /** data_imports.source → the label the Type column shows. */
-  protected sourceLabel(source: string): string {
-    switch (source) {
-      case 'persons':
-        return 'People';
-      case 'companies':
-        return 'Companies';
-      case 'households':
-        return 'Households';
-      case 'tasks':
-        return 'Tasks';
-      default:
-        return source || '—';
-    }
-  }
-
-  private pollInterval: ReturnType<typeof setInterval> | undefined;
-
-  // --- Exports tab ---
-  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
-  protected readonly exportCount = computed(() => this.exportJobs().length);
-  protected readonly exportsThisYear = computed(
-    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly exportsSentence = computed(
-    () =>
-      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
-      `files stay downloadable for 30 days · every export lands in the Activity log`,
-  );
-  protected readonly exportsLoading = createLoadingGate();
-  protected readonly showNewExportInfo = signal(false);
-
-  constructor() {
-    void this.load();
-
-    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
-    // (overrides the route's static default; effects flush after NavigationEnd,
-    // so this wins).
-    effect(() => {
-      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
-    });
-
-    // Reset checkbox when dialog closes
-    effect(() => {
-      const item = this.pendingDelete();
-      if (!item) {
-        this.deletePeople.set(false);
-        this.deleteHouseholds.set(false);
-        this.deleteCompanies.set(false);
-        this.deleteTasks.set(false);
-      }
-    });
-
-    this.startPolling();
-
-    this.destroyRef.onDestroy(() => {
-      this.imports.abort();
-      this.stopPolling();
-    });
-  }
-
-  protected switchTab(tab: string): void {
-    if (tab !== 'imports' && tab !== 'exports') return;
-    this.tab.set(tab);
-    if (tab === 'exports') {
-      void this.loadExports();
-    }
-  }
-
-  private startPolling() {
-    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
-  }
-
-  private async pollStep(): Promise<void> {
-    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-    if (hasActiveJobs) {
-      try {
-        const list = await this.imports.list();
-        this.items.set(list ?? []);
-      } catch (err) {
-        console.error('Failed to poll imports status:', err);
-      }
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = undefined;
-    }
-  }
-
-  protected formatDate(value: Date | string) {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(value instanceof Date ? value : new Date(value));
-    } catch {
-      return value ? String(value) : '—';
-    }
-  }
-
-  protected formatFileSize(bytes: number | null): string | null {
-    if (bytes == null) return null;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  protected startNewImport(): void {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected openDeleteDialog(item: ImportListItem, dialog: ModalShell) {
-    if (this.deleting()) return;
-    this.pendingDelete.set(item);
-    dialog.show();
-  }
-
-  protected closeDeleteDialog(dialog: ModalShell) {
-    dialog.close();
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmDelete(dialog: ModalShell) {
-    const item = this.pendingDelete();
-    if (!item || this.deleting()) return;
-
-    this.deleting.set(true);
-    try {
-      await this.imports.delete(item.id, {
-        deletePeople: this.deletePeople(),
-        deleteHouseholds: this.deleteHouseholds(),
-        deleteCompanies: this.deleteCompanies(),
-        deleteTasks: this.deleteTasks(),
-      });
-      this.alerts.showSuccess('Import deleted');
-      await this.load();
-      this.closeDeleteDialog(dialog);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to delete import';
-      this.alerts.showError(message);
-    } finally {
-      this.deleting.set(false);
-    }
-  }
-
-  protected downloadSource(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
-  }
-
-  protected downloadSkipped(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(
-      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
-      token,
-      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
-    );
-  }
-
-  private async load() {
-    if (this.isLoadActive) return;
-    this.isLoadActive = true;
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const list = await this.imports.list();
-      this.items.set(list ?? []);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load imports';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.isLoadActive = false;
-      end();
-    }
-  }
-
-  // --- Exports tab ---
-
-  protected toggleNewExportInfo(): void {
-    this.showNewExportInfo.update((v) => !v);
-  }
-
-  protected goToPeopleGrid(): void {
-    void this.router.navigate(['/people']);
-  }
-
-  protected formatExportDate(dateStr: string) {
-    return this.formatDate(dateStr);
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadExportJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alerts.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alerts.showError('Export is not ready yet.');
-      return;
-    }
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alerts.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteExportJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete export',
-      message: `Delete "${job.file_name}"? This removes the file from the server. It cannot be undone.`,
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.exports.delete(job.id);
-      this.alerts.showSuccess('Export deleted successfully.');
-      await this.loadExports();
-    } catch {
-      this.alerts.showError('Failed to delete export. Please try again.');
-    }
-  }
-
-  private async loadExports() {
-    const end = this.exportsLoading.begin();
-    try {
-      const list = await this.exports.list();
-      this.exportJobs.set(list ?? []);
-    } catch {
-      this.alerts.showError('Failed to load exports. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  SUPPORT_LEVEL_LABELS,
-  UpdatePersonsObj,
-  UpdatePersonsType,
-  VOTING_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  deleteConfirmMessageFor,
-  deleteSuccessMessageFor,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon, ModalShell],
-  templateUrl: './persons-grid.html',
-  host: { class: 'block h-full' },
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-  private readonly confirmAddressEditDlg = viewChild.required<ModalShell>('confirmAddressEdit');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadTotalCount();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    {
-      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
-      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
-      field: 'support_level',
-      headerName: 'Support (context)',
-      editable: false,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
-    },
-    {
-      field: 'voting_status',
-      headerName: 'Voting (context)',
-      editable: false,
-      hide: true,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
-    },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor is derived from donations and volunteer/staff are first-class person
-   * status (§15), not grid segments — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
-  }
-
-  protected routeToHouseholds() {
-    this.confirmAddressEditDlg().close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    this.confirmAddressEditDlg().show();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: deleteConfirmMessageFor(this.config.messages, selected.length),
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+<!-- Confirmation-email dialog ------------------------------------------------->
+<pc-modal-shell
+  #confirmEmailDialog
+  title="Confirmation email"
+  icon="envelope"
+  [boxClass]="'max-w-lg'"
+  [dismissible]="false"
+>
+  <form
+    id="confirm-email-form"
+    (submit)="$event.preventDefault(); saveConfirmEmail()"
+    novalidate
+    class="flex flex-col gap-4"
+  >
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Subject</span>
+      <input
+        class="input input-bordered w-full"
+        [value]="confirmSubjectDraft()"
+        (input)="confirmSubjectDraft.set($any($event.target).value)"
+      />
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-base-content">Body</span>
+      <textarea
+        class="textarea textarea-bordered min-h-[140px] w-full"
+        [value]="confirmBodyDraft()"
+        (input)="confirmBodyDraft.set($any($event.target).value)"
+      ></textarea>
+    </label>
+    <p class="text-xs text-base-content/50">
+      Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the greeting.
+    </p>
+  </form>
+  <div pc-modal-footer class="flex gap-2">
+    <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
+    <button class="btn btn-primary" type="submit" form="confirm-email-form">Save</button>
+  </div>
+</pc-modal-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
@@ -71722,6 +72824,2182 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
+```typescript
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { planDisplayName } from '@common';
+
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { UserService } from '@frontend/services/user.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { authRoleLabel } from '../../../../../../../libs/common/src';
+import { UserAdminService } from '../services/useradmin-service';
+import {
+  userIsDeactivated,
+  userLastActiveLabel,
+  userRoleLockReason,
+  userRoleOptions,
+  userStatus,
+} from '../user-status';
+import { InviteUserDialog, type SeatUsage } from './invite-user-dialog';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+export interface UserRow {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: string | null;
+  deactivated_at: string | null;
+  last_active_at: string | null;
+  created_at: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
+ * inline role select with explained locks, honest status/MFA/last-active columns derived from
+ * real session data, and the seat-aware "Invite user" dialog.
+ */
+@Component({
+  selector: 'pc-users-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [
+    EmptyState,
+    RouterLink,
+    Icon,
+    StatusBadge,
+    Table,
+    UserAvatarComponent,
+    InviteUserDialog,
+    GridHeaderComponent,
+  ],
+  templateUrl: './users-page.html',
+})
+export class UsersPageComponent implements OnInit {
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  private readonly inviteDlg = viewChild.required(InviteUserDialog);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly loaded = signal(false);
+  protected readonly rows = signal<UserRow[]>([]);
+  protected readonly seatUsage = signal<SeatUsage | null>(null);
+
+  /** Row that just saved a role change — drives the one-shot saved flash. */
+  protected readonly flashedId = signal<string | null>(null);
+  /** Rows with an in-flight role change; their select is disabled while saving. */
+  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
+
+  protected readonly currentUserId = computed(() => {
+    const id = this.auth.getUser()?.id;
+    return id != null ? String(id) : null;
+  });
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
+
+  protected readonly activeCount = computed(
+    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly invitedCount = computed(
+    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
+  );
+  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
+  protected readonly adminCount = computed(
+    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
+  );
+
+  protected readonly seatsRemaining = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
+  });
+
+  private readonly userSignal = this.auth.getUserSignal();
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+
+  /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected readonly inviteLockReason = computed<string | null>(() => {
+    if (this.isDemo()) {
+      return 'Inviting teammates is locked during the demo. Choose a plan, then exit demo mode';
+    }
+    if (this.seatsRemaining() === 0) {
+      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use. Upgrade in Settings → Billing`;
+    }
+    return null;
+  });
+
+  protected readonly planLabel = computed(() => {
+    const usage = this.seatUsage();
+    return usage ? planDisplayName(usage.plan) : '';
+  });
+
+  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
+  protected readonly headerSentence = computed(() => {
+    const total = this.rows().length;
+    const parts = [`${total} user${total === 1 ? '' : 's'}`];
+    const statusBits = [`${this.activeCount()} active`];
+    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
+    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
+    parts.push(statusBits.join(', '));
+    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
+    const usage = this.seatUsage();
+    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
+    return parts.join(' · ');
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected openInvite(): void {
+    this.inviteDlg().open();
+  }
+
+  protected onInvited(): void {
+    void this.load();
+  }
+
+  protected displayName(row: UserRow): string {
+    return `${row.first_name} ${row.last_name}`.trim() || row.email;
+  }
+
+  protected avatarUrl(row: UserRow): string | null {
+    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
+  }
+
+  protected isSelf(row: UserRow): boolean {
+    return row.id === this.currentUserId();
+  }
+
+  protected roleLabel(role: string | null): string {
+    return authRoleLabel(role);
+  }
+
+  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
+  protected roleOptions(row: UserRow): string[] {
+    return userRoleOptions(this.currentUserRole(), row.role);
+  }
+
+  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
+  protected roleLockReason(row: UserRow): string | null {
+    return userRoleLockReason({
+      isSelf: this.isSelf(row),
+      callerRole: this.currentUserRole(),
+      targetRole: row.role,
+      deactivated: userIsDeactivated(row),
+    });
+  }
+
+  protected isDeactivated(row: UserRow): boolean {
+    return userIsDeactivated(row);
+  }
+
+  protected status(row: UserRow): { label: string; tone: PcStatusType } {
+    return userStatus(row);
+  }
+
+  protected lastActiveText(row: UserRow): string {
+    return userLastActiveLabel(row);
+  }
+
+  protected async changeRole(row: UserRow, event: Event): Promise<void> {
+    const select = event.target as HTMLSelectElement;
+    const role = select.value;
+    if (!role || role === row.role) return;
+
+    this.savingIds.update((ids) => new Set(ids).add(row.id));
+    try {
+      await this.users.update(row.id, { role });
+      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
+      this.flashRow(row.id);
+      this.alerts.showSuccess(`Role updated. ${this.displayName(row)} is now ${this.roleLabel(role)}`);
+    } catch (err) {
+      select.value = row.role ?? '';
+      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
+      this.alerts.showError(message);
+    } finally {
+      this.savingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  protected async sendPasswordReset(row: UserRow): Promise<void> {
+    try {
+      await this.users.adminTriggerPasswordReset(row.id);
+      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
+      this.alerts.showError(message);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const [list, seats] = await Promise.all([
+        this.users.getAll({ startRow: 0, endRow: 500 }),
+        this.users.getSeatUsage(),
+      ]);
+      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
+      this.seatUsage.set(seats);
+      this.loaded.set(true);
+    } catch {
+      this.alerts.showError('Unable to load users. Try refreshing the page');
+    } finally {
+      end();
+    }
+  }
+
+  private toRow(raw: Record<string, unknown>): UserRow {
+    return {
+      id: raw['id'] != null ? String(raw['id']) : '',
+      email: typeof raw['email'] === 'string' ? raw['email'] : '',
+      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
+      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
+      role: typeof raw['role'] === 'string' ? raw['role'] : null,
+      verified: raw['verified'] === true,
+      two_factor_enabled: raw['two_factor_enabled'] === true,
+      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
+      deactivated_at: this.toIso(raw['deactivated_at']),
+      last_active_at: this.toIso(raw['last_active_at']),
+      created_at: this.toIso(raw['created_at']),
+      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
+    };
+  }
+
+  private toIso(value: unknown): string | null {
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'string' && value) return value;
+    return null;
+  }
+
+  private flashRow(id: string): void {
+    this.flashedId.set(id);
+    const FLASH_MS = 1300;
+    setTimeout(() => {
+      if (this.flashedId() === id) this.flashedId.set(null);
+    }, FLASH_MS);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+```html
+<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
+     full 24px below it would just steal height from the grid. -->
+<div
+  class="flex h-full w-full flex-col"
+  [class.px-6]="displayTitle() || grainLayout()"
+  [class.pt-6]="displayTitle() || grainLayout()"
+  [class.pb-2]="displayTitle() || grainLayout()"
+>
+  @if (grainLayout()) {
+  <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
+       (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
+  <div class="mb-3 flex items-center justify-between gap-4">
+    <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
+    @if (showToolbar()) {
+    <div class="shrink-0"><pc-dg-toolbar /></div>
+    }
+  </div>
+  } @else { @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasLoaded() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+    [totalSentence]="totalSentence()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
+      }
+    </div>
+  </div>
+  } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (showToolbar() && (allowFilter() || showTagFilter() || showIssueFilter() || showListFilter())) {
+  <!-- Filter chip row (spec §5): muted funnel marker · active chips · Clear all · dashed entry pills.
+       No surrounding box — sits directly on the page. -->
+  <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+    <pc-icon name="funnel" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+
+    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
+    <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+      @if (chip.kind === 'advanced') {
+      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
+      } @else {
+      <span>{{ chip.label }}</span>
+      }
+      <button
+        type="button"
+        class="opacity-70 hover:opacity-100"
+        [attr.aria-label]="'Remove filter: ' + chip.label"
+        (click)="removeFilterChip(chip)"
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </span>
+    } @if (filterChips().length) {
+    <button
+      type="button"
+      class="link text-primary hover:no-underline"
+      (click)="clearAllFilters()"
+      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
+    >
+      Clear all
+    </button>
+    }
+
+    <!-- + Add filter: quick single field → operator → value chip entry -->
+    @if (allowFilter()) {
+    <details class="dropdown" #addFilterDd>
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        <span i18n="Datagrid|Add-filter pill label@@datagrid.pills.addFilter">Add filter</span>
+      </summary>
+      <div
+        tabindex="0"
+        class="dropdown-content z-[60] mt-1 flex w-64 flex-col gap-2 rounded-box border border-base-200 bg-base-100 p-3 shadow-lg"
+      >
+        <select
+          class="select select-bordered select-xs w-full"
+          (change)="addFilterField.set($any($event.target).value)"
+        >
+          <option
+            value=""
+            disabled
+            [selected]="!addFilterField()"
+            i18n="Datagrid|Add-filter field placeholder@@datagrid.pills.addFilter.field"
+          >
+            Choose field…
+          </option>
+          @for (f of addFilterFields(); track f.field) {
+          <option [value]="f.field" [selected]="f.field === addFilterField()">{{ f.label }}</option>
+          }
+        </select>
+        <select class="select select-bordered select-xs w-full" (change)="addFilterOp.set($any($event.target).value)">
+          @for (op of addFilterOperators; track op.value) {
+          <option [value]="op.value" [selected]="op.value === addFilterOp()">{{ op.label }}</option>
+          }
+        </select>
+        @if (addFilterNeedsValue()) {
+        <input
+          type="text"
+          class="input input-bordered input-xs w-full"
+          placeholder="Value"
+          i18n-placeholder="Datagrid|Add-filter value placeholder@@datagrid.pills.addFilter.value"
+          [value]="addFilterValue()"
+          (input)="addFilterValue.set($any($event.target).value)"
+          (keydown.enter)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+        />
+        }
+        <div class="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-xs"
+            (click)="addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="!addFilterField() || (addFilterNeedsValue() && !addFilterValue().trim())"
+            (click)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Apply add-filter@@datagrid.pills.addFilter.apply"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </details>
+    }
+
+    <!-- Tags dashed pill — opens the OR checkbox picker -->
+    @if (showTagFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedTags().length > 0"
+        [class.!text-primary]="selectedTags().length > 0"
+      >
+        <pc-icon name="label" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Tags filter pill label@@datagrid.pills.tags">Tags</span>
+        @if (selectedTags().length) {
+        <span class="tabular-nums">({{ selectedTags().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Tags'"
+        [active]="selectedTags().length > 0"
+        (clear)="clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="filteredAvailableTags()"
+          [selected]="selectedTags()"
+          [searchQuery]="tagSearchQuery()"
+          (searchQueryChange)="tagSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllTags()"
+          (clearVisible)="clearAllTagsVisible()"
+          (toggle)="toggleTagFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+        >
+          Checked tags combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Issues dashed pill -->
+    @if (showIssueFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedIssues().length > 0"
+        [class.!text-primary]="selectedIssues().length > 0"
+      >
+        <pc-icon name="shield-exclamation" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Issues filter pill label@@datagrid.pills.issues">Issues</span>
+        @if (selectedIssues().length) {
+        <span class="tabular-nums">({{ selectedIssues().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Issues'"
+        [active]="selectedIssues().length > 0"
+        (clear)="clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="filteredAvailableIssues()"
+          [selected]="selectedIssues()"
+          [searchQuery]="issueSearchQuery()"
+          (searchQueryChange)="issueSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllIssues()"
+          (clearVisible)="clearAllIssuesVisible()"
+          (toggle)="toggleIssueFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+        >
+          Checked issues combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Lists dashed pill — apply a saved list as a chip -->
+    @if (showListFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedListId() !== null"
+        [class.!text-primary]="selectedListId() !== null"
+      >
+        <pc-icon name="queue-list" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Lists filter pill label@@datagrid.pills.lists">Lists</span>
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by List'"
+        [active]="selectedListId() !== null"
+        (clear)="clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="selectedListId()"
+          [radioName]="'selectedListPill'"
+          [maxHeight]="14"
+          (select)="selectListFilter($event)"
+        />
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+  </div>
+  }
+  <!-- Count sentence: below the filter row in grain layout (owner screenshot). -->
+  @if (grainLayout() && countSentence()) {
+  <p class="mb-3 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ countSentence() }}</p>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  } @if (hasSelectionState()) {
+  <!-- Bulk action bar: appears on any selection (§2) -->
+  <div class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral bg-base-100 px-3 py-2 text-sm">
+    <span class="font-semibold tabular-nums"
+      >{{ getCountRowSelected() }}
+      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
+    >
+    <span class="mx-1 h-4 w-px bg-base-300"></span>
+
+    @if (bulkTagOpen()) {
+    <input
+      type="text"
+      class="input input-bordered input-xs w-40"
+      placeholder="Tag name"
+      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
+      [value]="bulkTagValue()"
+      (input)="bulkTagValue.set($any($event.target).value)"
+      (keydown.enter)="applyBulkTag()"
+      (keydown.escape)="cancelBulkTag()"
+      autofocus
+    />
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
+    </button>
+    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
+      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
+    </button>
+    } @else {
+    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="openBulkTag()">
+      <pc-icon name="label" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
+    </button>
+    @if (!disableExport()) {
+    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="doConfirmExport()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
+    </button>
+    } @if (!disableMerge()) {
+    <button
+      class="btn btn-sm gap-1.5 bg-base-100"
+      [disabled]="getCountRowSelected() !== 2"
+      [title]="
+        getCountRowSelected() === 2
+          ? 'Merge 2 ' + entityNounPlural
+          : 'Select exactly 2 ' + entityNounPlural + ' to merge. ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doConfirmMerge()"
+    >
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
+    </button>
+    } @if (!!addRoute()) {
+    <button
+      class="btn btn-sm gap-1.5 bg-base-100"
+      [disabled]="!hasSingleSelection()"
+      [title]="
+        hasSingleSelection()
+          ? 'Clone this ' + entityNoun
+          : 'Select exactly 1 ' + entityNoun + ' to clone. ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doClone()"
+    >
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
+    </button>
+    }
+    <span class="flex-1"></span>
+    @if (!disableDelete()) {
+    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
+      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
+    </button>
+    } }
+  </div>
+  }
+  <div
+    #scroller
+    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
+    (scroll)="onScroll($event)"
+  >
+    <table #gridTable class="table pc-table w-full">
+      <thead>
+        <tr class="bg-base-100 text-xs">
+          @if (enableSelection()) {
+          <th
+            class="pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
+          <th
+            role="columnheader"
+            class="group cursor-grab pl-2 relative"
+            [class.pl-4]="hIdx === 0 && !enableSelection()"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="fixedWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              @if (showColumnMenus()) {
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  [class.!opacity-100]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      }
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              }
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-base-content/40"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+              <button
+                type="button"
+                class="btn btn-outline btn-secondary btn-sm mt-1"
+                (click)="clearAllFilters()"
+                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-base-content/40"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Create your first record with the New button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300/40"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
+          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
+          && ec.id === toId(r.original) && ec.field === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col, $event)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            [class]="cellClassFor(col, r.original)"
+            class="min-w-0 px-2 relative"
+            [class.pl-4]="cellIdx === 0 && !enableSelection()"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="fixedWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [value]="tagSearch()"
+                  (input)="tagSearch.set($any($event.target).value)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              (change)="onMultiSelectEditorChange($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value" [selected]="isEditorOptionMultiSelected(opt.value)">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              (change)="onSelectChange(r.original, col, $any($event.target).value)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value" [selected]="isEditorOptionSelected(opt.value)">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [value]="editingValueText()"
+              (input)="editingValue.set($any($event.target).value)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [value]="editingValueText()"
+              (input)="editingValue.set($any($event.target).value)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) { @let doorSubtitle =
+            callDoorSubtitle(r.original, col);
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            <div class="flex flex-col gap-0.5">
+              @if (rawValue) {
+              <span
+                class="cursor-pointer font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+                >{{ rawValue }}</span
+              >
+              } @else {
+              <span
+                class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+                i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+                >Unnamed person</span
+              >
+              } @if (doorSubtitle) {
+              <span class="text-xs text-base-content/55">{{ doorSubtitle }}</span>
+              }
+            </div>
+            } @else if (col.field === 'address') {
+            <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
+            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
+            <div class="py-1" [attr.title]="rawValue">
+              <div
+                class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
+                [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
+              >
+                {{ rawValue || '—' }}
+              </div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        } @if (visibleTableRows().length && !canNext()) {
+        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
+             would otherwise read as data that failed to load. -->
+        <tr class="hover:bg-transparent">
+          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
+            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
+              <span class="h-px flex-1 bg-base-300"></span>
+              <span
+                class="whitespace-nowrap tabular-nums"
+                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
+                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
+              >
+              <span class="h-px flex-1 bg-base-300"></span>
+            </div>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-between mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
+    <div class="min-w-0"><ng-content select="[pcGridFooterStart]"></ng-content></div>
+    <div class="flex items-center gap-3 flex-nowrap">
+      <div class="flex items-center gap-2 whitespace-nowrap">
+        <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+          >Page Size:</span
+        >
+        <select class="select select-bordered select-xs" (change)="onPageSizeChange($any($event.target).value)">
+          @if (![25,50,100].includes(pageSize())) {
+          <option [value]="pageSize()" [selected]="true">{{ pageSize() }}</option>
+          } @for (opt of pageSizeChoices(); track opt) {
+          <option [value]="opt" [selected]="opt === pageSize()">{{ opt }}</option>
+          }
+        </select>
+      </div>
+      <div
+        class="whitespace-nowrap tabular-nums"
+        i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+      >
+        <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+          >{{ displayEndIndex() }}</span
+        >
+        of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+        <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
+      </div>
+      <div class="join whitespace-nowrap">
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="firstPage()"
+        >
+          <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="prevPage()"
+        >
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? nextPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="nextPage()"
+        >
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? lastPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="lastPage()"
+        >
+          <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<pc-modal-shell
+  [open]="true"
+  (closed)="showAdvancedFilterBuilder.set(false)"
+  title="Advanced filter builder"
+  i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+  icon="adjustments-horizontal"
+  [boxClass]="'w-11/12 max-w-3xl'"
+>
+  <p
+    class="text-xs text-neutral-400 -mt-4 mb-4"
+    i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+  >
+    Build complex matching rules with custom operators and conjunction logic.
+  </p>
+
+  <pc-query-builder
+    [group]="advFilterRoot()"
+    [fields]="advancedFilterFields()"
+    [tagSvc]="tagsSvc ?? undefined"
+    [showSummary]="true"
+    (changed)="onAdvancedFilterChanged()"
+  ></pc-query-builder>
+
+  <div pc-modal-footer class="flex w-full justify-between items-center">
+    <button
+      class="btn btn-outline btn-error btn-sm"
+      (click)="clearAdvancedFilter()"
+      i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+    >
+      Clear Filters
+    </button>
+    <div class="flex gap-2">
+      <button
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+      >
+        Cancel
+      </button>
+      <button
+        class="btn btn-primary btn-sm px-6"
+        (click)="applyAdvancedFilter()"
+        i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+      >
+        Apply
+      </button>
+    </div>
+  </div>
+</pc-modal-shell>
+}
+```
+
+## File: apps/website/src/app/faq/faq-page.ts
+```typescript
+import { Component } from '@angular/core';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
+}
+
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'By default your data is stored in the US. On the Movement plan you choose your region (US, EU, Canada or UK) when you create your workspace, and it stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
+}
+```
+
+## File: apps/website/src/app/pricing/pricing-page.html
+```html
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Pricing</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Start free forever with unlimited contacts and households on every plan. You pay only for features and email
+      subscribers, never for the size of your list.
+    </p>
+  </div>
+</section>
+
+<!-- Plan comparison -->
+<section class="px-5 py-14 sm:px-8">
+  <div class="site-wrap mb-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-center text-[14px]">
+    <span class="font-semibold text-primary">Unlimited contacts &amp; households on every plan.</span>
+    <span class="text-base-content/70">
+      Most tools charge for every contact you store; we never do. Plans differ only in features and email
+      subscribers.</span
+    >
+  </div>
+
+  <!-- Subscriber slider: the one input that re-prices every column below. -->
+  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
+        How many email subscribers do you have?
+      </label>
+      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
+    </div>
+    <input
+      id="subscriber-slider"
+      type="range"
+      min="0"
+      [max]="maxStopIndex"
+      step="1"
+      class="range range-primary range-sm mt-4 w-full"
+      [value]="stopIndex()"
+      (input)="onSlide($event)"
+    />
+    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
+      <span>1,000</span>
+      <span>200,000</span>
+    </div>
+  </div>
+
+  <!-- Comparison table -->
+  <div class="site-wrap mt-4 overflow-x-auto rounded-xl border border-line bg-base-100">
+    <table class="w-full min-w-[680px] border-separate border-spacing-0">
+      <thead>
+        <tr>
+          <th class="sticky left-0 z-[2] w-[220px] border-b border-line bg-base-100 px-5 py-5 text-left align-bottom">
+            <div class="text-[15px] font-semibold">Compare plans</div>
+            <div class="mt-1 text-[12.5px] font-normal text-base-content/50">
+              Prices shown at {{ subscribersLabel() }} subscribers
+            </div>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <th
+            class="min-w-[180px] border-b border-line px-4 py-5 text-left align-top"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            <div class="h-6">
+              @if (tier.featured) {
+              <span class="inline-block rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                Best value
+              </span>
+              }
+            </div>
+            <div class="mt-1 text-[16px] font-semibold">{{ tier.name }}</div>
+            <p class="mt-1 min-h-[57px] text-[12.5px] font-normal leading-snug text-base-content/60">
+              {{ tier.blurb }}
+            </p>
+            <div class="mt-3 min-h-[52px]">
+              @if (!overMax(tier)) {
+              <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
+              } @else if (tier.key === 'free') {
+              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
+              } @else {
+              <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
+              <div class="mt-2 text-[12px] font-normal text-base-content/50">
+                For more than {{ maxSubscribersLabel(tier) }} subscribers
+              </div>
+              }
+            </div>
+            <a
+              [href]="signupUrl"
+              class="mt-4 block rounded-field px-4 py-2.5 text-center text-[13.5px] font-semibold"
+              [class]="
+                tier.featured
+                  ? 'btn btn-primary rounded-field'
+                  : 'border border-line text-base-content hover:border-primary hover:text-primary'
+              "
+              >Start free</a
+            >
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of matrix; track group.category; let groupLast = $last) {
+        <tr>
+          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-7 text-left">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+              {{ group.category }}
+            </span>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <td class="pb-2 pt-7" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
+          }
+        </tr>
+        @for (row of group.rows; track row.label; let rowLast = $last) {
+        <tr>
+          <th
+            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
+            [class.border-b]="!(groupLast && rowLast)"
+          >
+            {{ row.label }}
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
+               past the overflow-x wrapper on small screens. -->
+          <td
+            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
+            [class.border-b]="!(groupLast && rowLast)"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            @let value = matrixValue(row, tier); @if (value === true) {
+            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="sr-only">Included</span>
+            } @else if (value === false) {
+            <span class="text-base-content/30" aria-hidden="true">—</span>
+            <span class="sr-only">Not included</span>
+            } @else { {{ value }} }
+          </td>
+          }
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  @if (isConverted()) {
+  <p
+    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
+  >
+    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
+  </p>
+  }
+
+  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
+    Need more than 200,000 subscribers, SSO or custom contracts?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> —
+    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">or read the FAQ</a>.
+  </p>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Every plan starts on sample data.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+```
+
+## File: apps/website/src/app/pricing/pricing-page.ts
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { bracketIndexForSubscribers, FEATURE_MATRIX, PLANS, priceForQuantity } from '@common';
+import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
+
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
+
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
+const DEFAULT_STOP_INDEX = 1;
+const DEFAULT_STOP = 2_500;
+
+/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
+type MatrixPlanKey = keyof FeatureMatrixRow['values'];
+
+function isMatrixPlanKey(key: string): key is MatrixPlanKey {
+  return key === 'free' || key === 'grassroots' || key === 'movement';
+}
+
+@Component({
+  selector: 'pc-pricing-page',
+  imports: [RouterLink, SiteHeader, SiteFooter],
+  templateUrl: './pricing-page.html',
+})
+export class PricingPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
+  /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+  protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
+
+  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
+  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
+  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
+  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
+
+  protected onSlide(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      this.stopIndex.set(Number(target.value));
+    }
+  }
+
+  /** Live price at the slider's subscriber count, formatted in the active display currency. */
+  protected priceLabel(plan: PlanDef): string {
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
+  }
+
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
+  protected overMax(plan: PlanDef): boolean {
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
+  }
+
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
+  protected maxSubscribersLabel(plan: PlanDef): string {
+    const brackets = plan.pricing?.brackets;
+    const last = brackets?.[brackets.length - 1];
+    return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One matrix cell: true = included, false = not included, string = text value. */
+  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
+    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.html
+```html
+@if (detail(); as d) {
+<div class="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4">
+  <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
+
+  <!-- Header card -->
+  <div class="flex flex-col gap-3 pc-panel p-5">
+    <p class="pc-eyebrow">Delivery route</p>
+    <div class="flex flex-wrap items-center gap-3">
+      @if (renaming()) {
+      <input
+        class="input input-bordered input-sm w-72 text-lg font-bold"
+        [value]="draftName()"
+        (input)="onDraftNameInput($event)"
+        (keyup.enter)="saveRename()"
+      />
+      <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
+      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
+      } @else {
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
+      <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">
+        <pc-icon name="pencil-square" [size]="4"></pc-icon>
+      </button>
+      }
+      <pc-status-badge [type]="tone(d.status)">{{ label(d.status) }}</pc-status-badge>
+    </div>
+
+    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer</p>
+        <div class="flex items-center gap-1.5">
+          @if (d.volunteer_person_id) {
+          <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
+            >{{ d.volunteer_name || 'Volunteer' }}</a
+          >
+          <button type="button" class="link text-xs text-base-content/50" (click)="openAssign()">Change</button>
+          } @else {
+          <button type="button" class="btn btn-ghost btn-xs -ml-2 gap-1 text-primary" (click)="openAssign()">
+            <pc-icon name="user-plus" [size]="4"></pc-icon> Assign
+          </button>
+          }
+        </div>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Scheduled for</p>
+        <p class="text-base-content/80">{{ d.scheduled_for ? (d.scheduled_for | date: 'medium') : '—' }}</p>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Estimate</p>
+        <p class="tabular-nums text-base-content/80">{{ d.est_minutes }} min · {{ d.est_km }} km</p>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer link</p>
+        @if (d.link_active) { @if (d.link_expires_at) {
+        <p class="text-success">Active. Expires {{ d.link_expires_at | date: 'mediumDate' }}</p>
+        } @else {
+        <p class="text-success">Active</p>
+        } } @else {
+        <p class="text-base-content/50">No active link</p>
+        }
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-wrap items-center gap-2 pt-1">
+      @if (d.volunteer_person_id) {
+      <button type="button" class="btn btn-primary btn-sm" (click)="copyLink()">
+        <pc-icon name="paper-airplane" [size]="4"></pc-icon> Copy volunteer link
+      </button>
+      } @else {
+      <button type="button" class="btn btn-primary btn-sm" (click)="openAssign()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon> Assign a volunteer to share
+      </button>
+      }
+      <button type="button" class="btn btn-ghost btn-sm" (click)="openInGoogleMaps()">
+        <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
+      </button>
+      <div class="dropdown dropdown-end ml-auto">
+        <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-square" aria-label="More actions">
+          <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content z-10 w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow"
+        >
+          @if (d.link_active) {
+          <li>
+            <button type="button" (click)="copyLink(true)">
+              Regenerate link <span class="text-xs text-base-content/50">(old one stops working)</span>
+            </button>
+          </li>
+          <li><button type="button" (click)="revokeLink()">Revoke volunteer link</button></li>
+          }
+          <li><button type="button" class="text-error" (click)="cancelRoute()">Cancel route…</button></li>
+          @if (canDelete()) {
+          <li><button type="button" class="text-error" (click)="deleteRoute()">Delete route</button></li>
+          } @else {
+          <li>
+            <span class="cursor-not-allowed text-base-content/40"
+              >Delete route: draft or assigned only, cancel first</span
+            >
+          </li>
+          }
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stops card -->
+  <div class="flex flex-col gap-2 pc-panel p-5">
+    <div class="flex items-center justify-between">
+      <p class="text-sm font-semibold">
+        <span class="tabular-nums">{{ deliveredCount() }}</span> of
+        <span class="tabular-nums">{{ totalStops() }}</span> delivered
+      </p>
+    </div>
+    <progress class="progress progress-success w-full" [value]="deliveredCount()" [max]="totalStops() || 1"></progress>
+
+    <ol class="flex flex-col divide-y divide-base-200">
+      @for (stop of d.stops; track stop.id) {
+      <li class="flex items-center gap-3 py-2">
+        <span
+          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
+          >{{ stop.seq }}</span
+        >
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm">
+            @if (stop.person_id) {
+            <a class="font-medium text-primary" [routerLink]="['/people', stop.person_id]"
+              >{{ stop.first_name || 'Neighbour' }}</a
+            >
+            } @else {
+            <span class="font-medium">{{ stop.first_name || 'Neighbour' }}</span>
+            }
+            <span class="text-base-content/50"> · {{ stop.address }}</span>
+          </p>
+          <p class="text-xs tabular-nums text-base-content/40">+{{ stop.leg_minutes }} min</p>
+        </div>
+        <pc-status-badge [type]="stopTone(stop.status)">{{ stop.status }}</pc-status-badge>
+        @if (stop.status === 'pending') {
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-square"
+            (click)="reorder(stop.id, 'up')"
+            aria-label="Move up"
+          >
+            <pc-icon name="chevron-up" [size]="4"></pc-icon>
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-square"
+            (click)="reorder(stop.id, 'down')"
+            aria-label="Move down"
+          >
+            <pc-icon name="chevron-down" [size]="4"></pc-icon>
+          </button>
+          <div class="dropdown dropdown-end">
+            <button type="button" tabindex="0" class="btn btn-ghost btn-xs btn-square" aria-label="Stop actions">
+              <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+            </button>
+            <ul
+              tabindex="0"
+              class="menu dropdown-content z-10 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow"
+            >
+              <li><button type="button" (click)="markDelivered(stop.id)">Mark delivered</button></li>
+              <li><button type="button" (click)="couldntDeliver(stop.id)">Couldn't deliver…</button></li>
+              <li><button type="button" class="text-error" (click)="removeStop(stop.id)">Remove from route</button></li>
+            </ul>
+          </div>
+        </div>
+        }
+      </li>
+      }
+    </ol>
+    <p class="pt-1 text-xs tabular-nums text-base-content/50">
+      Estimated {{ d.est_minutes }} min · {{ d.est_km }} km from {{ d.start_address }}
+    </p>
+  </div>
+
+  <!-- Mandatory activity feed -->
+  <pc-record-activities [entity]="'delivery_routes'" [entityId]="id()"></pc-record-activities>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
+</div>
+} @else {
+<div class="flex min-h-[40vh] items-center justify-center">
+  <span class="loading loading-spinner loading-lg text-primary"></span>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-200/50 p-6">
+  <div class="w-full max-w-7xl">
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
+
+    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
+        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
+          <!-- Tags & issues — standalone card, first section -->
+          <pc-card>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
+          </pc-card>
+
+          <pc-card>
+            @if (!person()?.id) {
+            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
+            }
+
+            <!-- Name -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
+              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input
+                label="Primary email"
+                type="email"
+                placeholder="name@example.com"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                label="Secondary email"
+                type="email"
+                placeholder="Optional"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
+              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
+            </div>
+
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
+              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
+
+            <!-- Address & Household Assignment -->
+            <div class="flex flex-col gap-1.5">
+              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
+              @if (householdId() && !isPlaceholderHousehold()) {
+              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
+                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
+                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
+                  Edit on household
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
+                  data-tip="Change household"
+                  (click)="openAssignDrawer()"
+                >
+                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
+                  data-tip="Remove address"
+                  (click)="removeAddress()"
+                >
+                  <pc-icon name="trash" [size]="4"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <div
+                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
+              >
+                <div class="flex items-center gap-2">
+                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                  <span class="italic text-base-content/50">No address assigned</span>
+                </div>
+                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Assign household
+                </button>
+              </div>
+              }
+              <p class="pl-1 text-xs text-base-content/50">
+                Addresses belong to households, so everyone at the same address stays in sync.
+              </p>
+            </div>
+
+            <!-- Internal notes -->
+            <pc-textarea
+              label="Internal notes"
+              placeholder="Anything the team should know about this person…"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+
+            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
+            <details class="group border-t border-base-200 pt-3">
+              <summary
+                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
+              >
+                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                More details
+              </summary>
+              <div class="mt-4 flex flex-col gap-4">
+                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
+
+                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
+                  @for (u of users(); track u.id) {
+                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+                  }
+                </pc-select>
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
+                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
+                </div>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
+                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
+                </div>
+              </div>
+            </details>
+          </pc-card>
+        </fieldset>
+      </form>
+
+      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
+      <div class="flex flex-col gap-6">
+        @if (person()?.id && person(); as p) {
+        <pc-card>
+          <h3 class="block pc-eyebrow">Overview</h3>
+
+          <dl class="flex flex-col gap-3 text-sm">
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">First seen</dt>
+              <dd class="text-right font-medium text-base-content">
+                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">People in home</dt>
+              <dd class="text-right font-medium tabular-nums text-base-content">
+                {{ isPlaceholderHousehold() ? '—' : (householdMembersResource.value() ?? '—') }}
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+              <dt class="text-base-content/60">Company</dt>
+              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
+            </div>
+          </dl>
+
+          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Contact owner</dt>
+              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between">
+              <dt class="text-base-content/60">Preferred contact</dt>
+              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
+            </div>
+          </dl>
+
+          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
+            People in home counts everyone sharing this person's address. Edit it from the household record.
+          </p>
+        </pc-card>
+
+        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
+        <pc-person-campaign-facts
+          [personId]="p.id"
+          [dncFlag]="!!p.do_not_contact"
+          [volunteerStatus]="p.volunteer_status ?? null"
+          [staffStatus]="p.staff_status ?? null"
+        ></pc-person-campaign-facts>
+        } @else {
+        <!-- New person: capture standing now; it is applied once the person is created (§15) -->
+        <pc-person-standing-draft
+          [email]="payload().email"
+          [(supportLevel)]="draftSupport"
+          [(votingStatus)]="draftVoting"
+          [(subscribe)]="draftSubscribe"
+          [(doNotContact)]="draftDnc"
+          [(volunteerStatus)]="draftVolunteer"
+          [(staffStatus)]="draftStaff"
+        ></pc-person-standing-draft>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -71858,6 +75136,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 Generate credentials
               </button>
             </div>
+          </div>
+          } @if (section.config.id === 'communications') {
+          <!-- Compliance copy (§3): outbound email is regulated (CAN-SPAM / CASL); the platform can't guarantee it -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-info/30 bg-info/10 px-3.5 py-2.5">
+            <pc-icon name="information-circle" [size]="5" class="mt-0.5 shrink-0 text-info"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              You are responsible for ensuring your emails comply with the anti-spam and privacy laws that apply to you
+              and your recipients (such as CAN-SPAM and CASL) — including consent, accurate sender details, a valid
+              physical address, and a working unsubscribe link. pplCRM appends the disclaimer and unsubscribe link you
+              configure below, but is a platform only and cannot guarantee that any message satisfies your legal
+              obligations. When in doubt, consult a qualified legal or compliance advisor.
+            </p>
           </div>
           }
 
@@ -72281,1508 +75571,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     </div>
   </div>
   }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { planDisplayName } from '@common';
-
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { UserService } from '@frontend/services/user.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { authRoleLabel } from '../../../../../../../libs/common/src';
-import { UserAdminService } from '../services/useradmin-service';
-import {
-  userIsDeactivated,
-  userLastActiveLabel,
-  userRoleLockReason,
-  userRoleOptions,
-  userStatus,
-} from '../user-status';
-import { InviteUserDialog, type SeatUsage } from './invite-user-dialog';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-export interface UserRow {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: string | null;
-  deactivated_at: string | null;
-  last_active_at: string | null;
-  created_at: string | null;
-  avatar_url: string | null;
-}
-
-/**
- * Users admin page — staff logins for this workspace. A bespoke `pc-table` (not the datagrid):
- * inline role select with explained locks, honest status/MFA/last-active columns derived from
- * real session data, and the seat-aware "Invite user" dialog.
- */
-@Component({
-  selector: 'pc-users-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    EmptyState,
-    RouterLink,
-    Icon,
-    StatusBadge,
-    Table,
-    UserAvatarComponent,
-    InviteUserDialog,
-    GridHeaderComponent,
-  ],
-  templateUrl: './users-page.html',
-})
-export class UsersPageComponent implements OnInit {
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly userService = inject(UserService);
-
-  private readonly inviteDlg = viewChild.required(InviteUserDialog);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly loaded = signal(false);
-  protected readonly rows = signal<UserRow[]>([]);
-  protected readonly seatUsage = signal<SeatUsage | null>(null);
-
-  /** Row that just saved a role change — drives the one-shot saved flash. */
-  protected readonly flashedId = signal<string | null>(null);
-  /** Rows with an in-flight role change; their select is disabled while saving. */
-  protected readonly savingIds = signal<ReadonlySet<string>>(new Set());
-
-  protected readonly currentUserId = computed(() => {
-    const id = this.auth.getUser()?.id;
-    return id != null ? String(id) : null;
-  });
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role ?? null);
-
-  protected readonly activeCount = computed(
-    () => this.rows().filter((r) => r.verified && !userIsDeactivated(r)).length,
-  );
-  protected readonly invitedCount = computed(
-    () => this.rows().filter((r) => !r.verified && !userIsDeactivated(r)).length,
-  );
-  protected readonly deactivatedCount = computed(() => this.rows().filter((r) => userIsDeactivated(r)).length);
-  protected readonly adminCount = computed(
-    () => this.rows().filter((r) => (r.role === 'admin' || r.role === 'owner') && !userIsDeactivated(r)).length,
-  );
-
-  protected readonly seatsRemaining = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? Math.max(0, usage.seatLimit - usage.seatsUsed) : null;
-  });
-
-  private readonly userSignal = this.auth.getUserSignal();
-  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
-
-  /** Why inviting is unavailable — null when it isn't. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected readonly inviteLockReason = computed<string | null>(() => {
-    if (this.isDemo()) {
-      return 'Inviting teammates is locked during the demo. Choose a plan, then exit demo mode';
-    }
-    if (this.seatsRemaining() === 0) {
-      return `All ${this.seatUsage()?.seatLimit} seats on the ${this.planLabel()} plan are in use. Upgrade in Settings → Billing`;
-    }
-    return null;
-  });
-
-  protected readonly planLabel = computed(() => {
-    const usage = this.seatUsage();
-    return usage ? planDisplayName(usage.plan) : '';
-  });
-
-  /** Header grain sentence, e.g. "5 users · 3 active, 1 invited · 2 admins · 4 of 10 seats on the Team plan". */
-  protected readonly headerSentence = computed(() => {
-    const total = this.rows().length;
-    const parts = [`${total} user${total === 1 ? '' : 's'}`];
-    const statusBits = [`${this.activeCount()} active`];
-    if (this.invitedCount() > 0) statusBits.push(`${this.invitedCount()} invited`);
-    if (this.deactivatedCount() > 0) statusBits.push(`${this.deactivatedCount()} deactivated`);
-    parts.push(statusBits.join(', '));
-    parts.push(`${this.adminCount()} admin${this.adminCount() === 1 ? '' : 's'}`);
-    const usage = this.seatUsage();
-    if (usage) parts.push(`${usage.seatsUsed} of ${usage.seatLimit} seats on the ${this.planLabel()} plan`);
-    return parts.join(' · ');
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected openInvite(): void {
-    this.inviteDlg().open();
-  }
-
-  protected onInvited(): void {
-    void this.load();
-  }
-
-  protected displayName(row: UserRow): string {
-    return `${row.first_name} ${row.last_name}`.trim() || row.email;
-  }
-
-  protected avatarUrl(row: UserRow): string | null {
-    return row.avatar_url ? (this.userService.resolveAvatarUrl(row.avatar_url) ?? null) : null;
-  }
-
-  protected isSelf(row: UserRow): boolean {
-    return row.id === this.currentUserId();
-  }
-
-  protected roleLabel(role: string | null): string {
-    return authRoleLabel(role);
-  }
-
-  /** Roles the caller may assign on this row; includes the row's current role so the select never shows blank. */
-  protected roleOptions(row: UserRow): string[] {
-    return userRoleOptions(this.currentUserRole(), row.role);
-  }
-
-  /** Why this row's role can't be changed — null when it can. Doubles as the tooltip copy (§2 explained-disabled). */
-  protected roleLockReason(row: UserRow): string | null {
-    return userRoleLockReason({
-      isSelf: this.isSelf(row),
-      callerRole: this.currentUserRole(),
-      targetRole: row.role,
-      deactivated: userIsDeactivated(row),
-    });
-  }
-
-  protected isDeactivated(row: UserRow): boolean {
-    return userIsDeactivated(row);
-  }
-
-  protected status(row: UserRow): { label: string; tone: PcStatusType } {
-    return userStatus(row);
-  }
-
-  protected lastActiveText(row: UserRow): string {
-    return userLastActiveLabel(row);
-  }
-
-  protected async changeRole(row: UserRow, event: Event): Promise<void> {
-    const select = event.target as HTMLSelectElement;
-    const role = select.value;
-    if (!role || role === row.role) return;
-
-    this.savingIds.update((ids) => new Set(ids).add(row.id));
-    try {
-      await this.users.update(row.id, { role });
-      this.rows.update((rows) => rows.map((r) => (r.id === row.id ? { ...r, role } : r)));
-      this.flashRow(row.id);
-      this.alerts.showSuccess(`Role updated. ${this.displayName(row)} is now ${this.roleLabel(role)}`);
-    } catch (err) {
-      select.value = row.role ?? '';
-      const message = err instanceof Error && err.message ? err.message : 'Unable to update the role';
-      this.alerts.showError(message);
-    } finally {
-      this.savingIds.update((ids) => {
-        const next = new Set(ids);
-        next.delete(row.id);
-        return next;
-      });
-    }
-  }
-
-  protected async sendPasswordReset(row: UserRow): Promise<void> {
-    try {
-      await this.users.adminTriggerPasswordReset(row.id);
-      this.alerts.showSuccess(`Password reset email sent to ${row.email}`);
-    } catch (err) {
-      const message = err instanceof Error && err.message ? err.message : 'Unable to send the reset email';
-      this.alerts.showError(message);
-    }
-  }
-
-  private async load(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      const [list, seats] = await Promise.all([
-        this.users.getAll({ startRow: 0, endRow: 500 }),
-        this.users.getSeatUsage(),
-      ]);
-      this.rows.set(list.rows.map((raw) => this.toRow(raw)));
-      this.seatUsage.set(seats);
-      this.loaded.set(true);
-    } catch {
-      this.alerts.showError('Unable to load users. Try refreshing the page');
-    } finally {
-      end();
-    }
-  }
-
-  private toRow(raw: Record<string, unknown>): UserRow {
-    return {
-      id: raw['id'] != null ? String(raw['id']) : '',
-      email: typeof raw['email'] === 'string' ? raw['email'] : '',
-      first_name: typeof raw['first_name'] === 'string' ? raw['first_name'] : '',
-      last_name: typeof raw['last_name'] === 'string' ? raw['last_name'] : '',
-      role: typeof raw['role'] === 'string' ? raw['role'] : null,
-      verified: raw['verified'] === true,
-      two_factor_enabled: raw['two_factor_enabled'] === true,
-      deletion_scheduled_at: this.toIso(raw['deletion_scheduled_at']),
-      deactivated_at: this.toIso(raw['deactivated_at']),
-      last_active_at: this.toIso(raw['last_active_at']),
-      created_at: this.toIso(raw['created_at']),
-      avatar_url: typeof raw['avatar_url'] === 'string' ? raw['avatar_url'] : null,
-    };
-  }
-
-  private toIso(value: unknown): string | null {
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'string' && value) return value;
-    return null;
-  }
-
-  private flashRow(id: string): void {
-    this.flashedId.set(id);
-    const FLASH_MS = 1300;
-    setTimeout(() => {
-      if (this.flashedId() === id) this.flashedId.set(null);
-    }, FLASH_MS);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.html
-```html
-@if (detail(); as d) {
-<div class="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4">
-  <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
-
-  <!-- Header card -->
-  <div class="flex flex-col gap-3 pc-panel p-5">
-    <p class="pc-eyebrow">Delivery route</p>
-    <div class="flex flex-wrap items-center gap-3">
-      @if (renaming()) {
-      <input
-        class="input input-bordered input-sm w-72 text-lg font-bold"
-        [value]="draftName()"
-        (input)="onDraftNameInput($event)"
-        (keyup.enter)="saveRename()"
-      />
-      <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
-      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
-      } @else {
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
-      <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">
-        <pc-icon name="pencil-square" [size]="4"></pc-icon>
-      </button>
-      }
-      <pc-status-badge [type]="tone(d.status)">{{ label(d.status) }}</pc-status-badge>
-    </div>
-
-    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer</p>
-        <div class="flex items-center gap-1.5">
-          @if (d.volunteer_person_id) {
-          <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
-            >{{ d.volunteer_name || 'Volunteer' }}</a
-          >
-          <button type="button" class="link text-xs text-base-content/50" (click)="openAssign()">Change</button>
-          } @else {
-          <button type="button" class="btn btn-ghost btn-xs -ml-2 gap-1 text-primary" (click)="openAssign()">
-            <pc-icon name="user-plus" [size]="4"></pc-icon> Assign
-          </button>
-          }
-        </div>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Scheduled for</p>
-        <p class="text-base-content/80">{{ d.scheduled_for ? (d.scheduled_for | date: 'medium') : '—' }}</p>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Estimate</p>
-        <p class="tabular-nums text-base-content/80">{{ d.est_minutes }} min · {{ d.est_km }} km</p>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer link</p>
-        @if (d.link_active) { @if (d.link_expires_at) {
-        <p class="text-success">Active. Expires {{ d.link_expires_at | date: 'mediumDate' }}</p>
-        } @else {
-        <p class="text-success">Active</p>
-        } } @else {
-        <p class="text-base-content/50">No active link</p>
-        }
-      </div>
-    </div>
-
-    <!-- Actions -->
-    <div class="flex flex-wrap items-center gap-2 pt-1">
-      @if (d.volunteer_person_id) {
-      <button type="button" class="btn btn-primary btn-sm" (click)="copyLink()">
-        <pc-icon name="paper-airplane" [size]="4"></pc-icon> Copy volunteer link
-      </button>
-      } @else {
-      <button type="button" class="btn btn-primary btn-sm" (click)="openAssign()">
-        <pc-icon name="user-plus" [size]="4"></pc-icon> Assign a volunteer to share
-      </button>
-      }
-      <button type="button" class="btn btn-ghost btn-sm" (click)="openInGoogleMaps()">
-        <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
-      </button>
-      <div class="dropdown dropdown-end ml-auto">
-        <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-square" aria-label="More actions">
-          <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content z-10 w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow"
-        >
-          @if (d.link_active) {
-          <li>
-            <button type="button" (click)="copyLink(true)">
-              Regenerate link <span class="text-xs text-base-content/50">(old one stops working)</span>
-            </button>
-          </li>
-          <li><button type="button" (click)="revokeLink()">Revoke volunteer link</button></li>
-          }
-          <li><button type="button" class="text-error" (click)="cancelRoute()">Cancel route…</button></li>
-          @if (canDelete()) {
-          <li><button type="button" class="text-error" (click)="deleteRoute()">Delete route</button></li>
-          } @else {
-          <li>
-            <span class="cursor-not-allowed text-base-content/40"
-              >Delete route: draft or assigned only, cancel first</span
-            >
-          </li>
-          }
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <!-- Stops card -->
-  <div class="flex flex-col gap-2 pc-panel p-5">
-    <div class="flex items-center justify-between">
-      <p class="text-sm font-semibold">
-        <span class="tabular-nums">{{ deliveredCount() }}</span> of
-        <span class="tabular-nums">{{ totalStops() }}</span> delivered
-      </p>
-    </div>
-    <progress class="progress progress-success w-full" [value]="deliveredCount()" [max]="totalStops() || 1"></progress>
-
-    <ol class="flex flex-col divide-y divide-base-200">
-      @for (stop of d.stops; track stop.id) {
-      <li class="flex items-center gap-3 py-2">
-        <span
-          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
-          >{{ stop.seq }}</span
-        >
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm">
-            @if (stop.person_id) {
-            <a class="font-medium text-primary" [routerLink]="['/people', stop.person_id]"
-              >{{ stop.first_name || 'Neighbour' }}</a
-            >
-            } @else {
-            <span class="font-medium">{{ stop.first_name || 'Neighbour' }}</span>
-            }
-            <span class="text-base-content/50"> · {{ stop.address }}</span>
-          </p>
-          <p class="text-xs tabular-nums text-base-content/40">+{{ stop.leg_minutes }} min</p>
-        </div>
-        <pc-status-badge [type]="stopTone(stop.status)">{{ stop.status }}</pc-status-badge>
-        @if (stop.status === 'pending') {
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-square"
-            (click)="reorder(stop.id, 'up')"
-            aria-label="Move up"
-          >
-            <pc-icon name="chevron-up" [size]="4"></pc-icon>
-          </button>
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-square"
-            (click)="reorder(stop.id, 'down')"
-            aria-label="Move down"
-          >
-            <pc-icon name="chevron-down" [size]="4"></pc-icon>
-          </button>
-          <div class="dropdown dropdown-end">
-            <button type="button" tabindex="0" class="btn btn-ghost btn-xs btn-square" aria-label="Stop actions">
-              <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-            </button>
-            <ul
-              tabindex="0"
-              class="menu dropdown-content z-10 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow"
-            >
-              <li><button type="button" (click)="markDelivered(stop.id)">Mark delivered</button></li>
-              <li><button type="button" (click)="couldntDeliver(stop.id)">Couldn't deliver…</button></li>
-              <li><button type="button" class="text-error" (click)="removeStop(stop.id)">Remove from route</button></li>
-            </ul>
-          </div>
-        </div>
-        }
-      </li>
-      }
-    </ol>
-    <p class="pt-1 text-xs tabular-nums text-base-content/50">
-      Estimated {{ d.est_minutes }} min · {{ d.est_km }} km from {{ d.start_address }}
-    </p>
-  </div>
-
-  <!-- Mandatory activity feed -->
-  <pc-record-activities [entity]="'delivery_routes'" [entityId]="id()"></pc-record-activities>
-
-  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
-</div>
-} @else {
-<div class="flex min-h-[40vh] items-center justify-center">
-  <span class="loading loading-spinner loading-lg text-primary"></span>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
-```html
-<!-- Preview panel (shared by browse + edit) ---------------------------------->
-<ng-template #previewPanel let-showEdit="showEdit">
-  @if (selected(); as form) {
-  <div class="pc-panel">
-    <!-- Actions row -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-5 py-4">
-      <div class="join">
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'form'"
-          [class.text-neutral-500]="tab() !== 'form'"
-          (click)="setTab('form')"
-          type="button"
-        >
-          Form
-        </button>
-        <button
-          class="btn join-item btn-sm"
-          [class.bg-base-100]="tab() === 'responses'"
-          [class.text-neutral-500]="tab() !== 'responses'"
-          (click)="setTab('responses')"
-          type="button"
-        >
-          Responses
-          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
-        </button>
-      </div>
-
-      <div class="flex items-center gap-2">
-        @if (showEdit) {
-        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
-          <pc-icon name="pencil-square" [size]="4"></pc-icon>
-          Edit form
-        </button>
-        } @switch (form.status) { @case ('draft') {
-        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
-          Publish
-        </button>
-        } @case ('published') {
-        <button class="btn btn-outline btn-warning btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
-          Unpublish
-        </button>
-        } @case ('archived') {
-        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
-          Restore
-        </button>
-        } }
-      </div>
-    </div>
-
-    <!-- Public link row -->
-    <div class="flex items-center gap-3 bg-base-200/60 px-5 py-3">
-      <span class="pc-eyebrow">Public link</span>
-      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openPublicLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
-          type="button"
-          aria-label="Open public page"
-        >
-          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="copyLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
-          type="button"
-          aria-label="Copy public link"
-        >
-          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openEmbed()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
-          type="button"
-          aria-label="Embed form"
-        >
-          <pc-icon name="file-code" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-
-    <!-- State banner -->
-    @if (form.status === 'draft') {
-    <div class="border-b border-base-200 bg-info/10 px-5 py-2.5 text-xs text-info-content/80">
-      Draft: only your team can see this preview. Publish to accept responses.
-    </div>
-    } @else if (form.status === 'archived') {
-    <div class="border-b border-base-200 bg-base-200 px-5 py-2.5 text-xs text-base-content/70">
-      Archived: the public link shows a closed notice. Restore to edit or publish again.
-    </div>
-    }
-
-    <!-- Tab content -->
-    @if (tab() === 'form') {
-    <div class="bg-base-200/40 p-8">
-      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
-    </div>
-    } @else {
-    <div class="p-4">
-      @if (submissionsLoading()) {
-      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
-      } @else if (submissions().length > 0) {
-      <pc-table [columns]="3">
-        <ng-container pcTableHead>
-          <th>Person</th>
-          <th>Submitted</th>
-          <th>Answers</th>
-        </ng-container>
-        @for (row of submissions(); track row.id) {
-        <tr>
-          <td>
-            <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
-              {{ row.person_name || 'View person' }}
-            </a>
-          </td>
-          <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
-          <td class="text-base-content/70">{{ answerSummary(row) }}</td>
-        </tr>
-        }
-      </pc-table>
-      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
-        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
-      </div>
-      <p class="mt-2 px-1 text-xs text-base-content/50">
-        Each response created or updated a person, applied the form’s tags and joined its lists.
-      </p>
-      } @else {
-      <div class="flex flex-col items-center gap-2 py-12 text-center">
-        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
-        @switch (form.status) { @case ('draft') {
-        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
-        } @case ('published') {
-        <p class="text-sm text-base-content/60">
-          Share the link to start collecting responses. Each one becomes a person.
-        </p>
-        } @case ('archived') {
-        <p class="text-sm text-base-content/60">No responses yet. Anything collected stayed on people’s records.</p>
-        } }
-      </div>
-      }
-    </div>
-    }
-  </div>
-  }
-</ng-template>
-
-<!-- Page ---------------------------------------------------------------------->
-@if (loading() && forms().length === 0) {
-<div class="flex flex-col gap-4 p-4">
-  <div class="skeleton h-10 w-48"></div>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-    <div class="flex flex-col gap-3">
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-    </div>
-    <div class="skeleton h-96 w-full"></div>
-  </div>
-</div>
-} @else if (mode() === 'browse') {
-<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Forms" [totalSentence]="countSentence()">
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
-  </pc-grid-header>
-
-  @if (forms().length === 0) {
-  <pc-empty-state
-    icon="clipboard-document-list"
-    title="No forms yet. Create one to start collecting signups, RSVPs and more."
-  >
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
-  </pc-empty-state>
-  } @else {
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
-    <!-- Left rail -->
-    <div class="flex flex-col gap-1 divide-y divide-base-200">
-      @for (form of activeForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 p-2 border rounded-xl border-neutral mb-2 text-left transition-colors"
-        [class.border-primary]="form.id === selectedId()"
-        [class.bg-primary/10]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
-            >{{ form.name }}</span
-          >
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <pc-status-badge class="shrink-0" [type]="form.status === 'published' ? 'success' : 'ghost'">
-            {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </pc-status-badge>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
-          form.updated_at | date: 'MMM d' }}
-        </span>
-      </button>
-      }
-
-      <button
-        class="mt-1 flex cursor-pointer items-center gap-1 px-1 py-2 text-xs text-base-content/60 hover:text-base-content"
-        (click)="toggleArchived()"
-        type="button"
-      >
-        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="3"></pc-icon>
-        Archived ({{ archivedForms().length }})
-      </button>
-      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
-      <button
-        class="bg-base-100 hover:bg-base-200 flex cursor-pointer flex-col gap-1 px-1 py-2 text-left opacity-[0.78] transition-colors hover:opacity-100"
-        [class.text-primary]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium">{{ form.name }}</span>
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
-          <pc-status-badge type="ghost" class="shrink-0">Archived</pc-status-badge>
-        </div>
-        <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
-        </span>
-      </button>
-      } } @if (archivedOpen() && archivedForms().length === 0) {
-      <p class="px-1 py-2 text-xs text-base-content/40">No archived forms.</p>
-      }
-
-      <p class="mt-2 px-1 text-xs text-base-content/40">
-        Responses land in People with the form’s tag applied. No copy-paste step.
-      </p>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
-  </div>
-  }
-</div>
-} @else if (mode() === 'create') {
-<!-- ── Create mode — pick a template card, then name it (stepper) ───────── -->
-<div class="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4">
-  <div>
-    <button
-      class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
-      (click)="cancelNewForm()"
-      type="button"
-    >
-      <pc-icon name="arrow-left" [size]="3"></pc-icon>
-      All forms
-    </button>
-    <div class="flex items-center gap-3">
-      <div class="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <pc-icon name="add-form" [size]="5"></pc-icon>
-      </div>
-      <div>
-        <h2 class="text-xl font-semibold">New form</h2>
-        <p class="text-base-content/60 mt-0.5 text-sm">
-          Every form collects an email, so each response becomes a person.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Stepper -->
-  <ol class="flex w-full items-center text-sm">
-    <li class="flex flex-1 cursor-pointer items-center gap-2" (click)="backToTemplates()">
-      <div class="flex h-7 w-7 items-center justify-center rounded-full bg-primary">
-        <span class="font-bold text-base-100">1</span>
-      </div>
-      <span class="font-medium">Template</span>
-    </li>
-    <div
-      class="mx-2 h-0.5 flex-1"
-      [class.bg-primary]="newFormStep() > 1"
-      [class.bg-base-300]="newFormStep() <= 1"
-    ></div>
-    <li class="flex flex-1 items-center gap-2">
-      <div
-        class="flex h-7 w-7 items-center justify-center rounded-full"
-        [class.bg-primary]="newFormStep() >= 2"
-        [class.bg-base-300]="newFormStep() < 2"
-      >
-        <span class="font-bold text-base-100">2</span>
-      </div>
-      <span class="font-medium">Name</span>
-    </li>
-  </ol>
-
-  <!-- Step 1: template cards -->
-  @if (newFormStep() === 1) {
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-    @for (card of templateCards; track card.type) {
-    <button
-      type="button"
-      (click)="selectTemplate(card.type)"
-      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
-    >
-      <div
-        class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
-      >
-        <pc-icon [name]="card.icon" [size]="5"></pc-icon>
-      </div>
-      <div class="flex flex-col gap-1">
-        <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
-        <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
-      </div>
-      <span class="mt-1 text-xs font-semibold text-primary">Select template →</span>
-    </button>
-    }
-    <!-- Same grid, same card — these open their dedicated builders -->
-    @for (card of builderCards; track card.route) {
-    <button
-      type="button"
-      (click)="openBuilder(card)"
-      class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
-    >
-      <div
-        class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
-      >
-        <pc-icon [name]="card.icon" [size]="5"></pc-icon>
-      </div>
-      <div class="flex flex-col gap-1">
-        <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
-        <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
-      </div>
-      <span class="mt-1 text-xs font-semibold text-primary">{{ card.cta }} →</span>
-    </button>
-    }
-  </div>
-  }
-
-  <!-- Step 2: name the draft -->
-  @if (newFormStep() === 2) {
-  <div class="mx-auto flex w-full max-w-md flex-col gap-4">
-    <!-- Chosen template summary -->
-    <div class="rounded-2xl border-y border-r border-l-4 border-base-300 border-l-primary bg-base-100 p-4">
-      <div class="flex items-center justify-between">
-        <span class="pc-eyebrow">Template</span>
-        <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="backToTemplates()">Change</button>
-      </div>
-      <div class="mt-2 flex items-center gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <pc-icon [name]="chosenTemplate().icon" [size]="5"></pc-icon>
-        </div>
-        <div class="flex flex-col">
-          <span class="text-sm font-semibold text-base-content">{{ chosenTemplate().title }}</span>
-          <span class="text-xs text-base-content/60">{{ chosenTemplate().description }}</span>
-        </div>
-      </div>
-    </div>
-
-    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Form name</span>
-        <input
-          class="input input-bordered w-full"
-          [class.input-error]="!!newFormError()"
-          [value]="newFormName()"
-          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
-          placeholder="June phone bank signup"
-          autofocus
-        />
-        @if (newFormError()) {
-        <span class="flex items-center gap-1 text-xs text-error">
-          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-          {{ newFormError() }}
-        </span>
-        }
-        <span class="text-xs text-base-content/50"
-          >Starts as a draft with the template’s fields. Publish when it’s ready.</span
-        >
-      </label>
-
-      <div class="flex items-center justify-between">
-        <button class="btn" type="button" (click)="backToTemplates()">Back</button>
-        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
-      </div>
-    </form>
-  </div>
-  }
-</div>
-} @else if (selected(); as form) {
-<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <button
-        class="mb-1 flex items-center gap-1 text-xs text-base-content/60 hover:text-base-content"
-        (click)="exitEdit()"
-        type="button"
-      >
-        <pc-icon name="arrow-left" [size]="3"></pc-icon>
-        All forms
-      </button>
-      <div class="flex items-center gap-2">
-        <h2 class="text-xl font-semibold">{{ form.name }}</h2>
-        <span class="badge badge-info badge-xs">Editing</span>
-      </div>
-      <p class="text-base-content/60 mt-0.5 text-sm">Changes apply to the live form instantly. Nothing to save.</p>
-    </div>
-    <button class="btn btn-primary btn-sm gap-1.5" (click)="exitEdit()" type="button">
-      <pc-icon name="check-circle" [size]="4"></pc-icon>
-      Done editing
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
-    <!-- Settings column -->
-    <div class="flex flex-col gap-6">
-      <!-- FORM -->
-      <section class="flex flex-col gap-3">
-        <h2 class="pc-eyebrow">Form</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Form name</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.name"
-            (input)="editName($any($event.target).value)"
-          />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Public description</span>
-          <textarea
-            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
-            (input)="editDescription($any($event.target).value)"
-          >
-{{ form.description }}</textarea
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.redirect_url ?? ''"
-            (input)="editRedirect($any($event.target).value)"
-            placeholder="https://…"
-          />
-          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Submit button label</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.submit_label ?? ''"
-            (input)="editSubmitLabel($any($event.target).value)"
-          />
-        </label>
-      </section>
-
-      <!-- AFTER SUBMIT -->
-      <section class="flex flex-col gap-3">
-        <h2 class="pc-eyebrow">After submit</h2>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.send_confirmation"
-            (change)="toggleConfirmEmail($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Confirmation email</span>
-            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
-            @if (form.send_confirmation) {
-            <button
-              class="mt-1 self-start text-xs text-primary hover:underline"
-              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
-              type="button"
-            >
-              Edit the confirmation email
-            </button>
-            }
-          </span>
-        </label>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.notify_team_on"
-            (change)="toggleNotifyTeam($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Notify the team</span>
-            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
-          </span>
-        </label>
-      </section>
-
-      <!-- FIELDS -->
-      <section class="flex flex-col gap-2">
-        <h2 class="pc-eyebrow">Fields</h2>
-        @for (field of form.fields; track field.key) {
-        <div class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            [checked]="field.on"
-            [disabled]="field.key === 'email'"
-            (change)="toggleField(field.key, $any($event.target).checked)"
-          />
-          <span
-            class="flex-1 text-sm text-base-content"
-            [class.text-base-content]="field.on"
-            [class.text-base-content/40]="!field.on"
-          >
-            {{ field.label }}
-          </span>
-          <button
-            class="badge badge-sm"
-            [class.badge-primary]="field.required"
-            [class.badge-ghost]="!field.required"
-            (click)="toggleRequired(field.key)"
-            type="button"
-          >
-            {{ field.required ? 'Required' : 'Optional' }}
-          </button>
-        </div>
-        }
-        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
-      </section>
-
-      <!-- AUDIENCE -->
-      <section class="flex flex-col gap-3">
-        <h2 class="pc-eyebrow">Audience</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
-          <select
-            class="select select-bordered select-sm w-full"
-            (change)="addList($any($event.target).value); $any($event.target).value = ''"
-          >
-            <option value="">Choose a list…</option>
-            @for (list of lists(); track list.id) {
-            <option [value]="list.id">{{ list.name }}</option>
-            }
-          </select>
-        </label>
-        @if (form.target_lists.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (id of form.target_lists; track id) {
-          <span class="badge badge-outline gap-1">
-            {{ listName(id) }}
-            <button (click)="removeList(id)" type="button" aria-label="Remove list">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            placeholder="Add a tag, press Enter"
-            #tagInput
-            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
-          />
-        </label>
-        @if (form.target_tags.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (tag of form.target_tags; track tag) {
-          <span class="badge badge-primary badge-outline gap-1">
-            {{ tag }}
-            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-        <p class="text-xs text-base-content/50">
-          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
-          applied automatically.
-        </p>
-      </section>
-
-      <!-- ARCHIVE -->
-      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="pc-eyebrow">Archive</h2>
-        @if (canDelete(form)) {
-        <p class="text-xs text-base-content/60">
-          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
-        </p>
-        } @else {
-        <p class="text-xs text-base-content/60">
-          Forms with responses are archived, never deleted. Receipts and person timelines keep pointing at them.
-        </p>
-        }
-        <div class="flex gap-2">
-          @if (form.status !== 'archived') {
-          <button
-            class="btn btn-outline btn-warning btn-sm gap-1"
-            (click)="archiveForm()"
-            [disabled]="mutating()"
-            type="button"
-          >
-            <pc-icon name="archive-box" [size]="4"></pc-icon>
-            Archive form
-          </button>
-          } @if (canDelete(form)) {
-          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
-            <pc-icon name="trash-forever" [size]="4"></pc-icon>
-            Delete draft
-          </button>
-          }
-        </div>
-      </section>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
-  </div>
-</div>
-}
-
-<!-- Embed dialog -------------------------------------------------------------->
-<pc-modal-shell #embedDialog title="Embed this form" icon="file-code" [boxClass]="'max-w-2xl'">
-  <div class="join mb-3">
-    <button
-      class="btn join-item btn-sm"
-      [class.btn-active]="embedMode() === 'iframe'"
-      (click)="embedMode.set('iframe')"
-      type="button"
-    >
-      Embed (iframe)
-    </button>
-    <button
-      class="btn join-item btn-sm"
-      [class.btn-active]="embedMode() === 'html'"
-      (click)="embedMode.set('html')"
-      type="button"
-    >
-      Raw HTML form
-    </button>
-  </div>
-
-  <p class="mb-2 text-xs text-base-content/60">
-    @if (embedMode() === 'iframe') { Drops the hosted form into any page. Updates automatically when you edit the form.
-    } @else { A plain HTML form posting straight to pplCRM. Reflects the form’s currently enabled fields. }
-  </p>
-
-  <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
-{{ embedCode() }}</pre
-  >
-
-  <div pc-modal-footer>
-    <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
-      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-      Copy code
-    </button>
-  </div>
-</pc-modal-shell>
-
-<!-- Confirmation-email dialog ------------------------------------------------->
-<pc-modal-shell
-  #confirmEmailDialog
-  title="Confirmation email"
-  icon="envelope"
-  [boxClass]="'max-w-lg'"
-  [dismissible]="false"
->
-  <form
-    id="confirm-email-form"
-    (submit)="$event.preventDefault(); saveConfirmEmail()"
-    novalidate
-    class="flex flex-col gap-4"
-  >
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-medium text-base-content">Subject</span>
-      <input
-        class="input input-bordered w-full"
-        [value]="confirmSubjectDraft()"
-        (input)="confirmSubjectDraft.set($any($event.target).value)"
-      />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-medium text-base-content">Body</span>
-      <textarea
-        class="textarea textarea-bordered min-h-[140px] w-full"
-        [value]="confirmBodyDraft()"
-        (input)="confirmBodyDraft.set($any($event.target).value)"
-      ></textarea>
-    </label>
-    <p class="text-xs text-base-content/50">
-      Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the greeting.
-    </p>
-  </form>
-  <div pc-modal-footer class="flex gap-2">
-    <button class="btn btn-outline btn-accent" (click)="closeConfirmEmail()" type="button">Cancel</button>
-    <button class="btn btn-primary" type="submit" form="confirm-email-form">Save</button>
-  </div>
-</pc-modal-shell>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
-```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-200/50 p-6">
-  <div class="w-full max-w-7xl">
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
-
-    <progress class="progress mt-6 w-full" [class.hidden]="!isLoading()"></progress>
-
-    <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <form (submit)="save()" novalidate class="flex flex-col gap-6 lg:col-span-2">
-        <fieldset [disabled]="isLoading()" class="flex flex-col gap-6">
-          <!-- Tags & issues — standalone card, first section -->
-          <pc-card>
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-          </pc-card>
-
-          <pc-card>
-            @if (!person()?.id) {
-            <p class="text-xs text-base-content/50">All fields are optional, but try to add as much as possible.</p>
-            }
-
-            <!-- Name -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="First name" placeholder="First name" [formField]="form.first_name"></pc-input>
-              <pc-input label="Last name" placeholder="Last name" [formField]="form.last_name"></pc-input>
-            </div>
-
-            <!-- Emails -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input
-                label="Primary email"
-                type="email"
-                placeholder="name@example.com"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                label="Secondary email"
-                type="email"
-                placeholder="Optional"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="-mt-2 flex items-center gap-1 pl-1 text-sm text-error">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-input label="Mobile phone" type="tel" placeholder="Optional" [formField]="form.mobile"></pc-input>
-              <pc-input label="Home phone" type="tel" placeholder="Optional" [formField]="form.home_phone"></pc-input>
-            </div>
-
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <pc-select label="Company" placeholder="Optional" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-              <pc-select label="Preferred contact" placeholder="No preference" [formField]="form.preferred_contact">
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Address & Household Assignment -->
-            <div class="flex flex-col gap-1.5">
-              <label class="pl-1 text-xs font-semibold text-base-content/70">Address</label>
-              @if (householdId() && !isPlaceholderHousehold()) {
-              <div class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-200 p-3 text-sm">
-                <pc-icon name="map-pin" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-                <span class="flex-grow font-medium text-base-content">{{ addressWithWard() }}</span>
-                <button type="button" class="link link-primary shrink-0 text-xs" (click)="navigateToHousehold()">
-                  Edit on household
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-primary"
-                  data-tip="Change household"
-                  (click)="openAssignDrawer()"
-                >
-                  <pc-icon name="chevron-down" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle tooltip shrink-0 text-base-content/50 hover:text-error"
-                  data-tip="Remove address"
-                  (click)="removeAddress()"
-                >
-                  <pc-icon name="trash" [size]="4"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <div
-                class="flex items-center justify-between rounded-lg border border-dashed border-base-300 bg-base-200/30 p-3 text-sm"
-              >
-                <div class="flex items-center gap-2">
-                  <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                  <span class="italic text-base-content/50">No address assigned</span>
-                </div>
-                <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Assign household
-                </button>
-              </div>
-              }
-              <p class="pl-1 text-xs text-base-content/50">
-                Addresses belong to households, so everyone at the same address stays in sync.
-              </p>
-            </div>
-
-            <!-- Internal notes -->
-            <pc-textarea
-              label="Internal notes"
-              placeholder="Anything the team should know about this person…"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-
-            <!-- Secondary fields, disclosed on demand (§2 disclosure over suppression) -->
-            <details class="group border-t border-base-200 pt-3">
-              <summary
-                class="flex cursor-pointer list-none select-none items-center gap-2 py-1 text-sm font-medium text-base-content/60 hover:text-base-content"
-              >
-                <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                More details
-              </summary>
-              <div class="mt-4 flex flex-col gap-4">
-                <pc-input label="Middle name(s)" placeholder="Optional" [formField]="form.middle_names"></pc-input>
-
-                <pc-select label="Contact owner" placeholder="No owner" [formField]="form.assigned_to">
-                  @for (u of users(); track u.id) {
-                  <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-                  }
-                </pc-select>
-
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="LinkedIn" placeholder="Profile URL" [formField]="form.linkedin"></pc-input>
-                  <pc-input label="Twitter / X" placeholder="Profile URL" [formField]="form.twitter"></pc-input>
-                </div>
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <pc-input label="Facebook" placeholder="Profile URL" [formField]="form.facebook"></pc-input>
-                  <pc-input label="Instagram" placeholder="Profile URL" [formField]="form.instagram"></pc-input>
-                </div>
-              </div>
-            </details>
-          </pc-card>
-        </fieldset>
-      </form>
-
-      <!-- Overview rail: first seen · people in home · company · contact prefs (§6) -->
-      <div class="flex flex-col gap-6">
-        @if (person()?.id && person(); as p) {
-        <pc-card>
-          <h3 class="block pc-eyebrow">Overview</h3>
-
-          <dl class="flex flex-col gap-3 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">First seen</dt>
-              <dd class="text-right font-medium text-base-content">
-                {{ p.created_at | date: 'MMM y' }}@if (p.file_id) { · imported }
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">People in home</dt>
-              <dd class="text-right font-medium tabular-nums text-base-content">
-                {{ isPlaceholderHousehold() ? '—' : (householdMembersResource.value() ?? '—') }}
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <dt class="text-base-content/60">Company</dt>
-              <dd class="text-right font-medium text-base-content">{{ companyName() || '—' }}</dd>
-            </div>
-          </dl>
-
-          <dl class="flex flex-col gap-2 border-t border-base-200 pt-3 text-sm">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Contact owner</dt>
-              <dd class="font-medium">{{ p.assigned_to ? getUserName(p.assigned_to) : '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Preferred contact</dt>
-              <dd class="font-medium">{{ preferredContactLabel() }}</dd>
-            </div>
-          </dl>
-
-          <p class="border-t border-base-200 pt-3 text-xs leading-snug text-base-content/45">
-            People in home counts everyone sharing this person's address. Edit it from the household record.
-          </p>
-        </pc-card>
-
-        <!-- Campaign standing: editable support level, voting status, subscription, do-not-contact (§15) -->
-        <pc-person-campaign-facts
-          [personId]="p.id"
-          [dncFlag]="!!p.do_not_contact"
-          [volunteerStatus]="p.volunteer_status ?? null"
-          [staffStatus]="p.staff_status ?? null"
-        ></pc-person-campaign-facts>
-        } @else {
-        <!-- New person: capture standing now; it is applied once the person is created (§15) -->
-        <pc-person-standing-draft
-          [email]="payload().email"
-          [(supportLevel)]="draftSupport"
-          [(votingStatus)]="draftVoting"
-          [(subscribe)]="draftSubscribe"
-          [(doNotContact)]="draftDnc"
-          [(volunteerStatus)]="draftVolunteer"
-          [(staffStatus)]="draftStaff"
-        ></pc-person-standing-draft>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
-        }
-      </div>
-    </div>
-  </pc-side-drawer>
 </div>
 ```
 
@@ -75598,1245 +77386,6 @@ body {
 </div>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-```html
-<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
-     full 24px below it would just steal height from the grid. -->
-<div
-  class="flex h-full w-full flex-col"
-  [class.px-6]="displayTitle() || grainLayout()"
-  [class.pt-6]="displayTitle() || grainLayout()"
-  [class.pb-2]="displayTitle() || grainLayout()"
->
-  @if (grainLayout()) {
-  <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
-       (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
-  <div class="mb-3 flex items-center justify-between gap-4">
-    <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
-    @if (showToolbar()) {
-    <div class="shrink-0"><pc-dg-toolbar /></div>
-    }
-  </div>
-  } @else { @if (displayTitle()) {
-  <pc-grid-header
-    [title]="displayTitle()!"
-    [open]="showDescription()"
-    [description]="description() || ''"
-    [totalCount]="hasLoaded() ? totalCountAll() : null"
-    [filtered]="anyFilterActive()"
-    [totalSentence]="totalSentence()"
-  ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } } @if (showNarrowTypeFilter()) {
-  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
-  <div class="mb-2 flex flex-wrap items-center gap-2">
-    <div class="join border border-base-300 rounded-lg">
-      @for (opt of narrowTypeOptions(); track opt.label) {
-      <button
-        type="button"
-        class="btn btn-sm join-item border-0 font-normal gap-1.5"
-        [class.btn-primary]="selectedNarrowType() === opt.value"
-        [class.btn-ghost]="selectedNarrowType() !== opt.value"
-        (click)="selectNarrowType(opt.value)"
-      >
-        {{ opt.label }} @if (opt.count != null) {
-        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
-        }
-      </button>
-      }
-    </div>
-  </div>
-  } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (showToolbar() && (allowFilter() || showTagFilter() || showIssueFilter() || showListFilter())) {
-  <!-- Filter chip row (spec §5): muted funnel marker · active chips · Clear all · dashed entry pills.
-       No surrounding box — sits directly on the page. -->
-  <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
-    <pc-icon name="funnel" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-
-    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
-    <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
-      @if (chip.kind === 'advanced') {
-      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
-      } @else {
-      <span>{{ chip.label }}</span>
-      }
-      <button
-        type="button"
-        class="opacity-70 hover:opacity-100"
-        [attr.aria-label]="'Remove filter: ' + chip.label"
-        (click)="removeFilterChip(chip)"
-      >
-        <pc-icon name="x-mark" [size]="3"></pc-icon>
-      </button>
-    </span>
-    } @if (filterChips().length) {
-    <button
-      type="button"
-      class="link text-primary hover:no-underline"
-      (click)="clearAllFilters()"
-      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
-    >
-      Clear all
-    </button>
-    }
-
-    <!-- + Add filter: quick single field → operator → value chip entry -->
-    @if (allowFilter()) {
-    <details class="dropdown" #addFilterDd>
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        <span i18n="Datagrid|Add-filter pill label@@datagrid.pills.addFilter">Add filter</span>
-      </summary>
-      <div
-        tabindex="0"
-        class="dropdown-content z-[60] mt-1 flex w-64 flex-col gap-2 rounded-box border border-base-200 bg-base-100 p-3 shadow-lg"
-      >
-        <select
-          class="select select-bordered select-xs w-full"
-          (change)="addFilterField.set($any($event.target).value)"
-        >
-          <option
-            value=""
-            disabled
-            [selected]="!addFilterField()"
-            i18n="Datagrid|Add-filter field placeholder@@datagrid.pills.addFilter.field"
-          >
-            Choose field…
-          </option>
-          @for (f of addFilterFields(); track f.field) {
-          <option [value]="f.field" [selected]="f.field === addFilterField()">{{ f.label }}</option>
-          }
-        </select>
-        <select class="select select-bordered select-xs w-full" (change)="addFilterOp.set($any($event.target).value)">
-          @for (op of addFilterOperators; track op.value) {
-          <option [value]="op.value" [selected]="op.value === addFilterOp()">{{ op.label }}</option>
-          }
-        </select>
-        @if (addFilterNeedsValue()) {
-        <input
-          type="text"
-          class="input input-bordered input-xs w-full"
-          placeholder="Value"
-          i18n-placeholder="Datagrid|Add-filter value placeholder@@datagrid.pills.addFilter.value"
-          [value]="addFilterValue()"
-          (input)="addFilterValue.set($any($event.target).value)"
-          (keydown.enter)="applyAddFilter(); addFilterDd.removeAttribute('open')"
-        />
-        }
-        <div class="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            class="btn btn-outline btn-accent btn-xs"
-            (click)="addFilterDd.removeAttribute('open')"
-            i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary btn-xs"
-            [disabled]="!addFilterField() || (addFilterNeedsValue() && !addFilterValue().trim())"
-            (click)="applyAddFilter(); addFilterDd.removeAttribute('open')"
-            i18n="Datagrid|Apply add-filter@@datagrid.pills.addFilter.apply"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-    </details>
-    }
-
-    <!-- Tags dashed pill — opens the OR checkbox picker -->
-    @if (showTagFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedTags().length > 0"
-        [class.!text-primary]="selectedTags().length > 0"
-      >
-        <pc-icon name="label" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Tags filter pill label@@datagrid.pills.tags">Tags</span>
-        @if (selectedTags().length) {
-        <span class="tabular-nums">({{ selectedTags().length }})</span>
-        }
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by Tags'"
-        [active]="selectedTags().length > 0"
-        (clear)="clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="filteredAvailableTags()"
-          [selected]="selectedTags()"
-          [searchQuery]="tagSearchQuery()"
-          (searchQueryChange)="tagSearchQuery.set($event)"
-          [maxHeight]="14"
-          (selectAll)="selectAllTags()"
-          (clearVisible)="clearAllTagsVisible()"
-          (toggle)="toggleTagFilter($event.value, $event.checked)"
-        />
-        <p
-          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-          i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
-        >
-          Checked tags combine with OR and land as one chip.
-        </p>
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-
-    <!-- Issues dashed pill -->
-    @if (showIssueFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedIssues().length > 0"
-        [class.!text-primary]="selectedIssues().length > 0"
-      >
-        <pc-icon name="shield-exclamation" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Issues filter pill label@@datagrid.pills.issues">Issues</span>
-        @if (selectedIssues().length) {
-        <span class="tabular-nums">({{ selectedIssues().length }})</span>
-        }
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by Issues'"
-        [active]="selectedIssues().length > 0"
-        (clear)="clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="filteredAvailableIssues()"
-          [selected]="selectedIssues()"
-          [searchQuery]="issueSearchQuery()"
-          (searchQueryChange)="issueSearchQuery.set($event)"
-          [maxHeight]="14"
-          (selectAll)="selectAllIssues()"
-          (clearVisible)="clearAllIssuesVisible()"
-          (toggle)="toggleIssueFilter($event.value, $event.checked)"
-        />
-        <p
-          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-          i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
-        >
-          Checked issues combine with OR and land as one chip.
-        </p>
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-
-    <!-- Lists dashed pill — apply a saved list as a chip -->
-    @if (showListFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedListId() !== null"
-        [class.!text-primary]="selectedListId() !== null"
-      >
-        <pc-icon name="queue-list" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Lists filter pill label@@datagrid.pills.lists">Lists</span>
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by List'"
-        [active]="selectedListId() !== null"
-        (clear)="clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="selectedListId()"
-          [radioName]="'selectedListPill'"
-          [maxHeight]="14"
-          (select)="selectListFilter($event)"
-        />
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-  </div>
-  }
-  <!-- Count sentence: below the filter row in grain layout (owner screenshot). -->
-  @if (grainLayout() && countSentence()) {
-  <p class="mb-3 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ countSentence() }}</p>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  } @if (hasSelectionState()) {
-  <!-- Bulk action bar: appears on any selection (§2) -->
-  <div class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral bg-base-100 px-3 py-2 text-sm">
-    <span class="font-semibold tabular-nums"
-      >{{ getCountRowSelected() }}
-      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
-    >
-    <span class="mx-1 h-4 w-px bg-base-300"></span>
-
-    @if (bulkTagOpen()) {
-    <input
-      type="text"
-      class="input input-bordered input-xs w-40"
-      placeholder="Tag name"
-      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
-      [value]="bulkTagValue()"
-      (input)="bulkTagValue.set($any($event.target).value)"
-      (keydown.enter)="applyBulkTag()"
-      (keydown.escape)="cancelBulkTag()"
-      autofocus
-    />
-    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
-      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
-    </button>
-    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
-      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
-    </button>
-    } @else {
-    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="openBulkTag()">
-      <pc-icon name="label" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
-    </button>
-    @if (!disableExport()) {
-    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="doConfirmExport()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
-    </button>
-    } @if (!disableMerge()) {
-    <button
-      class="btn btn-sm gap-1.5 bg-base-100"
-      [disabled]="getCountRowSelected() !== 2"
-      [title]="
-        getCountRowSelected() === 2
-          ? 'Merge 2 ' + entityNounPlural
-          : 'Select exactly 2 ' + entityNounPlural + ' to merge. ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doConfirmMerge()"
-    >
-      <pc-icon name="merge" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
-    </button>
-    } @if (!!addRoute()) {
-    <button
-      class="btn btn-sm gap-1.5 bg-base-100"
-      [disabled]="!hasSingleSelection()"
-      [title]="
-        hasSingleSelection()
-          ? 'Clone this ' + entityNoun
-          : 'Select exactly 1 ' + entityNoun + ' to clone. ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doClone()"
-    >
-      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
-    </button>
-    }
-    <span class="flex-1"></span>
-    @if (!disableDelete()) {
-    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
-      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
-    </button>
-    } }
-  </div>
-  }
-  <div
-    #scroller
-    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
-    (scroll)="onScroll($event)"
-  >
-    <table #gridTable class="table pc-table w-full">
-      <thead>
-        <tr class="bg-base-100 text-xs">
-          @if (enableSelection()) {
-          <th
-            class="pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
-          <th
-            role="columnheader"
-            class="group cursor-grab pl-2 relative"
-            [class.pl-4]="hIdx === 0 && !enableSelection()"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="fixedWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              @if (showColumnMenus()) {
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  [class.!opacity-100]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (!col?.noHide) {
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      }
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              }
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-base-content/40"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-              <button
-                type="button"
-                class="btn btn-outline btn-secondary btn-sm mt-1"
-                (click)="clearAllFilters()"
-                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
-              >
-                Clear all filters
-              </button>
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-base-content/40"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Create your first record with the New button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300/40"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
-          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
-          && ec.id === toId(r.original) && ec.field === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col, $event)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            [class]="cellClassFor(col, r.original)"
-            class="min-w-0 px-2 relative"
-            [class.pl-4]="cellIdx === 0 && !enableSelection()"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="fixedWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [value]="tagSearch()"
-                  (input)="tagSearch.set($any($event.target).value)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              (change)="onMultiSelectEditorChange($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value" [selected]="isEditorOptionMultiSelected(opt.value)">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              (change)="onSelectChange(r.original, col, $any($event.target).value)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value" [selected]="isEditorOptionSelected(opt.value)">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [value]="editingValueText()"
-              (input)="editingValue.set($any($event.target).value)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [value]="editingValueText()"
-              (input)="editingValue.set($any($event.target).value)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) { @let doorSubtitle =
-            callDoorSubtitle(r.original, col);
-            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
-            <div class="flex flex-col gap-0.5">
-              @if (rawValue) {
-              <span
-                class="cursor-pointer font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
-                >{{ rawValue }}</span
-              >
-              } @else {
-              <span
-                class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
-                i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
-                >Unnamed person</span
-              >
-              } @if (doorSubtitle) {
-              <span class="text-xs text-base-content/55">{{ doorSubtitle }}</span>
-              }
-            </div>
-            } @else if (col.field === 'address') {
-            <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
-            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
-            <div class="py-1" [attr.title]="rawValue">
-              <div
-                class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
-                [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
-              >
-                {{ rawValue || '—' }}
-              </div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        } @if (visibleTableRows().length && !canNext()) {
-        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
-             would otherwise read as data that failed to load. -->
-        <tr class="hover:bg-transparent">
-          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
-            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
-              <span class="h-px flex-1 bg-base-300"></span>
-              <span
-                class="whitespace-nowrap tabular-nums"
-                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
-                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
-              >
-              <span class="h-px flex-1 bg-base-300"></span>
-            </div>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-between mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
-    <div class="min-w-0"><ng-content select="[pcGridFooterStart]"></ng-content></div>
-    <div class="flex items-center gap-3 flex-nowrap">
-      <div class="flex items-center gap-2 whitespace-nowrap">
-        <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-          >Page Size:</span
-        >
-        <select class="select select-bordered select-xs" (change)="onPageSizeChange($any($event.target).value)">
-          @if (![25,50,100].includes(pageSize())) {
-          <option [value]="pageSize()" [selected]="true">{{ pageSize() }}</option>
-          } @for (opt of pageSizeChoices(); track opt) {
-          <option [value]="opt" [selected]="opt === pageSize()">{{ opt }}</option>
-          }
-        </select>
-      </div>
-      <div
-        class="whitespace-nowrap tabular-nums"
-        i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-      >
-        <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
-          >{{ displayEndIndex() }}</span
-        >
-        of <span class="font-normal">{{ totalCountAll() }}</span> · Page
-        <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
-      </div>
-      <div class="join whitespace-nowrap">
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
-          [disabled]="!canPrev()"
-          (click)="firstPage()"
-        >
-          <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
-          [disabled]="!canPrev()"
-          (click)="prevPage()"
-        >
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canNext() ? nextPageTitle : onLastPageTitle"
-          [disabled]="!canNext()"
-          (click)="nextPage()"
-        >
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canNext() ? lastPageTitle : onLastPageTitle"
-          [disabled]="!canNext()"
-          (click)="lastPage()"
-        >
-          <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (closePanel)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<pc-modal-shell
-  [open]="true"
-  (closed)="showAdvancedFilterBuilder.set(false)"
-  title="Advanced filter builder"
-  i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-  icon="adjustments-horizontal"
-  [boxClass]="'w-11/12 max-w-3xl'"
->
-  <p
-    class="text-xs text-neutral-400 -mt-4 mb-4"
-    i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-  >
-    Build complex matching rules with custom operators and conjunction logic.
-  </p>
-
-  <pc-query-builder
-    [group]="advFilterRoot()"
-    [fields]="advancedFilterFields()"
-    [tagSvc]="tagsSvc ?? undefined"
-    [showSummary]="true"
-    (changed)="onAdvancedFilterChanged()"
-  ></pc-query-builder>
-
-  <div pc-modal-footer class="flex w-full justify-between items-center">
-    <button
-      class="btn btn-outline btn-error btn-sm"
-      (click)="clearAdvancedFilter()"
-      i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-    >
-      Clear Filters
-    </button>
-    <div class="flex gap-2">
-      <button
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-      >
-        Cancel
-      </button>
-      <button
-        class="btn btn-primary btn-sm px-6"
-        (click)="applyAdvancedFilter()"
-        i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-      >
-        Apply
-      </button>
-    </div>
-  </div>
-</pc-modal-shell>
-}
-```
-
-## File: apps/website/src/app/home/home-page.ts
-```typescript
-import { Component, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { PLANS, startingPriceLabel } from '@common';
-import type { PlanDef } from '@common';
-
-import { AppPreview, type PreviewKind } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { Constellation } from '../ui/constellation';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-type Audience = 'office' | 'camp' | 'np';
-
-interface Hero {
-  readonly h1: string;
-  readonly sub: string;
-  readonly url: string;
-  readonly kind: PreviewKind;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly img?: string;
-}
-
-interface AudienceOption {
-  readonly id: Audience;
-  readonly label: string;
-}
-
-interface Step {
-  readonly n: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Feature {
-  readonly icon: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Door {
-  readonly addr: string;
-  readonly who: string;
-  readonly chip: string;
-  readonly chipClass: string;
-}
-
-const HEROES: Record<Audience, Hero> = {
-  office: {
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
-    url: 'app.pplcrm.com/inbox',
-    kind: 'inbox',
-    img: 'assets/site-shots/01-shot.png',
-  },
-  camp: {
-    h1: 'Built for the people who knock and win campaigns.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    url: 'app.pplcrm.com/canvassing',
-    kind: 'canvassing',
-    img: 'assets/site-shots/02-shot.png',
-  },
-  np: {
-    h1: 'Donors, volunteers and neighbors. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    url: 'app.pplcrm.com/donations',
-    kind: 'donations',
-    img: 'assets/site-shots/03-shot.png',
-  },
-};
-
-@Component({
-  selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
-  templateUrl: './home-page.html',
-})
-export class HomePage {
-  protected readonly signupUrl = SIGNUP_URL;
-
-  protected readonly aud = signal<Audience>('office');
-  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
-
-  protected readonly audiences: readonly AudienceOption[] = [
-    { id: 'office', label: 'Constituency office' },
-    { id: 'camp', label: 'Campaign' },
-    { id: 'np', label: 'Non-profit' },
-  ];
-
-  protected readonly steps: readonly Step[] = [
-    {
-      n: '1',
-      title: 'Create your free workspace',
-      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
-    },
-    {
-      n: '2',
-      title: 'Try everything on sample data',
-      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
-    },
-    {
-      n: '3',
-      title: 'Import your list when it clicks',
-      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
-    },
-  ];
-
-  protected readonly features: readonly Feature[] = [
-    {
-      icon: 'users',
-      title: 'People & households',
-      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
-    },
-    {
-      icon: 'inbox',
-      title: 'A shared inbox & tasks',
-      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
-    },
-    {
-      icon: 'megaphone',
-      title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
-    },
-    {
-      icon: 'map-pin',
-      title: 'Doors & the field',
-      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
-    },
-    {
-      icon: 'currency-dollar',
-      title: 'Donations, gratefully',
-      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-    },
-    {
-      icon: 'arrow-up-tray',
-      title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
-    },
-  ];
-
-  protected readonly growFeatures: readonly Feature[] = [
-    {
-      icon: 'clipboard-document-list',
-      title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
-    },
-    {
-      icon: 'calendar',
-      title: 'Events & volunteer shifts',
-      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
-    },
-    {
-      icon: 'credit-card',
-      title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
-    },
-    {
-      icon: 'rectangle-stack',
-      title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
-    },
-  ];
-
-  /** The three claims beside the constellation animation in the network band. */
-  protected readonly networkPoints: readonly Feature[] = [
-    {
-      icon: 'user-group',
-      title: 'See the web, not the spreadsheet',
-      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
-    },
-    {
-      icon: 'route',
-      title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
-    },
-    {
-      icon: 'presentation-chart-line',
-      title: 'Every touch sharpens the map',
-      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
-    },
-  ];
-
-  protected readonly companionFeatures: readonly Feature[] = [
-    {
-      icon: 'map-pin',
-      title: 'Canvass companion',
-      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
-    },
-    {
-      icon: 'ticket',
-      title: 'Yard sign routes',
-      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
-    },
-    {
-      icon: 'house-modern',
-      title: 'Deliveries',
-      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
-    },
-  ];
-
-  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $55'). */
-  protected readonly startingPrice = startingPriceLabel;
-
-  protected readonly faqs: readonly Qa[] = [
-    {
-      q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-    },
-    {
-      q: 'What is the demo workspace?',
-      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
-    },
-    {
-      q: 'Can I import my existing list?',
-      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
-    },
-    {
-      q: 'Can I get my data back out?',
-      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
-    },
-    {
-      q: 'Who owns the data?',
-      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
-    },
-    {
-      q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
-    },
-  ];
-
-  protected readonly doors: readonly Door[] = [
-    {
-      addr: '214 Alder St',
-      who: 'Elena & Marco Ramos',
-      chip: 'Supporter',
-      chipClass: 'bg-success/20 text-success-content',
-    },
-    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
-    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
-    {
-      addr: '226 Alder St',
-      who: 'Priya Natarajan',
-      chip: 'Remaining',
-      chipClass: 'bg-base-300/60 text-base-content/60',
-    },
-    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
-  ];
-
-  protected pick(id: Audience): void {
-    this.aud.set(id);
-  }
-}
-```
-
 ## File: apps/website/src/app/home/home-page.html
 ```html
 <pc-site-header variant="over-hero" />
@@ -77101,4 +77650,276 @@ export class HomePage {
 </section>
 
 <pc-site-footer />
+```
+
+## File: apps/website/src/app/home/home-page.ts
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PLANS, startingPriceUsd } from '@common';
+import type { PlanDef } from '@common';
+
+import { AppPreview, type PreviewKind } from '../ui/app-preview';
+import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+type Audience = 'office' | 'camp' | 'np';
+
+interface Hero {
+  readonly h1: string;
+  readonly sub: string;
+  readonly url: string;
+  readonly kind: PreviewKind;
+  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
+  readonly img?: string;
+}
+
+interface AudienceOption {
+  readonly id: Audience;
+  readonly label: string;
+}
+
+interface Step {
+  readonly n: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Feature {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Door {
+  readonly addr: string;
+  readonly who: string;
+  readonly chip: string;
+  readonly chipClass: string;
+}
+
+const HEROES: Record<Audience, Hero> = {
+  office: {
+    h1: 'Every case answered. Every constituent remembered.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
+    url: 'app.pplcrm.com/inbox',
+    kind: 'inbox',
+    img: 'assets/site-shots/01-shot.png',
+  },
+  camp: {
+    h1: 'Built for the people who knock and win campaigns.',
+    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
+    url: 'app.pplcrm.com/canvassing',
+    kind: 'canvassing',
+    img: 'assets/site-shots/02-shot.png',
+  },
+  np: {
+    h1: 'Donors, volunteers and neighbors. One list.',
+    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
+    url: 'app.pplcrm.com/donations',
+    kind: 'donations',
+    img: 'assets/site-shots/03-shot.png',
+  },
+};
+
+@Component({
+  selector: 'pc-home-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
+  templateUrl: './home-page.html',
+})
+export class HomePage {
+  protected readonly signupUrl = SIGNUP_URL;
+
+  protected readonly aud = signal<Audience>('office');
+  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
+
+  protected readonly audiences: readonly AudienceOption[] = [
+    { id: 'office', label: 'Constituency office' },
+    { id: 'camp', label: 'Campaign' },
+    { id: 'np', label: 'Non-profit' },
+  ];
+
+  protected readonly steps: readonly Step[] = [
+    {
+      n: '1',
+      title: 'Create your free workspace',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
+    },
+    {
+      n: '2',
+      title: 'Try everything on sample data',
+      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
+    },
+    {
+      n: '3',
+      title: 'Import your list when it clicks',
+      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  protected readonly features: readonly Feature[] = [
+    {
+      icon: 'users',
+      title: 'People & households',
+      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
+    },
+    {
+      icon: 'inbox',
+      title: 'A shared inbox & tasks',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
+    },
+    {
+      icon: 'megaphone',
+      title: 'Newsletters that land',
+      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
+    },
+    {
+      icon: 'map-pin',
+      title: 'Doors & the field',
+      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
+    },
+    {
+      icon: 'currency-dollar',
+      title: 'Donations, gratefully',
+      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
+    },
+    {
+      icon: 'arrow-up-tray',
+      title: 'Your spreadsheet, welcomed',
+      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
+    },
+  ];
+
+  protected readonly companionFeatures: readonly Feature[] = [
+    {
+      icon: 'map-pin',
+      title: 'Canvass companion',
+      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
+    },
+    {
+      icon: 'ticket',
+      title: 'Yard sign routes',
+      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
+    },
+    {
+      icon: 'house-modern',
+      title: 'Deliveries',
+      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
+    },
+  ];
+
+  private readonly currency = inject(CurrencyService);
+
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
+  protected startingPrice(plan: PlanDef): string {
+    const usd = startingPriceUsd(plan);
+    if (usd === null) return 'Custom';
+    if (usd === 0) return this.currency.format(0);
+    return `From ${this.currency.format(usd)}`;
+  }
+
+  protected readonly faqs: readonly Qa[] = [
+    {
+      q: 'Is the free plan really free?',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+    },
+    {
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
+    },
+    {
+      q: 'Can I import my existing list?',
+      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
+    },
+    {
+      q: 'Can I get my data back out?',
+      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
+    },
+    {
+      q: 'Who owns the data?',
+      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'How does pricing work?',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+    },
+  ];
+
+  protected readonly doors: readonly Door[] = [
+    {
+      addr: '214 Alder St',
+      who: 'Elena & Marco Ramos',
+      chip: 'Supporter',
+      chipClass: 'bg-success/20 text-success-content',
+    },
+    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
+    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
+    {
+      addr: '226 Alder St',
+      who: 'Priya Natarajan',
+      chip: 'Remaining',
+      chipClass: 'bg-base-300/60 text-base-content/60',
+    },
+    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
+  ];
+
+  protected pick(id: Audience): void {
+    this.aud.set(id);
+  }
+}
 ```

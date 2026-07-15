@@ -9,6 +9,22 @@ import { environment } from '../../../../environments/environment';
 import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+/** Payment processor that fulfils online donations. */
+export type DonationProcessor = 'stripe' | 'helcim';
+
+/** Where donations are processed and payment data stored, derived from the CONFIGURED (saved) processor. */
+export interface ProcessingNotice {
+  heading: string;
+  body: string;
+}
+
+export interface ResidencyContext {
+  country: string | null;
+  processor: DonationProcessor;
+  residencyAcknowledged: boolean;
+}
 
 export interface TaxCreditTier {
   limit: number;
@@ -28,6 +44,7 @@ export interface DonationPeriod {
   selector: 'pc-donations-settings',
   imports: [FormField, Icon, Table, StatusBadge],
   templateUrl: './donations-settings.html',
+  styleUrl: './donations-settings.css',
 })
 export class DonationsSettingsComponent implements OnInit {
   private readonly settingsSvc = inject(SettingsService);
@@ -35,6 +52,29 @@ export class DonationsSettingsComponent implements OnInit {
   private readonly tokenSvc = inject(TokenService);
   private readonly donationsSvc = inject(DonationsService);
   private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+
+  // Payment processor: Stripe (default) or Helcim.
+  protected readonly processor = signal<DonationProcessor>('stripe');
+  protected readonly helcimApiToken = signal('');
+  protected readonly helcimWebhookSecret = signal('');
+
+  // "Configured" reads the SAVED settings snapshot (reactive), not the live-edited fields, so the
+  // mutual-exclusion lock only reflects what is actually persisted. Exactly one may be configured.
+  protected readonly stripeConfigured = computed(
+    () => this.settingsSvc.getValue<string>('donations.stripe_secret_key', '').trim().length > 0,
+  );
+  protected readonly helcimConfigured = computed(
+    () => this.settingsSvc.getValue<string>('donations.helcim_api_token', '').trim().length > 0,
+  );
+  // Lock the OTHER option while one processor is configured — you must remove its keys to switch.
+  protected readonly stripeOptionDisabled = computed(() => this.helcimConfigured() && !this.stripeConfigured());
+  protected readonly helcimOptionDisabled = computed(() => this.stripeConfigured() && !this.helcimConfigured());
+
+  // Residency gate: donations stay paused until the tenant confirms residency restrictions once.
+  protected readonly residencyAcknowledged = signal(false);
+  protected readonly residencyContext = signal<ResidencyContext | null>(null);
 
   protected readonly stripeSecretKey = signal('');
   protected readonly stripeWebhookSecret = signal('');
@@ -263,6 +303,28 @@ export class DonationsSettingsComponent implements OnInit {
     );
   });
 
+  // State where donations are processed and where donor payment data is stored, driven ONLY by which
+  // processor is actually CONFIGURED (saved keys) — not the radio selection. Picking a radio while no
+  // keys are saved leaves the neutral "either country" message; only saving keys changes this.
+  protected readonly processingNotice = computed<ProcessingNotice>(() => {
+    if (this.helcimConfigured()) {
+      return {
+        heading: 'Donations are processed in Canada',
+        body: 'Donations are processed by Helcim (Canada). Donor payment data is stored in Canada.',
+      };
+    }
+    if (this.stripeConfigured()) {
+      return {
+        heading: 'Donations are processed in the United States',
+        body: 'Donations are processed by Stripe (United States). Donor payment data is stored in the US.',
+      };
+    }
+    return {
+      heading: 'Set up a payment processor to accept donations',
+      body: 'Donor payment data will be stored in the country of the processor you configure: the United States with Stripe, or Canada with Helcim. Choose one below and enter its keys to lock this in.',
+    };
+  });
+
   protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
   protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
   protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
@@ -305,6 +367,19 @@ export class DonationsSettingsComponent implements OnInit {
     this.loadValues();
     await this.loadPeriods();
     await this.loadWebhookStatus();
+    await this.loadResidencyContext();
+  }
+
+  private async loadResidencyContext(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const ctx = await this.donationsSvc.getResidencyContext();
+      this.residencyContext.set(ctx);
+    } catch {
+      // non-fatal — the disclaimers simply stay in their fail-safe (shown) state
+    } finally {
+      end();
+    }
   }
 
   private async loadWebhookStatus(): Promise<void> {
@@ -411,8 +486,19 @@ export class DonationsSettingsComponent implements OnInit {
   private loadValues() {
     this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
     this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.processor.set(this.settingsSvc.getValue<DonationProcessor>('donations.processor', 'stripe'));
+    this.helcimApiToken.set(this.settingsSvc.getValue<string>('donations.helcim_api_token', ''));
+    this.helcimWebhookSecret.set(this.settingsSvc.getValue<string>('donations.helcim_webhook_secret', ''));
+    // When exactly one processor is configured, it is the only valid selection — force it so the UI
+    // can never show the locked processor's card.
+    if (this.stripeConfigured() && !this.helcimConfigured()) {
+      this.processor.set('stripe');
+    } else if (this.helcimConfigured() && !this.stripeConfigured()) {
+      this.processor.set('helcim');
+    }
     this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
     this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+    this.residencyAcknowledged.set(this.settingsSvc.getValue<boolean>('donations.residency_acknowledged', false));
 
     // Load countries
     const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
@@ -523,22 +609,98 @@ export class DonationsSettingsComponent implements OnInit {
     this.alerts.showSuccess('Settings reset to saved values');
   }
 
+  /** Guarded processor pick — a locked option (the other one is configured) cannot be selected. */
+  protected selectProcessor(next: DonationProcessor) {
+    if (next === 'stripe' && this.stripeOptionDisabled()) return;
+    if (next === 'helcim' && this.helcimOptionDisabled()) return;
+    this.processor.set(next);
+  }
+
+  /** Clear the saved Stripe keys (and its webhook secret), re-enabling the Helcim option. */
+  protected async removeStripeConfig() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Stripe configuration?',
+      message: 'Donations will stop until you configure a processor. This clears your saved Stripe keys.',
+      confirmText: 'Remove Stripe keys',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.settingsSvc.upsert([
+        { key: 'donations.stripe_secret_key', value: '' },
+        { key: 'donations.stripe_webhook_secret', value: '' },
+      ]);
+      this.stripeSecretKey.set('');
+      this.stripeWebhookSecret.set('');
+      this.alerts.showSuccess('Stripe configuration removed');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to remove Stripe configuration',
+      );
+    }
+  }
+
+  /** Clear the saved Helcim keys (and its webhook secret), re-enabling the Stripe option. */
+  protected async removeHelcimConfig() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Helcim configuration?',
+      message: 'Donations will stop until you configure a processor. This clears your saved Helcim keys.',
+      confirmText: 'Remove Helcim keys',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.settingsSvc.upsert([
+        { key: 'donations.helcim_api_token', value: '' },
+        { key: 'donations.helcim_webhook_secret', value: '' },
+      ]);
+      this.helcimApiToken.set('');
+      this.helcimWebhookSecret.set('');
+      this.alerts.showSuccess('Helcim configuration removed');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to remove Helcim configuration',
+      );
+    }
+  }
+
   protected async save() {
     this.isSaving.set(true);
     try {
+      // Only the SELECTED processor's keys are written; the other's are cleared so exactly one
+      // processor is ever configured (the mutual-exclusion contract the UI enforces).
+      const isStripe = this.processor() === 'stripe';
       const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.processor', value: this.processor() },
+        { key: 'donations.stripe_secret_key', value: isStripe ? this.stripeSecretKey() : '' },
+        { key: 'donations.stripe_webhook_secret', value: isStripe ? this.stripeWebhookSecret() : '' },
+        { key: 'donations.helcim_api_token', value: isStripe ? '' : this.helcimApiToken() },
+        { key: 'donations.helcim_webhook_secret', value: isStripe ? '' : this.helcimWebhookSecret() },
         { key: 'donations.limit', value: Number(this.donationLimit()) },
         { key: 'donations.restrict_residency', value: this.restrictResidency() },
         { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
         { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
         { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        // Saving the residency card — restricting or allowing everyone — is the explicit choice that
+        // lifts the "donations paused" gate, so record the acknowledgment alongside it.
+        { key: 'donations.residency_acknowledged', value: true },
         // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
         // shown once by regenerateWebhookToken(), never round-tripped through the client.
       ];
 
       await this.settingsSvc.upsert(entries);
+      // Mirror the "clear the other processor" write into the live fields so the UI state matches.
+      if (isStripe) {
+        this.helcimApiToken.set('');
+        this.helcimWebhookSecret.set('');
+      } else {
+        this.stripeSecretKey.set('');
+        this.stripeWebhookSecret.set('');
+      }
+      this.residencyAcknowledged.set(true);
+      this.residencyContext.update((ctx) => (ctx ? { ...ctx, residencyAcknowledged: true } : ctx));
       this.alerts.showSuccess('Donations configuration saved successfully');
     } catch (err) {
       this.alerts.showError(

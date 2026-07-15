@@ -1,5 +1,5 @@
 <div class="space-y-8">
-  <!-- Compliance Disclaimer -->
+  <!-- Compliance Disclaimer (top priority) -->
   <div
     class="alert alert-info text-xs rounded-xl p-3 border-info/30 bg-info/5 text-info-content shadow-sm flex items-start gap-3"
   >
@@ -16,20 +16,118 @@
     </div>
   </div>
 
+  <!-- Donations paused: residency not yet acknowledged (fail-closed gate) -->
+  @if (!residencyAcknowledged()) {
+  <div class="alert alert-warning shadow-sm">
+    <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+    <div>
+      <span class="font-bold">Donations are paused</span>
+      <p class="text-xs mt-0.5">
+        Confirm your residency restrictions below before this organization can accept donations.
+      </p>
+    </div>
+  </div>
+  }
+
+  <!-- Payment processor selector -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+      Payment processor
+    </h3>
+    <!-- Where donations are processed / where donor payment data is stored — driven by the CONFIGURED (saved) processor -->
+    <div class="alert alert-info shadow-sm">
+      <pc-icon name="information-circle" [size]="5"></pc-icon>
+      <div>
+        <span class="font-bold">{{ processingNotice().heading }}</span>
+        <p class="text-xs mt-0.5">{{ processingNotice().body }}</p>
+      </div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-3">
+      <label
+        class="flex items-start gap-3 flex-1 rounded-lg border p-4 transition-colors"
+        [class.border-primary]="processor() === 'stripe'"
+        [class.border-base-200]="processor() !== 'stripe'"
+        [class.cursor-pointer]="!stripeOptionDisabled()"
+        [class.cursor-not-allowed]="stripeOptionDisabled()"
+        [class.opacity-60]="stripeOptionDisabled()"
+      >
+        <input
+          type="radio"
+          name="donation_processor"
+          class="radio radio-primary radio-sm mt-0.5"
+          [checked]="processor() === 'stripe'"
+          [disabled]="stripeOptionDisabled()"
+          (change)="selectProcessor('stripe')"
+        />
+        <div>
+          <span class="text-xs font-semibold text-base-content/90">Stripe (US-based)</span>
+          <p class="text-[11px] text-base-content/60 mt-0.5">
+            Processes and stores donor data in the United States. One-time and monthly (recurring) donations.
+          </p>
+          @if (stripeOptionDisabled()) {
+          <p class="text-[11px] text-warning mt-1 flex items-center gap-1">
+            <pc-icon name="lock-closed" [size]="3"></pc-icon>
+            Remove your Helcim configuration first to switch.
+          </p>
+          }
+        </div>
+      </label>
+      <label
+        class="flex items-start gap-3 flex-1 rounded-lg border p-4 transition-colors"
+        [class.border-primary]="processor() === 'helcim'"
+        [class.border-base-200]="processor() !== 'helcim'"
+        [class.cursor-pointer]="!helcimOptionDisabled()"
+        [class.cursor-not-allowed]="helcimOptionDisabled()"
+        [class.opacity-60]="helcimOptionDisabled()"
+      >
+        <input
+          type="radio"
+          name="donation_processor"
+          class="radio radio-primary radio-sm mt-0.5"
+          [checked]="processor() === 'helcim'"
+          [disabled]="helcimOptionDisabled()"
+          (change)="selectProcessor('helcim')"
+        />
+        <div>
+          <span class="text-xs font-semibold text-base-content/90">Helcim (Canada-based)</span>
+          <p class="text-[11px] text-base-content/60 mt-0.5">
+            Processes and stores donor data in Canada. One-time donations only.
+          </p>
+          @if (helcimOptionDisabled()) {
+          <p class="text-[11px] text-warning mt-1 flex items-center gap-1">
+            <pc-icon name="lock-closed" [size]="3"></pc-icon>
+            Remove your Stripe configuration first to switch.
+          </p>
+          }
+        </div>
+      </label>
+    </div>
+  </div>
+
+  @if (processor() === 'stripe') {
   <!-- Stripe Connection Section -->
   <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between gap-2">
       <h3 class="text-lg font-semibold flex items-center gap-2">
         <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
         Stripe Integration
       </h3>
-      <span
-        class="badge badge-sm font-medium"
-        [class.badge-success]="stripeSecretKey().trim()"
-        [class.badge-neutral]="!stripeSecretKey().trim()"
-      >
-        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
-      </span>
+      <div class="flex items-center gap-2">
+        <span
+          class="badge badge-sm font-medium"
+          [class.badge-success]="stripeSecretKey().trim()"
+          [class.badge-neutral]="!stripeSecretKey().trim()"
+        >
+          {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
+        </span>
+        @if (stripeConfigured()) {
+        <button type="button" class="btn btn-xs btn-outline btn-error" (click)="removeStripeConfig()">
+          <pc-icon name="trash" [size]="3"></pc-icon>
+          Remove keys
+        </button>
+        }
+      </div>
     </div>
 
     <!-- Security Banner -->
@@ -142,6 +240,80 @@
       }
     </div>
   </div>
+  } @else {
+  <!-- Helcim Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between gap-2">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Helcim Integration
+      </h3>
+      <div class="flex items-center gap-2">
+        <span
+          class="badge badge-sm font-medium"
+          [class.badge-success]="helcimApiToken().trim()"
+          [class.badge-neutral]="!helcimApiToken().trim()"
+        >
+          {{ helcimApiToken().trim() ? 'Connected' : 'Not Configured' }}
+        </span>
+        @if (helcimConfigured()) {
+        <button type="button" class="btn btn-xs btn-outline btn-error" (click)="removeHelcimConfig()">
+          <pc-icon name="trash" [size]="3"></pc-icon>
+          Remove keys
+        </button>
+        }
+      </div>
+    </div>
+
+    <div
+      class="alert alert-info text-xs rounded-xl p-3 border-info/30 bg-info/5 text-info-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="information-circle" [size]="5" class="shrink-0 mt-0.5 text-info"></pc-icon>
+      <div>
+        <strong class="font-semibold">Helcim processes one-time donations only</strong>
+        <p class="mt-0.5 text-base-content/70">
+          Monthly (recurring) donations still require Stripe. Switch back to Stripe if you need recurring pledges.
+        </p>
+      </div>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Helcim API Token -->
+      <div class="flex flex-col gap-1.5">
+        <label for="helcim_api_token" class="text-xs font-semibold text-base-content/90">Helcim API Token</label>
+        <input
+          id="helcim_api_token"
+          type="password"
+          placeholder="Enter your Helcim API token"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="helcimApiToken()"
+          (input)="helcimApiToken.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Helcim. Find it in your Helcim account under API access.
+        </p>
+      </div>
+
+      <!-- Helcim Webhook Verifier Token -->
+      <div class="flex flex-col gap-1.5">
+        <label for="helcim_webhook_secret" class="text-xs font-semibold text-base-content/90">
+          Helcim Webhook Verifier Token
+        </label>
+        <input
+          id="helcim_webhook_secret"
+          type="password"
+          placeholder="Enter your Helcim webhook verifier token"
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs font-mono"
+          [value]="helcimWebhookSecret()"
+          (input)="helcimWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Helcim webhook notifications.
+        </p>
+      </div>
+    </div>
+  </div>
+  }
 
   <!-- Donation Limit & Residency Restrictions Section -->
   <div class="grid gap-6 md:grid-cols-2">
@@ -248,7 +420,7 @@
             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
             <input
               type="number"
-              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full no-spinner"
               [formField]="newPeriodLimitForm"
             />
           </div>
@@ -274,7 +446,7 @@
             id="donation_limit"
             type="number"
             min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-xs font-semibold no-spinner"
             [value]="donationLimit()"
             (input)="donationLimit.set($any($event.target).value)"
           />
@@ -528,31 +700,31 @@
     }
 
     <!-- Add new tier form -->
-    <div class="card pc-panel p-4 flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3">
+    <div class="card pc-panel p-4 mt-3 flex flex-col sm:flex-row sm:items-end gap-4">
       <!-- Tier Limit -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
+      <div class="flex flex-col gap-1.5 w-full sm:flex-1">
+        <label for="new_limit" class="text-xs font-semibold text-base-content/95">Bracket upper limit ($)</label>
         <div class="relative">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
           <input
             id="new_limit"
             type="number"
             placeholder="500"
-            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
+            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold no-spinner"
             [formField]="newLimitForm"
           />
         </div>
       </div>
 
       <!-- Tier Rate -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
+      <div class="flex flex-col gap-1.5 w-full sm:flex-1">
+        <label for="new_rate" class="text-xs font-semibold text-base-content/95">Credit percentage (%)</label>
         <div class="relative">
           <input
             id="new_rate"
             type="number"
             placeholder="75"
-            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
+            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold no-spinner"
             [formField]="newRateForm"
           />
           <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
@@ -560,13 +732,9 @@
       </div>
 
       <!-- Add button -->
-      <button
-        type="button"
-        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
-        (click)="addTier()"
-      >
+      <button type="button" class="btn btn-sm btn-primary w-full sm:w-auto font-semibold" (click)="addTier()">
         <pc-icon name="plus" [size]="4"></pc-icon>
-        Add Tier
+        Add tier
       </button>
     </div>
   </div>

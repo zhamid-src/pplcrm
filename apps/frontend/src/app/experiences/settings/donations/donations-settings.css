@@ -1,0 +1,12 @@
+/* Hide the native number-input spinner arrows on this page's amount/percentage fields.
+   Scoped via `.no-spinner` (and component view encapsulation) so app-wide number inputs are untouched. */
+.no-spinner::-webkit-inner-spin-button,
+.no-spinner::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

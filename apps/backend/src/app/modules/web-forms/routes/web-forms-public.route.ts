@@ -1,10 +1,12 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
+import { DonationsController } from '../../donations/controller';
 import formBody from '@fastify/formbody';
 import { resolveTenantFromRequest } from '../../../lib/public-tenant';
 import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
+const donationsController = new DonationsController();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -501,6 +503,13 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         return reply.send(errorHtml('Web form not found or inactive.'));
       }
 
+      // Fail-closed residency gate: don't render a live donation form for an org that hasn't
+      // confirmed its residency settings. Friendly copy, not the generic 404.
+      if (!(await donationsController.mayAcceptDonations(tenant.id))) {
+        reply.status(403).type('text/html');
+        return reply.send(errorHtml('This organization isn’t accepting online donations yet. Please check back soon.'));
+      }
+
       const formName = form.name;
       const formDescription = form.description || '';
 
@@ -542,7 +551,20 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp);
 
       if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
+        // The SPA/JSON caller launches the HelcimPay.js modal from `helcimCheckoutToken`, or follows
+        // `redirect_url` (Stripe hosted checkout / plain form redirect).
+        return reply.status(200).send({
+          success: true,
+          redirect_url: result.redirect_url ?? null,
+          helcimCheckoutToken: result.helcimCheckoutToken ?? null,
+        });
+      }
+
+      // Server-rendered (form POST) path: Helcim can't redirect, so hand back a page that opens the
+      // HelcimPay.js modal from the checkout token.
+      if (result.helcimCheckoutToken) {
+        reply.type('text/html');
+        return reply.send(renderHelcimLaunchHtml(result.helcimCheckoutToken));
       }
 
       if (result.redirect_url) {
@@ -552,8 +574,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.redirect('/api/forms/success');
     } catch (err) {
       fastify.log.error(err);
+      // Honor an AppError's `.status` as well as a Fastify error's `.statusCode`, so a 4xx AppError
+      // (e.g. the residency/eligibility gates) reaches the donor with its actionable message.
       const statusCode =
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+        (isRecord(err) && typeof err['status'] === 'number' ? err['status'] : undefined) ??
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) ??
+        500;
       // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
       // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
       const message =
@@ -574,6 +600,48 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default webFormsPublicRoute;
+
+/**
+ * Server-rendered launcher for the HelcimPay.js modal. The donation form POSTs normally (no fetch),
+ * so on the Helcim path we return this page: it loads HelcimPay.js and opens the modal from the
+ * checkout token. On an approved payment the modal fires a postMessage; the donation itself is
+ * recorded server-side by the Helcim webhook, so here we just move the donor to the success page.
+ */
+const renderHelcimLaunchHtml = (checkoutToken: string): string => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Completing your donation…</title>
+  <script type="text/javascript" src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f1f5f9;
+      color: #1f2937; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
+    .msg { text-align: center; padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="msg"><p>Opening secure payment…</p></div>
+  <script type="text/javascript">
+    (function () {
+      var checkoutToken = ${JSON.stringify(checkoutToken)};
+      function goSuccess() { window.location.href = '/api/forms/success'; }
+      try {
+        if (typeof appendHelcimPayIframe === 'function') {
+          appendHelcimPayIframe(checkoutToken);
+        }
+      } catch (e) { /* fall through to the message + event listener */ }
+      window.addEventListener('message', function (event) {
+        var data = event && event.data ? event.data : {};
+        if (data.eventName !== 'helcim-pay-js-' + checkoutToken) return;
+        if (data.eventStatus === 'SUCCESS') { goSuccess(); }
+      });
+    })();
+  </script>
+</body>
+</html>
+`;
 
 const renderFormHtml = (
   submitAction: string,

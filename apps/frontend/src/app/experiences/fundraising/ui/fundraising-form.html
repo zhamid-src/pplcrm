@@ -39,6 +39,20 @@
         </div>
       </div>
     </div>
+    } @if (!residencyAcknowledged()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-warning shadow-sm">
+        <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+        <div>
+          <span class="font-bold">Donations are paused</span>
+          <p class="text-sm mt-0.5">
+            Confirm residency restrictions in
+            <a href="/workspace/donations" class="link link-primary font-bold">Workspace → Donations</a>
+            before this form can accept gifts.
+          </p>
+        </div>
+      </div>
+    </div>
     } @if (error()) {
     <div class="mx-auto max-w-5xl mb-6">
       <div class="alert alert-error shadow-sm">

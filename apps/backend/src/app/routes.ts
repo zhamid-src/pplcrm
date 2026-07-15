@@ -13,6 +13,7 @@ import billingWebhookRoute from './modules/billing/routes/billing-webhook.route'
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import donationsHelcimWebhookRoute from './modules/donations/routes/donations-helcim-webhook.route';
 import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
 import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
@@ -44,6 +45,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register Stripe donations webhook route
   fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register Helcim donations webhook route (same tenant token; HMAC-signed body)
+  fastify.register(donationsHelcimWebhookRoute, { prefix: '/api/donations' });
 
   // Register SendGrid newsletters event webhook route
   fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });

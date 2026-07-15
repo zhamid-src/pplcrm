@@ -20,6 +20,11 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       'receipt',
       'cash',
       'check',
+      'stripe',
+      'helcim',
+      'processor',
+      'residency',
+      'paused',
     ],
     related: ['person-profile', 'forms', 'export', 'grid-basics'],
     blocks: [
@@ -35,6 +40,17 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe** or **Helcim**, whichever you pick under [Workspace → Donations](/workspace/donations). You configure one processor at a time, never both. Your choice sets where donor payment data lives: Stripe processes and stores it in the United States, while Helcim processes and stores it in Canada. Stripe is the default and handles both one-time and monthly (recurring) gifts; Helcim processes one-time donations only, so keep Stripe if you rely on monthly pledges. Once a processor is set up, the other is locked. To switch, remove the current processor’s keys first, then set up the other.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
       },
       { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
       {
@@ -185,6 +201,12 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         tone: 'info',
         title: 'Double opt-in and your forms',
         text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through Stripe, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
       },
     ],
   },

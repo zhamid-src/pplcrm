@@ -5,6 +5,10 @@ import { env } from '../../../env';
 import { BillingController } from '../../modules/billing/controller';
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
 import { DonationsController } from '../../modules/donations/controller';
+import {
+  HelcimDonationProcessor,
+  decodeHelcimInvoiceNumber,
+} from '../../modules/donations/processors/helcim-processor';
 import { logger } from '../../logger';
 
 export class WebhookEventWorker {
@@ -202,6 +206,10 @@ export class WebhookEventWorker {
         return String(tenantRow.admin_id);
       };
 
+      // Helcim events carry a thin marker payload (`{ source: 'helcim', id, type }`) rather than a
+      // Stripe event shape; the transaction detail is fetched from the Helcim API below.
+      const isHelcimTransaction = payload?.source === 'helcim';
+
       const isOneTimeDonation =
         eventType === 'checkout.session.completed' &&
         stripeObj?.metadata?.personId &&
@@ -218,7 +226,67 @@ export class WebhookEventWorker {
       const isDisputeCreated = eventType === 'charge.dispute.created';
       const isDisputeClosed = eventType === 'charge.dispute.closed';
 
-      if (isOneTimeDonation) {
+      if (isHelcimTransaction) {
+        // Verified Helcim card transaction — fetch the full transaction, then record the gift.
+        // Tenant is known from the event row; person/amount ride in the invoiceNumber we set at init.
+        const tenantId = String(eventRecord.tenant_id);
+        const transactionId = String(payload.id);
+
+        const tokenRow = await this.db
+          .selectFrom('settings')
+          .select('value')
+          .where('tenant_id', '=', tenantId)
+          .where('key', '=', 'donations.helcim_api_token')
+          .executeTakeFirst();
+        const apiToken = typeof tokenRow?.value === 'string' ? tokenRow.value : '';
+        if (!apiToken) {
+          throw new Error(`Helcim api token not configured for tenant ${tenantId}.`);
+        }
+
+        const txn = await HelcimDonationProcessor.fetchTransaction(transactionId, apiToken);
+        if (txn.status.toUpperCase() !== 'APPROVED') {
+          logger.info(
+            { tenantId, transactionId, status: txn.status },
+            'Helcim transaction not approved; nothing recorded',
+          );
+        } else {
+          const decoded = decodeHelcimInvoiceNumber(txn.invoiceNumber);
+          const personId = decoded?.personId ?? '';
+          // Prefer the fetched transaction amount (source of truth); fall back to the encoded amount.
+          const amountCents =
+            Number.isFinite(txn.amount) && txn.amount > 0 ? Math.round(txn.amount * 100) : (decoded?.amountCents ?? 0);
+          const sessionId = `helcim_${transactionId}`;
+
+          if (!personId || amountCents <= 0) {
+            logger.warn(
+              { tenantId, transactionId, invoiceNumber: txn.invoiceNumber },
+              'Helcim transaction missing decodable person/amount; skipping donation record',
+            );
+          } else {
+            // Idempotency: the session id keys the donation row (same guard the invoice path uses).
+            const alreadyRecorded = await this.db
+              .selectFrom('donations')
+              .select('id')
+              .where('tenant_id', '=', tenantId)
+              .where('stripe_session_id', '=', sessionId)
+              .executeTakeFirst();
+
+            if (!alreadyRecorded) {
+              const donationsController = new DonationsController();
+              const createdBy = await resolveUserId(tenantId, null);
+              await donationsController.recordSuccessfulDonation(
+                tenantId,
+                personId,
+                amountCents,
+                sessionId,
+                '',
+                '',
+                createdBy,
+              );
+            }
+          }
+        }
+      } else if (isOneTimeDonation) {
         // Standard one-time donation via checkout.session.completed
         const donationsController = new DonationsController();
         const tenantId = String(stripeObj.metadata.tenantId);

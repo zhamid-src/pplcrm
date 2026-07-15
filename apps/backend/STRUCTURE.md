@@ -200,13 +200,20 @@ apps/
             demo-seed.ts
             trpc.router.ts
           donations/
+            processors/
+              donation-processor.ts
+              helcim-processor.ts
+              resolver.ts
+              stripe-processor.ts
             repositories/
               donations.repo.ts
               periods.repo.ts
               pledges.repo.ts
             routes/
+              donations-helcim-webhook.route.ts
               donations-webhook.route.ts
             controller.ts
+            donation-guards.ts
             trpc.router.ts
           duplicates/
             repositories/
@@ -447,6 +454,9 @@ apps/
     project.json
     tsconfig.json
   website/
+    functions/
+      api/
+        geo-rates.ts
     src/
       app/
         audience/
@@ -477,6 +487,8 @@ apps/
           auth-hint.ts
           browser-frame.ts
           constellation.ts
+          currency-switcher.ts
+          currency.service.ts
           site-footer.ts
           site-header.ts
           site-icon.ts
@@ -1562,6 +1574,143 @@ function getEntityFilterValues(entityFilter: string): string[] {
     return ['tag', 'tags'];
   }
   return [ent];
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { CompaniesController } from '../../../modules/companies/controller';
+import { HouseholdsController } from '../../../modules/households/controller';
+import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
+import { PersonsService } from '../../../modules/persons/services/persons.service';
+import { TasksController } from '../../../modules/tasks/controller';
+import { StorageService } from '../../storage.service';
+import { notificationEnabled } from '../../profile-preferences';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { LegacyImportJobPayload } from '../job-payloads';
+
+const storageService = new StorageService();
+const importsRepo = new ImportsRepo();
+const mailService = new TransactionalEmailService();
+
+export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
+  // 1. Mark import status as 'processing' in data_imports
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'processing',
+      updated_at: new Date(),
+    },
+  });
+
+  // 2. Download mapping payload from storage
+  const buffer = await storageService.download(payload.storage_key);
+  const rows = JSON.parse(buffer.toString('utf8'));
+
+  // 3. Process the import rows in chunks
+  if (payload.source === 'companies') {
+    const companiesController = new CompaniesController();
+    await companiesController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'tasks') {
+    const tasksController = new TasksController();
+    await tasksController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'households') {
+    const householdsController = new HouseholdsController();
+    await householdsController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else {
+    const personsService = new PersonsService();
+    await personsService.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
+      Number(payload.skipped || 0),
+      rows,
+      {
+        duplicateDecision: payload.duplicate_decision ?? 'skip',
+        listName: payload.list_name ?? undefined,
+        clientSkipReasons: payload.client_skip_reasons ?? undefined,
+      },
+    );
+  }
+
+  // 4. Update import status to 'completed'
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'completed',
+      processed_at: new Date(),
+      updated_at: new Date(),
+    },
+  });
+
+  try {
+    await storageService.delete(payload.storage_key);
+  } catch (storageErr) {
+    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
+  }
+
+  try {
+    const user = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+      .where('authusers.id', '=', payload.user_id)
+      .executeTakeFirst();
+
+    if (user && user.email) {
+      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
+        const importRecord = await db
+          .selectFrom('data_imports')
+          .select(['inserted_count', 'error_count', 'skipped_count'])
+          .where('id', '=', payload.import_id)
+          .where('tenant_id', '=', payload.tenant_id)
+          .executeTakeFirst();
+
+        if (importRecord) {
+          const inserted = importRecord.inserted_count || 0;
+          const errors = importRecord.error_count || 0;
+          const skipped = importRecord.skipped_count || 0;
+
+          await mailService.sendMail({
+            to: user.email,
+            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
+          });
+        }
+      }
+    }
+  } catch (mailErr) {
+    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
+  }
 }
 ````
 
@@ -5159,6 +5308,75 @@ export function previewCut(doors: readonly DoorPoint[], targetDoors: number): Cu
 }
 ````
 
+## File: apps/backend/src/app/modules/companies/trpc.router.ts
+````typescript
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const companies = new CompaniesController();
+
+const CompanyInputSchema = CompanyInputObj;
+
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+
+export const CompaniesRouter = router({
+  ...crud,
+
+  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+
+  // §7 "Enrich" / "Re-check Google" — queues a Google Places lookup job.
+  enrich: authProcedure
+    .input(z.object({ id: idSchema, force: z.boolean().optional() }))
+    .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
+
+  // Add-time preview: look up a company by name on Google without persisting.
+  // Powers the New Company form's auto-fill on name blur.
+  lookupEnrichment: authProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(200) }))
+    .mutation(({ input }) => companies.lookupEnrichment(input.name)),
+
+  // Background duplicate-name check for the add/edit form's advisory hint.
+  nameExists: authProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(200), excludeId: idSchema.optional() }))
+    .query(({ input, ctx }) => companies.nameExists(input.name, ctx.auth, input.excludeId)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
+````
+
 ## File: apps/backend/src/app/modules/deliveries/repositories/delivery-route-stops.repo.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -5372,6 +5590,323 @@ export class DeliveryRoutesRepo extends BaseRepository<'delivery_routes'> {
 }
 ````
 
+## File: apps/backend/src/app/modules/donations/processors/donation-processor.ts
+````typescript
+// Processor-agnostic one-time donation checkout. Stripe drives a hosted redirect; Helcim drives a
+// client-side HelcimPay.js modal from a checkout token — hence the discriminated result so callers
+// can launch either without knowing which processor a tenant chose.
+export type CheckoutInit = { kind: 'redirect'; url: string | null } | { kind: 'helcim_pay'; checkoutToken: string };
+
+export interface OneTimeCheckoutParams {
+  tenantId: string;
+  userId: string;
+  personId: string;
+  amountCents: number;
+  address: { country?: string; state?: string };
+  customUrls?: { successUrl?: string; cancelUrl?: string };
+}
+
+/**
+ * A pluggable one-time donation processor. Recurring donations are deliberately NOT part of this
+ * contract — they remain Stripe-only in the controller (Helcim recurring is out of scope this pass).
+ */
+export interface DonationProcessor {
+  createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<CheckoutInit>;
+}
+````
+
+## File: apps/backend/src/app/modules/donations/processors/helcim-processor.ts
+````typescript
+import crypto from 'crypto';
+
+import { ServerMisconfigError } from '../../../errors/app-errors';
+import type { CheckoutInit, DonationProcessor, OneTimeCheckoutParams } from './donation-processor';
+
+// SDK-less HTTP integration (mirrors the plain-`fetch` style of newsletter-mail.service.ts).
+const HELCIM_API_BASE = 'https://api.helcim.com/v2';
+const INVOICE_PREFIX = 'pplcrm';
+
+export type HelcimCurrency = 'CAD' | 'USD';
+
+/** Verified/normalized Helcim card transaction (subset we act on). */
+export interface HelcimTransaction {
+  transactionId: string;
+  status: string; // e.g. 'APPROVED' | 'DECLINED'
+  amount: number; // dollars
+  currency: string;
+  invoiceNumber: string | null;
+  customerCode: string | null;
+}
+
+export interface HelcimWebhookHeaders {
+  'webhook-id': string;
+  'webhook-timestamp': string;
+  'webhook-signature': string;
+}
+
+/**
+ * The Helcim webhook body is thin (`{ id, type }`) and carries no tenant/person context, so we
+ * round-trip the identifiers we need through the `invoiceNumber` we set at init. Encoded as
+ * `pplcrm_<tenantId>_<personId>_<amountCents>` and read back off the fetched transaction.
+ */
+export function encodeHelcimInvoiceNumber(tenantId: string, personId: string, amountCents: number): string {
+  return `${INVOICE_PREFIX}_${tenantId}_${personId}_${amountCents}`;
+}
+
+export function decodeHelcimInvoiceNumber(
+  invoiceNumber: string | null | undefined,
+): { tenantId: string; personId: string; amountCents: number } | null {
+  if (!invoiceNumber) return null;
+  const parts = invoiceNumber.split('_');
+  if (parts.length !== 4 || parts[0] !== INVOICE_PREFIX) return null;
+  const [, tenantId, personId, amountRaw] = parts;
+  const amountCents = Number(amountRaw);
+  if (!tenantId || !personId || !Number.isFinite(amountCents)) return null;
+  return { tenantId, personId, amountCents };
+}
+
+function readString(obj: Record<string, unknown>, key: string): string | null {
+  const v = obj[key];
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return String(v);
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Constant-time compare of two base64 signature strings (unequal lengths short-circuit to false). */
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+/**
+ * The `webhook-signature` header may be a single base64 signature or a space-separated list of
+ * `v1,<base64sig>` entries (Svix-style, which Helcim uses). Accept a match against any entry.
+ */
+function signatureHeaderMatches(header: string, expected: string): boolean {
+  const entries = header.trim().split(/\s+/);
+  for (const entry of entries) {
+    const sig = entry.includes(',') ? entry.slice(entry.indexOf(',') + 1) : entry;
+    if (sig && timingSafeEqualStr(sig, expected)) return true;
+  }
+  return false;
+}
+
+/**
+ * Helcim one-time checkout adapter. Calls the HelcimPay initialize endpoint and returns a
+ * `helcim_pay` checkout token that the client uses to launch the HelcimPay.js modal (NOT a redirect).
+ */
+export class HelcimDonationProcessor implements DonationProcessor {
+  constructor(
+    private readonly apiToken: string,
+    private readonly currency: HelcimCurrency = 'CAD',
+  ) {}
+
+  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<CheckoutInit> {
+    if (!this.apiToken) {
+      throw new ServerMisconfigError('Helcim is not configured for this organization.');
+    }
+
+    // Helcim expects the amount in dollars; the rest of the app works in cents.
+    const amountDollars = Math.round(params.amountCents) / 100;
+    const invoiceNumber = encodeHelcimInvoiceNumber(params.tenantId, params.personId, params.amountCents);
+
+    const response = await fetch(`${HELCIM_API_BASE}/helcim-pay/initialize`, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'api-token': this.apiToken,
+      },
+      body: JSON.stringify({
+        paymentType: 'purchase',
+        amount: amountDollars,
+        currency: this.currency,
+        invoiceNumber,
+        customerCode: params.personId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Helcim initialize failed (${response.status}): ${errorText}`);
+    }
+
+    const data: unknown = await response.json();
+    const checkoutToken = isRecord(data) ? readString(data, 'checkoutToken') : null;
+    if (!checkoutToken) {
+      throw new Error('Helcim initialize returned no checkoutToken.');
+    }
+
+    return { kind: 'helcim_pay', checkoutToken };
+  }
+
+  /**
+   * Verify a Helcim webhook signature. `signature = base64( HMAC-SHA256( key = base64decode(
+   * verifierToken), msg = `${webhook-id}.${webhook-timestamp}.${rawBody}` ) )`. Timing-safe.
+   */
+  public static verifyWebhook(headers: HelcimWebhookHeaders, rawBody: string, verifierToken: string): boolean {
+    const id = headers['webhook-id'];
+    const timestamp = headers['webhook-timestamp'];
+    const signature = headers['webhook-signature'];
+    if (!id || !timestamp || !signature || !verifierToken) return false;
+
+    const key = Buffer.from(verifierToken, 'base64');
+    const message = `${id}.${timestamp}.${rawBody}`;
+    const expected = crypto.createHmac('sha256', key).update(message).digest('base64');
+    return signatureHeaderMatches(signature, expected);
+  }
+
+  /** Fetch the full transaction after a verified webhook to get amount/currency/status/invoice. */
+  public static async fetchTransaction(id: string, apiToken: string): Promise<HelcimTransaction> {
+    const response = await fetch(`${HELCIM_API_BASE}/card-transactions/${encodeURIComponent(id)}`, {
+      headers: {
+        accept: 'application/json',
+        'api-token': apiToken,
+      },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Helcim card-transaction fetch failed (${response.status}): ${errorText}`);
+    }
+    const data: unknown = await response.json();
+    if (!isRecord(data)) {
+      throw new Error('Helcim card-transaction response was not an object.');
+    }
+    return {
+      transactionId: readString(data, 'transactionId') ?? String(id),
+      status: readString(data, 'status') ?? '',
+      amount: Number(data['amount'] ?? 0),
+      currency: readString(data, 'currency') ?? '',
+      invoiceNumber: readString(data, 'invoiceNumber'),
+      customerCode: readString(data, 'customerCode'),
+    };
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/donations/processors/resolver.ts
+````typescript
+import { env } from '../../../../env';
+import type { SettingsLookup } from '../donation-guards';
+import { HelcimDonationProcessor } from './helcim-processor';
+import { StripeDonationProcessor } from './stripe-processor';
+
+export type ProcessorKind = 'stripe' | 'helcim';
+
+/** Resolved processor plus the credentials it was built from (exposed for the webhook path). */
+export type ResolvedDonationProcessor =
+  | { processor: 'stripe'; adapter: StripeDonationProcessor; stripeKey: string | undefined }
+  | { processor: 'helcim'; adapter: HelcimDonationProcessor; apiToken: string };
+
+function asNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+/** Which processor a tenant selected. Stripe is the default so existing tenants are unchanged. */
+export async function resolveProcessorKind(settingsLookup: SettingsLookup, tenantId: string): Promise<ProcessorKind> {
+  const raw = await settingsLookup(tenantId, 'donations.processor');
+  return raw === 'helcim' ? 'helcim' : 'stripe';
+}
+
+/**
+ * Build the one-time donation processor for a tenant from its settings. Stripe is the default; a
+ * tenant opts into Helcim via `donations.processor = 'helcim'` and `donations.helcim_api_token`.
+ * The Stripe key resolution preserves the original `tenant key || env fallback` behavior exactly.
+ */
+export async function resolveDonationProcessor(
+  settingsLookup: SettingsLookup,
+  tenantId: string,
+): Promise<ResolvedDonationProcessor> {
+  const kind = await resolveProcessorKind(settingsLookup, tenantId);
+
+  if (kind === 'helcim') {
+    const apiToken = asNonEmptyString(await settingsLookup(tenantId, 'donations.helcim_api_token')) ?? '';
+    return { processor: 'helcim', adapter: new HelcimDonationProcessor(apiToken, 'CAD'), apiToken };
+  }
+
+  const stripeKey =
+    asNonEmptyString(await settingsLookup(tenantId, 'donations.stripe_secret_key')) ?? env.stripeSecretKey;
+  return { processor: 'stripe', adapter: new StripeDonationProcessor(stripeKey), stripeKey };
+}
+````
+
+## File: apps/backend/src/app/modules/donations/processors/stripe-processor.ts
+````typescript
+import Stripe from 'stripe';
+
+import { env } from '../../../../env';
+import type { CheckoutInit, DonationProcessor, OneTimeCheckoutParams } from './donation-processor';
+
+/**
+ * Stripe one-time checkout adapter. This is the EXACT logic that used to live inline in
+ * DonationsController.createCheckoutSession (mock branch + `new Stripe` + `checkout.sessions.create`
+ * with identical params/metadata/success+cancel URLs), moved verbatim so Stripe behavior is
+ * byte-for-byte unchanged. The tenant Stripe key (already resolved to the tenant key or the env
+ * fallback) is injected; the mock-mode detection is identical to the original.
+ */
+export class StripeDonationProcessor implements DonationProcessor {
+  constructor(private readonly stripeKey: string | undefined) {}
+
+  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<CheckoutInit> {
+    const { tenantId, userId, personId, amountCents, address, customUrls } = params;
+
+    const tenantStripeKey = this.stripeKey;
+    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+
+    if (isMock) {
+      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
+      let redirectBase = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+
+      if (customUrls?.successUrl) {
+        const separator = redirectBase.includes('?') ? '&' : '?';
+        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${tenantId}&user_id=${userId}`;
+      }
+
+      return { kind: 'redirect', url: redirectBase };
+    }
+
+    const stripe = new Stripe(tenantStripeKey);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cad',
+            product_data: { name: 'Campaign Donation' },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      metadata: {
+        tenantId,
+        personId,
+        amount: String(amountCents),
+        residencyProvince: address.state || '',
+        residencyCountry: address.country || '',
+        createdBy: userId,
+      },
+    });
+
+    return { kind: 'redirect', url: session.url };
+  }
+}
+````
+
 ## File: apps/backend/src/app/modules/donations/repositories/periods.repo.ts
 ````typescript
 import type { Selectable } from 'kysely';
@@ -5476,6 +6011,160 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
       .executeTakeFirst();
 
     return Number(result?.total || 0);
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/donations/routes/donations-helcim-webhook.route.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+
+import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
+import { logger } from '../../../logger';
+import { HelcimDonationProcessor } from '../processors/helcim-processor';
+
+/**
+ * Helcim donation webhook. Mirrors the Stripe donations webhook: the tenant is selected by the same
+ * hashed `donations.webhook_token`, the signature is the primary authenticator (HMAC over the raw
+ * body, verified against the tenant's `donations.helcim_webhook_secret` verifier), and a verified
+ * event is persisted to `webhook_events` (source 'helcim') for the background worker to process.
+ *
+ * The body is thin (`{ id, type: 'cardTransaction' }`); the worker fetches the full transaction.
+ * NOTE: the raw request body is required for HMAC verification — `/donations/helcim-webhook` is
+ * added to the raw-body content-type parser in fastify.server.ts.
+ */
+const donationsHelcimWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/helcim-webhook', async (req, reply) => {
+    const query = req.query as { token?: string };
+    const token = query.token;
+    if (!token) {
+      logger.error('Helcim webhook error: Missing token query parameter');
+      return reply.code(400).send({ error: 'Missing token parameter' });
+    }
+
+    let tenantId = 'unknown';
+    try {
+      // Resolve the tenant by the HASH of the token (never the plaintext) — cross-tenant by design,
+      // this decides which tenant owns the token (same posture as the Stripe donations webhook).
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const tokenRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(hashToken(token)))
+        .executeTakeFirst();
+
+      if (!tokenRow) {
+        logger.error('Helcim webhook error: Invalid webhook token');
+        return reply.code(400).send({ error: 'Invalid webhook token' });
+      }
+
+      tenantId = String(tokenRow.tenant_id);
+
+      const rawBody = req.body as string; // Raw string thanks to the ContentTypeParser setup
+
+      const verifierRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.helcim_webhook_secret')
+        .executeTakeFirst();
+      const verifierToken = typeof verifierRow?.value === 'string' ? verifierRow.value : '';
+
+      // Mock mode (skip signature verification) requires the EXPLICIT ALLOW_MOCK_PAYMENTS opt-in and
+      // an unset verifier — never merely "not production" (SECURITY-REVIEW 4.2).
+      const isMock = env.allowMockPayments && !verifierToken;
+
+      if (!isMock) {
+        if (!verifierToken) {
+          throw new Error('Tenant Helcim webhook verifier not configured.');
+        }
+        const verified = HelcimDonationProcessor.verifyWebhook(
+          {
+            'webhook-id': String(req.headers['webhook-id'] || ''),
+            'webhook-timestamp': String(req.headers['webhook-timestamp'] || ''),
+            'webhook-signature': String(req.headers['webhook-signature'] || ''),
+          },
+          rawBody,
+          verifierToken,
+        );
+        if (!verified) {
+          throw new Error('Helcim webhook signature verification failed.');
+        }
+      }
+
+      const parsed: unknown = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
+      const body = (parsed && typeof parsed === 'object' ? parsed : {}) as { id?: unknown; type?: unknown };
+      const transactionId = body.id != null ? String(body.id) : '';
+      const type = body.type != null ? String(body.type) : 'cardTransaction';
+      if (!transactionId) {
+        throw new Error('Helcim webhook missing transaction id.');
+      }
+
+      logger.info(`[HelcimWebhook] Persisting webhook event: ${transactionId} (${type}) for Tenant: ${tenantId}`);
+
+      await BaseRepository.dbInstance
+        .insertInto('webhook_events')
+        .values({
+          tenant_id: tenantId,
+          // Namespaced so a Helcim id never collides with a Stripe event id in the unique index.
+          stripe_event_id: `helcim_${transactionId}`,
+          type,
+          // Thin marker payload; the worker fetches the full transaction via the Helcim API.
+          payload: JSON.stringify({ source: 'helcim', id: transactionId, type }),
+          status: 'pending',
+        })
+        .onConflict((oc) => oc.column('stripe_event_id').doNothing())
+        .execute();
+
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Helcim Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default donationsHelcimWebhookRoute;
+````
+
+## File: apps/backend/src/app/modules/donations/donation-guards.ts
+````typescript
+import { PreconditionFailedError } from '../../errors/app-errors';
+
+/**
+ * Fail-closed donation gate (mirrors modules/newsletters/send-guards.ts). Accepting money on behalf
+ * of an organization is a compliance act: campaign-finance residency rules must be deliberately
+ * confirmed before any donation — online or offline — can be taken. So the gate defaults to CLOSED
+ * and only opens once the tenant has explicitly acknowledged its residency settings in
+ * Workspace → Donations (the `donations.residency_acknowledged` setting).
+ */
+
+/**
+ * A read-only settings accessor: `(tenantId, key) => Promise<the setting's parsed value>`. Matches
+ * DonationsController's private `getSettingVal`, so the controller passes a bound reference and the
+ * guards/resolver stay decoupled from the settings repo. `unknown` because settings are dynamic JSON.
+ */
+export type SettingsLookup = (tenantId: string, key: string) => Promise<unknown>;
+
+export const DONATIONS_NOT_CONFIGURED_MESSAGE =
+  'This organization hasn’t finished setting up donations yet. (Residency settings must be confirmed in Workspace → Donations before donations can be accepted.)';
+
+/** True only when the tenant has explicitly acknowledged its residency settings. Fails closed. */
+export async function tenantMayAcceptDonations(settingsLookup: SettingsLookup, tenantId: string): Promise<boolean> {
+  const acknowledged = await settingsLookup(tenantId, 'donations.residency_acknowledged');
+  return acknowledged === true;
+}
+
+/** Throws a 412 with a Settings-pointing message when the tenant hasn't acknowledged residency. */
+export async function assertTenantMayAcceptDonations(settingsLookup: SettingsLookup, tenantId: string): Promise<void> {
+  if (!(await tenantMayAcceptDonations(settingsLookup, tenantId))) {
+    throw new PreconditionFailedError(DONATIONS_NOT_CONFIGURED_MESSAGE);
   }
 }
 ````
@@ -7360,6 +8049,135 @@ export const update = {
 };
 ````
 
+## File: apps/backend/src/app/modules/households/trpc.router.ts
+````typescript
+import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { HouseholdsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const households = new HouseholdsController();
+
+const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
+
+export const HouseholdsRouter = router({
+  ...crud,
+
+  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
+
+  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            street_num: z.string().trim().max(50).optional().nullable(),
+            apt: z.string().trim().max(50).optional().nullable(),
+            street1: z.string().trim().max(200).optional().nullable(),
+            street2: z.string().trim().max(200).optional().nullable(),
+            city: z.string().trim().max(100).optional().nullable(),
+            state: z.string().trim().max(100).optional().nullable(),
+            zip: z.string().trim().max(20).optional().nullable(),
+            country: z.string().trim().max(100).optional().nullable(),
+            home_phone: z.string().trim().max(50).optional().nullable(),
+            notes: z.string().trim().max(10000).optional().nullable(),
+          }),
+        ),
+        tags: z.array(z.string().trim().min(1).max(50)).optional(),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return households.importRows(input, ctx.auth);
+    }),
+
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
+
+  attachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
+
+  detachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
+    ),
+
+  getTags: authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return households.getTags(id, ctx.auth, type);
+    }),
+
+  getDistinctTags: authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
+
+  getAllWithPeopleCount: authProcedure
+    .input(z.any().optional())
+    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
+
+  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
+
+  getLastCanvass: authProcedure.input(idSchema).query(({ input, ctx }) => households.getLastCanvass(input, ctx.auth)),
+
+  countDistinctWards: authProcedure.query(({ ctx }) => households.countDistinctWards(ctx.auth)),
+
+  getUnhoused: authProcedure.query(({ ctx }) => households.getUnhoused(ctx.auth)),
+
+  // Tenant-scoped slug resolution for /households/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => households.getOneBySlug(input, ctx.auth)),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeHouseholds: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
+
+  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
+    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
+  ),
+
+  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
+    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
+  ),
+});
+````
+
 ## File: apps/backend/src/app/modules/imports/repositories/imports.repo.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -7637,6 +8455,47 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
     return Number(res?.numDeletedRows ?? 0);
   }
 }
+````
+
+## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
+````typescript
+import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { NewslettersController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const newsletters = new NewslettersController();
+
+const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+
+const sendTestSchema = z.object({
+  subject: z.string(),
+  html: z.string(),
+  text: z.string().optional(),
+  to: z.email(),
+  fromName: z.string().optional(),
+  fromEmail: z.string().optional(),
+});
+
+export const NewslettersRouter = router({
+  ...crud,
+
+  getReport: authProcedure.input(idSchema).query(({ input, ctx }) => newsletters.getReport(ctx.auth.tenant_id, input)),
+
+  createClickersList: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => newsletters.createClickersList(ctx.auth, input)),
+
+  send: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  sendTest: authProcedure
+    .input(sendTestSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
@@ -8551,6 +9410,516 @@ export class TaskAttachmentsController extends BaseController<'task_attachments'
 }
 ````
 
+## File: apps/backend/src/app/modules/tasks/controller.ts
+````typescript
+import type {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+
+import { TasksRepo } from './repositories/tasks.repo';
+import type { Selectable } from 'kysely';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../lib/base.repo';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
+import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export class TasksController extends BaseController<'tasks', TasksRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new TasksRepo());
+  }
+
+  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      details: payload.details,
+      due_at: payload.due_at ?? null,
+      status: payload.status ?? 'todo',
+      priority: payload.priority ?? null,
+      completed_at: payload.completed_at ?? null,
+      position: payload.position ?? 0,
+      assigned_to: payload.assigned_to ?? null,
+      team_id: payload.team_id ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'tasks', 'insert'>;
+    const task = await this.add(row);
+    if (task && payload.assigned_to) {
+      try {
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: payload.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${payload.name}"`,
+          type: 'task',
+          link: `/tasks/${task.id}`,
+        });
+
+        const assignedTo = payload.assigned_to;
+        if (assignedTo) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', assignedTo)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New Task Assigned: ${payload.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
+              });
+            }
+          }
+        }
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      }
+    }
+    return task;
+  }
+
+  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
+
+  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
+
+  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
+  private async loadSlaConfig(tenant_id: string): Promise<{
+    taskSlaHours: number;
+    workingDays: number[];
+    workingHoursStart: string;
+    workingHoursEnd: string;
+  }> {
+    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    return {
+      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+      workingDays: workingDaysStr
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !isNaN(n)),
+      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+    };
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
+  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
+    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(auth.tenant_id);
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const now = new Date();
+
+    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
+    return openTasks.reduce((count, task) => {
+      const workingMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        now,
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      return workingMs > taskSlaMs ? count + 1 : count;
+    }, 0);
+  }
+
+  /**
+   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
+   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
+   */
+  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    const repo = this.getRepo();
+    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
+      repo.countOpen(auth.tenant_id),
+      repo.countOpenUnassigned(auth.tenant_id),
+      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
+      this.countSlaBreaches(auth),
+    ]);
+    return { openTotal, unassigned, assignedToMe, slaBreaches };
+  }
+
+  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
+      | Selectable<Models['tasks']>
+      | undefined;
+    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+
+    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
+      try {
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: row.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${updated.name}"`,
+          type: 'task',
+          link: `/tasks/${id}`,
+        });
+
+        const assignedTo = row.assigned_to;
+        if (assignedTo) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', assignedTo)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `Task Assigned: ${updated.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
+              });
+            }
+          }
+        }
+      } catch (nErr) {
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
+      }
+    }
+    return updated;
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
+      const result = includeArchived
+        ? await this.getArchivedTasks(auth, input?.options)
+        : await this.getAllTasks(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: includeArchived ? 'tasks_archived' : 'tasks',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+          include_archived: includeArchived,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        details?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        due_at?: string | null;
+        assigned_to?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+      source_csv?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'tasks',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    };
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      },
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'tasks',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    // Parse status and priority to validate choices
+    const normalize = (v?: string) =>
+      (v || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s-]+/g, '');
+    const validStatuses: readonly string[] = TASK_STATUSES;
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+    // Map names to users for assigned_to
+    const users = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name', 'email'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      const idStr = String(u.id);
+      userMap.set(idStr, idStr);
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
+      if (u.first_name) {
+        userMap.set(u.first_name.toLowerCase().trim(), idStr);
+        if (u.last_name) {
+          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
+        }
+      }
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Normalize and filter valid rows upfront
+      const taskRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw['name'] || !raw['name'].trim()) {
+          results.skipped += 1;
+          continue;
+        }
+
+        let status: string = 'todo';
+        if (raw['status']) {
+          const normStatus = normalize(raw['status']);
+          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
+          if (matchedStatus) status = matchedStatus;
+        }
+
+        let priority: string | null = null;
+        if (raw['priority']) {
+          const normPriority = normalize(raw['priority']);
+          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
+          if (matchedPriority) priority = matchedPriority;
+        }
+
+        let assigned_to: string | null = null;
+        if (raw['assigned_to']) {
+          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
+        }
+
+        let due_at: Date | null = null;
+        if (raw['due_at']) {
+          const parsedDate = new Date(raw['due_at']);
+          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
+        }
+
+        taskRows.push({
+          tenant_id,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+          name: raw['name'].trim(),
+          details: raw['details'] ?? null,
+          status,
+          priority,
+          assigned_to,
+          due_at,
+          file_id: import_id,
+        });
+      }
+
+      if (taskRows.length > 0) {
+        try {
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
+              const CHUNK_SIZE = 2000;
+              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
+                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
+                await trx
+                  .insertInto('tasks')
+                  .values(chunk)
+                  .returningAll() // Adheres to repository rules
+                  .execute();
+              }
+            });
+          results.inserted += taskRows.length;
+        } catch (err: unknown) {
+          results.errors += taskRows.length;
+          errorMessages.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        },
+      });
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
+  }
+}
+````
+
 ## File: apps/backend/src/app/modules/teams/repositories/map-teams-lists.repo.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -9457,6 +10826,7 @@ export class FastifyServer {
       if (
         req.url.includes('/billing/webhook') ||
         req.url.includes('/donations/webhook') ||
+        req.url.includes('/donations/helcim-webhook') ||
         req.url.includes('/newsletters/webhook')
       ) {
         done(null, body);
@@ -20211,143 +21581,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 \unrestrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 ````
 
-## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { CompaniesController } from '../../../modules/companies/controller';
-import { HouseholdsController } from '../../../modules/households/controller';
-import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
-import { PersonsService } from '../../../modules/persons/services/persons.service';
-import { TasksController } from '../../../modules/tasks/controller';
-import { StorageService } from '../../storage.service';
-import { notificationEnabled } from '../../profile-preferences';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { LegacyImportJobPayload } from '../job-payloads';
-
-const storageService = new StorageService();
-const importsRepo = new ImportsRepo();
-const mailService = new TransactionalEmailService();
-
-export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
-  // 1. Mark import status as 'processing' in data_imports
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'processing',
-      updated_at: new Date(),
-    },
-  });
-
-  // 2. Download mapping payload from storage
-  const buffer = await storageService.download(payload.storage_key);
-  const rows = JSON.parse(buffer.toString('utf8'));
-
-  // 3. Process the import rows in chunks
-  if (payload.source === 'companies') {
-    const companiesController = new CompaniesController();
-    await companiesController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else if (payload.source === 'tasks') {
-    const tasksController = new TasksController();
-    await tasksController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else if (payload.source === 'households') {
-    const householdsController = new HouseholdsController();
-    await householdsController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      payload.campaign_id ?? '',
-      payload.tags ?? [],
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else {
-    const personsService = new PersonsService();
-    await personsService.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      payload.campaign_id ?? '',
-      payload.tags ?? [],
-      Number(payload.skipped || 0),
-      rows,
-      {
-        duplicateDecision: payload.duplicate_decision ?? 'skip',
-        listName: payload.list_name ?? undefined,
-        clientSkipReasons: payload.client_skip_reasons ?? undefined,
-      },
-    );
-  }
-
-  // 4. Update import status to 'completed'
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'completed',
-      processed_at: new Date(),
-      updated_at: new Date(),
-    },
-  });
-
-  try {
-    await storageService.delete(payload.storage_key);
-  } catch (storageErr) {
-    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
-  }
-
-  try {
-    const user = await db
-      .selectFrom('authusers')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-      .where('authusers.id', '=', payload.user_id)
-      .executeTakeFirst();
-
-    if (user && user.email) {
-      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
-        const importRecord = await db
-          .selectFrom('data_imports')
-          .select(['inserted_count', 'error_count', 'skipped_count'])
-          .where('id', '=', payload.import_id)
-          .where('tenant_id', '=', payload.tenant_id)
-          .executeTakeFirst();
-
-        if (importRecord) {
-          const inserted = importRecord.inserted_count || 0;
-          const errors = importRecord.error_count || 0;
-          const skipped = importRecord.skipped_count || 0;
-
-          await mailService.sendMail({
-            to: user.email,
-            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
-            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
-          });
-        }
-      }
-    }
-  } catch (mailErr) {
-    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
-  }
-}
-````
-
 ## File: apps/backend/src/app/lib/jobs/job-handlers.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -24128,73 +25361,409 @@ export class CompaniesEnrichmentService {
 }
 ````
 
-## File: apps/backend/src/app/modules/companies/trpc.router.ts
+## File: apps/backend/src/app/modules/companies/controller.ts
 ````typescript
-import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { CompaniesController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
+import { BaseController } from '../../lib/base.controller';
+import { CompaniesRepo } from './repositories/companies.repo';
+import { CompaniesEnrichmentService, type CompanyLookupResult } from './services/companies-enrichment.service';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
-const companies = new CompaniesController();
+/** The writable company fields accepted by the legacy add/update helpers (mirrors CompanyInputObj). */
+interface CompanyWriteFields {
+  name: string;
+  description?: string | null;
+  website?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  industry?: string | null;
+  notes?: string | null;
+}
 
-const CompanyInputSchema = CompanyInputObj;
+export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
+  constructor() {
+    super(new CompaniesRepo());
+  }
 
-const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
 
-export const CompaniesRouter = router({
-  ...crud,
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
+  }
 
-  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
-  getBySlug: authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
+    const company = (await super.getOneById(input)) as any;
+    if (company) {
+      let enrichment: Record<string, unknown> = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
+      }
+      if (!enrichment || !enrichment['google_enriched']) {
+        await this.getRepo()
+          .db.insertInto('background_jobs')
+          .values({
+            tenant_id: input.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'enrich_company_google',
+              company_id: String(company.id),
+              tenant_id: String(input.tenant_id),
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute()
+          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
+      }
+    }
+    return company;
+  }
 
-  // §7 "Enrich" / "Re-check Google" — queues a Google Places lookup job.
-  enrich: authProcedure
-    .input(z.object({ id: idSchema, force: z.boolean().optional() }))
-    .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
+  /**
+   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
+   * "Re-check Google" button). Transactional-outbox: verify the company is in
+   * the tenant, then insert the background job. `force` re-runs even if the
+   * company was already enriched.
+   */
+  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
+    const company = await this.getRepo()
+      .db.selectFrom('companies')
+      .select('id')
+      .where('id', '=', id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
 
-  // Add-time preview: look up a company by name on Google without persisting.
-  // Powers the New Company form's auto-fill on name blur.
-  lookupEnrichment: authProcedure
-    .input(z.object({ name: z.string().trim().min(1).max(200) }))
-    .mutation(({ input }) => companies.lookupEnrichment(input.name)),
+    if (!company) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
+    }
 
-  // Background duplicate-name check for the add/edit form's advisory hint.
-  nameExists: authProcedure
-    .input(z.object({ name: z.string().trim().min(1).max(200), excludeId: idSchema.optional() }))
-    .query(({ input, ctx }) => companies.nameExists(input.name, ctx.auth, input.excludeId)),
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'enrich_company_google',
+          company_id: String(id),
+          tenant_id: String(auth.tenant_id),
+          force,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
 
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(CompanyInputSchema),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-        source_csv: z.string().max(10_000_000).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return companies.importRows(input, ctx.auth);
-    }),
+    return { queued: true };
+  }
 
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+  /**
+   * Interactive add-time preview: look up a company by name on Google Places and
+   * return the fields without persisting anything (no company row exists yet).
+   * Powers the "auto-fill on name blur" behavior in the New Company form.
+   */
+  public lookupEnrichment(name: string): Promise<CompanyLookupResult> {
+    return CompaniesEnrichmentService.lookupByName(name);
+  }
 
-  mergeCompanies: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
-});
+  /**
+   * Background duplicate-name check for the add/edit form. Case-insensitive,
+   * tenant-scoped, and (in edit) ignores the record being edited. Drives the
+   * "a company by that name already exists" hint — advisory only, never blocks
+   * saving, since same-named companies can be legitimate.
+   */
+  public nameExists(name: string, auth: IAuthKeyPayload, excludeId?: string): Promise<boolean> {
+    return this.getRepo().nameExists(auth.tenant_id, name, excludeId);
+  }
+
+  public addCompany(payload: CompanyWriteFields, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      description: payload.description ?? null,
+      website: payload.website ?? null,
+      email: payload.email ?? null,
+      phone: payload.phone ?? null,
+      industry: payload.industry ?? null,
+      notes: payload.notes ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'insert'>;
+    return this.add(row);
+  }
+
+  public updateCompany(id: string, row: Partial<CompanyWriteFields>, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'update'>;
+    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+  }
+
+  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
+    return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeCompanies({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        description?: string | null;
+        website?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        industry?: string | null;
+        notes?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+      source_csv?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'companies',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as unknown as OperationDataType<'data_imports', 'insert'>;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      } as unknown as OperationDataType<'data_imports', 'update'>,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'companies',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Filter valid rows upfront
+      const validRows: Record<string, string>[] = [];
+      for (const raw of chunk) {
+        if (!raw['name'] || !raw['name'].trim()) {
+          results.skipped += 1;
+        } else {
+          validRows.push(raw);
+        }
+      }
+
+      if (validRows.length > 0) {
+        try {
+          // 2. Batch insert all valid company rows in one statement
+          const companyRows = validRows.map((raw) => ({
+            tenant_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            name: (raw['name'] ?? '').trim(),
+            description: raw['description'] ?? null,
+            website: raw['website'] ?? null,
+            email: raw['email'] ?? null,
+            phone: raw['phone'] ?? null,
+            industry: raw['industry'] ?? null,
+            notes: raw['notes'] ?? null,
+            file_id: import_id,
+          }));
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await trx.insertInto('companies').values(companyRows).execute();
+            });
+          results.inserted += validRows.length;
+        } catch (err) {
+          results.errors += validRows.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as unknown as OperationDataType<'data_imports', 'update'>,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/companion-access/repositories/companion-sessions.repo.ts
@@ -25333,9 +26902,17 @@ export const DonationsRouter = router({
         }),
       }),
     )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const init = await controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address);
+      // Preserve the existing `{ url }` shape for the Stripe redirect path; add the HelcimPay token
+      // for tenants on Helcim (the client launches the modal from it instead of redirecting).
+      return init.kind === 'redirect'
+        ? { url: init.url, helcimCheckoutToken: null }
+        : { url: null, helcimCheckoutToken: init.checkoutToken };
+    }),
+
+  /** Country + active processor + residency-acknowledged flag for the donation UI disclaimer. */
+  getResidencyContext: authProcedure.query(({ ctx }) => controller.getResidencyContext(ctx.auth.tenant_id)),
 
   confirmDonation: authProcedure
     .input(z.object({ sessionId: z.string() }))
@@ -29337,133 +30914,826 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/households/trpc.router.ts
+## File: apps/backend/src/app/modules/households/controller.ts
 ````typescript
-import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
 
-import { z } from 'zod';
+import type { QueryParams } from '../../lib/base.repo';
+import { BaseRepository } from '../../lib/base.repo';
+import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
+import { StorageService } from '../../lib/storage.service';
+import { HouseholdRepo } from './repositories/households.repo';
+import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
+import { BaseController } from '../../lib/base.controller';
+import { SettingsController } from '../settings/controller';
+import type { OperationDataType, TypeId, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
 
-import { authProcedure, router } from '../../../trpc';
-import { HouseholdsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
+export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
+  private importsRepo = new ImportsRepo();
+  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private settingsController = new SettingsController();
+  private storageService = new StorageService();
+  private tagsRepo = new TagsRepo();
 
-const households = new HouseholdsController();
+  constructor() {
+    super(new HouseholdRepo());
+  }
 
-const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
+  /**
+   * Household count for the grain tabs + count sentence — excludes the tenant's
+   * permanent placeholder household so the number matches the rows the grid shows.
+   */
+  public override getCount(tenant_id: string): Promise<number> {
+    return this.getRepo().countExcludingPlaceholder(tenant_id);
+  }
 
-export const HouseholdsRouter = router({
-  ...crud,
+  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
+    // Filter out any placeholder households — they are permanent and undeletable
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
+    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
 
-  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
+    if (safeIds.length === 0) return false;
+    // Members move to the tenant's placeholder household (persons.household_id is
+    // NOT NULL) rather than being cascade-deleted along with the household.
+    return this.getRepo().deleteManyReassigningPersons({
+      tenant_id: auth.tenant_id,
+      ids: safeIds,
+      user_id: auth.user_id,
+    });
+  }
 
-  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
+  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
 
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(
-          z.object({
-            street_num: z.string().trim().max(50).optional().nullable(),
-            apt: z.string().trim().max(50).optional().nullable(),
-            street1: z.string().trim().max(200).optional().nullable(),
-            street2: z.string().trim().max(200).optional().nullable(),
-            city: z.string().trim().max(100).optional().nullable(),
-            state: z.string().trim().max(100).optional().nullable(),
-            zip: z.string().trim().max(20).optional().nullable(),
-            country: z.string().trim().max(100).optional().nullable(),
-            home_phone: z.string().trim().max(50).optional().nullable(),
-            notes: z.string().trim().max(10000).optional().nullable(),
+    const fp_street = fingerprintStreet({
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: payload.apt,
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+      city: payload.city,
+      state: payload.state,
+      zip: payload.zip,
+      country: payload.country,
+    });
+
+    // Try to dedupe: find existing by fingerprint
+    if (fp_street || fp_full) {
+      const existing = await this.getRepo().findByFingerprint({
+        tenant_id: auth.tenant_id,
+        fp_street: fp_street,
+        fp_full: fp_full,
+      });
+      if (existing?.id) return { id: String(existing.id) } as any;
+    }
+
+    // Record slug for /households/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.street_num ?? ''} ${payload.street1 ?? ''}`, 'household'),
+      (candidate) => this.getRepo().slugExists(auth.tenant_id, candidate),
+    );
+
+    const row = {
+      ...payload,
+      slug,
+      address_fp_street: fp_street,
+      address_fp_full: fp_full,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as OperationDataType<'households', 'insert'>);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const household = await super.getOneById(input);
+    if (!household) return undefined;
+
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', input.tenant_id)
+      .executeTakeFirst();
+
+    const is_placeholder = tenantRow?.placeholder_household_id
+      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
+      : false;
+    return {
+      ...household,
+      is_placeholder,
+    } as any;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'households', 'update'>;
+  }) {
+    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
+    if (placeholders.has(input.id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'The placeholder household cannot be edited.',
+      });
+    }
+
+    const keys = Object.keys(input.row || {});
+    const affectsAddress = keys.some((k) =>
+      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    );
+
+    // Perform the main update without fingerprint columns first
+    const result = await super.update(input);
+
+    // Attempt fingerprint recompute in a separate, non-fatal step
+    if (affectsAddress) {
+      try {
+        const current = await this.getOneById({ tenant_id: input.tenant_id, id: input.id });
+        const merged = { ...current, ...input.row };
+
+        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
+        let district = null;
+        let precinct = null;
+        let ward = null;
+
+        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
+        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during update');
+          }
+        }
+
+        // Address change is a household "rename" — regenerate the record slug (spec §1).
+        const slug = await uniqueSlug(
+          slugifyRecordName(`${merged.street_num ?? ''} ${merged.street1 ?? ''}`, 'household'),
+          (candidate) => this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+        );
+
+        const fpRow: Record<string, unknown> = {
+          slug,
+          address_fp_street: fingerprintStreet({
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
           }),
-        ),
-        tags: z.array(z.string().trim().min(1).max(50)).optional(),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-        source_csv: z.string().max(10_000_000).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return households.importRows(input, ctx.auth);
-    }),
+          address_fp_full: fingerprintFull({
+            apt: merged.apt,
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+            city: merged.city,
+            state: merged.state,
+            zip: merged.zip,
+            country: merged.country,
+          }),
+          geocoding_status,
+          district,
+          precinct,
+          ward,
+        };
+        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
 
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
+        // Queue geocoding background job if geocoding status is pending
+        if (geocoding_status === 'pending') {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: input.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'geocode_household',
+                household_id: input.id,
+                tenant_id: input.tenant_id,
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+        // Duplicate maintenance is only calculated nightly
+      } catch (err) {
+        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
+      }
+    }
 
-  attachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
+    return result;
+  }
 
-  detachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
-    ),
+  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot attach tags to the placeholder household.',
+      });
+    }
 
-  getTags: authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return households.getTags(id, ctx.auth, type);
-    }),
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
 
-  getDistinctTags: authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
 
-  getAllWithPeopleCount: authProcedure
-    .input(z.any().optional())
-    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
+    return this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      household_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+  }
 
-  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
+  public async detachTag(
+    tenant_id: string,
+    household_id: string,
+    tag_name: string,
+    type: 'tag' | 'issue' = 'tag',
+    userId?: string,
+  ) {
+    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot detach tags from the placeholder household.',
+      });
+    }
 
-  getLastCanvass: authProcedure.input(idSchema).query(({ input, ctx }) => households.getLastCanvass(input, ctx.auth)),
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
+    if (tag?.id) {
+      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
+    }
 
-  countDistinctWards: authProcedure.query(({ ctx }) => households.countDistinctWards(ctx.auth)),
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id,
+          user_id: userId,
+          activity: 'update',
+          entity: 'households',
+          entity_id: household_id,
+          quantity: 1,
+          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+  }
 
-  getUnhoused: authProcedure.query(({ ctx }) => households.getUnhoused(ctx.auth)),
+  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithPeopleCount({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
+      tags,
+    });
+  }
 
-  // Tenant-scoped slug resolution for /households/:slug URLs (spec §1).
-  getBySlug: authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => households.getOneBySlug(input, ctx.auth)),
+  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
 
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
+  /**
+   * Most recent canvass at this household's door — powers the "Canvassed <date>"
+   * segment of the household header subtitle. Returns null when the household has
+   * no knock on record (the subtitle then honestly drops the segment).
+   */
+  public async getLastCanvass(
+    id: string,
+    auth: IAuthKeyPayload,
+  ): Promise<{ knocked_at: Date; canvasser_name: string | null; outcome: string } | null> {
+    const row = await this.getRepo()
+      .db.selectFrom('turf_knocks')
+      .select(['knocked_at', 'canvasser_name', 'outcome'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('household_id', '=', id)
+      .orderBy('knocked_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    if (!row) return null;
+    return {
+      knocked_at: new Date(row.knocked_at as unknown as string),
+      canvasser_name: row.canvasser_name ?? null,
+      outcome: row.outcome,
+    };
+  }
 
-  mergeHouseholds: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
+  public countDistinctWards(auth: IAuthKeyPayload) {
+    return this.getRepo().countDistinctWards(auth.tenant_id);
+  }
 
-  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
-    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
-  ),
+  public getUnhoused(auth: IAuthKeyPayload) {
+    return this.getRepo().getUnhoused(auth.tenant_id);
+  }
 
-  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
-    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
-  ),
-});
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
+
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
+
+  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags(id, auth.tenant_id, type);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithPeopleCount(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'households',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    household_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapHouseholdsTagRepo.add({
+      row: row as OperationDataType<'map_households_tags', 'insert'>,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeHouseholds({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
+    const job = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+
+    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
+  }
+
+  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const existingJob = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .where('created_at', '>', oneMonthAgo)
+      .executeTakeFirst();
+
+    if (existingJob) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'recompute_address_fingerprints',
+          tenant_id: tenantId,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+  }
+
+  /**
+   * CSV import (spec §17): record the import in data_imports, park the mapped
+   * rows in storage, and queue a background job — same transactional-outbox
+   * shape as the persons/companies/tasks imports.
+   */
+  public async importRows(
+    input: {
+      rows: Array<Record<string, string | null | undefined>>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      source_csv?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoName = `Imported-Households-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoName}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'households',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    };
+
+    const savedImport = await this.importsRepo.add({
+      row: importRow as unknown as OperationDataType<'data_imports', 'insert'>,
+    });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      } as unknown as OperationDataType<'data_imports', 'update'>,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags: input.tags ?? [],
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'households',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    };
+  }
+
+  /**
+   * Background-job half of the households CSV import. Rows are deduplicated by
+   * address fingerprint — against households the tenant already has and within
+   * the file itself — matching how the persons import resolves households.
+   * Inserts go through HouseholdRepo.addMany so geocoding jobs are queued in
+   * the same transaction.
+   */
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+    const trim = (value: string | null | undefined): string | null => {
+      const text = (value ?? '').toString().trim();
+      return text.length > 0 ? text : null;
+    };
+    const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
+    for (const name of tags) {
+      const clean = (name ?? '').trim();
+      if (clean && !uniqueTagNames.has(clean.toLowerCase())) uniqueTagNames.set(clean.toLowerCase(), clean);
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and fingerprint valid rows upfront
+      type Entry = {
+        sanitized: {
+          street_num: string | null;
+          apt: string | null;
+          street1: string | null;
+          street2: string | null;
+          city: string | null;
+          state: string | null;
+          zip: string | null;
+          country: string | null;
+          home_phone: string | null;
+          notes: string | null;
+        };
+        fp_street: string | null;
+        fp_full: string | null;
+      };
+      const entries: Entry[] = [];
+      for (const raw of chunk) {
+        const sanitized = {
+          street_num: trim(raw['street_num']),
+          apt: trim(raw['apt']),
+          street1: trim(raw['street1']),
+          street2: trim(raw['street2']),
+          city: trim(raw['city']),
+          state: trim(raw['state']),
+          zip: trim(raw['zip']),
+          country: trim(raw['country']),
+          home_phone: trim(raw['home_phone']),
+          notes: trim(raw['notes']),
+        };
+        const hasAddress =
+          sanitized.street_num != null ||
+          sanitized.apt != null ||
+          sanitized.street1 != null ||
+          sanitized.street2 != null ||
+          sanitized.city != null ||
+          sanitized.state != null ||
+          sanitized.zip != null ||
+          sanitized.country != null;
+        if (!hasAddress && sanitized.home_phone == null && sanitized.notes == null) {
+          results.skipped += 1;
+          continue;
+        }
+        entries.push({
+          sanitized,
+          fp_street: hasAddress
+            ? fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              })
+            : null,
+          fp_full: hasAddress
+            ? fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              })
+            : null,
+        });
+      }
+
+      if (entries.length > 0) {
+        try {
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // 2. Dedupe against existing households by full-address fingerprint
+              const uniqueFps = [...new Set(entries.map((e) => e.fp_full).filter((fp): fp is string => fp != null))];
+              const existingFps = new Set<string>();
+              if (uniqueFps.length > 0) {
+                const existing = await trx
+                  .selectFrom('households')
+                  .select(['address_fp_full'])
+                  .where('tenant_id', '=', tenant_id)
+                  .where('address_fp_full', 'in', uniqueFps)
+                  .execute();
+                for (const h of existing) {
+                  if (h.address_fp_full) existingFps.add(h.address_fp_full);
+                }
+              }
+
+              // 3. Insert only addresses the tenant doesn't have yet (also deduped within the file)
+              const seenFps = new Set<string>();
+              const toInsert: OperationDataType<'households', 'insert'>[] = [];
+              for (const entry of entries) {
+                if (entry.fp_full && (existingFps.has(entry.fp_full) || seenFps.has(entry.fp_full))) {
+                  results.skipped += 1;
+                  continue;
+                }
+                if (entry.fp_full) seenFps.add(entry.fp_full);
+                toInsert.push({
+                  tenant_id,
+                  campaign_id: campaign_id || null,
+                  createdby_id: user_id,
+                  updatedby_id: user_id,
+                  ...entry.sanitized,
+                  address_fp_street: entry.fp_street,
+                  address_fp_full: entry.fp_full,
+                  file_id: import_id,
+                } as OperationDataType<'households', 'insert'>);
+              }
+
+              const created = toInsert.length > 0 ? await this.getRepo().addMany({ rows: toInsert }, trx) : [];
+              results.inserted += created.length;
+
+              // 4. Apply the batch-level tags to every created household
+              if (created.length > 0 && uniqueTagNames.size > 0) {
+                const tagIds: string[] = [];
+                for (const name of uniqueTagNames.values()) {
+                  const tag = await this.tagsRepo.addOrGet(
+                    {
+                      row: {
+                        name,
+                        tenant_id,
+                        createdby_id: user_id,
+                        updatedby_id: user_id,
+                      } as OperationDataType<'tags', 'insert'>,
+                      onConflictColumn: 'name',
+                    },
+                    trx,
+                  );
+                  if (tag?.id != null) tagIds.push(String(tag.id));
+                }
+                const mapRows = created
+                  .filter((h) => h?.id != null)
+                  .flatMap((h) =>
+                    tagIds.map((tag_id) => ({
+                      tenant_id,
+                      household_id: String(h.id),
+                      tag_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                    })),
+                  );
+                if (mapRows.length > 0) {
+                  await trx
+                    .insertInto('map_households_tags')
+                    .values(mapRows as unknown as OperationDataType<'map_households_tags', 'insert'>[])
+                    .onConflict((oc) => oc.doNothing())
+                    .execute();
+                }
+              }
+            });
+        } catch (err) {
+          results.errors += entries.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          households_created: results.inserted,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as unknown as OperationDataType<'data_imports', 'update'>,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill household slugs after import');
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/imports/routes/imports-download.route.ts
@@ -31185,47 +33455,6 @@ export async function applyEngagementTripwires(db: Db, tenantId: string, newslet
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
-````typescript
-import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { NewslettersController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const newsletters = new NewslettersController();
-
-const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
-
-const sendTestSchema = z.object({
-  subject: z.string(),
-  html: z.string(),
-  text: z.string().optional(),
-  to: z.email(),
-  fromName: z.string().optional(),
-  fromEmail: z.string().optional(),
-});
-
-export const NewslettersRouter = router({
-  ...crud,
-
-  getReport: authProcedure.input(idSchema).query(({ input, ctx }) => newsletters.getReport(ctx.auth.tenant_id, input)),
-
-  createClickersList: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => newsletters.createClickersList(ctx.auth, input)),
-
-  send: authProcedure
-    .input(idSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  sendTest: authProcedure
-    .input(sendTestSchema)
-    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
-});
-````
-
 ## File: apps/backend/src/app/modules/notifications/controller.ts
 ````typescript
 import { BaseController } from '../../lib/base.controller';
@@ -31574,6 +33803,307 @@ export class DuplicateMaintenanceService {
     }
   }
 }
+````
+
+## File: apps/backend/src/app/modules/persons/trpc.router.ts
+````typescript
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { PersonsController } from './controller';
+import { PersonsService } from './services/persons.service';
+
+const persons = new PersonsController();
+const personsService = new PersonsService();
+
+function add() {
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
+}
+
+function attachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
+}
+
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteOne() {
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
+}
+
+function detachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      personsService.detachTag({
+        tenant_id: ctx.auth.tenant_id,
+        person_id: input.id,
+        name: input.tag_name,
+        type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
+      }),
+    );
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+}
+
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
+}
+
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+/** Tenant-scoped resolution by opaque public_id for /people/:slug URLs (spec §1). */
+function getByPublicId() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getByPublicId(input, ctx.auth));
+}
+
+function getActivity() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
+// Distinct tags
+function getDistinctTags() {
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
+}
+
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
+}
+
+function getTags() {
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    });
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data, ctx.auth));
+}
+
+function removeHousehold() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+}
+
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().trim().max(100).optional(),
+    middle_names: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    email: z.string().trim().max(255).optional(),
+    email2: z.string().trim().max(255).optional(),
+    mobile: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(10000).optional(),
+    home_phone: z.string().trim().max(30).optional(),
+    street_num: z.string().trim().max(30).optional(),
+    street1: z.string().trim().max(150).optional(),
+    street2: z.string().trim().max(150).optional(),
+    apt: z.string().trim().max(30).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    zip: z.string().trim().max(20).optional(),
+    country: z.string().trim().max(100).optional(),
+    // Company name from a mapped CSV column — matched case-insensitively to an
+    // existing company, created (attributed to this import) when there's no match.
+    company: z.string().trim().max(200).optional(),
+    // Raw comma/semicolon-separated tag names from a mapped CSV column,
+    // applied per person on top of the batch-level `tags` below.
+    tags: z.string().trim().max(500).optional(),
+  });
+
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+    // §17 CSV import wizard: how to handle rows whose email matches a person
+    // that already exists — one choice for the whole batch (spec review step
+    // is a single radio group, not a per-row decision).
+    duplicate_decision: z.enum(['merge', 'skip', 'import_new']).optional().default('skip'),
+    // Add every imported/merged person to this static list (created if it
+    // doesn't exist yet). Resolved by exact, case-insensitive name match.
+    list_name: z.string().trim().min(1).max(100).optional(),
+    // Raw uploaded CSV text, retained 90 days for the History page's
+    // per-import re-download (spec §17 footer copy).
+    source_csv: z.string().max(10_000_000).optional(),
+    // Rows the wizard's Review step already excluded/cleaned client-side
+    // (bad-email "Skip" decision) — recorded so History's "download skipped
+    // rows" export covers them too, not just server-detected skips.
+    client_skip_reasons: z
+      .array(
+        z.object({
+          row: z.number().int().nonnegative(),
+          email: z.string().optional(),
+          reason: z.string().max(200),
+        }),
+      )
+      .max(500)
+      .optional(),
+  });
+
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
+}
+
+function checkDuplicateEmails() {
+  return authProcedure
+    .input(z.object({ emails: z.array(z.string().trim().max(255)).max(2000) }))
+    .query(({ input, ctx }) => personsService.checkDuplicateEmails(ctx.auth, input.emails));
+}
+
+function getPotentialDuplicates() {
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
+}
+
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
+}
+
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
+export const PersonsRouter = router({
+  add: add(),
+  count: count(),
+  getAll: getAll(),
+  update: update(),
+  removeHousehold: removeHousehold(),
+  import: importMany(),
+  getTags: getTags(),
+  getById: getById(),
+  getByPublicId: getByPublicId(),
+  getActivity: getActivity(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
+  getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
+  getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
+  mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
+  checkDuplicateEmails: checkDuplicateEmails(),
+});
 ````
 
 ## File: apps/backend/src/app/modules/settings/trpc.router.ts
@@ -31964,516 +34494,6 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
 }
 ````
 
-## File: apps/backend/src/app/modules/tasks/controller.ts
-````typescript
-import type {
-  AddTaskType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTaskType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-
-import { TasksRepo } from './repositories/tasks.repo';
-import type { Selectable } from 'kysely';
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTenantId,
-} from '../../../../../../libs/common/src/lib/kysely.models';
-import type { QueryParams } from '../../lib/base.repo';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { notificationEnabled } from '../../lib/profile-preferences';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-export class TasksController extends BaseController<'tasks', TasksRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new TasksRepo());
-  }
-
-  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      details: payload.details,
-      due_at: payload.due_at ?? null,
-      status: payload.status ?? 'todo',
-      priority: payload.priority ?? null,
-      completed_at: payload.completed_at ?? null,
-      position: payload.position ?? 0,
-      assigned_to: payload.assigned_to ?? null,
-      team_id: payload.team_id ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'tasks', 'insert'>;
-    const task = await this.add(row);
-    if (task && payload.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: payload.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${payload.name}"`,
-          type: 'task',
-          link: `/tasks/${task.id}`,
-        });
-
-        const assignedTo = payload.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New Task Assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
-      }
-    }
-    return task;
-  }
-
-  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
-  }
-
-  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
-  }
-
-  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
-  private async loadSlaConfig(tenant_id: string): Promise<{
-    taskSlaHours: number;
-    workingDays: number[];
-    workingHoursStart: string;
-    workingHoursEnd: string;
-  }> {
-    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    return {
-      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
-      workingDays: workingDaysStr
-        .split(',')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !isNaN(n)),
-      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
-      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
-    };
-  }
-
-  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
-  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
-    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(auth.tenant_id);
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-    const now = new Date();
-
-    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
-    return openTasks.reduce((count, task) => {
-      const workingMs = calculateWorkingTimeMs(
-        new Date(task.created_at),
-        now,
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      return workingMs > taskSlaMs ? count + 1 : count;
-    }, 0);
-  }
-
-  /**
-   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
-   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
-   */
-  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
-    assignedToMe: number;
-    openTotal: number;
-    slaBreaches: number;
-    unassigned: number;
-  }> {
-    const repo = this.getRepo();
-    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
-      repo.countOpen(auth.tenant_id),
-      repo.countOpenUnassigned(auth.tenant_id),
-      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
-      this.countSlaBreaches(auth),
-    ]);
-    return { openTotal, unassigned, assignedToMe, slaBreaches };
-  }
-
-  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
-      | Selectable<Models['tasks']>
-      | undefined;
-    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-
-    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: row.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${updated.name}"`,
-          type: 'task',
-          link: `/tasks/${id}`,
-        });
-
-        const assignedTo = row.assigned_to;
-        if (assignedTo) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', assignedTo)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `Task Assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
-      }
-    }
-    return updated;
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
-      const result = includeArchived
-        ? await this.getArchivedTasks(auth, input?.options)
-        : await this.getAllTasks(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: includeArchived ? 'tasks_archived' : 'tasks',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-          include_archived: includeArchived,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        details?: string | null;
-        status?: string | null;
-        priority?: string | null;
-        due_at?: string | null;
-        assigned_to?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-      source_csv?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'tasks',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    };
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({
-        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
-        id: importRecordId as TypeId<'data_imports'>,
-      });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    // Keep the original upload downloadable for 90 days (spec §17 History
-    // page footer). Best-effort: a failure here shouldn't fail the import.
-    let sourceFileKey: string | null = null;
-    let sourceFileSize: number | null = null;
-    if (input.source_csv) {
-      try {
-        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
-        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
-        sourceFileSize = sourceBuffer.byteLength;
-        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
-      } catch (err) {
-        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
-        sourceFileKey = null;
-        sourceFileSize = null;
-      }
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-        source_file_key: sourceFileKey,
-        source_file_size: sourceFileSize,
-      },
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'tasks',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    // Parse status and priority to validate choices
-    const normalize = (v?: string) =>
-      (v || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[_\s-]+/g, '');
-    const validStatuses: readonly string[] = TASK_STATUSES;
-    const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-    // Map names to users for assigned_to
-    const users = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name', 'email'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      const idStr = String(u.id);
-      userMap.set(idStr, idStr);
-      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
-      if (u.first_name) {
-        userMap.set(u.first_name.toLowerCase().trim(), idStr);
-        if (u.last_name) {
-          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
-        }
-      }
-    }
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Normalize and filter valid rows upfront
-      const taskRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw['name'] || !raw['name'].trim()) {
-          results.skipped += 1;
-          continue;
-        }
-
-        let status: string = 'todo';
-        if (raw['status']) {
-          const normStatus = normalize(raw['status']);
-          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
-          if (matchedStatus) status = matchedStatus;
-        }
-
-        let priority: string | null = null;
-        if (raw['priority']) {
-          const normPriority = normalize(raw['priority']);
-          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
-          if (matchedPriority) priority = matchedPriority;
-        }
-
-        let assigned_to: string | null = null;
-        if (raw['assigned_to']) {
-          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
-        }
-
-        let due_at: Date | null = null;
-        if (raw['due_at']) {
-          const parsedDate = new Date(raw['due_at']);
-          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
-        }
-
-        taskRows.push({
-          tenant_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-          name: raw['name'].trim(),
-          details: raw['details'] ?? null,
-          status,
-          priority,
-          assigned_to,
-          due_at,
-          file_id: import_id,
-        });
-      }
-
-      if (taskRows.length > 0) {
-        try {
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
-              const CHUNK_SIZE = 2000;
-              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
-                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
-                await trx
-                  .insertInto('tasks')
-                  .values(chunk)
-                  .returningAll() // Adheres to repository rules
-                  .execute();
-              }
-            });
-          results.inserted += taskRows.length;
-        } catch (err: unknown) {
-          results.errors += taskRows.length;
-          errorMessages.push(err instanceof Error ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        },
-      });
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/tasks/subtasks.controller.ts
 ````typescript
 import type { Transaction, Selectable } from 'kysely';
@@ -32543,6 +34563,164 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
   }
 }
+````
+
+## File: apps/backend/src/app/modules/tasks/trpc.router.ts
+````typescript
+import {
+  AddTaskObj,
+  UpdateTaskObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { authProcedure, router } from '../../../trpc';
+import { TasksController } from './controller';
+import { TaskCommentsController } from './comments.controller';
+import { TaskAttachmentsController } from './attachments.controller';
+import { TaskSubtasksController } from './subtasks.controller';
+
+const tasks = new TasksController();
+
+export const TasksRouter = router({
+  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(
+          z.object({
+            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
+            details: z.string().trim().max(10000).optional().nullable(),
+            status: z.string().trim().max(50).optional().nullable(),
+            priority: z.string().trim().max(50).optional().nullable(),
+            due_at: z.string().trim().max(50).optional().nullable(),
+            assigned_to: z.string().trim().max(50).optional().nullable(),
+          }),
+        ),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+        source_csv: z.string().max(10_000_000).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return tasks.importRows(input, ctx.auth);
+    }),
+
+  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
+  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
+  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
+  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
+    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
+  getComments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addComment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskCommentsController().add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        author_id: ctx.auth.user_id,
+        comment: input.comment,
+      } as any),
+    ),
+  getAttachments: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addAttachment: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
+        url: z.string().url('Invalid URL format').optional(),
+        content_type: z.string().trim().max(100).optional(),
+        size_bytes: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      (new TaskAttachmentsController() as any).add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        filename: input.filename,
+        url: input.url,
+        content_type: input.content_type,
+        size_bytes: input.size_bytes ?? null,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+  getSubtasks: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) =>
+      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
+    ),
+  addSubtask: authProcedure
+    .input(
+      z.object({
+        task_id: idSchema,
+        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().add({
+        tenant_id: ctx.auth.tenant_id,
+        task_id: input.task_id,
+        name: input.name,
+        status: 'todo',
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      } as OperationDataType<'task_subtasks', 'insert'>),
+    ),
+  updateSubtask: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        data: z.object({
+          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
+          status: z.string().trim().max(50).optional(),
+          position: z.number().int().optional(),
+        }),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      new TaskSubtasksController().updateSubtask({
+        tenant_id: ctx.auth.tenant_id,
+        id: input.id,
+        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as OperationDataType<'task_subtasks', 'update'>,
+      }),
+    ),
+});
 ````
 
 ## File: apps/backend/src/app/modules/teams/controller.ts
@@ -36415,6 +38593,85 @@ export default defineConfig(() => ({
 }));
 ````
 
+## File: apps/website/functions/api/geo-rates.ts
+````typescript
+/**
+ * Cloudflare Pages Function — GET /api/geo-rates
+ *
+ * Serves the marketing site's multi-currency pricing (see the website's ui/currency.service.ts).
+ * Does both region detection and rate lookup at the edge so the browser makes a single
+ * same-origin call — no third-party request from the client, no CORS, no API key shipped to the
+ * browser:
+ *   - `country` comes from Cloudflare's `request.cf.country` (derived from the visitor's IP).
+ *   - `rates` are fetched server-side from a free, no-key FX API (USD base).
+ *
+ * The response is edge-cached ~12h via `Cache-Control: s-maxage`, so most requests never hit the
+ * FX API. This function is intentionally dependency-free (no `@common` import): country→currency
+ * mapping and formatting live on the client, so the edge stays a thin data source.
+ *
+ * Directory-mode Pages Function: it only owns `/api/geo-rates`; static asset serving and the SPA
+ * `_redirects` fallback are untouched.
+ */
+
+/** Display currencies we return rates for. USD is the billing currency (always 1). */
+const RATE_CURRENCIES = ['EUR', 'GBP', 'CAD'] as const;
+type RateCurrency = (typeof RATE_CURRENCIES)[number];
+
+/** Free, no-key, USD-base FX source (ECB-backed). Swap here if it ever changes. */
+const FX_URL = 'https://open.er-api.com/v6/latest/USD';
+
+/** Edge + browser cache lifetime for the response (12 hours, in seconds). */
+const CACHE_SECONDS = 43_200;
+
+/** Minimal shape of the Cloudflare request/context we rely on (avoids a workers-types dep). */
+interface CfRequest extends Request {
+  readonly cf?: { readonly country?: string };
+}
+interface PagesContext {
+  readonly request: CfRequest;
+}
+
+type Rates = { readonly USD: 1 } & Partial<Record<RateCurrency, number>>;
+
+/** Narrow one entry of the FX API's `rates` object to a positive finite number, or undefined. */
+function toRate(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Fetch USD-base rates for our display currencies. Returns `{ USD: 1 }` alone on any failure. */
+async function fetchRates(): Promise<Rates> {
+  const rates: { USD: 1 } & Partial<Record<RateCurrency, number>> = { USD: 1 };
+  try {
+    const res = await fetch(FX_URL, { headers: { accept: 'application/json' } });
+    if (!res.ok) return rates;
+    const body: unknown = await res.json();
+    const table =
+      typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+    if (typeof table !== 'object' || table === null) return rates;
+    const record = table as Record<string, unknown>;
+    for (const code of RATE_CURRENCIES) {
+      const rate = toRate(record[code]);
+      if (rate !== undefined) rates[code] = rate;
+    }
+  } catch {
+    // Network/parse failure: fall through with USD-only. The client stays in USD.
+  }
+  return rates;
+}
+
+export async function onRequestGet(context: PagesContext): Promise<Response> {
+  const country = context.request.cf?.country ?? null;
+  const rates = await fetchRates();
+  const payload = JSON.stringify({ country, rates });
+  return new Response(payload, {
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}`,
+    },
+  });
+}
+````
+
 ## File: apps/website/src/app/audience/audience-content.ts
 ````typescript
 import type { PreviewKind } from '../ui/app-preview';
@@ -37831,115 +40088,292 @@ export class Constellation {
 }
 ````
 
-## File: apps/website/src/app/ui/site-header.ts
+## File: apps/website/src/app/ui/currency-switcher.ts
 ````typescript
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, input } from '@angular/core';
+import type { CurrencyCode } from '@common';
 
-import { AuthHint } from './auth-hint';
-import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
-import { SiteLogo } from './site-logo';
-
-type HeaderVariant = 'over-hero' | 'solid';
+import { CurrencyService } from './currency.service';
 
 /**
- * Site header. Two looks from one component:
- *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
- *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
- * Below `md` the nav collapses behind a hamburger toggle.
+ * Currency picker for the site header. Lets a visitor override the auto-detected display currency;
+ * the choice persists (see {@link CurrencyService}). A DaisyUI `dropdown` — platform-first, no
+ * custom widget. Two looks (`onDark` for the navy hero header, solid otherwise) to match
+ * {@link SiteHeader}'s variants.
  */
 @Component({
-  selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo],
+  selector: 'pc-currency-switcher',
   template: `
-    <header [class]="barClass()">
-      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
-          <pc-site-logo [onDark]="onDark()" />
-        </a>
-
-        <!-- Desktop nav -->
-        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
-          }
-          @if (signedIn()) {
-            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-          } @else {
-            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
-            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-          }
-        </nav>
-
-        <!-- Mobile toggle -->
-        <button
-          type="button"
-          class="btn btn-square btn-ghost btn-sm lg:hidden"
-          [class.text-white]="onDark()"
-          [attr.aria-expanded]="open()"
-          aria-label="Toggle menu"
-          (click)="open.set(!open())"
+    <div class="dropdown dropdown-end">
+      <button
+        type="button"
+        tabindex="0"
+        [class]="triggerClass()"
+        [attr.aria-label]="'Change currency, currently ' + active().label"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
         >
-          @if (open()) {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-            </svg>
-          } @else {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
-            </svg>
-          }
-        </button>
-      </div>
-
-      <!-- Mobile menu -->
-      @if (open()) {
-        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
-              link.label
-            }}</a>
-          }
-          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-            @if (signedIn()) {
-              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-            } @else {
-              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
-              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-            }
-          </div>
-        </nav>
-      }
-    </header>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" stroke-linecap="round" />
+        </svg>
+        <span class="tabular-nums">{{ active().code }}</span>
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-2 w-52 rounded-box border border-line bg-base-100 p-2 shadow-lg"
+      >
+        @for (opt of options; track opt.code) {
+          <li>
+            <button
+              type="button"
+              class="flex items-center justify-between gap-3 text-[13.5px]"
+              [class.text-primary]="opt.code === active().code"
+              [class.font-semibold]="opt.code === active().code"
+              (click)="select(opt.code, $event)"
+            >
+              <span>{{ opt.label }}</span>
+              <span class="tabular-nums text-base-content/50">{{ opt.symbol }} {{ opt.code }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
   `,
 })
-export class SiteHeader {
-  public readonly variant = input<HeaderVariant>('solid');
+export class CurrencySwitcher {
+  public readonly onDark = input<boolean>(false);
 
-  private readonly auth = inject(AuthHint);
+  private readonly currency = inject(CurrencyService);
 
-  protected readonly nav = PRIMARY_NAV;
-  protected readonly loginUrl = LOGIN_URL;
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly dashboardUrl = DASHBOARD_URL;
-  protected readonly signedIn = this.auth.signedIn;
-  protected readonly open = signal(false);
+  protected readonly options = this.currency.options;
+  protected readonly active = this.currency.active;
 
-  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
-
-  protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'bg-navy' : 'border-b border-line bg-base-100',
-  );
-
-  protected readonly linkClass = computed<string>(() =>
-    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
-  );
-
-  protected readonly loginBtnClass = computed<string>(() =>
+  protected readonly triggerClass = computed<string>(() =>
     this.onDark()
-      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
-      : 'btn btn-outline btn-sm rounded-field',
+      ? 'flex items-center gap-1.5 rounded-field border border-white/30 px-2.5 py-1.5 text-[13px] font-medium text-white/85 hover:bg-white/10'
+      : 'flex items-center gap-1.5 rounded-field border border-line px-2.5 py-1.5 text-[13px] font-medium text-base-content hover:border-primary hover:text-primary',
   );
+
+  protected select(code: CurrencyCode, event: Event): void {
+    this.currency.setCurrency(code);
+    // DaisyUI dropdowns close on blur; drop focus so the menu dismisses after a pick.
+    (event.currentTarget as HTMLElement | null)?.blur();
+  }
+}
+````
+
+## File: apps/website/src/app/ui/currency.service.ts
+````typescript
+import { afterNextRender, computed, Injectable, signal } from '@angular/core';
+import {
+  currencyForCountry,
+  currencyPriceSymbol,
+  formatCurrency,
+  isCurrencyCode,
+  SUPPORTED_CURRENCIES,
+  type CurrencyCode,
+  type CurrencyDef,
+  type ExchangeRates,
+} from '@common';
+
+/** localStorage key for the visitor's manual currency choice (overrides geo detection). */
+const STORAGE_CURRENCY = 'pc_currency';
+/** localStorage key for the cached FX rates + fetch timestamp. */
+const STORAGE_FX = 'pc_fx';
+/** How long cached rates stay fresh before we refetch (12 hours), matching the edge cache. */
+const FX_TTL_MS = 12 * 60 * 60 * 1000;
+/** Same-origin Cloudflare Pages Function that returns `{ country, rates }`. */
+const GEO_ENDPOINT = '/api/geo-rates';
+/** Public CORS-enabled FX source used only as a fallback when the edge endpoint is unavailable
+ * (local dev, or before the Pages Function is wired). USD base, no key. */
+const FX_DIRECT_URL = 'https://open.er-api.com/v6/latest/USD';
+
+interface CachedFx {
+  readonly rates: ExchangeRates;
+  readonly ts: number;
+}
+
+/**
+ * Picks which currency the marketing site displays prices in, and converts USD prices to it at
+ * live exchange rates. Billing is always USD — surfaces show a disclaimer via {@link isConverted}.
+ *
+ * Browser-only work (reading storage, detecting region, fetching rates) runs in `afterNextRender`,
+ * exactly like {@link AuthHint}: the prerendered (SSG) markup is always USD and the client
+ * re-prices after hydration, so there's no server/client mismatch. Everything degrades safely —
+ * if the geo/rate call fails we fall back to the browser locale, and with no rates we stay in USD.
+ */
+@Injectable({ providedIn: 'root' })
+export class CurrencyService {
+  /** The active display currency (USD until detection/override resolves after hydration). */
+  public readonly currency = signal<CurrencyCode>('USD');
+  /** USD-base rates; USD is always 1, other codes appear once loaded. */
+  public readonly rates = signal<ExchangeRates>({ USD: 1 });
+
+  /** The currencies offered in the switcher. */
+  public readonly options: readonly CurrencyDef[] = Object.values(SUPPORTED_CURRENCIES);
+  /** The active currency's display metadata (for the switcher trigger). */
+  public readonly active = computed<CurrencyDef>(() => SUPPORTED_CURRENCIES[this.currency()]);
+  /** The active currency's price symbol (e.g. `C$`), for inline copy like the disclaimer. */
+  public readonly priceSymbol = computed<string>(() => currencyPriceSymbol(this.currency()));
+
+  /** True only when we're actually converting away from USD (a rate for the currency is loaded).
+   * Gates the "billed in USD" disclaimer so it never shows while prices are still really USD. */
+  public readonly isConverted = computed<boolean>(() => {
+    const code = this.currency();
+    return code !== 'USD' && this.rates()[code] != null;
+  });
+
+  constructor() {
+    afterNextRender(() => this.init());
+  }
+
+  /** Set and persist the visitor's manual currency choice. */
+  public setCurrency(code: CurrencyCode): void {
+    this.currency.set(code);
+    try {
+      localStorage.setItem(STORAGE_CURRENCY, code);
+    } catch {
+      // Storage unavailable (private mode): the choice still applies for this session.
+    }
+  }
+
+  /** Format a whole-dollar USD price in the active currency; falls back to USD when no rate. */
+  public format(usd: number): string {
+    const code = this.currency();
+    const rate = code === 'USD' ? 1 : this.rates()[code];
+    if (rate == null) return formatCurrency(usd, 'USD');
+    return formatCurrency(Math.round(usd * rate), code);
+  }
+
+  private init(): void {
+    const override = this.readOverride();
+    if (override) this.currency.set(override);
+
+    const cached = this.readCachedRates();
+    if (cached) this.rates.set(cached);
+
+    void this.refresh(override != null);
+  }
+
+  /** Fetch fresh geo + rates; set the currency from geo only when there's no manual override. */
+  private async refresh(hasOverride: boolean): Promise<void> {
+    try {
+      const res = await fetch(GEO_ENDPOINT, { headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`geo-rates ${res.status}`);
+      const { country, rates } = this.parsePayload(await res.json());
+      this.rates.set(rates);
+      this.writeCachedRates(rates);
+      if (!hasOverride) this.applyDetected(currencyForCountry(country), rates);
+    } catch {
+      // Edge endpoint unavailable (local dev, or not wired yet): fetch rates directly from the
+      // public FX API and detect the region from the browser locale instead of the visitor's IP.
+      const rates = await this.fetchRatesDirect();
+      if (rates) {
+        this.rates.set(rates);
+        this.writeCachedRates(rates);
+      }
+      // Only switch if we actually have a rate for the detected currency, else stay in USD.
+      if (!hasOverride) this.applyDetected(currencyForCountry(this.regionFromLocale()), this.rates());
+    }
+  }
+
+  /** Fallback rate source when the edge endpoint fails. Queries a public CORS FX API straight from
+   * the browser; returns null on any failure so we simply stay in USD. */
+  private async fetchRatesDirect(): Promise<ExchangeRates | null> {
+    try {
+      const res = await fetch(FX_DIRECT_URL, { headers: { accept: 'application/json' } });
+      if (!res.ok) return null;
+      const body: unknown = await res.json();
+      const table =
+        typeof body === 'object' && body !== null && 'rates' in body ? (body as { rates: unknown }).rates : null;
+      return this.sanitizeRates(table);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Adopt a geo/locale-detected currency only when a rate for it is available. */
+  private applyDetected(code: CurrencyCode, rates: ExchangeRates): void {
+    if (code === 'USD' || rates[code] != null) this.currency.set(code);
+  }
+
+  private readOverride(): CurrencyCode | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_CURRENCY);
+      return raw && isCurrencyCode(raw) ? raw : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private readCachedRates(): ExchangeRates | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_FX);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== 'object' || parsed === null) return null;
+      const { rates, ts } = parsed as Partial<CachedFx>;
+      if (typeof ts !== 'number' || Date.now() - ts > FX_TTL_MS) return null;
+      return this.sanitizeRates(rates);
+    } catch {
+      return null;
+    }
+  }
+
+  private writeCachedRates(rates: ExchangeRates): void {
+    try {
+      const entry: CachedFx = { rates, ts: Date.now() };
+      localStorage.setItem(STORAGE_FX, JSON.stringify(entry));
+    } catch {
+      // Non-fatal: we just refetch next visit.
+    }
+  }
+
+  /** Validate the Pages Function response into a country + sanitized rates. */
+  private parsePayload(body: unknown): { country: string | null; rates: ExchangeRates } {
+    if (typeof body !== 'object' || body === null) return { country: null, rates: { USD: 1 } };
+    const record = body as { country?: unknown; rates?: unknown };
+    const country = typeof record.country === 'string' ? record.country : null;
+    return { country, rates: this.sanitizeRates(record.rates) };
+  }
+
+  /** Keep only positive numeric rates for known currency codes; USD is always 1. */
+  private sanitizeRates(raw: unknown): ExchangeRates {
+    const clean: ExchangeRates = { USD: 1 };
+    if (typeof raw !== 'object' || raw === null) return clean;
+    const record = raw as Record<string, unknown>;
+    for (const def of this.options) {
+      if (def.code === 'USD') continue;
+      const value = record[def.code];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) clean[def.code] = value;
+    }
+    return clean;
+  }
+
+  /** Region subtag from the browser locale (e.g. "en-GB" → "GB"), or null. */
+  private regionFromLocale(): string | null {
+    const locale = typeof navigator !== 'undefined' ? navigator.language : '';
+    const region = locale.split('-')[1];
+    return region ? region.toUpperCase() : null;
+  }
 }
 ````
 
@@ -40147,266 +42581,6 @@ export class BackgroundJobWorker {
 }
 ````
 
-## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
-````typescript
-import type { Transaction } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
-import type { FormType } from '../../../../../../libs/common/src';
-
-export interface StarterTagDef {
-  name: string;
-  description: string;
-  color: string;
-}
-
-/**
- * Starter tag vocabulary (freeform organizational labels). Donor / supporter /
- * subscriber are structured concepts in this product (donations table,
- * campaign_person_facts, campaign_subscriptions) and were retired as tags —
- * the starter vocabulary must not resurrect them.
- *
- * The demo dataset (modules/demo/demo-seed-data.ts) attaches demo persons and
- * households to these by NAME — keep the two in sync when renaming.
- */
-export const STARTER_TAGS: StarterTagDef[] = [
-  { name: 'community leader', description: 'Runs or anchors a local association, league, or board.', color: '#8b5cf6' },
-  { name: 'small business owner', description: 'Owns or operates a business in the riding.', color: '#f97316' },
-  { name: 'senior', description: 'Prefers daytime calls and print material.', color: '#64748b' },
-  { name: 'student', description: 'Student — usually reachable evenings and weekends.', color: '#22c55e' },
-  { name: 'new to riding', description: 'Moved into the riding within the last year.', color: '#06b6d4' },
-  { name: 'letter writer', description: 'Has written letters to the editor or to council.', color: '#eab308' },
-  { name: 'media contact', description: 'Journalist or newsletter editor — route through comms.', color: '#ef4444' },
-  { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
-  { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
-  { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
-];
-
-/**
- * Starter issue vocabulary (tags with type 'issue' — the structured
- * what-do-they-care-about list). Deliberately generic doorstep topics; the
- * demo dataset attaches demo persons to these by NAME.
- */
-export const STARTER_ISSUES: StarterTagDef[] = [
-  {
-    name: 'housing affordability',
-    description: 'Rents, missing-middle supply, and three-bedroom family units.',
-    color: '#f43f5e',
-  },
-  {
-    name: 'transit reliability',
-    description: 'On-time performance, frequency, and coverage on the core routes.',
-    color: '#0ea5e9',
-  },
-  {
-    name: 'road safety',
-    description: 'Traffic calming, crossings, and lighting on residential streets.',
-    color: '#f59e0b',
-  },
-  {
-    name: 'parks & greenspace',
-    description: 'Park maintenance, trail access, and tree cover.',
-    color: '#22c55e',
-  },
-  {
-    name: 'small business support',
-    description: 'Main-street vacancy, patio rules, and local procurement.',
-    color: '#f97316',
-  },
-  {
-    name: 'climate action',
-    description: 'Retrofit programs, clean air and water, and active transportation.',
-    color: '#14b8a6',
-  },
-];
-
-/**
- * Creates the starter tag + issue vocabulary for a new tenant. Like the
- * starter forms below, these are deliberately separate from the demo dataset
- * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
- * keeps this vocabulary — a ready-made starting point that also shows what
- * tags and issues are for. All rows are `deletable: true` (suggestions, not
- * system data — the user can rename, recolor, merge, or delete them).
- *
- * Must run BEFORE seedDemoData: the demo seeder attaches demo persons and
- * households to these rows by name.
- */
-export async function seedStarterTags(
-  params: { tenant_id: string; user_id: string },
-  trx: Transaction<Models>,
-): Promise<void> {
-  const audit = { tenant_id: params.tenant_id, createdby_id: params.user_id, updatedby_id: params.user_id };
-  await trx
-    .insertInto('tags')
-    .values([
-      ...STARTER_TAGS.map((t) => ({
-        ...audit,
-        name: t.name,
-        description: t.description,
-        color: t.color,
-        deletable: true,
-        type: 'tag' as const,
-      })),
-      ...STARTER_ISSUES.map((t) => ({
-        ...audit,
-        name: t.name,
-        description: t.description,
-        color: t.color,
-        deletable: true,
-        type: 'issue' as const,
-      })),
-    ])
-    .execute();
-}
-
-/**
- * Creates the seven starter web forms (all drafts) for a new tenant: one of
- * each standard kind (signup ×2, request, survey), a standard fundraising
- * pledge form, plus the two donation giving pages (one-time + recurring). These
- * are deliberately separate from the demo dataset
- * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
- * keeps these forms — a ready-made starting point the user publishes when
- * they're ready.
- *
- * Returns the created ids + slugs so the demo seeder can attach sample
- * submissions to two of them.
- */
-export async function seedStarterForms(
-  params: {
-    tenant_id: string;
-    user_id: string;
-    campaign_id: string | bigint;
-  },
-  trx: Transaction<Models>,
-): Promise<{ id: string; slug: string }[]> {
-  const { tenant_id, user_id } = params;
-  const campaign_id = String(params.campaign_id);
-
-  const starterForms: {
-    key: FormType;
-    formType: 'standard' | 'donation' | 'recurring_donation';
-    name: string;
-    slug: string;
-    description: string;
-    submitLabel: string;
-    thanksBody: string;
-    confirmSubject: string;
-    confirmBody: string;
-  }[] = [
-    {
-      key: 'signup',
-      formType: 'standard',
-      name: 'Volunteer signup',
-      slug: 'volunteer-signup',
-      description: 'Volunteer signup form for your website. Customize the fields, then publish to get a public link.',
-      submitLabel: FORM_TEMPLATES.signup.submitLabel,
-      thanksBody: 'You’re signed up — we’ll be in touch soon.',
-      confirmSubject: 'Thanks for signing up',
-      confirmBody: 'Hi [First name],\n\nThanks for signing up to volunteer — we’ll be in touch soon.',
-    },
-    {
-      key: 'signup',
-      formType: 'standard',
-      name: 'Newsletter sign-up',
-      slug: 'newsletter-sign-up',
-      description: 'Sign-up form for your email newsletter. Customize the fields, then publish to get a public link.',
-      submitLabel: FORM_TEMPLATES.signup.submitLabel,
-      thanksBody: 'You’re on the list — thanks for signing up.',
-      confirmSubject: 'Thanks for signing up',
-      confirmBody: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
-    },
-    {
-      key: 'pledge',
-      formType: 'recurring_donation',
-      name: 'Recurring donation',
-      slug: 'recurring-donation',
-      description: 'Monthly-giving form. Customize the fields, then publish to start accepting recurring gifts.',
-      submitLabel: 'Set up recurring gift',
-      thanksBody: 'Your recurring gift means a lot to us.',
-      confirmSubject: 'Thanks for your recurring gift',
-      confirmBody: 'Hi [First name],\n\nThanks for setting up a recurring gift — we’ll send a receipt each month.',
-    },
-    {
-      key: 'pledge',
-      formType: 'donation',
-      name: 'One-time donation',
-      slug: 'one-time-donation',
-      description: 'One-time donation form. Customize the fields, then publish to start accepting gifts.',
-      submitLabel: 'Give now',
-      thanksBody: 'Your gift means a lot to us.',
-      confirmSubject: 'Thanks for your gift',
-      confirmBody: 'Hi [First name],\n\nThanks for your gift — a receipt is on its way.',
-    },
-    {
-      key: 'pledge',
-      formType: 'standard',
-      name: 'Fundraising pledge',
-      slug: 'fundraising-pledge',
-      description:
-        'Collect pledges of support from your website. Responses become people you can follow up with — no payment is taken here (use the Fundraising donation pages for card gifts).',
-      submitLabel: FORM_TEMPLATES.pledge.submitLabel,
-      thanksBody: 'Thank you for pledging your support — we’ll be in touch about next steps.',
-      confirmSubject: 'Thanks for your pledge',
-      confirmBody: 'Hi [First name],\n\nThank you for pledging your support — we’ll be in touch about next steps soon.',
-    },
-    {
-      key: 'request',
-      formType: 'standard',
-      name: 'Yard sign request',
-      slug: 'yard-sign-request',
-      description: 'Yard sign request form for your website. Requests feed the Deliveries page for route planning.',
-      submitLabel: FORM_TEMPLATES.request.submitLabel,
-      thanksBody: 'We’ll deliver your yard sign soon.',
-      confirmSubject: 'Your yard sign request',
-      confirmBody: 'Hi [First name],\n\nThanks for your request — a volunteer will drop off your sign soon.',
-    },
-    {
-      key: 'survey',
-      formType: 'standard',
-      name: 'Issues survey',
-      slug: 'issues-survey',
-      description: 'Issues survey for your website. Answers help you rank what your community cares about.',
-      submitLabel: FORM_TEMPLATES.survey.submitLabel,
-      thanksBody: 'Thanks for sharing your priorities with us.',
-      confirmSubject: 'Thanks for your input',
-      confirmBody: 'Hi [First name],\n\nThanks for filling out our survey — your input helps shape our priorities.',
-    },
-  ];
-
-  const created = await trx
-    .insertInto('web_forms')
-    .values(
-      starterForms.map((f) => ({
-        tenant_id: tenant_id,
-        campaign_id,
-        name: f.name,
-        description: f.description,
-        fields: JSON.stringify(fieldsForTemplate(f.key)),
-        target_tags: JSON.stringify([]),
-        target_lists: JSON.stringify([]),
-        status: 'draft' as const,
-        type: f.key,
-        slug: f.slug,
-        submit_label: f.submitLabel,
-        thanks_title: 'Thank you!',
-        thanks_body: f.thanksBody,
-        confirm_subject: f.confirmSubject,
-        confirm_body: f.confirmBody,
-        send_confirmation: true,
-        send_alert: false,
-        notify_team_on: false,
-        form_type: f.formType,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      })),
-    )
-    .returning(['id', 'slug'])
-    .execute();
-
-  return created.map((f) => ({ id: String(f.id), slug: f.slug }));
-}
-````
-
 ## File: apps/backend/src/app/modules/auth/passkey.controller.ts
 ````typescript
 import {
@@ -40683,46 +42857,6 @@ function getExpectedOrigins(): string[] {
 
 const rpID = env.webAuthnRpId;
 const rpName = env.webAuthnRpName;
-````
-
-## File: apps/backend/src/app/modules/billing/trpc.router.ts
-````typescript
-import { z } from 'zod';
-import { maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
-import { adminOrOwnerProcedure, router } from '../../../trpc';
-import { BillingController } from './controller';
-
-const controller = new BillingController();
-
-/** Largest valid Stripe quantity across the purchasable tiers (currently Movement's ladder). */
-const MAX_BRACKET_QUANTITY = Math.max(...PURCHASABLE_PLAN_KEYS.map((key) => maxQuantity(key)));
-
-export const BillingRouter = router({
-  getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
-
-  /** Live usage snapshot for the billing page: emailable subscribers vs. the tenant's currently
-   * billed bracket (subscriber/email caps, monthly price, tier max). See §5 of the pricing
-   * overhaul plan. */
-  getUsage: adminOrOwnerProcedure.query(({ ctx }) => controller.getUsage(ctx.auth)),
-
-  createCheckout: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS) }))
-    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan)),
-
-  createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
-
-  // Local mock testing mutation endpoints
-  activateMockPlan: adminOrOwnerProcedure
-    .input(
-      z.object({
-        plan: z.enum(PURCHASABLE_PLAN_KEYS),
-        quantity: z.number().int().min(1).max(MAX_BRACKET_QUANTITY).optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity)),
-
-  cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
-});
 ````
 
 ## File: apps/backend/src/app/modules/canvassing/repositories/turf-assignments.repo.ts
@@ -41035,411 +43169,6 @@ export const CanvassingRouter = router({
     .input(FieldReportRangeObj)
     .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
 });
-````
-
-## File: apps/backend/src/app/modules/companies/controller.ts
-````typescript
-import { BaseController } from '../../lib/base.controller';
-import { CompaniesRepo } from './repositories/companies.repo';
-import { CompaniesEnrichmentService, type CompanyLookupResult } from './services/companies-enrichment.service';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTenantId,
-} from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { slugifyRecordName } from '../../../../../../libs/common/src';
-import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-
-/** The writable company fields accepted by the legacy add/update helpers (mirrors CompanyInputObj). */
-interface CompanyWriteFields {
-  name: string;
-  description?: string | null;
-  website?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  industry?: string | null;
-  notes?: string | null;
-}
-
-export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
-  constructor() {
-    super(new CompaniesRepo());
-  }
-
-  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
-  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
-    const rowObj = row as Record<string, unknown>;
-    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
-      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
-      );
-    }
-    return super.add(row, trx);
-  }
-
-  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'companies', 'update'>;
-  }) {
-    const row = input.row as Record<string, unknown>;
-    if ('name' in row) {
-      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
-      );
-    }
-    return super.update(input);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
-    const company = (await super.getOneById(input)) as any;
-    if (company) {
-      let enrichment: Record<string, unknown> = {};
-      if (company.enrichment) {
-        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
-      }
-      if (!enrichment || !enrichment['google_enriched']) {
-        await this.getRepo()
-          .db.insertInto('background_jobs')
-          .values({
-            tenant_id: input.tenant_id,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'enrich_company_google',
-              company_id: String(company.id),
-              tenant_id: String(input.tenant_id),
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute()
-          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
-      }
-    }
-    return company;
-  }
-
-  /**
-   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
-   * "Re-check Google" button). Transactional-outbox: verify the company is in
-   * the tenant, then insert the background job. `force` re-runs even if the
-   * company was already enriched.
-   */
-  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
-    const company = await this.getRepo()
-      .db.selectFrom('companies')
-      .select('id')
-      .where('id', '=', id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!company) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
-    }
-
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'enrich_company_google',
-          company_id: String(id),
-          tenant_id: String(auth.tenant_id),
-          force,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-
-    return { queued: true };
-  }
-
-  /**
-   * Interactive add-time preview: look up a company by name on Google Places and
-   * return the fields without persisting anything (no company row exists yet).
-   * Powers the "auto-fill on name blur" behavior in the New Company form.
-   */
-  public lookupEnrichment(name: string): Promise<CompanyLookupResult> {
-    return CompaniesEnrichmentService.lookupByName(name);
-  }
-
-  /**
-   * Background duplicate-name check for the add/edit form. Case-insensitive,
-   * tenant-scoped, and (in edit) ignores the record being edited. Drives the
-   * "a company by that name already exists" hint — advisory only, never blocks
-   * saving, since same-named companies can be legitimate.
-   */
-  public nameExists(name: string, auth: IAuthKeyPayload, excludeId?: string): Promise<boolean> {
-    return this.getRepo().nameExists(auth.tenant_id, name, excludeId);
-  }
-
-  public addCompany(payload: CompanyWriteFields, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description ?? null,
-      website: payload.website ?? null,
-      email: payload.email ?? null,
-      phone: payload.phone ?? null,
-      industry: payload.industry ?? null,
-      notes: payload.notes ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'insert'>;
-    return this.add(row);
-  }
-
-  public updateCompany(id: string, row: Partial<CompanyWriteFields>, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'update'>;
-    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-  }
-
-  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
-    return this.getAllWithCounts(auth.tenant_id, options);
-  }
-
-  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeCompanies({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        description?: string | null;
-        website?: string | null;
-        email?: string | null;
-        phone?: string | null;
-        industry?: string | null;
-        notes?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-      source_csv?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'companies',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as unknown as OperationDataType<'data_imports', 'insert'>;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({
-        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
-        id: importRecordId as TypeId<'data_imports'>,
-      });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    // Keep the original upload downloadable for 90 days (spec §17 History
-    // page footer). Best-effort: a failure here shouldn't fail the import.
-    let sourceFileKey: string | null = null;
-    let sourceFileSize: number | null = null;
-    if (input.source_csv) {
-      try {
-        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
-        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
-        sourceFileSize = sourceBuffer.byteLength;
-        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
-      } catch (err) {
-        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
-        sourceFileKey = null;
-        sourceFileSize = null;
-      }
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-        source_file_key: sourceFileKey,
-        source_file_size: sourceFileSize,
-      } as unknown as OperationDataType<'data_imports', 'update'>,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'companies',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Filter valid rows upfront
-      const validRows: Record<string, string>[] = [];
-      for (const raw of chunk) {
-        if (!raw['name'] || !raw['name'].trim()) {
-          results.skipped += 1;
-        } else {
-          validRows.push(raw);
-        }
-      }
-
-      if (validRows.length > 0) {
-        try {
-          // 2. Batch insert all valid company rows in one statement
-          const companyRows = validRows.map((raw) => ({
-            tenant_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            name: (raw['name'] ?? '').trim(),
-            description: raw['description'] ?? null,
-            website: raw['website'] ?? null,
-            email: raw['email'] ?? null,
-            phone: raw['phone'] ?? null,
-            industry: raw['industry'] ?? null,
-            notes: raw['notes'] ?? null,
-            file_id: import_id,
-          }));
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await trx.insertInto('companies').values(companyRows).execute();
-            });
-          results.inserted += validRows.length;
-        } catch (err) {
-          results.errors += validRows.length;
-          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as unknown as OperationDataType<'data_imports', 'update'>,
-      });
-    }
-
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
-    try {
-      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill company slugs after import');
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
 ````
 
 ## File: apps/backend/src/app/modules/companion-access/routes/companion-public.route.ts
@@ -43351,828 +45080,6 @@ export const GoogleSyncRouter = router({
 export type GoogleSyncRouterType = typeof GoogleSyncRouter;
 ````
 
-## File: apps/backend/src/app/modules/households/controller.ts
-````typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { slugifyRecordName } from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../lib/base.repo';
-import { BaseRepository } from '../../lib/base.repo';
-import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
-import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
-import { StorageService } from '../../lib/storage.service';
-import { HouseholdRepo } from './repositories/households.repo';
-import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
-import { BaseController } from '../../lib/base.controller';
-import { SettingsController } from '../settings/controller';
-import type { OperationDataType, TypeId, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../logger';
-
-export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
-  private importsRepo = new ImportsRepo();
-  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
-  private settingsController = new SettingsController();
-  private storageService = new StorageService();
-  private tagsRepo = new TagsRepo();
-
-  constructor() {
-    super(new HouseholdRepo());
-  }
-
-  /**
-   * Household count for the grain tabs + count sentence — excludes the tenant's
-   * permanent placeholder household so the number matches the rows the grid shows.
-   */
-  public override getCount(tenant_id: string): Promise<number> {
-    return this.getRepo().countExcludingPlaceholder(tenant_id);
-  }
-
-  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
-    // Filter out any placeholder households — they are permanent and undeletable
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
-    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
-
-    if (safeIds.length === 0) return false;
-    // Members move to the tenant's placeholder household (persons.household_id is
-    // NOT NULL) rather than being cascade-deleted along with the household.
-    return this.getRepo().deleteManyReassigningPersons({
-      tenant_id: auth.tenant_id,
-      ids: safeIds,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-
-    const fp_street = fingerprintStreet({
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: payload.apt,
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-      city: payload.city,
-      state: payload.state,
-      zip: payload.zip,
-      country: payload.country,
-    });
-
-    // Try to dedupe: find existing by fingerprint
-    if (fp_street || fp_full) {
-      const existing = await this.getRepo().findByFingerprint({
-        tenant_id: auth.tenant_id,
-        fp_street: fp_street,
-        fp_full: fp_full,
-      });
-      if (existing?.id) return { id: String(existing.id) } as any;
-    }
-
-    // Record slug for /households/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
-    const slug = await uniqueSlug(
-      slugifyRecordName(`${payload.street_num ?? ''} ${payload.street1 ?? ''}`, 'household'),
-      (candidate) => this.getRepo().slugExists(auth.tenant_id, candidate),
-    );
-
-    const row = {
-      ...payload,
-      slug,
-      address_fp_street: fp_street,
-      address_fp_full: fp_full,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as OperationDataType<'households', 'insert'>);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const household = await super.getOneById(input);
-    if (!household) return undefined;
-
-    const tenantRow = await (BaseRepository as any)['_db']
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', input.tenant_id)
-      .executeTakeFirst();
-
-    const is_placeholder = tenantRow?.placeholder_household_id
-      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
-      : false;
-    return {
-      ...household,
-      is_placeholder,
-    } as any;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'households', 'update'>;
-  }) {
-    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
-    if (placeholders.has(input.id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'The placeholder household cannot be edited.',
-      });
-    }
-
-    const keys = Object.keys(input.row || {});
-    const affectsAddress = keys.some((k) =>
-      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
-    );
-
-    // Perform the main update without fingerprint columns first
-    const result = await super.update(input);
-
-    // Attempt fingerprint recompute in a separate, non-fatal step
-    if (affectsAddress) {
-      try {
-        const current = await this.getOneById({ tenant_id: input.tenant_id, id: input.id });
-        const merged = { ...current, ...input.row };
-
-        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
-        let district = null;
-        let precinct = null;
-        let ward = null;
-
-        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
-        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during update');
-          }
-        }
-
-        // Address change is a household "rename" — regenerate the record slug (spec §1).
-        const slug = await uniqueSlug(
-          slugifyRecordName(`${merged.street_num ?? ''} ${merged.street1 ?? ''}`, 'household'),
-          (candidate) => this.getRepo().slugExists(input.tenant_id, candidate, input.id),
-        );
-
-        const fpRow: Record<string, unknown> = {
-          slug,
-          address_fp_street: fingerprintStreet({
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-          }),
-          address_fp_full: fingerprintFull({
-            apt: merged.apt,
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-            city: merged.city,
-            state: merged.state,
-            zip: merged.zip,
-            country: merged.country,
-          }),
-          geocoding_status,
-          district,
-          precinct,
-          ward,
-        };
-        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
-
-        // Queue geocoding background job if geocoding status is pending
-        if (geocoding_status === 'pending') {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: input.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'geocode_household',
-                household_id: input.id,
-                tenant_id: input.tenant_id,
-              }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-        // Duplicate maintenance is only calculated nightly
-      } catch (err) {
-        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
-      }
-    }
-
-    return result;
-  }
-
-  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot attach tags to the placeholder household.',
-      });
-    }
-
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    return this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      household_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-  }
-
-  public async detachTag(
-    tenant_id: string,
-    household_id: string,
-    tag_name: string,
-    type: 'tag' | 'issue' = 'tag',
-    userId?: string,
-  ) {
-    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot detach tags from the placeholder household.',
-      });
-    }
-
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
-    if (tag?.id) {
-      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
-    }
-
-    try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id,
-          user_id: userId,
-          activity: 'update',
-          entity: 'households',
-          entity_id: household_id,
-          quantity: 1,
-          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-  }
-
-  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithPeopleCount({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
-      tags,
-    });
-  }
-
-  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
-  }
-
-  /**
-   * Most recent canvass at this household's door — powers the "Canvassed <date>"
-   * segment of the household header subtitle. Returns null when the household has
-   * no knock on record (the subtitle then honestly drops the segment).
-   */
-  public async getLastCanvass(
-    id: string,
-    auth: IAuthKeyPayload,
-  ): Promise<{ knocked_at: Date; canvasser_name: string | null; outcome: string } | null> {
-    const row = await this.getRepo()
-      .db.selectFrom('turf_knocks')
-      .select(['knocked_at', 'canvasser_name', 'outcome'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('household_id', '=', id)
-      .orderBy('knocked_at', 'desc')
-      .limit(1)
-      .executeTakeFirst();
-    if (!row) return null;
-    return {
-      knocked_at: new Date(row.knocked_at as unknown as string),
-      canvasser_name: row.canvasser_name ?? null,
-      outcome: row.outcome,
-    };
-  }
-
-  public countDistinctWards(auth: IAuthKeyPayload) {
-    return this.getRepo().countDistinctWards(auth.tenant_id);
-  }
-
-  public getUnhoused(auth: IAuthKeyPayload) {
-    return this.getRepo().getUnhoused(auth.tenant_id);
-  }
-
-  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags(id, auth.tenant_id, type);
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithPeopleCount(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'households',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    household_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapHouseholdsTagRepo.add({
-      row: row as OperationDataType<'map_households_tags', 'insert'>,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeHouseholds({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
-    const job = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .orderBy('created_at', 'desc')
-      .executeTakeFirst();
-
-    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
-  }
-
-  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-    const existingJob = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .where('created_at', '>', oneMonthAgo)
-      .executeTakeFirst();
-
-    if (existingJob) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
-      });
-    }
-
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'recompute_address_fingerprints',
-          tenant_id: tenantId,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-  }
-
-  /**
-   * CSV import (spec §17): record the import in data_imports, park the mapped
-   * rows in storage, and queue a background job — same transactional-outbox
-   * shape as the persons/companies/tasks imports.
-   */
-  public async importRows(
-    input: {
-      rows: Array<Record<string, string | null | undefined>>;
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-      source_csv?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoName = `Imported-Households-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoName}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'households',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    };
-
-    const savedImport = await this.importsRepo.add({
-      row: importRow as unknown as OperationDataType<'data_imports', 'insert'>,
-    });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({
-        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
-        id: importRecordId as TypeId<'data_imports'>,
-      });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    // Keep the original upload downloadable for 90 days (spec §17 History
-    // page footer). Best-effort: a failure here shouldn't fail the import.
-    let sourceFileKey: string | null = null;
-    let sourceFileSize: number | null = null;
-    if (input.source_csv) {
-      try {
-        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
-        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
-        sourceFileSize = sourceBuffer.byteLength;
-        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
-      } catch (err) {
-        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
-        sourceFileKey = null;
-        sourceFileSize = null;
-      }
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-        source_file_key: sourceFileKey,
-        source_file_size: sourceFileSize,
-      } as unknown as OperationDataType<'data_imports', 'update'>,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          tags: input.tags ?? [],
-          skipped: skippedFromClient,
-          campaign_id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'households',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    };
-  }
-
-  /**
-   * Background-job half of the households CSV import. Rows are deduplicated by
-   * address fingerprint — against households the tenant already has and within
-   * the file itself — matching how the persons import resolves households.
-   * Inserts go through HouseholdRepo.addMany so geocoding jobs are queued in
-   * the same transaction.
-   */
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    campaign_id: string,
-    tags: string[],
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-    const trim = (value: string | null | undefined): string | null => {
-      const text = (value ?? '').toString().trim();
-      return text.length > 0 ? text : null;
-    };
-    const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
-    for (const name of tags) {
-      const clean = (name ?? '').trim();
-      if (clean && !uniqueTagNames.has(clean.toLowerCase())) uniqueTagNames.set(clean.toLowerCase(), clean);
-    }
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Sanitize and fingerprint valid rows upfront
-      type Entry = {
-        sanitized: {
-          street_num: string | null;
-          apt: string | null;
-          street1: string | null;
-          street2: string | null;
-          city: string | null;
-          state: string | null;
-          zip: string | null;
-          country: string | null;
-          home_phone: string | null;
-          notes: string | null;
-        };
-        fp_street: string | null;
-        fp_full: string | null;
-      };
-      const entries: Entry[] = [];
-      for (const raw of chunk) {
-        const sanitized = {
-          street_num: trim(raw['street_num']),
-          apt: trim(raw['apt']),
-          street1: trim(raw['street1']),
-          street2: trim(raw['street2']),
-          city: trim(raw['city']),
-          state: trim(raw['state']),
-          zip: trim(raw['zip']),
-          country: trim(raw['country']),
-          home_phone: trim(raw['home_phone']),
-          notes: trim(raw['notes']),
-        };
-        const hasAddress =
-          sanitized.street_num != null ||
-          sanitized.apt != null ||
-          sanitized.street1 != null ||
-          sanitized.street2 != null ||
-          sanitized.city != null ||
-          sanitized.state != null ||
-          sanitized.zip != null ||
-          sanitized.country != null;
-        if (!hasAddress && sanitized.home_phone == null && sanitized.notes == null) {
-          results.skipped += 1;
-          continue;
-        }
-        entries.push({
-          sanitized,
-          fp_street: hasAddress
-            ? fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              })
-            : null,
-          fp_full: hasAddress
-            ? fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              })
-            : null,
-        });
-      }
-
-      if (entries.length > 0) {
-        try {
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              // 2. Dedupe against existing households by full-address fingerprint
-              const uniqueFps = [...new Set(entries.map((e) => e.fp_full).filter((fp): fp is string => fp != null))];
-              const existingFps = new Set<string>();
-              if (uniqueFps.length > 0) {
-                const existing = await trx
-                  .selectFrom('households')
-                  .select(['address_fp_full'])
-                  .where('tenant_id', '=', tenant_id)
-                  .where('address_fp_full', 'in', uniqueFps)
-                  .execute();
-                for (const h of existing) {
-                  if (h.address_fp_full) existingFps.add(h.address_fp_full);
-                }
-              }
-
-              // 3. Insert only addresses the tenant doesn't have yet (also deduped within the file)
-              const seenFps = new Set<string>();
-              const toInsert: OperationDataType<'households', 'insert'>[] = [];
-              for (const entry of entries) {
-                if (entry.fp_full && (existingFps.has(entry.fp_full) || seenFps.has(entry.fp_full))) {
-                  results.skipped += 1;
-                  continue;
-                }
-                if (entry.fp_full) seenFps.add(entry.fp_full);
-                toInsert.push({
-                  tenant_id,
-                  campaign_id: campaign_id || null,
-                  createdby_id: user_id,
-                  updatedby_id: user_id,
-                  ...entry.sanitized,
-                  address_fp_street: entry.fp_street,
-                  address_fp_full: entry.fp_full,
-                  file_id: import_id,
-                } as OperationDataType<'households', 'insert'>);
-              }
-
-              const created = toInsert.length > 0 ? await this.getRepo().addMany({ rows: toInsert }, trx) : [];
-              results.inserted += created.length;
-
-              // 4. Apply the batch-level tags to every created household
-              if (created.length > 0 && uniqueTagNames.size > 0) {
-                const tagIds: string[] = [];
-                for (const name of uniqueTagNames.values()) {
-                  const tag = await this.tagsRepo.addOrGet(
-                    {
-                      row: {
-                        name,
-                        tenant_id,
-                        createdby_id: user_id,
-                        updatedby_id: user_id,
-                      } as OperationDataType<'tags', 'insert'>,
-                      onConflictColumn: 'name',
-                    },
-                    trx,
-                  );
-                  if (tag?.id != null) tagIds.push(String(tag.id));
-                }
-                const mapRows = created
-                  .filter((h) => h?.id != null)
-                  .flatMap((h) =>
-                    tagIds.map((tag_id) => ({
-                      tenant_id,
-                      household_id: String(h.id),
-                      tag_id,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                    })),
-                  );
-                if (mapRows.length > 0) {
-                  await trx
-                    .insertInto('map_households_tags')
-                    .values(mapRows as unknown as OperationDataType<'map_households_tags', 'insert'>[])
-                    .onConflict((oc) => oc.doNothing())
-                    .execute();
-                }
-              }
-            });
-        } catch (err) {
-          results.errors += entries.length;
-          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          households_created: results.inserted,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as unknown as OperationDataType<'data_imports', 'update'>,
-      });
-    }
-
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
-    try {
-      await backfillMissingSlugs(this.getRepo().db, 'households', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill household slugs after import');
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
 ````typescript
 import type { AuthorizationCodeRequest } from '@azure/msal-node';
@@ -44721,6 +45628,268 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     return { rows, count };
   }
 }
+````
+
+## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
+````typescript
+import { createPublicKey, createVerify } from 'crypto';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import { BaseRepository } from '../../../lib/base.repo';
+import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
+import { applyEngagementTripwires } from '../send-guards';
+import { env } from '../../../../env';
+import { sql } from 'kysely';
+
+const db = new BaseRepository('newsletters').db;
+const subscriptions = new CampaignSubscriptionsRepo();
+
+/**
+ * Consent/suppression side-effects of a SendGrid event (§15):
+ *  - unsubscribe → unsubscribed in the CAMPAIGN whose newsletter carried the link
+ *  - bounce → global hard_bounce suppression (address is dead everywhere)
+ *  - spamreport → global spam_complaint suppression
+ */
+async function applyConsentSideEffects(
+  tenantId: string,
+  newsletterId: string,
+  eventType: string,
+  email: string,
+  occurredAt: Date,
+): Promise<void> {
+  if (!email) return;
+  if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
+    const newsletter = await db
+      .selectFrom('newsletters')
+      .select(['campaign_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .executeTakeFirst();
+    if (newsletter?.campaign_id) {
+      await subscriptions.unsubscribeByEmail({
+        tenant_id: tenantId,
+        campaign_id: String(newsletter.campaign_id),
+        email,
+      });
+    }
+  } else if (eventType === 'bounce' || eventType === 'spamreport') {
+    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
+    await db
+      .insertInto('email_suppressions')
+      .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
+      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
+      .execute();
+  }
+}
+
+const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
+const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
+
+/**
+ * Verifies a SendGrid Signed Event Webhook request.
+ * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
+ * against the base64-DER public verification key configured in the dashboard.
+ */
+function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
+  const verificationKey = env.sendgridWebhookVerificationKey;
+  if (!verificationKey || !signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(verificationKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verifier = createVerify('sha256');
+    verifier.update(timestamp + rawBody);
+    verifier.end();
+    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
+}
+
+/** Shape of a single SendGrid Event Webhook payload entry (all fields optional — inbound/untrusted). */
+interface SendGridEvent {
+  newsletter_id?: string;
+  tenant_id?: string;
+  sg_event_id?: string;
+  sg_message_id?: string;
+  event?: string;
+  email?: string;
+  url?: string;
+  ip?: string;
+  useragent?: string;
+  reason?: string;
+  type?: string;
+  timestamp?: number;
+}
+
+const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req: FastifyRequest, reply) => {
+    // req.body is the raw string (see content-type parser in fastify.server.ts)
+    const rawBody = typeof req.body === 'string' ? req.body : '';
+    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
+    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
+
+    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid payload' });
+    }
+
+    const events: SendGridEvent[] = Array.isArray(parsedBody) ? parsedBody : [parsedBody as SendGridEvent];
+
+    try {
+      const processedNewsletters = new Set<string>();
+
+      // Insert all events that have newsletter_id and tenant_id
+      for (const ev of events) {
+        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
+          continue;
+        }
+
+        const newsletterId = ev.newsletter_id;
+        const tenantId = ev.tenant_id;
+        const eventType = ev.event || '';
+        const email = ev.email || '';
+        const sgEventId = ev.sg_event_id;
+        const sgMessageId = ev.sg_message_id || null;
+        const url = ev.url || null;
+        const ip = ev.ip || null;
+        const userAgent = ev.useragent || null;
+        // Bounce diagnostics for the report: reason ("Mailbox does not exist")
+        // on bounce/dropped events, type 'bounce' (hard) / 'blocked' (soft) on bounces.
+        const reason = typeof ev.reason === 'string' && ev.reason ? ev.reason : null;
+        const bounceType = eventType === 'bounce' && typeof ev.type === 'string' && ev.type ? ev.type : null;
+        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+
+        try {
+          await db
+            .insertInto('newsletter_events')
+            .values({
+              tenant_id: tenantId,
+              newsletter_id: newsletterId,
+              email,
+              event_type: eventType,
+              sg_event_id: sgEventId,
+              sg_message_id: sgMessageId,
+              url,
+              ip,
+              user_agent: userAgent,
+              reason,
+              bounce_type: bounceType,
+              timestamp,
+              created_at: new Date(),
+            })
+            .onConflict((oc) => oc.column('sg_event_id').doNothing())
+            .execute();
+
+          processedNewsletters.add(`${tenantId}:${newsletterId}`);
+
+          await applyConsentSideEffects(String(tenantId), String(newsletterId), eventType, email, timestamp);
+        } catch (insertErr) {
+          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
+        }
+      }
+
+      // Recompute aggregates for each processed newsletter
+      for (const key of processedNewsletters) {
+        const [tenantId, newsletterId] = key.split(':') as [string, string];
+
+        await db.transaction().execute(async (trx) => {
+          // 1. Fetch aggregates
+          const stats = await trx
+            .selectFrom('newsletter_events')
+            .select([
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
+              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
+            ])
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          // 2. Fetch top links clicked
+          const topLinksResult = await trx
+            .selectFrom('newsletter_events')
+            .select(['url'])
+            .select(({ fn }) => fn.count<number>('id').as('clicks'))
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .where('event_type', '=', 'click')
+            .where('url', 'is not', null)
+            .groupBy('url')
+            .orderBy('clicks', 'desc')
+            .execute();
+
+          const topLinks = topLinksResult.map((l) => ({
+            url: l.url,
+            clicks: Number(l.clicks),
+          }));
+
+          // 3. Update the newsletters table row
+          const newsletter = await trx
+            .selectFrom('newsletters')
+            .select(['total_recipients'])
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
+          const uniqueOpens = Number(stats?.unique_opens ?? 0);
+          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
+
+          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
+          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
+
+          await trx
+            .updateTable('newsletters')
+            .set({
+              delivered_count: Number(stats?.delivered ?? 0),
+              bounce_count: Number(stats?.bounced ?? 0),
+              unique_opens: uniqueOpens,
+              unique_clicks: uniqueClicks,
+              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
+              spam_complaint_count: Number(stats?.spamreports ?? 0),
+              last_engagement_at: stats?.last_engagement || null,
+              open_rate: openRate,
+              click_rate: clickRate,
+              top_links: JSON.stringify(topLinks),
+              updated_at: new Date(),
+            })
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .execute();
+        });
+
+        // Abuse tripwires (§ anti-spam): a high hard-bounce rate pauses the tenant's sending, a
+        // high spam-complaint rate suspends the account pending human review. Runs after the
+        // aggregates so an in-flight send's worker loop sees the flag on its next batch.
+        await applyEngagementTripwires(db, tenantId, newsletterId);
+      }
+
+      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
+    } catch (err) {
+      req.log.error(err, 'SendGrid webhook processing error');
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  done();
+};
+
+export default newslettersWebhookRoute;
 ````
 
 ## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
@@ -45560,305 +46729,1585 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/persons/trpc.router.ts
+## File: apps/backend/src/app/modules/persons/services/persons.service.ts
 ````typescript
-import {
-  UpdatePersonsObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { PersonsController } from './controller';
-import { PersonsService } from './services/persons.service';
+import { env } from '../../../../env';
+import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
 
-const persons = new PersonsController();
-const personsService = new PersonsService();
+import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { backfillMissingSlugs } from '../../../lib/slug';
+import { backfillPersonPublicIds, insertPersonWithPublicId } from '../../../lib/person-public-id';
+import { notificationEnabled } from '../../../lib/profile-preferences';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+import { SettingsController } from '../../settings/controller';
+import { TagsRepo } from '../../tags/repositories/tags.repo';
+import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { CompaniesRepo } from '../../companies/repositories/companies.repo';
+import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
+import { TeamsRepo } from '../../teams/repositories/teams.repo';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { ListsRepo } from '../../lists/repositories/lists.repo';
+import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
+import { UserActivityRepo } from '../../../lib/user-activity.repo';
+import { StorageService } from '../../../lib/storage.service';
+import { WorkflowsController } from '../../workflows/controller';
+import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
+import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
+import { logger } from '../../../logger';
 
-function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
-}
+export class PersonsService {
+  private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+  private teamsRepo = new TeamsRepo();
+  private importsRepo = new ImportsRepo();
+  private personsRepo = new PersonsRepo();
+  private userActivity = new UserActivityRepo();
+  private storageService = new StorageService();
+  private householdRepo = new HouseholdRepo();
+  private companiesRepo = new CompaniesRepo();
+  private listsRepo = new ListsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
 
-function attachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
-}
+  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant
+    const emailToCheck = payload.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
 
-function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
-}
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+    const households = new HouseholdRepo();
 
-const deleteOneInput = z.union([
-  idSchema,
-  z.object({
-    id: idSchema,
-    force: z.boolean().optional(),
-  }),
-]);
+    let household_id = payload.household_id as string | undefined;
+    if (!household_id) {
+      const existingBlank = await households.getBlankHousehold({ tenant_id: auth.tenant_id });
+      if (existingBlank?.id) {
+        household_id = String(existingBlank.id);
+      } else {
+        const created = await households.add({
+          row: {
+            tenant_id: auth.tenant_id,
+            campaign_id: String(campaign_id),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          } as OperationDataType<'households', 'insert'>,
+        });
+        household_id = String(created?.id);
+      }
+    }
 
-function deleteOne() {
-  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
-    const id = typeof input === 'string' ? input : input.id;
-    const force = typeof input === 'string' ? false : !!input.force;
-    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
-  });
-}
-
-const deleteManyInput = z.union([
-  z.array(idSchema).min(1, 'At least one ID is required'),
-  z.object({
-    ids: z.array(idSchema).min(1, 'At least one ID is required'),
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteMany() {
-  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
-    const ids = Array.isArray(input) ? input : input.ids;
-    const force = Array.isArray(input) ? false : !!input.force;
-    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
-  });
-}
-
-function detachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      personsService.detachTag({
-        tenant_id: ctx.auth.tenant_id,
-        person_id: input.id,
-        name: input.tag_name,
-        type: input.type ?? 'tag',
-        user_id: ctx.auth.user_id,
-      }),
-    );
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
-}
-
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
-}
-
-function getByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
-}
-
-function countByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
-}
-
-function countWithCompany() {
-  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
-}
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-/** Tenant-scoped resolution by opaque public_id for /people/:slug URLs (spec §1). */
-function getByPublicId() {
-  return authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => persons.getByPublicId(input, ctx.auth));
-}
-
-function getActivity() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
-}
-
-// Distinct tags
-function getDistinctTags() {
-  return authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
-}
-
-function exportCsv() {
-  return authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
-}
-
-function getTags() {
-  return authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return persons.getTags(id, ctx.auth, type);
+    // Persons are keyed by an opaque public_id, not a name slug (spec §1):
+    // generate a Crockford id → insert → retry on the per-tenant unique
+    // violation. The display slug `{name}-xxxx-xxxx` is derived from the same
+    // public_id in one write. (Households/companies still use name slugs.)
+    const result = await insertPersonWithPublicId(payload.first_name, payload.last_name, (public_id, slug) => {
+      const row = {
+        ...payload,
+        public_id,
+        slug,
+        household_id,
+        campaign_id,
+        tenant_id: auth.tenant_id,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      };
+      return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
     });
-}
+    if (result && typeof result === 'object') {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger usage check in addPerson');
+      }
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerWorkflow(
+          auth.tenant_id,
+          String((result as Record<string, unknown>)['id']),
+          'contact_created',
+          null,
+        );
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
+      }
 
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data, ctx.auth));
-}
+      if (payload.assigned_to) {
+        try {
+          const assignee = await this.personsRepo.db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', String(payload.assigned_to))
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+              const createdPerson = result as Record<string, unknown>;
+              const personName =
+                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+              const mailService = new TransactionalEmailService();
+              await mailService.sendMail({
+                to: assignee.email,
+                subject: `Contact Assigned to You: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+              });
+            }
+          }
+        } catch (mailErr) {
+          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+        }
+      }
+    }
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'create',
+        entity: 'persons',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: {
+          id: result?.id,
+          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log create person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_created',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
+    }
+    return result;
+  }
 
-function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
-}
+  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant (excluding the person being updated)
+    const emailToCheck = data.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing && String(existing.id) !== String(id)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
 
-function importMany() {
-  const ImportRow = z.object({
-    first_name: z.string().trim().max(100).optional(),
-    middle_names: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
-    email: z.string().trim().max(255).optional(),
-    email2: z.string().trim().max(255).optional(),
-    mobile: z.string().trim().max(30).optional(),
-    notes: z.string().trim().max(10000).optional(),
-    home_phone: z.string().trim().max(30).optional(),
-    street_num: z.string().trim().max(30).optional(),
-    street1: z.string().trim().max(150).optional(),
-    street2: z.string().trim().max(150).optional(),
-    apt: z.string().trim().max(30).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    zip: z.string().trim().max(20).optional(),
-    country: z.string().trim().max(100).optional(),
-    // Company name from a mapped CSV column — matched case-insensitively to an
-    // existing company, created (attributed to this import) when there's no match.
-    company: z.string().trim().max(200).optional(),
-    // Raw comma/semicolon-separated tag names from a mapped CSV column,
-    // applied per person on top of the batch-level `tags` below.
-    tags: z.string().trim().max(500).optional(),
-  });
+    let original: Record<string, unknown> | null = null;
+    try {
+      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
+        string,
+        unknown
+      > | null;
+    } catch (err) {
+      logger.error({ err }, 'Failed to fetch original person record for activity log');
+    }
+    const result = await this.personsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        ...data,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'persons', 'update'>,
+    });
+    if (result && typeof result === 'object') {
+      const updatedPerson = result as Record<string, unknown>;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
+        const newAssigneeId = data.assigned_to;
+        if (newAssigneeId) {
+          try {
+            const assignee = await this.personsRepo.db
+              .selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+              // String conversion ensures precision is maintained down to the database driver level
+              .where('authusers.id', '=', String(newAssigneeId))
+              .executeTakeFirst();
 
-  const Input = z.object({
-    rows: z.array(ImportRow),
-    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
-    skipped: z.number().int().nonnegative().optional(),
-    file_name: z.string().trim().min(1).max(255).optional(),
-    // §17 CSV import wizard: how to handle rows whose email matches a person
-    // that already exists — one choice for the whole batch (spec review step
-    // is a single radio group, not a per-row decision).
-    duplicate_decision: z.enum(['merge', 'skip', 'import_new']).optional().default('skip'),
-    // Add every imported/merged person to this static list (created if it
-    // doesn't exist yet). Resolved by exact, case-insensitive name match.
-    list_name: z.string().trim().min(1).max(100).optional(),
-    // Raw uploaded CSV text, retained 90 days for the History page's
-    // per-import re-download (spec §17 footer copy).
-    source_csv: z.string().max(10_000_000).optional(),
-    // Rows the wizard's Review step already excluded/cleaned client-side
-    // (bad-email "Skip" decision) — recorded so History's "download skipped
-    // rows" export covers them too, not just server-detected skips.
-    client_skip_reasons: z
-      .array(
-        z.object({
-          row: z.number().int().nonnegative(),
-          email: z.string().optional(),
-          reason: z.string().max(200),
-        }),
+            if (assignee && assignee.email) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+                const personName =
+                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
+                  'unnamed contact';
+                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+                const mailService = new TransactionalEmailService();
+                await mailService.sendMail({
+                  to: assignee.email,
+                  subject: `Contact Assigned to You: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                });
+              }
+            }
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+          }
+        }
+      }
+    }
+    try {
+      const changes: Record<string, unknown> = {};
+      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+      if (original && resultObj) {
+        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+        for (const key of Object.keys(data)) {
+          if (skipKeys.includes(key)) continue;
+          const oldVal = (original as Record<string, unknown>)[key];
+          const newVal = resultObj[key];
+          if (oldVal !== newVal) {
+            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+          }
+        }
+      }
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: id ? String(id) : null,
+        quantity: 1,
+        metadata: {
+          id,
+          entity_label: resultObj
+            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
+            : 'Person',
+          changes,
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log update person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_updated',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
+    }
+    return result;
+  }
+
+  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
+    if (!html) return '';
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  }
+
+  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
+      string,
+      unknown
+    > | null;
+    if (!person) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Person not found',
+      });
+    }
+
+    const emails: string[] = [];
+    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
+    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
+
+    if (emails.length === 0) {
+      return {
+        emails: [],
+        newsletters: [],
+      };
+    }
+
+    const db = this.personsRepo.db;
+
+    // 1. Fetch email conversations (sent and received)
+    const conversations = await db
+      .selectFrom('emails')
+      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
+      .selectAll('emails')
+      .select('email_bodies.body_html as body_html')
+      .where('emails.tenant_id', '=', auth.tenant_id)
+      // Recipient match goes through email_recipients — the source of truth.
+      // emails.to_email is a display-only cache holding a joined "a, b" string,
+      // so an exact IN match would miss multi-recipient emails (D-10).
+      .where((eb) =>
+        eb.or([
+          eb('emails.from_email', 'in', emails),
+          eb.exists(
+            eb
+              .selectFrom('email_recipients')
+              .select('email_recipients.id')
+              .whereRef('email_recipients.email_id', '=', 'emails.id')
+              .where('email_recipients.tenant_id', '=', auth.tenant_id)
+              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
+          ),
+        ]),
       )
-      .max(500)
-      .optional(),
-  });
+      .orderBy('emails.created_at', 'desc')
+      .limit(50)
+      .execute();
 
-  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
-}
+    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
+    const newsletterEvents = await db
+      .selectFrom('newsletter_events')
+      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
+      .select([
+        'newsletter_events.id',
+        'newsletter_events.event_type',
+        'newsletter_events.timestamp',
+        'newsletter_events.url',
+        'newsletters.subject as newsletter_subject',
+        'newsletters.name as newsletter_name',
+      ])
+      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
+      .where('newsletter_events.email', 'in', emails)
+      .orderBy('newsletter_events.timestamp', 'desc')
+      .limit(100)
+      .execute();
 
-function checkDuplicateEmails() {
-  return authProcedure
-    .input(z.object({ emails: z.array(z.string().trim().max(255)).max(2000) }))
-    .query(({ input, ctx }) => personsService.checkDuplicateEmails(ctx.auth, input.emails));
-}
-
-function getPotentialDuplicates() {
-  return authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
-}
-
-function getDuplicateCounts() {
-  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
-}
-
-function mergePersons() {
-  return authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
-}
-
-function moveEntireHousehold() {
-  return authProcedure
-    .input(
-      z.object({
-        fromHouseholdId: idSchema,
-        toHouseholdId: idSchema,
+    return {
+      emails: conversations.map((mail) => {
+        let snippet = '';
+        if (mail.body_html) {
+          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
+        }
+        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
+          snippet = mail.preview;
+        }
+        return {
+          ...mail,
+          preview: snippet,
+        };
       }),
-    )
-    .mutation(({ input, ctx }) =>
-      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
-    );
-}
+      newsletters: newsletterEvents,
+    };
+  }
 
-export const PersonsRouter = router({
-  add: add(),
-  count: count(),
-  getAll: getAll(),
-  update: update(),
-  removeHousehold: removeHousehold(),
-  import: importMany(),
-  getTags: getTags(),
-  getById: getById(),
-  getByPublicId: getByPublicId(),
-  getActivity: getActivity(),
-  attachTag: attachTag(),
-  detachTag: detachTag(),
-  delete: deleteOne(),
-  deleteMany: deleteMany(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getByCompanyId: getByCompanyId(),
-  countByCompanyId: countByCompanyId(),
-  countWithCompany: countWithCompany(),
-  getAllWithAddress: getAllWithAddress(),
-  exportCsv: exportCsv(),
-  getPotentialDuplicates: getPotentialDuplicates(),
-  getDuplicateCounts: getDuplicateCounts(),
-  mergePersons: mergePersons(),
-  moveEntireHousehold: moveEntireHousehold(),
-  checkDuplicateEmails: checkDuplicateEmails(),
-});
+  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    const result = await this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      person_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+
+    if (result && tag?.id) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger tag_added workflow');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: person_id,
+        quantity: 1,
+        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log attach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
+        person_id,
+        tag_name: name,
+        tag_type: type,
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
+    }
+
+    return result;
+  }
+
+  public async detachTag(input: {
+    tenant_id: string;
+    person_id: string;
+    name: string;
+    type?: 'tag' | 'issue';
+    user_id?: string;
+    source?: string;
+  }) {
+    const tag = await this.tagsRepo.getIdByName({
+      tenant_id: input.tenant_id,
+      name: input.name,
+      type: input.type ?? 'tag',
+    });
+
+    if (tag?.id) {
+      await this.mapPersonsTagRepo.deleteMapping({
+        tenant_id: input.tenant_id,
+        person_id: input.person_id,
+        tag_id: tag.id,
+      });
+    }
+
+    try {
+      if (input.user_id) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          activity: 'update',
+          entity: 'persons',
+          entity_id: input.person_id,
+          quantity: 1,
+          metadata: {
+            id: input.person_id,
+            action: `detach_${input.type ?? 'tag'}`,
+            name: input.name,
+            ...(input.source ? { source: input.source } : {}),
+          },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
+        person_id: input.person_id,
+        tag_name: input.name,
+        tag_type: input.type ?? 'tag',
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
+    }
+
+    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
+    if (!isVolunteerTag) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+    });
+
+    if (!teams.length) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
+
+    for (const team of teams) {
+      if (team.is_captain && team.team_id) {
+        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
+      }
+    }
+
+    const removedTeams = teams
+      .filter((team) => team.team_id)
+      .map((team) => ({
+        id: team.team_id,
+        name: team.team_name ?? '',
+        was_captain: team.is_captain,
+      }));
+
+    return {
+      removed_team_ids: removedTeams.map((team) => team.id),
+      removed_teams: removedTeams,
+    };
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        first_name?: string;
+        middle_names?: string;
+        last_name?: string;
+        email?: string;
+        email2?: string;
+        mobile?: string;
+        notes?: string;
+        home_phone?: string;
+        street_num?: string;
+        street1?: string;
+        street2?: string;
+        apt?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+        company?: string;
+        tags?: string;
+      }>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      /** Raw uploaded CSV text, kept 90 days so the History page can offer a re-download (spec §17). */
+      source_csv?: string;
+      /** Rows the wizard already excluded/cleaned client-side (bad-email "Skip"), recorded for History's skip-reasons export. */
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    let hasImportableRow = false;
+    for (const candidate of input.rows) {
+      const sanitized = this.sanitizeRow(candidate);
+      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
+        hasImportableRow = true;
+        break;
+      }
+    }
+
+    if (!hasImportableRow) {
+      const totalSkipped = skippedFromClient + input.rows.length;
+      const personsBefore = await this.personsRepo.count(auth.tenant_id);
+      return {
+        inserted: 0,
+        errors: 0,
+        skipped: totalSkipped,
+        tag: null,
+        file_name: requestedFileName || null,
+        import_id: null,
+        tenant_id: auth.tenant_id,
+        campaign_id,
+        persons_total_after: personsBefore,
+        persons_total_before: personsBefore,
+        status: 'completed',
+      };
+    }
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'persons',
+      tag_name: autoTag,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as OperationDataType<'data_imports', 'insert'>;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      },
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags,
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          duplicate_decision: input.duplicate_decision ?? 'skip',
+          list_name: input.list_name ?? null,
+          client_skip_reasons: input.client_skip_reasons ?? [],
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      tag: autoTag,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      campaign_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+    options?: {
+      duplicateDecision?: 'merge' | 'skip' | 'import_new';
+      listName?: string;
+      clientSkipReasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+  ) {
+    const households = new HouseholdRepo();
+    const duplicateDecision = options?.duplicateDecision ?? 'skip';
+    const results: {
+      inserted: number;
+      errors: number;
+      households_created: number;
+      skipped: number;
+      merged: number;
+    } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+      skipped: 0,
+      merged: 0,
+    };
+    const importedPersonIds: string[] = [];
+    // Rows kept downloadable with the reason each was skipped (History page, spec §17) —
+    // seeded with the wizard's own client-side skips (bad-email "Skip"), then appended to below.
+    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [...(options?.clientSkipReasons ?? [])];
+
+    const errorMessages: string[] = [];
+    let cachedBlankHouseholdId: string | null = null;
+    // Companies resolved so far, keyed by lower(name) — merged from each chunk's
+    // transaction only after it commits, so a rolled-back create is never reused.
+    const companyIdByName = new Map<string, string>();
+    let autoTagId: string | null = null;
+    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and classify all valid rows in the chunk upfront
+      type ValidEntry = {
+        sanitized: {
+          first_name?: string;
+          middle_names?: string;
+          last_name?: string;
+          email?: string;
+          email2?: string;
+          mobile?: string;
+          notes?: string;
+          home_phone?: string;
+          street_num?: string;
+          street1?: string;
+          street2?: string;
+          apt?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          country?: string;
+          company?: string;
+          tags: string[];
+        };
+        isBlankAddress: boolean;
+        fp_street: string | null;
+        fp_full: string | null;
+        rowNumber: number;
+      };
+      const SKIP_REASONS_CAP = 500;
+      const validEntries: ValidEntry[] = [];
+      for (const [chunkIdx, raw] of chunk.entries()) {
+        const rowNumber = i + chunkIdx + 1;
+        const sanitized = this.sanitizeRow(raw);
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
+          results.skipped += 1;
+          if (skipReasons.length < SKIP_REASONS_CAP) {
+            skipReasons.push({ row: rowNumber, reason: 'Blank row: no importable fields' });
+          }
+          continue;
+        }
+        const isBlankAddress =
+          !sanitized.home_phone &&
+          !sanitized.street_num &&
+          !sanitized.street1 &&
+          !sanitized.street2 &&
+          !sanitized.apt &&
+          !sanitized.city &&
+          !sanitized.state &&
+          !sanitized.zip &&
+          !sanitized.country;
+        validEntries.push({
+          sanitized,
+          isBlankAddress,
+          fp_street: isBlankAddress
+            ? null
+            : fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              }),
+          fp_full: isBlankAddress
+            ? null
+            : fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              }),
+          rowNumber,
+        });
+      }
+
+      if (validEntries.length === 0) {
+        await this.importsRepo.update({
+          tenant_id: tenant_id,
+          id: import_id,
+          row: {
+            tag_id: autoTagId,
+            inserted_count: results.inserted,
+            error_count: results.errors,
+            skipped_count: skipped + results.skipped,
+            households_created: results.households_created,
+            updatedby_id: user_id,
+            updated_at: new Date(),
+          },
+        });
+        continue;
+      }
+
+      try {
+        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
+          let localBlankHouseholdId = cachedBlankHouseholdId;
+          let localAutoTagId = autoTagId;
+          let householdsCreatedDelta = 0;
+
+          // 2a. Resolve blank household once for the whole chunk
+          if (validEntries.some((e) => e.isBlankAddress)) {
+            if (!localBlankHouseholdId) {
+              const existingBlank = await households.getBlankHousehold({ tenant_id }, trx);
+              if (existingBlank?.id) {
+                localBlankHouseholdId = String(existingBlank.id);
+              } else {
+                const created = await households.add(
+                  {
+                    row: {
+                      tenant_id,
+                      campaign_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                      file_id: import_id,
+                    } as OperationDataType<'households', 'insert'>,
+                  },
+                  trx,
+                );
+                localBlankHouseholdId = String(created?.id);
+                householdsCreatedDelta += 1;
+              }
+            }
+          }
+
+          // 2b. Batch-resolve addressed households with a single IN query
+          const fpCache = new Map<string, string>(); // fp_full -> household_id
+          const uniqueFps = [
+            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
+          ];
+          if (uniqueFps.length > 0) {
+            const existingHouseholds = await trx
+              .selectFrom('households')
+              .select(['id', 'address_fp_full'])
+              .where('tenant_id', '=', tenant_id)
+              .where('address_fp_full', 'in', uniqueFps)
+              .execute();
+            for (const h of existingHouseholds) {
+              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
+            }
+          }
+
+          // 2c. Create only missing households (deduplicated within this chunk)
+          for (const entry of validEntries) {
+            if (entry.isBlankAddress || !entry.fp_full) continue;
+            if (fpCache.has(entry.fp_full)) continue;
+            const { sanitized, fp_street, fp_full } = entry;
+            const hhRow = {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              home_phone: sanitized.home_phone ?? null,
+              street_num: sanitized.street_num ?? null,
+              street1: sanitized.street1 ?? null,
+              street2: sanitized.street2 ?? null,
+              apt: sanitized.apt ?? null,
+              city: sanitized.city ?? null,
+              state: sanitized.state ?? null,
+              zip: sanitized.zip ?? null,
+              country: sanitized.country ?? null,
+              address_fp_street: fp_street,
+              address_fp_full: fp_full,
+              notes: null,
+              file_id: import_id,
+            } as OperationDataType<'households', 'insert'>;
+            const household = await households.add({ row: hhRow }, trx);
+            fpCache.set(fp_full, String(household?.id));
+            householdsCreatedDelta += 1;
+          }
+
+          // 2c'. Resolve companies by case-insensitive name: one IN query for the
+          // chunk's unmatched names, then create whatever is still missing —
+          // attributed to this import via file_id so deleting the import can
+          // clean them up. Kept in a chunk-local map and merged into the outer
+          // cache only after commit.
+          const localCompanyIdByName = new Map<string, string>(companyIdByName);
+          const chunkCompanyNames = new Map<string, string>(); // lower(name) -> original casing
+          for (const entry of validEntries) {
+            const name = entry.sanitized.company;
+            if (name && !localCompanyIdByName.has(name.toLowerCase())) {
+              if (!chunkCompanyNames.has(name.toLowerCase())) chunkCompanyNames.set(name.toLowerCase(), name);
+            }
+          }
+          if (chunkCompanyNames.size > 0) {
+            const existingCompanies = await trx
+              .selectFrom('companies')
+              .select(['id', 'name'])
+              .where('tenant_id', '=', tenant_id)
+              .where(sql`lower(name)`, 'in', [...chunkCompanyNames.keys()])
+              .execute();
+            for (const c of existingCompanies) {
+              localCompanyIdByName.set(c.name.toLowerCase(), String(c.id));
+            }
+            for (const [lowerName, name] of chunkCompanyNames) {
+              if (localCompanyIdByName.has(lowerName)) continue;
+              const created = await trx
+                .insertInto('companies')
+                .values({
+                  tenant_id,
+                  createdby_id: user_id,
+                  updatedby_id: user_id,
+                  name,
+                  file_id: import_id,
+                } as OperationDataType<'companies', 'insert'>)
+                .returning('id')
+                .executeTakeFirst();
+              if (created?.id) localCompanyIdByName.set(lowerName, String(created.id));
+            }
+          }
+          const companyIdFor = (entry: (typeof validEntries)[number]): string | null => {
+            const name = entry.sanitized.company;
+            return name ? (localCompanyIdByName.get(name.toLowerCase()) ?? null) : null;
+          };
+
+          // 2d. Duplicate-email resolution (spec §17 Review step — a single
+          // decision governs every row whose email matches a person that
+          // already exists; email is the match key app-wide, same as
+          // Duplicates and Forms).
+          //  - 'skip' (default): exclude the row; counted + reasoned below.
+          //  - 'merge': fill the existing person's blank fields from the row
+          //    (never overwrite), don't insert a second person.
+          //  - 'import_new': insert as a brand-new person anyway; the email
+          //    is cleared first so it can't collide with the unique
+          //    (tenant_id, lower(email)) index — the row becomes a
+          //    name-only duplicate for the Duplicates page to reconcile.
+          const mergeEntries: Array<{ entry: (typeof validEntries)[number]; personId: string }> = [];
+          const insertEntries: typeof validEntries = [];
+          const candidateEmails = [
+            ...new Set(validEntries.map((e) => e.sanitized.email).filter((email): email is string => !!email)),
+          ];
+          const existingByEmail = new Map<string, { id: string }>();
+          if (candidateEmails.length > 0) {
+            const existing = await trx
+              .selectFrom('persons')
+              .select(['id', 'email'])
+              .where('tenant_id', '=', tenant_id)
+              .where(
+                sql`lower(email)`,
+                'in',
+                candidateEmails.map((email) => email.toLowerCase()),
+              )
+              .execute();
+            for (const p of existing) {
+              if (p.email) existingByEmail.set(p.email.toLowerCase(), { id: String(p.id) });
+            }
+          }
+
+          for (const entry of validEntries) {
+            const match = entry.sanitized.email ? existingByEmail.get(entry.sanitized.email.toLowerCase()) : null;
+            if (!match) {
+              insertEntries.push(entry);
+              continue;
+            }
+            if (duplicateDecision === 'merge') {
+              mergeEntries.push({ entry, personId: match.id });
+            } else if (duplicateDecision === 'import_new') {
+              // Keep the row, but the email must go so the insert doesn't
+              // collide with the existing person's email.
+              insertEntries.push({ ...entry, sanitized: { ...entry.sanitized, email: undefined } });
+            } else {
+              results.skipped += 1;
+              if (skipReasons.length < SKIP_REASONS_CAP) {
+                skipReasons.push({
+                  row: entry.rowNumber,
+                  email: entry.sanitized.email,
+                  reason: 'Matches a person you already have. Duplicate decision was Skip',
+                });
+              }
+            }
+          }
+
+          // 3. Batch insert all persons in one statement
+          const personRows = insertEntries.map((entry) => {
+            const { sanitized, isBlankAddress, fp_full } = entry;
+            return {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
+              first_name: sanitized.first_name ?? null,
+              middle_names: sanitized.middle_names ?? null,
+              last_name: sanitized.last_name ?? null,
+              email: sanitized.email ?? null,
+              email2: sanitized.email2 ?? null,
+              mobile: sanitized.mobile ?? null,
+              home_phone: null,
+              company_id: companyIdFor(entry),
+              file_id: import_id,
+              notes: sanitized.notes ?? null,
+            };
+          });
+          const insertedPersons = personRows.length
+            ? await trx
+                .insertInto('persons')
+                .values(personRows)
+                .onConflict((oc) => oc.doNothing())
+                .returningAll()
+                .execute()
+            : [];
+
+          // Count rows silently skipped due to a duplicate email under the 'skip' decision
+          const duplicatesSkipped = personRows.length - insertedPersons.length;
+          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+
+          // 3b. Merge decision: fill only the existing person's blank fields — never overwrite.
+          const mergedPersonIds: string[] = [];
+          for (const { entry, personId } of mergeEntries) {
+            await trx
+              .updateTable('persons')
+              .set({
+                first_name: sql`COALESCE(persons.first_name, ${entry.sanitized.first_name ?? null})`,
+                middle_names: sql`COALESCE(persons.middle_names, ${entry.sanitized.middle_names ?? null})`,
+                last_name: sql`COALESCE(persons.last_name, ${entry.sanitized.last_name ?? null})`,
+                email2: sql`COALESCE(persons.email2, ${entry.sanitized.email2 ?? null})`,
+                mobile: sql`COALESCE(persons.mobile, ${entry.sanitized.mobile ?? null})`,
+                company_id: sql`COALESCE(persons.company_id, ${companyIdFor(entry)})`,
+                notes: sql`COALESCE(persons.notes, ${entry.sanitized.notes ?? null})`,
+                updated_at: sql`now()`,
+                updatedby_id: user_id,
+              })
+              .where('tenant_id', '=', tenant_id)
+              .where('id', '=', personId)
+              .execute();
+            mergedPersonIds.push(personId);
+          }
+          results.merged += mergedPersonIds.length;
+
+          // 4. Upsert each unique tag name exactly once (not once per row) —
+          // the batch-level tags plus every name from a mapped Tags column,
+          // deduplicated case-insensitively (first casing wins).
+          const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
+          for (const name of [...tags, ...validEntries.flatMap((e) => e.sanitized.tags)]) {
+            if (!uniqueTagNames.has(name.toLowerCase())) uniqueTagNames.set(name.toLowerCase(), name);
+          }
+          const tagIdByLowerName = new Map<string, string>();
+          const tagRecords: Array<{ name: string; id: string }> = [];
+          for (const name of uniqueTagNames.values()) {
+            const row = {
+              name,
+              tenant_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            } as OperationDataType<'tags', 'insert'>;
+            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
+            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
+            if (tag?.id) {
+              tagRecords.push({ name, id: String(tag.id) });
+              tagIdByLowerName.set(name.toLowerCase(), String(tag.id));
+            }
+          }
+
+          // 5. Work out which tags each person gets: every batch-level tag,
+          // plus the row's own Tags-column names. Inserted persons are paired
+          // back to their source rows by position when the insert dropped
+          // nothing; if onConflict(doNothing) dropped rows the positions no
+          // longer line up, so fall back to email pairing (rows that can't be
+          // paired still get the batch-level tags).
+          const batchTagRecords = tagRecords.filter((t) => tags.some((n) => n.toLowerCase() === t.name.toLowerCase()));
+          const rowTagRecords = (
+            entry: (typeof validEntries)[number] | undefined,
+          ): Array<{ name: string; id: string }> => {
+            if (!entry) return batchTagRecords;
+            const names = new Set([...tags, ...entry.sanitized.tags].map((n) => n.toLowerCase()));
+            return tagRecords.filter((t) => names.has(t.name.toLowerCase()));
+          };
+
+          const personTags = new Map<string, Array<{ name: string; id: string }>>();
+          if (insertedPersons.length === insertEntries.length) {
+            insertedPersons.forEach((p, idx) => personTags.set(String(p.id), rowTagRecords(insertEntries[idx])));
+          } else {
+            const entryByEmail = new Map(
+              insertEntries
+                .filter((e) => e.sanitized.email)
+                .map((e) => [(e.sanitized.email as string).toLowerCase(), e] as const),
+            );
+            for (const p of insertedPersons) {
+              const entry = p.email ? entryByEmail.get(String(p.email).toLowerCase()) : undefined;
+              personTags.set(String(p.id), rowTagRecords(entry));
+            }
+          }
+          for (const { entry, personId } of mergeEntries) {
+            personTags.set(personId, rowTagRecords(entry));
+          }
+
+          const tagMapRows = [...personTags.entries()].flatMap(([person_id, records]) =>
+            records.map(({ id: tag_id }) => ({
+              tenant_id,
+              person_id,
+              tag_id: tag_id as unknown as string,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            })),
+          );
+          if (tagMapRows.length > 0) {
+            // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
+            await trx
+              .insertInto('map_peoples_tags')
+              .values(tagMapRows)
+              .onConflict((oc) => oc.doNothing())
+              .execute();
+          }
+
+          return {
+            insertedPersons,
+            mergedPersonIds,
+            personTags,
+            householdsCreatedDelta,
+            blankHouseholdId: localBlankHouseholdId,
+            companyIdByName: localCompanyIdByName,
+            autoTagId: localAutoTagId,
+          };
+        });
+
+        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
+        const workflowsController = new WorkflowsController();
+        for (const person of outcome.insertedPersons) {
+          const personId = String(person.id);
+          importedPersonIds.push(personId);
+          try {
+            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
+          }
+          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
+            }
+          }
+        }
+        // Merged persons aren't new contacts — only the tag_added workflow applies, and
+        // they still belong in the static-list membership pass below.
+        for (const personId of outcome.mergedPersonIds) {
+          importedPersonIds.push(personId);
+          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow after CSV import merge');
+            }
+          }
+        }
+
+        results.inserted += outcome.insertedPersons.length;
+        results.households_created += outcome.householdsCreatedDelta;
+        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
+        for (const [lowerName, companyId] of outcome.companyIdByName) companyIdByName.set(lowerName, companyId);
+        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
+      } catch (err: unknown) {
+        // If the chunk transaction fails, count all valid rows in the chunk as errors
+        results.errors += validEntries.length;
+        const message = err instanceof Error ? err.message : String(err);
+        errorMessages.push(message);
+        logger.error({ err, message }, 'Import chunk failed');
+      }
+
+      // Update intermediate counts after each chunk
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          tag_id: autoTagId,
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          merged_count: results.merged,
+          households_created: results.households_created,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        },
+      });
+    }
+
+    // Add every imported (and merged-into) person to a static list, creating
+    // it if it doesn't already exist by that exact name (spec §17 "add
+    // everyone to a static list"). This runs here — not as a public
+    // lists.addMembers endpoint — because processImportRows is the only
+    // place that knows the final set of person ids; see pplcrm-forms-style
+    // note in the wizard skill for why no new public list-membership API
+    // was added for this track.
+    if (options?.listName && importedPersonIds.length > 0) {
+      try {
+        await this.addImportedPersonsToStaticList(tenant_id, user_id, options.listName, importedPersonIds);
+      } catch (err) {
+        logger.error({ err }, 'Failed to add imported people to the requested static list');
+      }
+    }
+
+    // Bulk-inserted rows get their identifiers in one set-based pass (spec §1):
+    // persons get an opaque public_id + display slug, households a name slug.
+    try {
+      await backfillPersonPublicIds(this.personsRepo.db, tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill record identifiers after import');
+    }
+
+    // Final History-page facts: every tag actually applied, and the reason
+    // each skipped row was skipped (spec §17 — "skipped rows stay
+    // downloadable with the reason each was skipped").
+    try {
+      await this.importsRepo.update({
+        tenant_id,
+        id: import_id,
+        row: {
+          merged_count: results.merged,
+          tags_applied: JSON.stringify(tags),
+          skip_reasons: JSON.stringify(skipReasons),
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to persist final import stats');
+    }
+
+    // Log the user activity
+    try {
+      await this.userActivity.log({
+        tenant_id,
+        user_id,
+        activity: 'import',
+        entity: 'persons',
+        quantity: results.inserted,
+        metadata: {
+          rows_received: rows.length,
+          tags_applied: tags.slice(0, 10),
+          auto_tag: autoTag,
+          households_created: results.households_created,
+          errors: results.errors,
+          skipped: skipped + results.skipped,
+          import_id,
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log import activity');
+    }
+
+    if (importedPersonIds.length > 0) {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
+      }
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      merged: results.merged,
+      households_created: results.households_created,
+      tag_id: autoTagId,
+      errorMessages,
+    };
+  }
+
+  /**
+   * Find-or-create a static people list by exact, case-insensitive name and
+   * add every given person id to it (spec §17 "add everyone to a static
+   * list"). Runs inside the import job because that's the only place the
+   * final imported/merged person ids are known — see the call site comment
+   * in processImportRows.
+   */
+  private async addImportedPersonsToStaticList(
+    tenant_id: string,
+    user_id: string,
+    listName: string,
+    personIds: string[],
+  ): Promise<void> {
+    const trimmedName = listName.trim();
+    if (!trimmedName) return;
+
+    const existingList = await this.listsRepo.db
+      .selectFrom('lists')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where(sql`lower(name)`, '=', trimmedName.toLowerCase())
+      .where('object', '=', 'people')
+      .executeTakeFirst();
+
+    let listId = existingList?.id != null ? String(existingList.id) : undefined;
+
+    if (!listId) {
+      const created = await this.listsRepo.add({
+        row: {
+          tenant_id,
+          name: trimmedName,
+          description: `Created by the CSV import wizard on ${new Date().toLocaleDateString()}.`,
+          object: 'people',
+          is_dynamic: false,
+          definition: null,
+          status: 'idle',
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        } as OperationDataType<'lists', 'insert'>,
+      });
+      if (created?.id != null) listId = String(created.id);
+    }
+    if (!listId) return;
+
+    const uniqueIds = [...new Set(personIds)];
+    const rows = uniqueIds.map((person_id) => ({
+      tenant_id,
+      list_id: listId as string,
+      person_id,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })) as OperationDataType<'map_lists_persons', 'insert'>[];
+
+    // A person may already belong to this list (e.g. re-running an import
+    // into the same list) — the primary key is (tenant_id, list_id,
+    // person_id), so skip rows that would collide instead of failing the batch.
+    await this.mapListsPersonsRepo.db
+      .insertInto('map_lists_persons')
+      .values(rows)
+      .onConflict((oc) => oc.columns(['tenant_id', 'list_id', 'person_id']).doNothing())
+      .execute();
+  }
+
+  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    return this.personsRepo.moveToNewHousehold({
+      tenant_id: auth.tenant_id,
+      person_id,
+      user_id: auth.user_id,
+      campaign_id,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  /**
+   * CSV import wizard Review step (spec §17) — email is the match key across
+   * this app (Duplicates, Forms). Given the emails mapped from the uploaded
+   * file, report which ones already belong to a person so the wizard can
+   * render "N rows match people you already have" with a door to each match.
+   */
+  public async checkDuplicateEmails(auth: IAuthKeyPayload, emails: string[]) {
+    const matches = await this.personsRepo.findManyByEmails({ tenant_id: auth.tenant_id, emails });
+    return matches.map((match) => ({
+      email: (match.email ?? '').toLowerCase(),
+      person_id: String(match.id),
+      name:
+        [match.first_name, match.last_name]
+          .filter((part) => !!part)
+          .join(' ')
+          .trim() || 'Unnamed person',
+      slug: match.slug ?? null,
+    }));
+  }
+
+  public async getDuplicateCounts(auth: IAuthKeyPayload) {
+    const [people, households, companies] = await Promise.all([
+      this.personsRepo.getDuplicateCount(auth.tenant_id),
+      this.householdRepo.getDuplicateCount(auth.tenant_id),
+      this.companiesRepo.getDuplicateCount(auth.tenant_id),
+    ]);
+    return { people, households, companies };
+  }
+
+  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
+    const result = await this.personsRepo.mergePersons({
+      tenant_id: auth.tenant_id,
+      target_id: input.target_id,
+      source_id: input.source_id,
+      user_id: auth.user_id,
+    });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'merge',
+      entity: 'persons',
+      quantity: 1,
+      metadata: {
+        target_id: input.target_id,
+        source_id: input.source_id,
+      },
+    });
+    return result;
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    person_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapPersonsTagRepo.add({
+      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
+    });
+  }
+
+  private sanitizePhone(v?: string) {
+    if (!v) return undefined;
+    const digits = v.replace(/[^0-9+]/g, '');
+    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
+    return digits.replace(/[^0-9]/g, '');
+  }
+
+  private sanitizeRow(row: {
+    first_name?: string;
+    middle_names?: string;
+    last_name?: string;
+    email?: string;
+    email2?: string;
+    mobile?: string;
+    notes?: string;
+    home_phone?: string;
+    street_num?: string;
+    street1?: string;
+    street2?: string;
+    apt?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+    company?: string;
+    tags?: string;
+  }) {
+    const trim = (v?: string) => (v ? v.trim() : undefined);
+
+    let first_name = trim(row.first_name);
+    const middle_names = trim(row.middle_names);
+    const last_name = trim(row.last_name);
+    let email = (trim(row.email) || '').toLowerCase();
+    let email2 = (trim(row.email2) || '').toLowerCase();
+    if (email2 && !/.+@.+\..+/.test(email2)) email2 = '';
+    let mobile = this.sanitizePhone(row.mobile);
+    const home_phone = this.sanitizePhone(row.home_phone);
+    const notes = trim(row.notes);
+    const company = trim(row.company);
+    // A mapped Tags column holds comma/semicolon-separated names; over-long
+    // names are dropped rather than failing the row (same 50-char cap as tags).
+    const tags = (row.tags ?? '')
+      .split(/[,;]/)
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0 && t.length <= 50);
+
+    if (!email) {
+      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
+    }
+    if (email && !/.+@.+\..+/.test(email)) email = '';
+
+    if (!mobile) {
+      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
+      mobile = this.sanitizePhone(possiblePhone);
+    }
+
+    if (first_name) first_name = this.stripNoise(first_name);
+    if (!first_name && email) first_name = this.nameFromEmail(email);
+
+    return {
+      first_name,
+      middle_names,
+      last_name,
+      email: email || undefined,
+      email2: email2 || undefined,
+      mobile,
+      notes,
+      home_phone,
+      street_num: trim(row.street_num),
+      street1: trim(row.street1),
+      street2: trim(row.street2),
+      apt: trim(row.apt),
+      city: trim(row.city),
+      state: trim(row.state),
+      zip: trim(row.zip),
+      country: trim(row.country),
+      company,
+      tags,
+    };
+  }
+
+  private findEmail(text: string): string | undefined {
+    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return m?.[0];
+  }
+
+  private findPhone(text?: string): string | undefined {
+    if (!text) return undefined;
+    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
+    return m?.[0];
+  }
+
+  private stripNoise(text: string): string | undefined {
+    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
+    const cleaned = noPhone
+      .replace(/[,]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned || undefined;
+  }
+
+  private nameFromEmail(email: string): string | undefined {
+    const local = (email || '').split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || '';
+    if (!token) return undefined;
+    return token.charAt(0).toUpperCase() + token.slice(1);
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
@@ -47275,164 +49724,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/tasks/trpc.router.ts
-````typescript
-import {
-  AddTaskObj,
-  UpdateTaskObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { authProcedure, router } from '../../../trpc';
-import { TasksController } from './controller';
-import { TaskCommentsController } from './comments.controller';
-import { TaskAttachmentsController } from './attachments.controller';
-import { TaskSubtasksController } from './subtasks.controller';
-
-const tasks = new TasksController();
-
-export const TasksRouter = router({
-  add: authProcedure.input(AddTaskObj).mutation(({ input, ctx }) => tasks.addTask(input, ctx.auth)),
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(
-          z.object({
-            name: z.string().trim().min(1, 'Task name is required').max(200, 'Task name is too long'),
-            details: z.string().trim().max(10000).optional().nullable(),
-            status: z.string().trim().max(50).optional().nullable(),
-            priority: z.string().trim().max(50).optional().nullable(),
-            due_at: z.string().trim().max(50).optional().nullable(),
-            assigned_to: z.string().trim().max(50).optional().nullable(),
-          }),
-        ),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-        source_csv: z.string().max(10_000_000).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return tasks.importRows(input, ctx.auth);
-    }),
-
-  count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
-  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
-  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => tasks.deleteMany(ctx.auth.tenant_id, input)),
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getAllTasks(ctx.auth, input)),
-  getArchived: authProcedure.input(getAllOptions).query(({ input, ctx }) => tasks.getArchivedTasks(ctx.auth, input)),
-  exportCsv: authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => tasks.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => tasks.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTaskObj }))
-    .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
-  getComments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskCommentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addComment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskCommentsController().add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        author_id: ctx.auth.user_id,
-        comment: input.comment,
-      } as any),
-    ),
-  getAttachments: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskAttachmentsController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addAttachment: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        filename: z.string().trim().min(1, 'Filename cannot be empty').max(255, 'Filename is too long'),
-        url: z.string().url('Invalid URL format').optional(),
-        content_type: z.string().trim().max(100).optional(),
-        size_bytes: z.number().int().nonnegative().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      (new TaskAttachmentsController() as any).add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        filename: input.filename,
-        url: input.url,
-        content_type: input.content_type,
-        size_bytes: input.size_bytes ?? null,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-  getSubtasks: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) =>
-      new TaskSubtasksController().getByTaskId({ tenant_id: ctx.auth.tenant_id, task_id: input }),
-    ),
-  addSubtask: authProcedure
-    .input(
-      z.object({
-        task_id: idSchema,
-        name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskSubtasksController().add({
-        tenant_id: ctx.auth.tenant_id,
-        task_id: input.task_id,
-        name: input.name,
-        status: 'todo',
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      } as OperationDataType<'task_subtasks', 'insert'>),
-    ),
-  updateSubtask: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        data: z.object({
-          name: z.string().trim().min(1, 'Subtask name cannot be empty').max(200, 'Subtask name too long').optional(),
-          status: z.string().trim().max(50).optional(),
-          position: z.number().int().optional(),
-        }),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      new TaskSubtasksController().updateSubtask({
-        tenant_id: ctx.auth.tenant_id,
-        id: input.id,
-        row: { ...(input.data ?? {}), updatedby_id: ctx.auth.user_id } as OperationDataType<'task_subtasks', 'update'>,
-      }),
-    ),
-});
-````
-
 ## File: apps/backend/src/app/modules/teams/repositories/teams.repo.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -47858,11 +50149,13 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
 ````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
+import { DonationsController } from '../../donations/controller';
 import formBody from '@fastify/formbody';
 import { resolveTenantFromRequest } from '../../../lib/public-tenant';
 import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
+const donationsController = new DonationsController();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -48359,6 +50652,13 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         return reply.send(errorHtml('Web form not found or inactive.'));
       }
 
+      // Fail-closed residency gate: don't render a live donation form for an org that hasn't
+      // confirmed its residency settings. Friendly copy, not the generic 404.
+      if (!(await donationsController.mayAcceptDonations(tenant.id))) {
+        reply.status(403).type('text/html');
+        return reply.send(errorHtml('This organization isn’t accepting online donations yet. Please check back soon.'));
+      }
+
       const formName = form.name;
       const formDescription = form.description || '';
 
@@ -48400,7 +50700,20 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp);
 
       if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
+        // The SPA/JSON caller launches the HelcimPay.js modal from `helcimCheckoutToken`, or follows
+        // `redirect_url` (Stripe hosted checkout / plain form redirect).
+        return reply.status(200).send({
+          success: true,
+          redirect_url: result.redirect_url ?? null,
+          helcimCheckoutToken: result.helcimCheckoutToken ?? null,
+        });
+      }
+
+      // Server-rendered (form POST) path: Helcim can't redirect, so hand back a page that opens the
+      // HelcimPay.js modal from the checkout token.
+      if (result.helcimCheckoutToken) {
+        reply.type('text/html');
+        return reply.send(renderHelcimLaunchHtml(result.helcimCheckoutToken));
       }
 
       if (result.redirect_url) {
@@ -48410,8 +50723,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.redirect('/api/forms/success');
     } catch (err) {
       fastify.log.error(err);
+      // Honor an AppError's `.status` as well as a Fastify error's `.statusCode`, so a 4xx AppError
+      // (e.g. the residency/eligibility gates) reaches the donor with its actionable message.
       const statusCode =
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+        (isRecord(err) && typeof err['status'] === 'number' ? err['status'] : undefined) ??
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) ??
+        500;
       // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
       // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
       const message =
@@ -48432,6 +50749,48 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default webFormsPublicRoute;
+
+/**
+ * Server-rendered launcher for the HelcimPay.js modal. The donation form POSTs normally (no fetch),
+ * so on the Helcim path we return this page: it loads HelcimPay.js and opens the modal from the
+ * checkout token. On an approved payment the modal fires a postMessage; the donation itself is
+ * recorded server-side by the Helcim webhook, so here we just move the donor to the success page.
+ */
+const renderHelcimLaunchHtml = (checkoutToken: string): string => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Completing your donation…</title>
+  <script type="text/javascript" src="https://secure.helcim.app/helcim-pay/services/start.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f1f5f9;
+      color: #1f2937; min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
+    .msg { text-align: center; padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="msg"><p>Opening secure payment…</p></div>
+  <script type="text/javascript">
+    (function () {
+      var checkoutToken = ${JSON.stringify(checkoutToken)};
+      function goSuccess() { window.location.href = '/api/forms/success'; }
+      try {
+        if (typeof appendHelcimPayIframe === 'function') {
+          appendHelcimPayIframe(checkoutToken);
+        }
+      } catch (e) { /* fall through to the message + event listener */ }
+      window.addEventListener('message', function (event) {
+        var data = event && event.data ? event.data : {};
+        if (data.eventName !== 'helcim-pay-js-' + checkoutToken) return;
+        if (data.eventStatus === 'SUCCESS') { goSuccess(); }
+      });
+    })();
+  </script>
+</body>
+</html>
+`;
 
 const renderFormHtml = (
   submitAction: string,
@@ -48960,7 +51319,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return updated;
   }
 
-  public async submitFormPublic(tenant: PublicTenant, slug: string, payload: Record<string, string>, clientIp: string) {
+  public async submitFormPublic(
+    tenant: PublicTenant,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+  ): Promise<{ redirect_url?: string | null; helcimCheckoutToken?: string }> {
     // 1. Rate limiting check
     const now = Date.now();
     let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
@@ -49526,15 +51890,19 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
 
       if (form.form_type === 'donation') {
-        const checkoutSession = await donationsController.createCheckoutSession(
+        // One-time may resolve to a Stripe redirect OR a HelcimPay checkout token (client-side modal).
+        const checkoutInit = await donationsController.createCheckoutSession(
           { tenant_id: tenantId, user_id: resolvedCreatorId },
           resolvedPersonId,
           amountCents,
           { country, state },
           { successUrl, cancelUrl },
         );
-        return { redirect_url: checkoutSession.url };
+        return checkoutInit.kind === 'helcim_pay'
+          ? { helcimCheckoutToken: checkoutInit.checkoutToken }
+          : { redirect_url: checkoutInit.url };
       } else {
+        // Recurring is Stripe-only (Helcim recurring throws upstream), so this is always a redirect.
         const checkoutSession = await donationsController.createRecurringCheckoutSession(
           { tenant_id: tenantId, user_id: resolvedCreatorId },
           resolvedPersonId,
@@ -50250,6 +52618,7 @@ import billingWebhookRoute from './modules/billing/routes/billing-webhook.route'
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import donationsHelcimWebhookRoute from './modules/donations/routes/donations-helcim-webhook.route';
 import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
 import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
@@ -50281,6 +52650,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register Stripe donations webhook route
   fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register Helcim donations webhook route (same tenant token; HMAC-signed body)
+  fastify.register(donationsHelcimWebhookRoute, { prefix: '/api/donations' });
 
   // Register SendGrid newsletters event webhook route
   fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
@@ -53074,6 +55446,123 @@ export const appConfig: ApplicationConfig = {
 <pc-site-footer />
 ````
 
+## File: apps/website/src/app/ui/site-header.ts
+````typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
+import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
+import { SiteLogo } from './site-logo';
+
+type HeaderVariant = 'over-hero' | 'solid';
+
+/**
+ * Site header. Two looks from one component:
+ *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
+ *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
+ * Below `md` the nav collapses behind a hamburger toggle.
+ */
+@Component({
+  selector: 'pc-site-header',
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
+  template: `
+    <header [class]="barClass()">
+      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
+        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
+          <pc-site-logo [onDark]="onDark()" />
+        </a>
+
+        <!-- Desktop nav -->
+        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
+          }
+          <pc-currency-switcher [onDark]="onDark()" />
+          @if (signedIn()) {
+            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+          } @else {
+            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
+            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+          }
+        </nav>
+
+        <!-- Mobile toggle -->
+        <button
+          type="button"
+          class="btn btn-square btn-ghost btn-sm lg:hidden"
+          [class.text-white]="onDark()"
+          [attr.aria-expanded]="open()"
+          aria-label="Toggle menu"
+          (click)="open.set(!open())"
+        >
+          @if (open()) {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+            </svg>
+          }
+        </button>
+      </div>
+
+      <!-- Mobile menu -->
+      @if (open()) {
+        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
+              link.label
+            }}</a>
+          }
+          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
+            @if (signedIn()) {
+              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+            } @else {
+              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
+              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+            }
+          </div>
+        </nav>
+      }
+    </header>
+  `,
+})
+export class SiteHeader {
+  public readonly variant = input<HeaderVariant>('solid');
+
+  private readonly auth = inject(AuthHint);
+
+  protected readonly nav = PRIMARY_NAV;
+  protected readonly loginUrl = LOGIN_URL;
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly dashboardUrl = DASHBOARD_URL;
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly open = signal(false);
+
+  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
+
+  protected readonly barClass = computed<string>(() =>
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
+  );
+
+  protected readonly linkClass = computed<string>(() =>
+    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
+  );
+
+  protected readonly loginBtnClass = computed<string>(() =>
+    this.onDark()
+      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
+      : 'btn btn-outline btn-sm rounded-field',
+  );
+}
+````
+
 ## File: apps/website/src/app/ui/site-logo.ts
 ````typescript
 import { Component, input } from '@angular/core';
@@ -53846,6 +56335,10 @@ import { env } from '../../../env';
 import { BillingController } from '../../modules/billing/controller';
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
 import { DonationsController } from '../../modules/donations/controller';
+import {
+  HelcimDonationProcessor,
+  decodeHelcimInvoiceNumber,
+} from '../../modules/donations/processors/helcim-processor';
 import { logger } from '../../logger';
 
 export class WebhookEventWorker {
@@ -54043,6 +56536,10 @@ export class WebhookEventWorker {
         return String(tenantRow.admin_id);
       };
 
+      // Helcim events carry a thin marker payload (`{ source: 'helcim', id, type }`) rather than a
+      // Stripe event shape; the transaction detail is fetched from the Helcim API below.
+      const isHelcimTransaction = payload?.source === 'helcim';
+
       const isOneTimeDonation =
         eventType === 'checkout.session.completed' &&
         stripeObj?.metadata?.personId &&
@@ -54059,7 +56556,67 @@ export class WebhookEventWorker {
       const isDisputeCreated = eventType === 'charge.dispute.created';
       const isDisputeClosed = eventType === 'charge.dispute.closed';
 
-      if (isOneTimeDonation) {
+      if (isHelcimTransaction) {
+        // Verified Helcim card transaction — fetch the full transaction, then record the gift.
+        // Tenant is known from the event row; person/amount ride in the invoiceNumber we set at init.
+        const tenantId = String(eventRecord.tenant_id);
+        const transactionId = String(payload.id);
+
+        const tokenRow = await this.db
+          .selectFrom('settings')
+          .select('value')
+          .where('tenant_id', '=', tenantId)
+          .where('key', '=', 'donations.helcim_api_token')
+          .executeTakeFirst();
+        const apiToken = typeof tokenRow?.value === 'string' ? tokenRow.value : '';
+        if (!apiToken) {
+          throw new Error(`Helcim api token not configured for tenant ${tenantId}.`);
+        }
+
+        const txn = await HelcimDonationProcessor.fetchTransaction(transactionId, apiToken);
+        if (txn.status.toUpperCase() !== 'APPROVED') {
+          logger.info(
+            { tenantId, transactionId, status: txn.status },
+            'Helcim transaction not approved; nothing recorded',
+          );
+        } else {
+          const decoded = decodeHelcimInvoiceNumber(txn.invoiceNumber);
+          const personId = decoded?.personId ?? '';
+          // Prefer the fetched transaction amount (source of truth); fall back to the encoded amount.
+          const amountCents =
+            Number.isFinite(txn.amount) && txn.amount > 0 ? Math.round(txn.amount * 100) : (decoded?.amountCents ?? 0);
+          const sessionId = `helcim_${transactionId}`;
+
+          if (!personId || amountCents <= 0) {
+            logger.warn(
+              { tenantId, transactionId, invoiceNumber: txn.invoiceNumber },
+              'Helcim transaction missing decodable person/amount; skipping donation record',
+            );
+          } else {
+            // Idempotency: the session id keys the donation row (same guard the invoice path uses).
+            const alreadyRecorded = await this.db
+              .selectFrom('donations')
+              .select('id')
+              .where('tenant_id', '=', tenantId)
+              .where('stripe_session_id', '=', sessionId)
+              .executeTakeFirst();
+
+            if (!alreadyRecorded) {
+              const donationsController = new DonationsController();
+              const createdBy = await resolveUserId(tenantId, null);
+              await donationsController.recordSuccessfulDonation(
+                tenantId,
+                personId,
+                amountCents,
+                sessionId,
+                '',
+                '',
+                createdBy,
+              );
+            }
+          }
+        }
+      } else if (isOneTimeDonation) {
         // Standard one-time donation via checkout.session.completed
         const donationsController = new DonationsController();
         const tenantId = String(stripeObj.metadata.tenantId);
@@ -55589,6 +58146,306 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 ````
 
+## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
+````typescript
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
+import type { FormType } from '../../../../../../libs/common/src';
+
+export interface StarterTagDef {
+  name: string;
+  description: string;
+  color: string;
+}
+
+/**
+ * Starter tag vocabulary (freeform organizational labels). Donor / supporter /
+ * subscriber are structured concepts in this product (donations table,
+ * campaign_person_facts, campaign_subscriptions) and were retired as tags —
+ * the starter vocabulary must not resurrect them.
+ *
+ * The demo dataset (modules/demo/demo-seed-data.ts) attaches demo persons and
+ * households to these by NAME — keep the two in sync when renaming.
+ */
+export const STARTER_TAGS: StarterTagDef[] = [
+  { name: 'community leader', description: 'Runs or anchors a local association, league, or board.', color: '#8b5cf6' },
+  { name: 'small business owner', description: 'Owns or operates a business in the riding.', color: '#f97316' },
+  { name: 'senior', description: 'Prefers daytime calls and print material.', color: '#64748b' },
+  { name: 'student', description: 'Student — usually reachable evenings and weekends.', color: '#22c55e' },
+  { name: 'new to riding', description: 'Moved into the riding within the last year.', color: '#06b6d4' },
+  { name: 'letter writer', description: 'Has written letters to the editor or to council.', color: '#eab308' },
+  { name: 'media contact', description: 'Journalist or newsletter editor — route through comms.', color: '#ef4444' },
+  { name: 'union member', description: 'Active local union member.', color: '#3b82f6' },
+  { name: 'faith community', description: 'Active in a local faith community.', color: '#a855f7' },
+  { name: 'lawn sign location', description: 'Household that has agreed to display a lawn sign.', color: '#16a34a' },
+];
+
+/**
+ * Starter issue vocabulary (tags with type 'issue' — the structured
+ * what-do-they-care-about list). Deliberately generic doorstep topics; the
+ * demo dataset attaches demo persons to these by NAME.
+ */
+export const STARTER_ISSUES: StarterTagDef[] = [
+  {
+    name: 'housing affordability',
+    description: 'Rents, missing-middle supply, and three-bedroom family units.',
+    color: '#f43f5e',
+  },
+  {
+    name: 'transit reliability',
+    description: 'On-time performance, frequency, and coverage on the core routes.',
+    color: '#0ea5e9',
+  },
+  {
+    name: 'road safety',
+    description: 'Traffic calming, crossings, and lighting on residential streets.',
+    color: '#f59e0b',
+  },
+  {
+    name: 'parks & greenspace',
+    description: 'Park maintenance, trail access, and tree cover.',
+    color: '#22c55e',
+  },
+  {
+    name: 'small business support',
+    description: 'Main-street vacancy, patio rules, and local procurement.',
+    color: '#f97316',
+  },
+  {
+    name: 'climate action',
+    description: 'Retrofit programs, clean air and water, and active transportation.',
+    color: '#14b8a6',
+  },
+];
+
+/**
+ * Creates the starter tag + issue vocabulary for a new tenant. Like the
+ * starter forms below, these are deliberately separate from the demo dataset
+ * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
+ * keeps this vocabulary — a ready-made starting point that also shows what
+ * tags and issues are for. All rows are `deletable: true` (suggestions, not
+ * system data — the user can rename, recolor, merge, or delete them).
+ *
+ * Must run BEFORE seedDemoData: the demo seeder attaches demo persons and
+ * households to these rows by name.
+ */
+export async function seedStarterTags(
+  params: { tenant_id: string; user_id: string },
+  trx: Transaction<Models>,
+): Promise<void> {
+  const audit = { tenant_id: params.tenant_id, createdby_id: params.user_id, updatedby_id: params.user_id };
+  await trx
+    .insertInto('tags')
+    .values([
+      ...STARTER_TAGS.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'tag' as const,
+      })),
+      ...STARTER_ISSUES.map((t) => ({
+        ...audit,
+        name: t.name,
+        description: t.description,
+        color: t.color,
+        deletable: true,
+        type: 'issue' as const,
+      })),
+    ])
+    .execute();
+}
+
+/**
+ * Creates the seven starter web forms (all drafts) for a new tenant: one of
+ * each standard kind (signup ×2, request, survey), a standard fundraising
+ * pledge form, plus the two donation giving pages (one-time + recurring). These
+ * are deliberately separate from the demo dataset
+ * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
+ * keeps these forms — a ready-made starting point the user publishes when
+ * they're ready.
+ *
+ * Returns the created ids + slugs so the demo seeder can attach sample
+ * submissions to two of them.
+ */
+export async function seedStarterForms(
+  params: {
+    tenant_id: string;
+    user_id: string;
+    campaign_id: string | bigint;
+  },
+  trx: Transaction<Models>,
+): Promise<{ id: string; slug: string }[]> {
+  const { tenant_id, user_id } = params;
+  const campaign_id = String(params.campaign_id);
+
+  const starterForms: {
+    key: FormType;
+    formType: 'standard' | 'donation' | 'recurring_donation';
+    name: string;
+    slug: string;
+    description: string;
+    submitLabel: string;
+    thanksBody: string;
+    confirmSubject: string;
+    confirmBody: string;
+  }[] = [
+    {
+      key: 'signup',
+      formType: 'standard',
+      name: 'Volunteer sign-up',
+      slug: 'volunteer-signup',
+      description: 'Volunteer sign-up form for your website. Customize the fields, then publish to get a public link.',
+      submitLabel: FORM_TEMPLATES.signup.submitLabel,
+      thanksBody: 'You’re signed up — we’ll be in touch soon.',
+      confirmSubject: 'Thanks for signing up',
+      confirmBody: 'Hi [First name],\n\nThanks for signing up to volunteer — we’ll be in touch soon.',
+    },
+    {
+      key: 'signup',
+      formType: 'standard',
+      name: 'Newsletter sign-up',
+      slug: 'newsletter-sign-up',
+      description: 'Sign-up form for your email newsletter. Customize the fields, then publish to get a public link.',
+      submitLabel: FORM_TEMPLATES.signup.submitLabel,
+      thanksBody: 'You’re on the list — thanks for signing up.',
+      confirmSubject: 'Thanks for signing up',
+      confirmBody: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
+    },
+    {
+      key: 'pledge',
+      formType: 'recurring_donation',
+      name: 'Recurring donation',
+      slug: 'recurring-donation',
+      description: 'Monthly-giving form. Customize the fields, then publish to start accepting recurring gifts.',
+      submitLabel: 'Set up recurring gift',
+      thanksBody: 'Your recurring gift means a lot to us.',
+      confirmSubject: 'Thanks for your recurring gift',
+      confirmBody: 'Hi [First name],\n\nThanks for setting up a recurring gift — we’ll send a receipt each month.',
+    },
+    {
+      key: 'pledge',
+      formType: 'donation',
+      name: 'One-time donation',
+      slug: 'one-time-donation',
+      description: 'One-time donation form. Customize the fields, then publish to start accepting gifts.',
+      submitLabel: 'Give now',
+      thanksBody: 'Your gift means a lot to us.',
+      confirmSubject: 'Thanks for your gift',
+      confirmBody: 'Hi [First name],\n\nThanks for your gift — a receipt is on its way.',
+    },
+    {
+      key: 'pledge',
+      formType: 'standard',
+      name: 'Fundraising pledge',
+      slug: 'fundraising-pledge',
+      description:
+        'Collect pledges of support from your website. Responses become people you can follow up with — no payment is taken here (use the Fundraising donation pages for card gifts).',
+      submitLabel: FORM_TEMPLATES.pledge.submitLabel,
+      thanksBody: 'Thank you for pledging your support — we’ll be in touch about next steps.',
+      confirmSubject: 'Thanks for your pledge',
+      confirmBody: 'Hi [First name],\n\nThank you for pledging your support — we’ll be in touch about next steps soon.',
+    },
+    {
+      key: 'request',
+      formType: 'standard',
+      name: 'Yard sign request',
+      slug: 'yard-sign-request',
+      description: 'Yard sign request form for your website. Requests feed the Deliveries page for route planning.',
+      submitLabel: FORM_TEMPLATES.request.submitLabel,
+      thanksBody: 'We’ll deliver your yard sign soon.',
+      confirmSubject: 'Your yard sign request',
+      confirmBody: 'Hi [First name],\n\nThanks for your request — a volunteer will drop off your sign soon.',
+    },
+    {
+      key: 'survey',
+      formType: 'standard',
+      name: 'Issues survey',
+      slug: 'issues-survey',
+      description: 'Issues survey for your website. Answers help you rank what your community cares about.',
+      submitLabel: FORM_TEMPLATES.survey.submitLabel,
+      thanksBody: 'Thanks for sharing your priorities with us.',
+      confirmSubject: 'Thanks for your input',
+      confirmBody: 'Hi [First name],\n\nThanks for filling out our survey — your input helps shape our priorities.',
+    },
+  ];
+
+  const created = await trx
+    .insertInto('web_forms')
+    .values(
+      starterForms.map((f) => ({
+        tenant_id: tenant_id,
+        campaign_id,
+        name: f.name,
+        description: f.description,
+        fields: JSON.stringify(fieldsForTemplate(f.key)),
+        target_tags: JSON.stringify([]),
+        target_lists: JSON.stringify([]),
+        status: 'draft' as const,
+        type: f.key,
+        slug: f.slug,
+        submit_label: f.submitLabel,
+        thanks_title: 'Thank you!',
+        thanks_body: f.thanksBody,
+        confirm_subject: f.confirmSubject,
+        confirm_body: f.confirmBody,
+        send_confirmation: true,
+        send_alert: false,
+        notify_team_on: false,
+        form_type: f.formType,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      })),
+    )
+    .returning(['id', 'slug'])
+    .execute();
+
+  return created.map((f) => ({ id: String(f.id), slug: f.slug }));
+}
+````
+
+## File: apps/backend/src/app/modules/billing/trpc.router.ts
+````typescript
+import { z } from 'zod';
+import { maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
+import { adminOrOwnerProcedure, router } from '../../../trpc';
+import { BillingController } from './controller';
+
+const controller = new BillingController();
+
+/** Largest valid Stripe quantity across the purchasable tiers (currently Movement's ladder). */
+const MAX_BRACKET_QUANTITY = Math.max(...PURCHASABLE_PLAN_KEYS.map((key) => maxQuantity(key)));
+
+export const BillingRouter = router({
+  getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
+
+  /** Live usage snapshot for the billing page: emailable subscribers vs. the tenant's currently
+   * billed bracket (subscriber/email caps, monthly price, tier max). See §5 of the pricing
+   * overhaul plan. */
+  getUsage: adminOrOwnerProcedure.query(({ ctx }) => controller.getUsage(ctx.auth)),
+
+  createCheckout: adminOrOwnerProcedure
+    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS) }))
+    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan)),
+
+  createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
+
+  // Local mock testing mutation endpoints
+  activateMockPlan: adminOrOwnerProcedure
+    .input(
+      z.object({
+        plan: z.enum(PURCHASABLE_PLAN_KEYS),
+        quantity: z.number().int().min(1).max(MAX_BRACKET_QUANTITY).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity)),
+
+  cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
+});
+````
+
 ## File: apps/backend/src/app/modules/canvassing/controller.ts
 ````typescript
 import type {
@@ -56981,6 +59838,7 @@ import crypto from 'crypto';
 import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
+import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { DonationsRepo } from './repositories/donations.repo';
@@ -56992,6 +59850,13 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable, Updateable } from 'kysely';
 import { logger } from '../../logger';
+import { assertTenantMayAcceptDonations, tenantMayAcceptDonations, type SettingsLookup } from './donation-guards';
+import type { CheckoutInit } from './processors/donation-processor';
+import { resolveDonationProcessor, resolveProcessorKind, type ProcessorKind } from './processors/resolver';
+
+// Helcim recurring is out of scope this pass; recurring stays Stripe-only.
+const HELCIM_RECURRING_UNAVAILABLE_MESSAGE =
+  "Monthly (recurring) donations aren't available with Helcim yet — use Stripe for recurring, or switch this donation to one-time.";
 
 // The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
 // shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
@@ -57012,6 +59877,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   private periodsRepo = new DonationPeriodsRepo();
   private pledgesRepo = new DonationPledgesRepo();
   private campaignsRepo = new CampaignsRepo();
+
+  // Bound settings accessor handed to the fail-closed guards and the processor resolver, so they
+  // stay decoupled from the settings repo while reusing the same lookup the controller already uses.
+  private readonly settingsLookup: SettingsLookup = (tenantId, key) => this.getSettingVal(tenantId, key);
 
   constructor() {
     super(new DonationsRepo());
@@ -57311,6 +60180,36 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     };
   }
 
+  /** Whether this tenant has acknowledged residency settings and may accept donations (fail-closed).
+   * Used by the public donation page to gate rendering before showing a live donation form. */
+  public mayAcceptDonations(tenantId: string): Promise<boolean> {
+    return tenantMayAcceptDonations(this.settingsLookup, tenantId);
+  }
+
+  /**
+   * Context the donation UI needs to show the right residency disclaimer and processor affordances:
+   * the tenant's country, which processor is active, and whether residency has been acknowledged
+   * (the fail-closed gate). Shape is depended on by the frontend — keep name/fields stable.
+   */
+  public async getResidencyContext(
+    tenantId: string,
+  ): Promise<{ country: string | null; processor: ProcessorKind; residencyAcknowledged: boolean }> {
+    // `tenants` is looked up by primary id (it's on the tenant-scope allow-list — scoping the tenant
+    // table by tenant_id would be circular).
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select('country')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const processor = await resolveProcessorKind(this.settingsLookup, tenantId);
+    const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
+    return {
+      country: tenant?.country != null ? String(tenant.country) : null,
+      processor,
+      residencyAcknowledged,
+    };
+  }
+
   // ── One-time Checkout ────────────────────────────────────────────────────────
 
   public async createCheckoutSession(
@@ -57319,60 +60218,25 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     amountCents: number,
     address: { country?: string; state?: string },
     customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
+  ): Promise<CheckoutInit> {
+    // Fail-closed residency gate FIRST — an org that hasn't confirmed residency can't take money.
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
     const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
     if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+      throw new BadRequestError(eligibility.reason);
     }
 
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      let redirectBase = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
-
-      if (customUrls?.successUrl) {
-        const separator = redirectBase.includes('?') ? '&' : '?';
-        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
-      }
-
-      return { url: redirectBase };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Campaign Donation' },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        amount: String(amountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-      },
+    // Stripe (default) returns a hosted-checkout redirect; Helcim returns a HelcimPay checkout token.
+    const resolved = await resolveDonationProcessor(this.settingsLookup, auth.tenant_id);
+    return resolved.adapter.createOneTimeCheckout({
+      tenantId: auth.tenant_id,
+      userId: auth.user_id,
+      personId,
+      amountCents,
+      address,
+      customUrls,
     });
-
-    return { url: session.url };
   }
 
   // ── Recurring Subscription Checkout ─────────────────────────────────────────
@@ -57396,6 +60260,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     address: { country?: string; state?: string },
     customUrls?: { successUrl?: string; cancelUrl?: string },
   ) {
+    // Fail-closed residency gate FIRST (same as one-time).
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
+    // Recurring is Stripe-only this pass — Helcim recurring is cleanly disabled with a clear message.
+    const processorKind = await resolveProcessorKind(this.settingsLookup, auth.tenant_id);
+    if (processorKind === 'helcim') {
+      throw new PreconditionFailedError(HELCIM_RECURRING_UNAVAILABLE_MESSAGE);
+    }
+
     // Determine remaining months for limit enforcement
     const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
     const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
@@ -57405,7 +60278,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       remainingMonths: remainingMonths ?? 12,
     });
     if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+      throw new BadRequestError(eligibility.reason);
     }
 
     const tenantStripeKey =
@@ -58160,1927 +61033,6 @@ export class ListsRepo extends BaseRepository<'lists'> {
       .execute();
 
     return { rows, count: Number(total || 0) };
-  }
-}
-````
-
-## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
-````typescript
-import { createPublicKey, createVerify } from 'crypto';
-import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
-import { BaseRepository } from '../../../lib/base.repo';
-import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
-import { applyEngagementTripwires } from '../send-guards';
-import { env } from '../../../../env';
-import { sql } from 'kysely';
-
-const db = new BaseRepository('newsletters').db;
-const subscriptions = new CampaignSubscriptionsRepo();
-
-/**
- * Consent/suppression side-effects of a SendGrid event (§15):
- *  - unsubscribe → unsubscribed in the CAMPAIGN whose newsletter carried the link
- *  - bounce → global hard_bounce suppression (address is dead everywhere)
- *  - spamreport → global spam_complaint suppression
- */
-async function applyConsentSideEffects(
-  tenantId: string,
-  newsletterId: string,
-  eventType: string,
-  email: string,
-  occurredAt: Date,
-): Promise<void> {
-  if (!email) return;
-  if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
-    const newsletter = await db
-      .selectFrom('newsletters')
-      .select(['campaign_id'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .executeTakeFirst();
-    if (newsletter?.campaign_id) {
-      await subscriptions.unsubscribeByEmail({
-        tenant_id: tenantId,
-        campaign_id: String(newsletter.campaign_id),
-        email,
-      });
-    }
-  } else if (eventType === 'bounce' || eventType === 'spamreport') {
-    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
-    await db
-      .insertInto('email_suppressions')
-      .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
-      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
-      .execute();
-  }
-}
-
-const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
-const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
-
-/**
- * Verifies a SendGrid Signed Event Webhook request.
- * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
- * against the base64-DER public verification key configured in the dashboard.
- */
-function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
-  const verificationKey = env.sendgridWebhookVerificationKey;
-  if (!verificationKey || !signature || !timestamp) {
-    return false;
-  }
-
-  try {
-    const publicKey = createPublicKey({
-      key: Buffer.from(verificationKey, 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    const verifier = createVerify('sha256');
-    verifier.update(timestamp + rawBody);
-    verifier.end();
-    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
-  } catch {
-    return false;
-  }
-}
-
-/** Shape of a single SendGrid Event Webhook payload entry (all fields optional — inbound/untrusted). */
-interface SendGridEvent {
-  newsletter_id?: string;
-  tenant_id?: string;
-  sg_event_id?: string;
-  sg_message_id?: string;
-  event?: string;
-  email?: string;
-  url?: string;
-  ip?: string;
-  useragent?: string;
-  reason?: string;
-  type?: string;
-  timestamp?: number;
-}
-
-const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req: FastifyRequest, reply) => {
-    // req.body is the raw string (see content-type parser in fastify.server.ts)
-    const rawBody = typeof req.body === 'string' ? req.body : '';
-    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
-    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
-
-    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    let parsedBody: unknown;
-    try {
-      parsedBody = JSON.parse(rawBody);
-    } catch {
-      return reply.code(400).send({ error: 'Invalid payload' });
-    }
-
-    const events: SendGridEvent[] = Array.isArray(parsedBody) ? parsedBody : [parsedBody as SendGridEvent];
-
-    try {
-      const processedNewsletters = new Set<string>();
-
-      // Insert all events that have newsletter_id and tenant_id
-      for (const ev of events) {
-        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
-          continue;
-        }
-
-        const newsletterId = ev.newsletter_id;
-        const tenantId = ev.tenant_id;
-        const eventType = ev.event || '';
-        const email = ev.email || '';
-        const sgEventId = ev.sg_event_id;
-        const sgMessageId = ev.sg_message_id || null;
-        const url = ev.url || null;
-        const ip = ev.ip || null;
-        const userAgent = ev.useragent || null;
-        // Bounce diagnostics for the report: reason ("Mailbox does not exist")
-        // on bounce/dropped events, type 'bounce' (hard) / 'blocked' (soft) on bounces.
-        const reason = typeof ev.reason === 'string' && ev.reason ? ev.reason : null;
-        const bounceType = eventType === 'bounce' && typeof ev.type === 'string' && ev.type ? ev.type : null;
-        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
-
-        try {
-          await db
-            .insertInto('newsletter_events')
-            .values({
-              tenant_id: tenantId,
-              newsletter_id: newsletterId,
-              email,
-              event_type: eventType,
-              sg_event_id: sgEventId,
-              sg_message_id: sgMessageId,
-              url,
-              ip,
-              user_agent: userAgent,
-              reason,
-              bounce_type: bounceType,
-              timestamp,
-              created_at: new Date(),
-            })
-            .onConflict((oc) => oc.column('sg_event_id').doNothing())
-            .execute();
-
-          processedNewsletters.add(`${tenantId}:${newsletterId}`);
-
-          await applyConsentSideEffects(String(tenantId), String(newsletterId), eventType, email, timestamp);
-        } catch (insertErr) {
-          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
-        }
-      }
-
-      // Recompute aggregates for each processed newsletter
-      for (const key of processedNewsletters) {
-        const [tenantId, newsletterId] = key.split(':') as [string, string];
-
-        await db.transaction().execute(async (trx) => {
-          // 1. Fetch aggregates
-          const stats = await trx
-            .selectFrom('newsletter_events')
-            .select([
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
-              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
-            ])
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          // 2. Fetch top links clicked
-          const topLinksResult = await trx
-            .selectFrom('newsletter_events')
-            .select(['url'])
-            .select(({ fn }) => fn.count<number>('id').as('clicks'))
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .where('event_type', '=', 'click')
-            .where('url', 'is not', null)
-            .groupBy('url')
-            .orderBy('clicks', 'desc')
-            .execute();
-
-          const topLinks = topLinksResult.map((l) => ({
-            url: l.url,
-            clicks: Number(l.clicks),
-          }));
-
-          // 3. Update the newsletters table row
-          const newsletter = await trx
-            .selectFrom('newsletters')
-            .select(['total_recipients'])
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
-          const uniqueOpens = Number(stats?.unique_opens ?? 0);
-          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
-
-          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
-          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
-
-          await trx
-            .updateTable('newsletters')
-            .set({
-              delivered_count: Number(stats?.delivered ?? 0),
-              bounce_count: Number(stats?.bounced ?? 0),
-              unique_opens: uniqueOpens,
-              unique_clicks: uniqueClicks,
-              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
-              spam_complaint_count: Number(stats?.spamreports ?? 0),
-              last_engagement_at: stats?.last_engagement || null,
-              open_rate: openRate,
-              click_rate: clickRate,
-              top_links: JSON.stringify(topLinks),
-              updated_at: new Date(),
-            })
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .execute();
-        });
-
-        // Abuse tripwires (§ anti-spam): a high hard-bounce rate pauses the tenant's sending, a
-        // high spam-complaint rate suspends the account pending human review. Runs after the
-        // aggregates so an in-flight send's worker loop sees the flag on its next batch.
-        await applyEngagementTripwires(db, tenantId, newsletterId);
-      }
-
-      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err) {
-      req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  });
-
-  done();
-};
-
-export default newslettersWebhookRoute;
-````
-
-## File: apps/backend/src/app/modules/persons/services/persons.service.ts
-````typescript
-import { env } from '../../../../env';
-import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
-import { backfillMissingSlugs } from '../../../lib/slug';
-import { backfillPersonPublicIds, insertPersonWithPublicId } from '../../../lib/person-public-id';
-import { notificationEnabled } from '../../../lib/profile-preferences';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { SettingsController } from '../../settings/controller';
-import { TagsRepo } from '../../tags/repositories/tags.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { CompaniesRepo } from '../../companies/repositories/companies.repo';
-import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
-import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { ListsRepo } from '../../lists/repositories/lists.repo';
-import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
-import { UserActivityRepo } from '../../../lib/user-activity.repo';
-import { StorageService } from '../../../lib/storage.service';
-import { WorkflowsController } from '../../workflows/controller';
-import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
-import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
-import { logger } from '../../../logger';
-
-export class PersonsService {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
-  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-  private teamsRepo = new TeamsRepo();
-  private importsRepo = new ImportsRepo();
-  private personsRepo = new PersonsRepo();
-  private userActivity = new UserActivityRepo();
-  private storageService = new StorageService();
-  private householdRepo = new HouseholdRepo();
-  private companiesRepo = new CompaniesRepo();
-  private listsRepo = new ListsRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-
-  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant
-    const emailToCheck = payload.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-    const households = new HouseholdRepo();
-
-    let household_id = payload.household_id as string | undefined;
-    if (!household_id) {
-      const existingBlank = await households.getBlankHousehold({ tenant_id: auth.tenant_id });
-      if (existingBlank?.id) {
-        household_id = String(existingBlank.id);
-      } else {
-        const created = await households.add({
-          row: {
-            tenant_id: auth.tenant_id,
-            campaign_id: String(campaign_id),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          } as OperationDataType<'households', 'insert'>,
-        });
-        household_id = String(created?.id);
-      }
-    }
-
-    // Persons are keyed by an opaque public_id, not a name slug (spec §1):
-    // generate a Crockford id → insert → retry on the per-tenant unique
-    // violation. The display slug `{name}-xxxx-xxxx` is derived from the same
-    // public_id in one write. (Households/companies still use name slugs.)
-    const result = await insertPersonWithPublicId(payload.first_name, payload.last_name, (public_id, slug) => {
-      const row = {
-        ...payload,
-        public_id,
-        slug,
-        household_id,
-        campaign_id,
-        tenant_id: auth.tenant_id,
-        createdby_id: auth.user_id,
-        updatedby_id: auth.user_id,
-      };
-      return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
-    });
-    if (result && typeof result === 'object') {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger usage check in addPerson');
-      }
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerWorkflow(
-          auth.tenant_id,
-          String((result as Record<string, unknown>)['id']),
-          'contact_created',
-          null,
-        );
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
-      }
-
-      if (payload.assigned_to) {
-        try {
-          const assignee = await this.personsRepo.db
-            .selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', String(payload.assigned_to))
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
-              const mailService = new TransactionalEmailService();
-              await mailService.sendMail({
-                to: assignee.email,
-                subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-              });
-            }
-          }
-        } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
-        }
-      }
-    }
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'create',
-        entity: 'persons',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: {
-          id: result?.id,
-          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log create person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_created',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
-    }
-    return result;
-  }
-
-  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant (excluding the person being updated)
-    const emailToCheck = data.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing && String(existing.id) !== String(id)) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    let original: Record<string, unknown> | null = null;
-    try {
-      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
-        string,
-        unknown
-      > | null;
-    } catch (err) {
-      logger.error({ err }, 'Failed to fetch original person record for activity log');
-    }
-    const result = await this.personsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        ...data,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'persons', 'update'>,
-    });
-    if (result && typeof result === 'object') {
-      const updatedPerson = result as Record<string, unknown>;
-      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
-        const newAssigneeId = data.assigned_to;
-        if (newAssigneeId) {
-          try {
-            const assignee = await this.personsRepo.db
-              .selectFrom('authusers')
-              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
-              .executeTakeFirst();
-
-            if (assignee && assignee.email) {
-              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
-                const mailService = new TransactionalEmailService();
-                await mailService.sendMail({
-                  to: assignee.email,
-                  subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-                });
-              }
-            }
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
-          }
-        }
-      }
-    }
-    try {
-      const changes: Record<string, unknown> = {};
-      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
-      if (original && resultObj) {
-        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-        for (const key of Object.keys(data)) {
-          if (skipKeys.includes(key)) continue;
-          const oldVal = (original as Record<string, unknown>)[key];
-          const newVal = resultObj[key];
-          if (oldVal !== newVal) {
-            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-          }
-        }
-      }
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: id ? String(id) : null,
-        quantity: 1,
-        metadata: {
-          id,
-          entity_label: resultObj
-            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
-            : 'Person',
-          changes,
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log update person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_updated',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
-    }
-    return result;
-  }
-
-  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
-    if (!html) return '';
-    const text = html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (text.length <= limit) return text;
-    return text.substring(0, limit) + '...';
-  }
-
-  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
-    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
-      string,
-      unknown
-    > | null;
-    if (!person) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Person not found',
-      });
-    }
-
-    const emails: string[] = [];
-    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
-    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
-
-    if (emails.length === 0) {
-      return {
-        emails: [],
-        newsletters: [],
-      };
-    }
-
-    const db = this.personsRepo.db;
-
-    // 1. Fetch email conversations (sent and received)
-    const conversations = await db
-      .selectFrom('emails')
-      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
-      .selectAll('emails')
-      .select('email_bodies.body_html as body_html')
-      .where('emails.tenant_id', '=', auth.tenant_id)
-      // Recipient match goes through email_recipients — the source of truth.
-      // emails.to_email is a display-only cache holding a joined "a, b" string,
-      // so an exact IN match would miss multi-recipient emails (D-10).
-      .where((eb) =>
-        eb.or([
-          eb('emails.from_email', 'in', emails),
-          eb.exists(
-            eb
-              .selectFrom('email_recipients')
-              .select('email_recipients.id')
-              .whereRef('email_recipients.email_id', '=', 'emails.id')
-              .where('email_recipients.tenant_id', '=', auth.tenant_id)
-              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
-          ),
-        ]),
-      )
-      .orderBy('emails.created_at', 'desc')
-      .limit(50)
-      .execute();
-
-    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
-    const newsletterEvents = await db
-      .selectFrom('newsletter_events')
-      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
-      .select([
-        'newsletter_events.id',
-        'newsletter_events.event_type',
-        'newsletter_events.timestamp',
-        'newsletter_events.url',
-        'newsletters.subject as newsletter_subject',
-        'newsletters.name as newsletter_name',
-      ])
-      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
-      .where('newsletter_events.email', 'in', emails)
-      .orderBy('newsletter_events.timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    return {
-      emails: conversations.map((mail) => {
-        let snippet = '';
-        if (mail.body_html) {
-          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
-        }
-        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
-          snippet = mail.preview;
-        }
-        return {
-          ...mail,
-          preview: snippet,
-        };
-      }),
-      newsletters: newsletterEvents,
-    };
-  }
-
-  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    const result = await this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      person_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-
-    if (result && tag?.id) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger tag_added workflow');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: person_id,
-        quantity: 1,
-        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log attach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
-        person_id,
-        tag_name: name,
-        tag_type: type,
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
-    }
-
-    return result;
-  }
-
-  public async detachTag(input: {
-    tenant_id: string;
-    person_id: string;
-    name: string;
-    type?: 'tag' | 'issue';
-    user_id?: string;
-    source?: string;
-  }) {
-    const tag = await this.tagsRepo.getIdByName({
-      tenant_id: input.tenant_id,
-      name: input.name,
-      type: input.type ?? 'tag',
-    });
-
-    if (tag?.id) {
-      await this.mapPersonsTagRepo.deleteMapping({
-        tenant_id: input.tenant_id,
-        person_id: input.person_id,
-        tag_id: tag.id,
-      });
-    }
-
-    try {
-      if (input.user_id) {
-        await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: input.user_id,
-          activity: 'update',
-          entity: 'persons',
-          entity_id: input.person_id,
-          quantity: 1,
-          metadata: {
-            id: input.person_id,
-            action: `detach_${input.type ?? 'tag'}`,
-            name: input.name,
-            ...(input.source ? { source: input.source } : {}),
-          },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
-        person_id: input.person_id,
-        tag_name: input.name,
-        tag_type: input.type ?? 'tag',
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
-    }
-
-    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
-    if (!isVolunteerTag) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
-      tenant_id: input.tenant_id,
-      person_id: input.person_id,
-    });
-
-    if (!teams.length) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
-
-    for (const team of teams) {
-      if (team.is_captain && team.team_id) {
-        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
-      }
-    }
-
-    const removedTeams = teams
-      .filter((team) => team.team_id)
-      .map((team) => ({
-        id: team.team_id,
-        name: team.team_name ?? '',
-        was_captain: team.is_captain,
-      }));
-
-    return {
-      removed_team_ids: removedTeams.map((team) => team.id),
-      removed_teams: removedTeams,
-    };
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        first_name?: string;
-        middle_names?: string;
-        last_name?: string;
-        email?: string;
-        email2?: string;
-        mobile?: string;
-        notes?: string;
-        home_phone?: string;
-        street_num?: string;
-        street1?: string;
-        street2?: string;
-        apt?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-        country?: string;
-        company?: string;
-        tags?: string;
-      }>;
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-      duplicate_decision?: 'merge' | 'skip' | 'import_new';
-      list_name?: string;
-      /** Raw uploaded CSV text, kept 90 days so the History page can offer a re-download (spec §17). */
-      source_csv?: string;
-      /** Rows the wizard already excluded/cleaned client-side (bad-email "Skip"), recorded for History's skip-reasons export. */
-      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    let hasImportableRow = false;
-    for (const candidate of input.rows) {
-      const sanitized = this.sanitizeRow(candidate);
-      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
-        hasImportableRow = true;
-        break;
-      }
-    }
-
-    if (!hasImportableRow) {
-      const totalSkipped = skippedFromClient + input.rows.length;
-      const personsBefore = await this.personsRepo.count(auth.tenant_id);
-      return {
-        inserted: 0,
-        errors: 0,
-        skipped: totalSkipped,
-        tag: null,
-        file_name: requestedFileName || null,
-        import_id: null,
-        tenant_id: auth.tenant_id,
-        campaign_id,
-        persons_total_after: personsBefore,
-        persons_total_before: personsBefore,
-        status: 'completed',
-      };
-    }
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'persons',
-      tag_name: autoTag,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as OperationDataType<'data_imports', 'insert'>;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    // Keep the original upload downloadable for 90 days (spec §17 History
-    // page footer). Best-effort: a failure here shouldn't fail the import.
-    let sourceFileKey: string | null = null;
-    let sourceFileSize: number | null = null;
-    if (input.source_csv) {
-      try {
-        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
-        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
-        sourceFileSize = sourceBuffer.byteLength;
-        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
-      } catch (err) {
-        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
-        sourceFileKey = null;
-        sourceFileSize = null;
-      }
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-        source_file_key: sourceFileKey,
-        source_file_size: sourceFileSize,
-      },
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          tags,
-          skipped: skippedFromClient,
-          campaign_id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          duplicate_decision: input.duplicate_decision ?? 'skip',
-          list_name: input.list_name ?? null,
-          client_skip_reasons: input.client_skip_reasons ?? [],
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      tag: autoTag,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      campaign_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    campaign_id: string,
-    tags: string[],
-    skipped: number,
-    rows: Record<string, string>[],
-    options?: {
-      duplicateDecision?: 'merge' | 'skip' | 'import_new';
-      listName?: string;
-      clientSkipReasons?: Array<{ row: number; email?: string; reason: string }>;
-    },
-  ) {
-    const households = new HouseholdRepo();
-    const duplicateDecision = options?.duplicateDecision ?? 'skip';
-    const results: {
-      inserted: number;
-      errors: number;
-      households_created: number;
-      skipped: number;
-      merged: number;
-    } = {
-      inserted: 0,
-      errors: 0,
-      households_created: 0,
-      skipped: 0,
-      merged: 0,
-    };
-    const importedPersonIds: string[] = [];
-    // Rows kept downloadable with the reason each was skipped (History page, spec §17) —
-    // seeded with the wizard's own client-side skips (bad-email "Skip"), then appended to below.
-    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [...(options?.clientSkipReasons ?? [])];
-
-    const errorMessages: string[] = [];
-    let cachedBlankHouseholdId: string | null = null;
-    // Companies resolved so far, keyed by lower(name) — merged from each chunk's
-    // transaction only after it commits, so a rolled-back create is never reused.
-    const companyIdByName = new Map<string, string>();
-    let autoTagId: string | null = null;
-    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Sanitize and classify all valid rows in the chunk upfront
-      type ValidEntry = {
-        sanitized: {
-          first_name?: string;
-          middle_names?: string;
-          last_name?: string;
-          email?: string;
-          email2?: string;
-          mobile?: string;
-          notes?: string;
-          home_phone?: string;
-          street_num?: string;
-          street1?: string;
-          street2?: string;
-          apt?: string;
-          city?: string;
-          state?: string;
-          zip?: string;
-          country?: string;
-          company?: string;
-          tags: string[];
-        };
-        isBlankAddress: boolean;
-        fp_street: string | null;
-        fp_full: string | null;
-        rowNumber: number;
-      };
-      const SKIP_REASONS_CAP = 500;
-      const validEntries: ValidEntry[] = [];
-      for (const [chunkIdx, raw] of chunk.entries()) {
-        const rowNumber = i + chunkIdx + 1;
-        const sanitized = this.sanitizeRow(raw);
-        if (
-          !sanitized.first_name &&
-          !sanitized.last_name &&
-          !sanitized.email &&
-          !sanitized.mobile &&
-          !sanitized.notes
-        ) {
-          results.skipped += 1;
-          if (skipReasons.length < SKIP_REASONS_CAP) {
-            skipReasons.push({ row: rowNumber, reason: 'Blank row: no importable fields' });
-          }
-          continue;
-        }
-        const isBlankAddress =
-          !sanitized.home_phone &&
-          !sanitized.street_num &&
-          !sanitized.street1 &&
-          !sanitized.street2 &&
-          !sanitized.apt &&
-          !sanitized.city &&
-          !sanitized.state &&
-          !sanitized.zip &&
-          !sanitized.country;
-        validEntries.push({
-          sanitized,
-          isBlankAddress,
-          fp_street: isBlankAddress
-            ? null
-            : fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              }),
-          fp_full: isBlankAddress
-            ? null
-            : fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              }),
-          rowNumber,
-        });
-      }
-
-      if (validEntries.length === 0) {
-        await this.importsRepo.update({
-          tenant_id: tenant_id,
-          id: import_id,
-          row: {
-            tag_id: autoTagId,
-            inserted_count: results.inserted,
-            error_count: results.errors,
-            skipped_count: skipped + results.skipped,
-            households_created: results.households_created,
-            updatedby_id: user_id,
-            updated_at: new Date(),
-          },
-        });
-        continue;
-      }
-
-      try {
-        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
-          let localBlankHouseholdId = cachedBlankHouseholdId;
-          let localAutoTagId = autoTagId;
-          let householdsCreatedDelta = 0;
-
-          // 2a. Resolve blank household once for the whole chunk
-          if (validEntries.some((e) => e.isBlankAddress)) {
-            if (!localBlankHouseholdId) {
-              const existingBlank = await households.getBlankHousehold({ tenant_id }, trx);
-              if (existingBlank?.id) {
-                localBlankHouseholdId = String(existingBlank.id);
-              } else {
-                const created = await households.add(
-                  {
-                    row: {
-                      tenant_id,
-                      campaign_id,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                      file_id: import_id,
-                    } as OperationDataType<'households', 'insert'>,
-                  },
-                  trx,
-                );
-                localBlankHouseholdId = String(created?.id);
-                householdsCreatedDelta += 1;
-              }
-            }
-          }
-
-          // 2b. Batch-resolve addressed households with a single IN query
-          const fpCache = new Map<string, string>(); // fp_full -> household_id
-          const uniqueFps = [
-            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
-          ];
-          if (uniqueFps.length > 0) {
-            const existingHouseholds = await trx
-              .selectFrom('households')
-              .select(['id', 'address_fp_full'])
-              .where('tenant_id', '=', tenant_id)
-              .where('address_fp_full', 'in', uniqueFps)
-              .execute();
-            for (const h of existingHouseholds) {
-              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
-            }
-          }
-
-          // 2c. Create only missing households (deduplicated within this chunk)
-          for (const entry of validEntries) {
-            if (entry.isBlankAddress || !entry.fp_full) continue;
-            if (fpCache.has(entry.fp_full)) continue;
-            const { sanitized, fp_street, fp_full } = entry;
-            const hhRow = {
-              tenant_id,
-              campaign_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              home_phone: sanitized.home_phone ?? null,
-              street_num: sanitized.street_num ?? null,
-              street1: sanitized.street1 ?? null,
-              street2: sanitized.street2 ?? null,
-              apt: sanitized.apt ?? null,
-              city: sanitized.city ?? null,
-              state: sanitized.state ?? null,
-              zip: sanitized.zip ?? null,
-              country: sanitized.country ?? null,
-              address_fp_street: fp_street,
-              address_fp_full: fp_full,
-              notes: null,
-              file_id: import_id,
-            } as OperationDataType<'households', 'insert'>;
-            const household = await households.add({ row: hhRow }, trx);
-            fpCache.set(fp_full, String(household?.id));
-            householdsCreatedDelta += 1;
-          }
-
-          // 2c'. Resolve companies by case-insensitive name: one IN query for the
-          // chunk's unmatched names, then create whatever is still missing —
-          // attributed to this import via file_id so deleting the import can
-          // clean them up. Kept in a chunk-local map and merged into the outer
-          // cache only after commit.
-          const localCompanyIdByName = new Map<string, string>(companyIdByName);
-          const chunkCompanyNames = new Map<string, string>(); // lower(name) -> original casing
-          for (const entry of validEntries) {
-            const name = entry.sanitized.company;
-            if (name && !localCompanyIdByName.has(name.toLowerCase())) {
-              if (!chunkCompanyNames.has(name.toLowerCase())) chunkCompanyNames.set(name.toLowerCase(), name);
-            }
-          }
-          if (chunkCompanyNames.size > 0) {
-            const existingCompanies = await trx
-              .selectFrom('companies')
-              .select(['id', 'name'])
-              .where('tenant_id', '=', tenant_id)
-              .where(sql`lower(name)`, 'in', [...chunkCompanyNames.keys()])
-              .execute();
-            for (const c of existingCompanies) {
-              localCompanyIdByName.set(c.name.toLowerCase(), String(c.id));
-            }
-            for (const [lowerName, name] of chunkCompanyNames) {
-              if (localCompanyIdByName.has(lowerName)) continue;
-              const created = await trx
-                .insertInto('companies')
-                .values({
-                  tenant_id,
-                  createdby_id: user_id,
-                  updatedby_id: user_id,
-                  name,
-                  file_id: import_id,
-                } as OperationDataType<'companies', 'insert'>)
-                .returning('id')
-                .executeTakeFirst();
-              if (created?.id) localCompanyIdByName.set(lowerName, String(created.id));
-            }
-          }
-          const companyIdFor = (entry: (typeof validEntries)[number]): string | null => {
-            const name = entry.sanitized.company;
-            return name ? (localCompanyIdByName.get(name.toLowerCase()) ?? null) : null;
-          };
-
-          // 2d. Duplicate-email resolution (spec §17 Review step — a single
-          // decision governs every row whose email matches a person that
-          // already exists; email is the match key app-wide, same as
-          // Duplicates and Forms).
-          //  - 'skip' (default): exclude the row; counted + reasoned below.
-          //  - 'merge': fill the existing person's blank fields from the row
-          //    (never overwrite), don't insert a second person.
-          //  - 'import_new': insert as a brand-new person anyway; the email
-          //    is cleared first so it can't collide with the unique
-          //    (tenant_id, lower(email)) index — the row becomes a
-          //    name-only duplicate for the Duplicates page to reconcile.
-          const mergeEntries: Array<{ entry: (typeof validEntries)[number]; personId: string }> = [];
-          const insertEntries: typeof validEntries = [];
-          const candidateEmails = [
-            ...new Set(validEntries.map((e) => e.sanitized.email).filter((email): email is string => !!email)),
-          ];
-          const existingByEmail = new Map<string, { id: string }>();
-          if (candidateEmails.length > 0) {
-            const existing = await trx
-              .selectFrom('persons')
-              .select(['id', 'email'])
-              .where('tenant_id', '=', tenant_id)
-              .where(
-                sql`lower(email)`,
-                'in',
-                candidateEmails.map((email) => email.toLowerCase()),
-              )
-              .execute();
-            for (const p of existing) {
-              if (p.email) existingByEmail.set(p.email.toLowerCase(), { id: String(p.id) });
-            }
-          }
-
-          for (const entry of validEntries) {
-            const match = entry.sanitized.email ? existingByEmail.get(entry.sanitized.email.toLowerCase()) : null;
-            if (!match) {
-              insertEntries.push(entry);
-              continue;
-            }
-            if (duplicateDecision === 'merge') {
-              mergeEntries.push({ entry, personId: match.id });
-            } else if (duplicateDecision === 'import_new') {
-              // Keep the row, but the email must go so the insert doesn't
-              // collide with the existing person's email.
-              insertEntries.push({ ...entry, sanitized: { ...entry.sanitized, email: undefined } });
-            } else {
-              results.skipped += 1;
-              if (skipReasons.length < SKIP_REASONS_CAP) {
-                skipReasons.push({
-                  row: entry.rowNumber,
-                  email: entry.sanitized.email,
-                  reason: 'Matches a person you already have. Duplicate decision was Skip',
-                });
-              }
-            }
-          }
-
-          // 3. Batch insert all persons in one statement
-          const personRows = insertEntries.map((entry) => {
-            const { sanitized, isBlankAddress, fp_full } = entry;
-            return {
-              tenant_id,
-              campaign_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
-              first_name: sanitized.first_name ?? null,
-              middle_names: sanitized.middle_names ?? null,
-              last_name: sanitized.last_name ?? null,
-              email: sanitized.email ?? null,
-              email2: sanitized.email2 ?? null,
-              mobile: sanitized.mobile ?? null,
-              home_phone: null,
-              company_id: companyIdFor(entry),
-              file_id: import_id,
-              notes: sanitized.notes ?? null,
-            };
-          });
-          const insertedPersons = personRows.length
-            ? await trx
-                .insertInto('persons')
-                .values(personRows)
-                .onConflict((oc) => oc.doNothing())
-                .returningAll()
-                .execute()
-            : [];
-
-          // Count rows silently skipped due to a duplicate email under the 'skip' decision
-          const duplicatesSkipped = personRows.length - insertedPersons.length;
-          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
-
-          // 3b. Merge decision: fill only the existing person's blank fields — never overwrite.
-          const mergedPersonIds: string[] = [];
-          for (const { entry, personId } of mergeEntries) {
-            await trx
-              .updateTable('persons')
-              .set({
-                first_name: sql`COALESCE(persons.first_name, ${entry.sanitized.first_name ?? null})`,
-                middle_names: sql`COALESCE(persons.middle_names, ${entry.sanitized.middle_names ?? null})`,
-                last_name: sql`COALESCE(persons.last_name, ${entry.sanitized.last_name ?? null})`,
-                email2: sql`COALESCE(persons.email2, ${entry.sanitized.email2 ?? null})`,
-                mobile: sql`COALESCE(persons.mobile, ${entry.sanitized.mobile ?? null})`,
-                company_id: sql`COALESCE(persons.company_id, ${companyIdFor(entry)})`,
-                notes: sql`COALESCE(persons.notes, ${entry.sanitized.notes ?? null})`,
-                updated_at: sql`now()`,
-                updatedby_id: user_id,
-              })
-              .where('tenant_id', '=', tenant_id)
-              .where('id', '=', personId)
-              .execute();
-            mergedPersonIds.push(personId);
-          }
-          results.merged += mergedPersonIds.length;
-
-          // 4. Upsert each unique tag name exactly once (not once per row) —
-          // the batch-level tags plus every name from a mapped Tags column,
-          // deduplicated case-insensitively (first casing wins).
-          const uniqueTagNames = new Map<string, string>(); // lower(name) -> original casing
-          for (const name of [...tags, ...validEntries.flatMap((e) => e.sanitized.tags)]) {
-            if (!uniqueTagNames.has(name.toLowerCase())) uniqueTagNames.set(name.toLowerCase(), name);
-          }
-          const tagIdByLowerName = new Map<string, string>();
-          const tagRecords: Array<{ name: string; id: string }> = [];
-          for (const name of uniqueTagNames.values()) {
-            const row = {
-              name,
-              tenant_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-            } as OperationDataType<'tags', 'insert'>;
-            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
-            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
-            if (tag?.id) {
-              tagRecords.push({ name, id: String(tag.id) });
-              tagIdByLowerName.set(name.toLowerCase(), String(tag.id));
-            }
-          }
-
-          // 5. Work out which tags each person gets: every batch-level tag,
-          // plus the row's own Tags-column names. Inserted persons are paired
-          // back to their source rows by position when the insert dropped
-          // nothing; if onConflict(doNothing) dropped rows the positions no
-          // longer line up, so fall back to email pairing (rows that can't be
-          // paired still get the batch-level tags).
-          const batchTagRecords = tagRecords.filter((t) => tags.some((n) => n.toLowerCase() === t.name.toLowerCase()));
-          const rowTagRecords = (
-            entry: (typeof validEntries)[number] | undefined,
-          ): Array<{ name: string; id: string }> => {
-            if (!entry) return batchTagRecords;
-            const names = new Set([...tags, ...entry.sanitized.tags].map((n) => n.toLowerCase()));
-            return tagRecords.filter((t) => names.has(t.name.toLowerCase()));
-          };
-
-          const personTags = new Map<string, Array<{ name: string; id: string }>>();
-          if (insertedPersons.length === insertEntries.length) {
-            insertedPersons.forEach((p, idx) => personTags.set(String(p.id), rowTagRecords(insertEntries[idx])));
-          } else {
-            const entryByEmail = new Map(
-              insertEntries
-                .filter((e) => e.sanitized.email)
-                .map((e) => [(e.sanitized.email as string).toLowerCase(), e] as const),
-            );
-            for (const p of insertedPersons) {
-              const entry = p.email ? entryByEmail.get(String(p.email).toLowerCase()) : undefined;
-              personTags.set(String(p.id), rowTagRecords(entry));
-            }
-          }
-          for (const { entry, personId } of mergeEntries) {
-            personTags.set(personId, rowTagRecords(entry));
-          }
-
-          const tagMapRows = [...personTags.entries()].flatMap(([person_id, records]) =>
-            records.map(({ id: tag_id }) => ({
-              tenant_id,
-              person_id,
-              tag_id: tag_id as unknown as string,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-            })),
-          );
-          if (tagMapRows.length > 0) {
-            // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
-            await trx
-              .insertInto('map_peoples_tags')
-              .values(tagMapRows)
-              .onConflict((oc) => oc.doNothing())
-              .execute();
-          }
-
-          return {
-            insertedPersons,
-            mergedPersonIds,
-            personTags,
-            householdsCreatedDelta,
-            blankHouseholdId: localBlankHouseholdId,
-            companyIdByName: localCompanyIdByName,
-            autoTagId: localAutoTagId,
-          };
-        });
-
-        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
-        const workflowsController = new WorkflowsController();
-        for (const person of outcome.insertedPersons) {
-          const personId = String(person.id);
-          importedPersonIds.push(personId);
-          try {
-            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
-          }
-          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
-            try {
-              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
-            }
-          }
-        }
-        // Merged persons aren't new contacts — only the tag_added workflow applies, and
-        // they still belong in the static-list membership pass below.
-        for (const personId of outcome.mergedPersonIds) {
-          importedPersonIds.push(personId);
-          for (const { name, id: tagId } of outcome.personTags.get(personId) ?? []) {
-            try {
-              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow after CSV import merge');
-            }
-          }
-        }
-
-        results.inserted += outcome.insertedPersons.length;
-        results.households_created += outcome.householdsCreatedDelta;
-        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
-        for (const [lowerName, companyId] of outcome.companyIdByName) companyIdByName.set(lowerName, companyId);
-        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
-      } catch (err: unknown) {
-        // If the chunk transaction fails, count all valid rows in the chunk as errors
-        results.errors += validEntries.length;
-        const message = err instanceof Error ? err.message : String(err);
-        errorMessages.push(message);
-        logger.error({ err, message }, 'Import chunk failed');
-      }
-
-      // Update intermediate counts after each chunk
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          tag_id: autoTagId,
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          merged_count: results.merged,
-          households_created: results.households_created,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        },
-      });
-    }
-
-    // Add every imported (and merged-into) person to a static list, creating
-    // it if it doesn't already exist by that exact name (spec §17 "add
-    // everyone to a static list"). This runs here — not as a public
-    // lists.addMembers endpoint — because processImportRows is the only
-    // place that knows the final set of person ids; see pplcrm-forms-style
-    // note in the wizard skill for why no new public list-membership API
-    // was added for this track.
-    if (options?.listName && importedPersonIds.length > 0) {
-      try {
-        await this.addImportedPersonsToStaticList(tenant_id, user_id, options.listName, importedPersonIds);
-      } catch (err) {
-        logger.error({ err }, 'Failed to add imported people to the requested static list');
-      }
-    }
-
-    // Bulk-inserted rows get their identifiers in one set-based pass (spec §1):
-    // persons get an opaque public_id + display slug, households a name slug.
-    try {
-      await backfillPersonPublicIds(this.personsRepo.db, tenant_id);
-      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
-      await backfillMissingSlugs(this.personsRepo.db, 'companies', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill record identifiers after import');
-    }
-
-    // Final History-page facts: every tag actually applied, and the reason
-    // each skipped row was skipped (spec §17 — "skipped rows stay
-    // downloadable with the reason each was skipped").
-    try {
-      await this.importsRepo.update({
-        tenant_id,
-        id: import_id,
-        row: {
-          merged_count: results.merged,
-          tags_applied: JSON.stringify(tags),
-          skip_reasons: JSON.stringify(skipReasons),
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        },
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to persist final import stats');
-    }
-
-    // Log the user activity
-    try {
-      await this.userActivity.log({
-        tenant_id,
-        user_id,
-        activity: 'import',
-        entity: 'persons',
-        quantity: results.inserted,
-        metadata: {
-          rows_received: rows.length,
-          tags_applied: tags.slice(0, 10),
-          auto_tag: autoTag,
-          households_created: results.households_created,
-          errors: results.errors,
-          skipped: skipped + results.skipped,
-          import_id,
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log import activity');
-    }
-
-    if (importedPersonIds.length > 0) {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
-      }
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      merged: results.merged,
-      households_created: results.households_created,
-      tag_id: autoTagId,
-      errorMessages,
-    };
-  }
-
-  /**
-   * Find-or-create a static people list by exact, case-insensitive name and
-   * add every given person id to it (spec §17 "add everyone to a static
-   * list"). Runs inside the import job because that's the only place the
-   * final imported/merged person ids are known — see the call site comment
-   * in processImportRows.
-   */
-  private async addImportedPersonsToStaticList(
-    tenant_id: string,
-    user_id: string,
-    listName: string,
-    personIds: string[],
-  ): Promise<void> {
-    const trimmedName = listName.trim();
-    if (!trimmedName) return;
-
-    const existingList = await this.listsRepo.db
-      .selectFrom('lists')
-      .select(['id'])
-      .where('tenant_id', '=', tenant_id)
-      .where(sql`lower(name)`, '=', trimmedName.toLowerCase())
-      .where('object', '=', 'people')
-      .executeTakeFirst();
-
-    let listId = existingList?.id != null ? String(existingList.id) : undefined;
-
-    if (!listId) {
-      const created = await this.listsRepo.add({
-        row: {
-          tenant_id,
-          name: trimmedName,
-          description: `Created by the CSV import wizard on ${new Date().toLocaleDateString()}.`,
-          object: 'people',
-          is_dynamic: false,
-          definition: null,
-          status: 'idle',
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        } as OperationDataType<'lists', 'insert'>,
-      });
-      if (created?.id != null) listId = String(created.id);
-    }
-    if (!listId) return;
-
-    const uniqueIds = [...new Set(personIds)];
-    const rows = uniqueIds.map((person_id) => ({
-      tenant_id,
-      list_id: listId as string,
-      person_id,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })) as OperationDataType<'map_lists_persons', 'insert'>[];
-
-    // A person may already belong to this list (e.g. re-running an import
-    // into the same list) — the primary key is (tenant_id, list_id,
-    // person_id), so skip rows that would collide instead of failing the batch.
-    await this.mapListsPersonsRepo.db
-      .insertInto('map_lists_persons')
-      .values(rows)
-      .onConflict((oc) => oc.columns(['tenant_id', 'list_id', 'person_id']).doNothing())
-      .execute();
-  }
-
-  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    return this.personsRepo.moveToNewHousehold({
-      tenant_id: auth.tenant_id,
-      person_id,
-      user_id: auth.user_id,
-      campaign_id,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  /**
-   * CSV import wizard Review step (spec §17) — email is the match key across
-   * this app (Duplicates, Forms). Given the emails mapped from the uploaded
-   * file, report which ones already belong to a person so the wizard can
-   * render "N rows match people you already have" with a door to each match.
-   */
-  public async checkDuplicateEmails(auth: IAuthKeyPayload, emails: string[]) {
-    const matches = await this.personsRepo.findManyByEmails({ tenant_id: auth.tenant_id, emails });
-    return matches.map((match) => ({
-      email: (match.email ?? '').toLowerCase(),
-      person_id: String(match.id),
-      name:
-        [match.first_name, match.last_name]
-          .filter((part) => !!part)
-          .join(' ')
-          .trim() || 'Unnamed person',
-      slug: match.slug ?? null,
-    }));
-  }
-
-  public async getDuplicateCounts(auth: IAuthKeyPayload) {
-    const [people, households, companies] = await Promise.all([
-      this.personsRepo.getDuplicateCount(auth.tenant_id),
-      this.householdRepo.getDuplicateCount(auth.tenant_id),
-      this.companiesRepo.getDuplicateCount(auth.tenant_id),
-    ]);
-    return { people, households, companies };
-  }
-
-  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
-    const result = await this.personsRepo.mergePersons({
-      tenant_id: auth.tenant_id,
-      target_id: input.target_id,
-      source_id: input.source_id,
-      user_id: auth.user_id,
-    });
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'merge',
-      entity: 'persons',
-      quantity: 1,
-      metadata: {
-        target_id: input.target_id,
-        source_id: input.source_id,
-      },
-    });
-    return result;
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    person_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapPersonsTagRepo.add({
-      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
-    });
-  }
-
-  private sanitizePhone(v?: string) {
-    if (!v) return undefined;
-    const digits = v.replace(/[^0-9+]/g, '');
-    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
-    return digits.replace(/[^0-9]/g, '');
-  }
-
-  private sanitizeRow(row: {
-    first_name?: string;
-    middle_names?: string;
-    last_name?: string;
-    email?: string;
-    email2?: string;
-    mobile?: string;
-    notes?: string;
-    home_phone?: string;
-    street_num?: string;
-    street1?: string;
-    street2?: string;
-    apt?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-    company?: string;
-    tags?: string;
-  }) {
-    const trim = (v?: string) => (v ? v.trim() : undefined);
-
-    let first_name = trim(row.first_name);
-    const middle_names = trim(row.middle_names);
-    const last_name = trim(row.last_name);
-    let email = (trim(row.email) || '').toLowerCase();
-    let email2 = (trim(row.email2) || '').toLowerCase();
-    if (email2 && !/.+@.+\..+/.test(email2)) email2 = '';
-    let mobile = this.sanitizePhone(row.mobile);
-    const home_phone = this.sanitizePhone(row.home_phone);
-    const notes = trim(row.notes);
-    const company = trim(row.company);
-    // A mapped Tags column holds comma/semicolon-separated names; over-long
-    // names are dropped rather than failing the row (same 50-char cap as tags).
-    const tags = (row.tags ?? '')
-      .split(/[,;]/)
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0 && t.length <= 50);
-
-    if (!email) {
-      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
-    }
-    if (email && !/.+@.+\..+/.test(email)) email = '';
-
-    if (!mobile) {
-      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
-      mobile = this.sanitizePhone(possiblePhone);
-    }
-
-    if (first_name) first_name = this.stripNoise(first_name);
-    if (!first_name && email) first_name = this.nameFromEmail(email);
-
-    return {
-      first_name,
-      middle_names,
-      last_name,
-      email: email || undefined,
-      email2: email2 || undefined,
-      mobile,
-      notes,
-      home_phone,
-      street_num: trim(row.street_num),
-      street1: trim(row.street1),
-      street2: trim(row.street2),
-      apt: trim(row.apt),
-      city: trim(row.city),
-      state: trim(row.state),
-      zip: trim(row.zip),
-      country: trim(row.country),
-      company,
-      tags,
-    };
-  }
-
-  private findEmail(text: string): string | undefined {
-    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return m?.[0];
-  }
-
-  private findPhone(text?: string): string | undefined {
-    if (!text) return undefined;
-    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
-    return m?.[0];
-  }
-
-  private stripNoise(text: string): string | undefined {
-    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
-    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
-    const cleaned = noPhone
-      .replace(/[,]+/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return cleaned || undefined;
-  }
-
-  private nameFromEmail(email: string): string | undefined {
-    const local = (email || '').split('@')[0] || '';
-    const token = local.split(/[._+-]/)[0] || '';
-    if (!token) return undefined;
-    return token.charAt(0).toUpperCase() + token.slice(1);
-  }
-}
-````
-
-## File: apps/website/src/app/pricing/pricing-page.ts
-````typescript
-import { Component, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { FEATURE_MATRIX, PLANS, priceLabelAt } from '@common';
-import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
-];
-
-/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
-const DEFAULT_STOP_INDEX = 1;
-const DEFAULT_STOP = 2_500;
-
-/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
-type MatrixPlanKey = keyof FeatureMatrixRow['values'];
-
-function isMatrixPlanKey(key: string): key is MatrixPlanKey {
-  return key === 'free' || key === 'grassroots' || key === 'movement';
-}
-
-@Component({
-  selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
-  templateUrl: './pricing-page.html',
-})
-export class PricingPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-  protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
-
-  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
-  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
-  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
-  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
-
-  protected onSlide(event: Event): void {
-    const target = event.target;
-    if (target instanceof HTMLInputElement) {
-      this.stopIndex.set(Number(target.value));
-    }
-  }
-
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
-  protected priceLabel(plan: PlanDef): string {
-    const label = priceLabelAt(plan, this.subscribers());
-    const amount = /^\$(\d+)$/.exec(label)?.[1];
-    return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
-  }
-
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
-  protected overMax(plan: PlanDef): boolean {
-    return priceLabelAt(plan, this.subscribers()) === 'Contact us';
-  }
-
-  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
-  protected maxSubscribersLabel(plan: PlanDef): string {
-    const brackets = plan.pricing?.brackets;
-    const last = brackets?.[brackets.length - 1];
-    return (last?.upTo ?? 0).toLocaleString('en-US');
-  }
-
-  /** One matrix cell: true = included, false = not included, string = text value. */
-  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
-    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
   }
 }
 ````
@@ -65112,6 +66064,931 @@ function buildNewsletterEvents(
 }
 ````
 
+## File: apps/backend/src/app/modules/newsletters/controller.ts
+````typescript
+import type {
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  MarketingEmailTopLinkType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportType,
+} from '../../../../../../libs/common/src';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
+
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { ListsController } from '../lists/controller';
+import { NewslettersRepo } from './repositories/newsletters.repo';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
+
+const DEFAULT_FROM_NAME = 'pplCRM Team';
+const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+
+export interface SendTestEmailInput {
+  subject: string;
+  html: string;
+  text?: string;
+  to: string;
+  fromName?: string;
+  fromEmail?: string;
+}
+
+export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
+  constructor() {
+    super(new NewslettersRepo());
+  }
+
+  /**
+   * map_newsletters_lists is the source of truth for list targeting (the
+   * legacy JSONB target_lists column is still dual-written by callers during
+   * the transition, but nothing reads it for behavior anymore).
+   */
+  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    // Every newsletter belongs to a campaign (§15). Callers that predate the
+    // context switcher fall back to the tenant's office context.
+    const pending = row as Record<string, unknown>;
+    if (!pending['campaign_id']) {
+      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
+      const office = campaigns.find((c) => c.kind === 'office');
+      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
+      pending['campaign_id'] = String(office.id);
+    }
+    const result = await super.add(row, trx);
+    const rowObj = row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        String(rowObj['tenant_id']),
+        String(resultObj['id']),
+        rowObj['target_lists'],
+        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
+        trx,
+      );
+    }
+    return result;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'newsletters', 'update'>;
+  }) {
+    const result = await super.update(input);
+    const rowObj = input.row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        input.tenant_id,
+        input.id,
+        rowObj['target_lists'],
+        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
+      );
+    }
+    return result;
+  }
+
+  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
+  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      const raw = parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return {
+          include: raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          exclude: [],
+        };
+      }
+    }
+    if (Array.isArray(parsed)) {
+      return { include: parsed.map((v) => String(v)), exclude: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
+
+  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
+  private async syncTargetLists(
+    tenant_id: string,
+    newsletterId: string,
+    rawTargetLists: unknown,
+    actorId: string,
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const db = trx ?? this.getRepo().db;
+    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+
+    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
+    let liveIds = new Set<string>();
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = new Set(rows.map((r) => String(r.id)));
+    }
+
+    await db
+      .deleteFrom('map_newsletters_lists')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+
+    const values = [
+      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
+      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
+    ].map((v) => ({
+      tenant_id,
+      newsletter_id: newsletterId,
+      list_id: v.list_id,
+      mode: v.mode,
+      createdby_id: actorId,
+      updatedby_id: actorId,
+    }));
+    if (values.length > 0) {
+      await db.insertInto('map_newsletters_lists').values(values).execute();
+    }
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'newsletters',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  public async buildRecipientQuery(tenant_id: string, newsletter: Record<string, unknown>): Promise<any> {
+    let includeTags: string[] = [];
+    let excludeTags: string[] = [];
+
+    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
+    const listRows = await this.getRepo()
+      .db.selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', String(newsletter['id']))
+      .execute();
+    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
+    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
+
+    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // It stays JSONB deliberately: it holds tag *names*, not ids.
+    const parseJsonField = (value: unknown): unknown => {
+      if (value == null) return null;
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value; // already parsed object from jsonb column
+    };
+
+    const segmentsObj = parseJsonField(newsletter['segments']);
+    if (Array.isArray(segmentsObj)) {
+      includeTags = segmentsObj as string[];
+    } else if (segmentsObj && typeof segmentsObj === 'object') {
+      const obj = segmentsObj as Record<string, unknown>;
+      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof segmentsObj === 'string' && segmentsObj) {
+      includeTags = (segmentsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const db = this.getRepo().db;
+    const campaignId = String(newsletter['campaign_id']);
+    let query = db
+      .selectFrom('persons')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.email', 'is not', null)
+      .where('persons.email', '!=', '')
+      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
+      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
+      .where((eb) =>
+        eb.exists(
+          db
+            .selectFrom('campaign_subscriptions')
+            .select('campaign_subscriptions.person_id')
+            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
+            .where('campaign_subscriptions.campaign_id', '=', campaignId)
+            .where('campaign_subscriptions.status', '=', 'subscribed')
+            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
+        ),
+      )
+      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('email_suppressions')
+              .select('email_suppressions.id')
+              .where('email_suppressions.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`email_suppressions.email = persons.email`),
+          ),
+        ),
+      )
+      // 3. Person-level do-not-contact (null channel list = all channels).
+      .where(
+        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
+      );
+
+    query = query.where((eb) => {
+      const conditions = [];
+      if (includeListIds.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', includeListIds),
+          ),
+        );
+      }
+      if (includeTags.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', includeTags),
+          ),
+        );
+      }
+
+      if (conditions.length === 0) {
+        return eb.val(false);
+      }
+      return eb.or(conditions);
+    });
+
+    if (excludeListIds.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', excludeListIds),
+          ),
+        ),
+      );
+    }
+
+    if (excludeTags.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', excludeTags),
+          ),
+        ),
+      );
+    }
+
+    return query;
+  }
+
+  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    // Sending is locked during the demo test drive (no plan yet, no sender identity).
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) {
+      throw new NotFoundError('Newsletter not found');
+    }
+    if (newsletter['status'] === 'sent' || newsletter['status'] === 'queuing' || newsletter['status'] === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
+    }
+
+    const db = this.getRepo().db;
+    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
+
+    // Get total count of unique recipients using a distinct count query
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number(countResult?.count || 0);
+
+    if (totalRecipients === 0) {
+      throw new BadRequestError('No recipients found for the selected lists or tags');
+    }
+
+    // A 'paused' newsletter (tripwire fired mid-send) resumes from where it stopped once the
+    // tenant is unblocked, instead of double-sending the recipients before the pause point.
+    const resumeOffset = newsletter['status'] === 'paused' ? Number(newsletter['send_offset'] ?? 0) : 0;
+    const resumeDelivered = resumeOffset > 0 ? Number(newsletter['delivered_count'] ?? 0) : 0;
+
+    // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
+    await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
+
+    const updated = await this.update({
+      tenant_id,
+      id,
+      row: {
+        status: 'queuing',
+        total_recipients: totalRecipients,
+        delivered_count: resumeDelivered,
+        updatedby_id: userId,
+        updated_at: new Date(),
+      },
+    });
+
+    await db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenant_id,
+          userId: userId,
+          offset: resumeOffset,
+          deliveredCount: resumeDelivered,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return updated;
+  }
+
+  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
+    const db = this.getRepo().db;
+
+    // Test sends are single-recipient but still outbound mail: blocked while the tenant is
+    // suspended/paused, and throttled so they can't be scripted into a bulk channel.
+    assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
+    checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
+
+    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
+    // from name/email, otherwise fall back to the workspace Communications settings.
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+        'communications.reply_to',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
+    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
+    const replyTo = settingsMap['communications.reply_to'] || undefined;
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+
+    // Apply the same send-time render as the real send so the test reflects what recipients receive:
+    // block-JSON stripped, relative images made absolute, merge tokens resolved (to their fallbacks
+    // here, since a test address carries no person record).
+    const html = renderNewsletterHtml(input.html, { baseUrl: env.appUrl, previewText: null });
+    const mergeTokens = extractMergeTokens(input.subject, html, input.text);
+    const substitutions = mergeTokens.length ? resolveMergeSubstitutions(mergeTokens, { email: input.to }) : undefined;
+
+    const mailSvc = new NewsletterEmailService();
+    const delivered = await mailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: [{ email: input.to, substitutions }],
+      subject: input.subject,
+      html,
+      text: input.text,
+      sendgridApiKey,
+      subuserUsername,
+    });
+
+    return { to: input.to, delivered };
+  }
+
+  /**
+   * Everything the newsletter report page renders in one call.
+   *
+   * Engagement detail lives in two places: raw `newsletter_events` (recent) and
+   * the `person_newsletter_engagements` rollup (raw rows are aggregated into it
+   * and deleted by the prune job). The two are disjoint by construction, so
+   * per-email numbers are the sum of both sources.
+   */
+  public async getReport(tenant_id: string, id: string): Promise<NewsletterReportType> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    const db = this.getRepo().db;
+
+    // --- per-email engagement, merged from raw events + the rollup ------------
+    const rawAgg = await db
+      .selectFrom('newsletter_events')
+      .select([
+        'email',
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'click')`.as('clicks'),
+        sql<number>`COUNT(DISTINCT url) FILTER (WHERE event_type = 'click' AND url IS NOT NULL)`.as('links'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as('hard_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND bounce_type = 'blocked')`.as('soft_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'dropped')`.as('dropped'),
+        sql<string | null>`MAX(reason) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounce_reason'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced_at'),
+        sql<boolean>`BOOL_OR(event_type = 'unsubscribe')`.as('unsubscribed'),
+        sql<boolean>`BOOL_OR(event_type = 'spamreport')`.as('spam_reported'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type = 'spamreport')`.as('spam_reported_at'),
+      ])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email')
+      .execute();
+
+    const rollup = await db
+      .selectFrom('person_newsletter_engagements')
+      .select(['email', 'open_count', 'click_count', 'hard_bounced', 'soft_bounced', 'has_unsubscribed', 'bounced_at'])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    interface EmailEngagement {
+      opens: number;
+      clicks: number;
+      links: number;
+      hard: boolean;
+      soft: boolean;
+      dropped: boolean;
+      reason: string | null;
+      bouncedAt: Date | null;
+      unsubscribed: boolean;
+      spamReported: boolean;
+      spamReportedAt: Date | null;
+    }
+    const byEmail = new Map<string, EmailEngagement>();
+    const entryFor = (email: string): EmailEngagement => {
+      let e = byEmail.get(email);
+      if (!e) {
+        e = {
+          opens: 0,
+          clicks: 0,
+          links: 0,
+          hard: false,
+          soft: false,
+          dropped: false,
+          reason: null,
+          bouncedAt: null,
+          unsubscribed: false,
+          spamReported: false,
+          spamReportedAt: null,
+        };
+        byEmail.set(email, e);
+      }
+      return e;
+    };
+    for (const r of rollup) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.open_count);
+      e.clicks += Number(r.click_count);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.unsubscribed = e.unsubscribed || r.has_unsubscribed;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+    }
+    for (const r of rawAgg) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.opens);
+      e.clicks += Number(r.clicks);
+      e.links += Number(r.links);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.dropped = e.dropped || r.dropped;
+      e.reason = e.reason ?? r.bounce_reason;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+      e.unsubscribed = e.unsubscribed || r.unsubscribed;
+      e.spamReported = e.spamReported || r.spam_reported;
+      e.spamReportedAt =
+        e.spamReportedAt ?? (r.spam_reported_at ? new Date(r.spam_reported_at as unknown as string) : null);
+    }
+
+    const bounceKind = (e: EmailEngagement): 'hard' | 'soft' | 'dropped' | null =>
+      e.hard ? 'hard' : e.soft ? 'soft' : e.dropped ? 'dropped' : null;
+
+    // --- bounce rows, CRM-matched --------------------------------------------
+    const MAX_BOUNCE_ROWS = 500;
+    const bounceEntries = [...byEmail.entries()]
+      .map(([email, e]) => ({ email, e, kind: bounceKind(e) }))
+      .filter((b): b is { email: string; e: EmailEngagement; kind: 'hard' | 'soft' | 'dropped' } => b.kind !== null)
+      .sort((a, b) => (b.e.bouncedAt?.getTime() ?? 0) - (a.e.bouncedAt?.getTime() ?? 0));
+
+    const engagedEntries = [...byEmail.entries()]
+      .filter(([, e]) => e.opens + e.clicks > 0)
+      .sort(([, a], [, b]) => b.clicks - a.clicks || b.opens - a.opens)
+      .slice(0, 5);
+
+    const matchEmails = [
+      ...new Set(
+        [...bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => b.email), ...engagedEntries.map(([email]) => email)].map(
+          (m) => m.toLowerCase(),
+        ),
+      ),
+    ];
+    const personsByEmail = new Map<string, { id: string; public_id: string | null; name: string }>();
+    if (matchEmails.length > 0) {
+      const matches = await db
+        .selectFrom('persons')
+        .select(['id', 'public_id', 'first_name', 'last_name', 'email'])
+        .where('tenant_id', '=', tenant_id)
+        .where(sql<string>`LOWER(persons.email)`, 'in', matchEmails)
+        .execute();
+      for (const p of matches) {
+        if (!p.email) continue;
+        const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        personsByEmail.set(String(p.email).toLowerCase(), {
+          id: String(p.id),
+          public_id: p.public_id,
+          name: name || 'Unnamed person',
+        });
+      }
+    }
+    const personFor = (email: string) => personsByEmail.get(email.toLowerCase()) ?? null;
+
+    const bounceRows: NewsletterReportBounceType[] = bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => ({
+      email: b.email,
+      kind: b.kind,
+      reason: b.e.reason,
+      occurred_at: b.e.bouncedAt,
+      person: personFor(b.email),
+    }));
+
+    const mostEngaged: NewsletterReportEngagedType[] = engagedEntries.map(([email, e]) => ({
+      email,
+      opens: e.opens,
+      clicks: e.clicks,
+      links: e.links,
+      person: personFor(email),
+    }));
+
+    // --- hourly timeline (raw events only — empty once pruned) ----------------
+    const timeline = await db
+      .selectFrom('newsletter_events')
+      .select([
+        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+      ])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', 'in', ['open', 'click'])
+      .groupBy('time_bucket')
+      .orderBy('time_bucket', 'asc')
+      .execute();
+    const timelinePoints = timeline.map((t) => ({
+      time: t.time_bucket,
+      opens: Number(t.opens),
+      clicks: Number(t.clicks),
+    }));
+
+    const sendDate = newsletter['send_date'] ? new Date(newsletter['send_date'] as string) : null;
+    let opensIn24hPct: number | null = null;
+    if (sendDate && timelinePoints.length > 0) {
+      const cutoff = sendDate.getTime() + 24 * 60 * 60 * 1000;
+      let within = 0;
+      let total = 0;
+      for (const t of timelinePoints) {
+        total += t.opens;
+        // Bucket keys are Postgres-local hour strings; treat them as local time.
+        if (new Date(t.time.replace(' ', 'T')).getTime() <= cutoff) within += t.opens;
+      }
+      opensIn24hPct = total > 0 ? (within / total) * 100 : null;
+    }
+
+    // --- links: stored top_links are authoritative for clicks (they survive
+    // pruning); unique-people counts only exist while raw events do ------------
+    const linkAgg = await db
+      .selectFrom('newsletter_events')
+      .select(['url', sql<number>`COUNT(*)`.as('clicks'), sql<number>`COUNT(DISTINCT email)`.as('people')])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .where('url', 'is not', null)
+      .groupBy('url')
+      .execute();
+    const peopleByUrl = new Map(
+      linkAgg.map((l) => [String(l.url), { clicks: Number(l.clicks), people: Number(l.people) }]),
+    );
+
+    let storedLinks: MarketingEmailTopLinkType[] = [];
+    const rawTopLinks = newsletter['top_links'];
+    if (Array.isArray(rawTopLinks)) {
+      storedLinks = rawTopLinks as MarketingEmailTopLinkType[];
+    } else if (typeof rawTopLinks === 'string' && rawTopLinks) {
+      try {
+        const parsed: unknown = JSON.parse(rawTopLinks);
+        if (Array.isArray(parsed)) storedLinks = parsed as MarketingEmailTopLinkType[];
+      } catch {
+        storedLinks = [];
+      }
+    }
+    const linkUrls = new Set<string>([...storedLinks.map((l) => l.url), ...peopleByUrl.keys()]);
+    const allLinks: NewsletterReportLinkType[] = [...linkUrls]
+      .map((url) => {
+        const stored = storedLinks.find((l) => l.url === url);
+        const raw = peopleByUrl.get(url);
+        const clicks = Math.max(stored?.clicks ?? 0, raw?.clicks ?? 0);
+        // A people count from a partial event window would understate — only
+        // report it when the raw window still covers every recorded click.
+        const people = raw && raw.clicks >= clicks ? raw.people : null;
+        return { url, clicks, people };
+      })
+      .sort((a, b) => b.clicks - a.clicks);
+
+    // --- audience composition (current list membership — see report footer) ---
+    const audienceLists: { id: string; name: string; mode: 'include' | 'exclude'; members: number }[] = [];
+    let overlapRemoved = 0;
+    let suppressedSkipped = 0;
+    const listRows = await db
+      .selectFrom('map_newsletters_lists')
+      .innerJoin('lists', 'lists.id', 'map_newsletters_lists.list_id')
+      .select(['lists.id as id', 'lists.name as name', 'map_newsletters_lists.mode as mode'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.newsletter_id', '=', id)
+      .execute();
+    const includeIds = listRows.filter((l) => l.mode === 'include').map((l) => String(l.id));
+    if (listRows.length > 0) {
+      const allIds = listRows.map((l) => String(l.id));
+      const memberCounts = await db
+        .selectFrom('map_lists_persons')
+        .select(['list_id', sql<number>`COUNT(DISTINCT person_id)`.as('members')])
+        .where('tenant_id', '=', tenant_id)
+        .where('list_id', 'in', allIds)
+        .groupBy('list_id')
+        .execute();
+      const membersByList = new Map(memberCounts.map((m) => [String(m.list_id), Number(m.members)]));
+      for (const l of listRows) {
+        audienceLists.push({
+          id: String(l.id),
+          name: String(l.name),
+          mode: l.mode === 'exclude' ? 'exclude' : 'include',
+          members: membersByList.get(String(l.id)) ?? 0,
+        });
+      }
+      if (includeIds.length > 0) {
+        const distinctRow = await db
+          .selectFrom('map_lists_persons')
+          .select(sql<number>`COUNT(DISTINCT person_id)`.as('distinct_members'))
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', 'in', includeIds)
+          .executeTakeFirst();
+        const includeSum = audienceLists.filter((l) => l.mode === 'include').reduce((sum, l) => sum + l.members, 0);
+        overlapRemoved = Math.max(0, includeSum - Number(distinctRow?.distinct_members ?? 0));
+
+        const suppressedRow = await db
+          .selectFrom('map_lists_persons')
+          .innerJoin('persons', 'persons.id', 'map_lists_persons.person_id')
+          .select(sql<number>`COUNT(DISTINCT persons.id)`.as('suppressed'))
+          .where('map_lists_persons.tenant_id', '=', tenant_id)
+          .where('persons.tenant_id', '=', tenant_id)
+          .where('map_lists_persons.list_id', 'in', includeIds)
+          .where((eb) =>
+            eb.exists(
+              db
+                .selectFrom('email_suppressions')
+                .select('email_suppressions.id')
+                .where('email_suppressions.tenant_id', '=', tenant_id)
+                .where(sql<boolean>`email_suppressions.email = persons.email`),
+            ),
+          )
+          .executeTakeFirst();
+        suppressedSkipped = Number(suppressedRow?.suppressed ?? 0);
+      }
+    }
+
+    // --- the last 5 sends in this campaign, ending with this one --------------
+    let previousSends: NewsletterReportType['previous_sends'] = [];
+    if (sendDate) {
+      let prevQuery = db
+        .selectFrom('newsletters')
+        .select([
+          'id',
+          'name',
+          'send_date',
+          'open_rate',
+          'click_rate',
+          'unsubscribe_count',
+          'bounce_count',
+          'delivered_count',
+          'total_recipients',
+        ])
+        .where('tenant_id', '=', tenant_id)
+        .where('status', '=', 'sent')
+        .where('send_date', 'is not', null)
+        .where((eb) => eb.or([eb('send_date', '<', sendDate), eb('id', '=', id)]))
+        .orderBy('send_date', 'desc')
+        .limit(5);
+      const campaignId = newsletter['campaign_id'];
+      prevQuery =
+        campaignId != null
+          ? prevQuery.where('campaign_id', '=', String(campaignId))
+          : prevQuery.where('campaign_id', 'is', null);
+      const prevRows = await prevQuery.execute();
+      previousSends = prevRows.reverse().map((r) => {
+        const delivered = Number(r.delivered_count ?? 0);
+        const recipients = Number(r.total_recipients ?? 0);
+        return {
+          id: String(r.id),
+          name: String(r.name),
+          send_date: r.send_date ? new Date(r.send_date as unknown as string) : null,
+          open_rate: Number(r.open_rate ?? 0),
+          click_rate: Number(r.click_rate ?? 0),
+          unsubscribe_rate: delivered > 0 ? (Number(r.unsubscribe_count ?? 0) / delivered) * 100 : 0,
+          bounce_rate: recipients > 0 ? (Number(r.bounce_count ?? 0) / recipients) * 100 : 0,
+        };
+      });
+    }
+
+    // --- sender identity (workspace Communications settings) ------------------
+    const fromRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', ['communications.default_from_name', 'communications.default_from_email'])
+      .execute();
+    const fromMap: Record<string, string> = {};
+    for (const row of fromRows) {
+      if (typeof row.value === 'string') fromMap[row.key] = row.value;
+    }
+    const fromName = fromMap['communications.default_from_name'] ?? null;
+    const fromEmail = fromMap['communications.default_from_email'] ?? null;
+
+    // --- totals ----------------------------------------------------------------
+    const hard = bounceEntries.filter((b) => b.kind === 'hard').length;
+    const soft = bounceEntries.filter((b) => b.kind === 'soft').length;
+    const dropped = bounceEntries.filter((b) => b.kind === 'dropped').length;
+    const unsubTotal = Math.max(
+      [...byEmail.values()].filter((e) => e.unsubscribed).length,
+      Number(newsletter['unsubscribe_count'] ?? 0),
+    );
+    const spamRows = [...byEmail.entries()]
+      .filter(([, e]) => e.spamReported)
+      .map(([email, e]) => ({ email: email || null, occurred_at: e.spamReportedAt }));
+    const spamTotal = Math.max(spamRows.length, Number(newsletter['spam_complaint_count'] ?? 0));
+    const clickers = [...byEmail.values()].filter((e) => e.clicks > 0);
+
+    return {
+      timeline: timelinePoints,
+      opens_in_24h_pct: opensIn24hPct,
+      bounces: { total: bounceEntries.length, hard, soft, dropped, rows: bounceRows },
+      top_links: allLinks.slice(0, 6),
+      tracked_links: allLinks.length,
+      total_clicks: clickers.reduce((sum, e) => sum + e.clicks, 0),
+      unique_clickers: clickers.length,
+      most_engaged: mostEngaged,
+      unsubscribes: { total: unsubTotal, reasons: unsubTotal > 0 ? [{ reason: null, count: unsubTotal }] : [] },
+      spam_reports: { total: spamTotal, rows: spamRows },
+      audience: { lists: audienceLists, overlap_removed: overlapRemoved, suppressed_skipped: suppressedSkipped },
+      previous_sends: previousSends,
+      from: fromName || fromEmail ? { name: fromName, email: fromEmail } : null,
+    };
+  }
+
+  /**
+   * "Create list of N clickers" — a static snapshot list of every CRM person
+   * whose address clicked this newsletter, so the next send can target the
+   * people who acted on this one.
+   */
+  public async createClickersList(auth: IAuthKeyPayload, id: string): Promise<CreateClickersListResultType> {
+    const tenant_id = auth.tenant_id;
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    const db = this.getRepo().db;
+
+    const rawClickers = await db
+      .selectFrom('newsletter_events')
+      .select('email')
+      .distinct()
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .execute();
+    const rolledUpClickers = await db
+      .selectFrom('person_newsletter_engagements')
+      .select('email')
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('click_count', '>', 0)
+      .execute();
+    const emails = [
+      ...new Set([...rawClickers, ...rolledUpClickers].map((r) => r.email.toLowerCase()).filter(Boolean)),
+    ];
+    if (emails.length === 0) throw new BadRequestError('No one has clicked this newsletter yet.');
+
+    const persons = await db
+      .selectFrom('persons')
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where(sql<string>`LOWER(persons.email)`, 'in', emails)
+      .execute();
+    const memberIds = [...new Set(persons.map((p) => String(p.id)))];
+    if (memberIds.length === 0) {
+      throw new BadRequestError('None of the clickers match a person in the CRM, so there is no one to add.');
+    }
+
+    const listsController = new ListsController();
+    const newsletterName = String(newsletter['name'] ?? 'newsletter');
+    // Lists cap names at 100 chars — leave room for a " (n)" de-dup suffix.
+    const baseName = `Clicked · ${newsletterName}`.slice(0, 90);
+    const description = `People who clicked "${newsletterName}" — snapshot taken ${new Date().toISOString().slice(0, 10)}.`;
+    const campaignId = newsletter['campaign_id'] != null ? String(newsletter['campaign_id']) : undefined;
+
+    const MAX_NAME_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
+      const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
+      try {
+        const list = (await listsController.addList(
+          { name, description, object: 'people', is_dynamic: false, member_ids: memberIds, campaign_id: campaignId },
+          auth,
+        )) as Record<string, unknown>;
+        return { id: String(list['id']), name, members: memberIds.length };
+      } catch (err: unknown) {
+        const isNameConflict = err instanceof TRPCError && err.code === 'CONFLICT';
+        if (!isNameConflict || attempt === MAX_NAME_ATTEMPTS - 1) throw err;
+      }
+    }
+    // Unreachable — the loop either returns or rethrows on its last attempt.
+    throw new BadRequestError('Could not find a free list name.');
+  }
+}
+````
+
 ## File: apps/companion/src/app/canvass/canvass-page.ts
 ````typescript
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -65507,313 +67384,6 @@ export class RoutePage {
     }
   }
 }
-````
-
-## File: apps/website/src/app/faq/faq-page.ts
-````typescript
-import { Component } from '@angular/core';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'In your region. Canadian organizations’ data stays in Canada, EU organizations’ data stays in the EU, and so on. It doesn’t cross borders for processing or backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
-````
-
-## File: apps/website/src/app/pricing/pricing-page.html
-````html
-<pc-site-header variant="solid" />
-
-<!-- Hero -->
-<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
-  <div class="mx-auto max-w-[760px] text-center">
-    <div class="eyebrow">Pricing</div>
-    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
-    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
-      Start free forever with unlimited contacts and households on every plan. You pay only for features and email
-      subscribers, never for the size of your list.
-    </p>
-  </div>
-</section>
-
-<!-- Plan comparison -->
-<section class="px-5 py-14 sm:px-8">
-  <div class="site-wrap mb-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-center text-[14px]">
-    <span class="font-semibold text-primary">Unlimited contacts &amp; households on every plan.</span>
-    <span class="text-base-content/70">
-      Most tools charge for every contact you store; we never do. Plans differ only in features and email
-      subscribers.</span
-    >
-  </div>
-
-  <!-- Subscriber slider: the one input that re-prices every column below. -->
-  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
-    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
-        How many email subscribers do you have?
-      </label>
-      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
-    </div>
-    <input
-      id="subscriber-slider"
-      type="range"
-      min="0"
-      [max]="maxStopIndex"
-      step="1"
-      class="range range-primary range-sm mt-4 w-full"
-      [value]="stopIndex()"
-      (input)="onSlide($event)"
-    />
-    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
-      <span>1,000</span>
-      <span>200,000</span>
-    </div>
-  </div>
-
-  <!-- Comparison table -->
-  <div class="site-wrap mt-4 overflow-x-auto rounded-xl border border-line bg-base-100">
-    <table class="w-full min-w-[680px] border-separate border-spacing-0">
-      <thead>
-        <tr>
-          <th class="sticky left-0 z-[2] w-[220px] border-b border-line bg-base-100 px-5 py-5 text-left align-bottom">
-            <div class="text-[15px] font-semibold">Compare plans</div>
-            <div class="mt-1 text-[12.5px] font-normal text-base-content/50">
-              Prices shown at {{ subscribersLabel() }} subscribers
-            </div>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <th
-            class="min-w-[180px] border-b border-line px-4 py-5 text-left align-top"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            <div class="h-6">
-              @if (tier.featured) {
-              <span class="inline-block rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary">
-                Best value
-              </span>
-              }
-            </div>
-            <div class="mt-1 text-[16px] font-semibold">{{ tier.name }}</div>
-            <p class="mt-1 min-h-[57px] text-[12.5px] font-normal leading-snug text-base-content/60">
-              {{ tier.blurb }}
-            </p>
-            <div class="mt-3 min-h-[52px]">
-              @if (!overMax(tier)) {
-              <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
-              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
-              } @else if (tier.key === 'free') {
-              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">$0</div>
-              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
-              } @else {
-              <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
-              <div class="mt-2 text-[12px] font-normal text-base-content/50">
-                For more than {{ maxSubscribersLabel(tier) }} subscribers
-              </div>
-              }
-            </div>
-            <a
-              [href]="signupUrl"
-              class="mt-4 block rounded-field px-4 py-2.5 text-center text-[13.5px] font-semibold"
-              [class]="
-                tier.featured
-                  ? 'btn btn-primary rounded-field'
-                  : 'border border-line text-base-content hover:border-primary hover:text-primary'
-              "
-              >Start free</a
-            >
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody>
-        @for (group of matrix; track group.category; let groupLast = $last) {
-        <tr>
-          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-7 text-left">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-              {{ group.category }}
-            </span>
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <td class="pb-2 pt-7" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
-          }
-        </tr>
-        @for (row of group.rows; track row.label; let rowLast = $last) {
-        <tr>
-          <th
-            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
-            [class.border-b]="!(groupLast && rowLast)"
-          >
-            {{ row.label }}
-          </th>
-          @for (tier of tiers; track tier.key) {
-          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
-               past the overflow-x wrapper on small screens. -->
-          <td
-            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
-            [class.border-b]="!(groupLast && rowLast)"
-            [class]="tier.featured ? 'bg-primary/5' : ''"
-          >
-            @let value = matrixValue(row, tier); @if (value === true) {
-            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            <span class="sr-only">Included</span>
-            } @else if (value === false) {
-            <span class="text-base-content/30" aria-hidden="true">—</span>
-            <span class="sr-only">Not included</span>
-            } @else { {{ value }} }
-          </td>
-          }
-        </tr>
-        } }
-      </tbody>
-    </table>
-  </div>
-
-  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
-    Need more than 200,000 subscribers, SSO or custom contracts?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
-  </p>
-
-  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
-    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
-    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> —
-    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">or read the FAQ</a>.
-  </p>
-</section>
-
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8">
-  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
-    Every plan starts on sample data.
-  </h2>
-  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-    <a
-      [href]="mailto"
-      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
-    >
-      Book a 15-minute walkthrough
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
 ````
 
 ## File: apps/backend/src/app/modules/billing/controller.ts
@@ -66961,931 +68531,6 @@ export class CompanionAccessController {
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/controller.ts
-````typescript
-import type {
-  CreateClickersListResultType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  MarketingEmailTopLinkType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportType,
-} from '../../../../../../libs/common/src';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { ListsController } from '../lists/controller';
-import { NewslettersRepo } from './repositories/newsletters.repo';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
-
-const DEFAULT_FROM_NAME = 'pplCRM Team';
-const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
-
-export interface SendTestEmailInput {
-  subject: string;
-  html: string;
-  text?: string;
-  to: string;
-  fromName?: string;
-  fromEmail?: string;
-}
-
-export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
-  private readonly campaignsRepo = new CampaignsRepo();
-
-  constructor() {
-    super(new NewslettersRepo());
-  }
-
-  /**
-   * map_newsletters_lists is the source of truth for list targeting (the
-   * legacy JSONB target_lists column is still dual-written by callers during
-   * the transition, but nothing reads it for behavior anymore).
-   */
-  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
-    // Every newsletter belongs to a campaign (§15). Callers that predate the
-    // context switcher fall back to the tenant's office context.
-    const pending = row as Record<string, unknown>;
-    if (!pending['campaign_id']) {
-      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
-      const office = campaigns.find((c) => c.kind === 'office');
-      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
-      pending['campaign_id'] = String(office.id);
-    }
-    const result = await super.add(row, trx);
-    const rowObj = row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        String(rowObj['tenant_id']),
-        String(resultObj['id']),
-        rowObj['target_lists'],
-        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
-        trx,
-      );
-    }
-    return result;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'newsletters', 'update'>;
-  }) {
-    const result = await super.update(input);
-    const rowObj = input.row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        input.tenant_id,
-        input.id,
-        rowObj['target_lists'],
-        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
-      );
-    }
-    return result;
-  }
-
-  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
-  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
-    let parsed: unknown = value;
-    if (typeof parsed === 'string') {
-      const raw = parsed;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return {
-          include: raw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-          exclude: [],
-        };
-      }
-    }
-    if (Array.isArray(parsed)) {
-      return { include: parsed.map((v) => String(v)), exclude: [] };
-    }
-    if (parsed && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>;
-      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
-      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
-    }
-    return { include: [], exclude: [] };
-  }
-
-  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
-  private async syncTargetLists(
-    tenant_id: string,
-    newsletterId: string,
-    rawTargetLists: unknown,
-    actorId: string,
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    const db = trx ?? this.getRepo().db;
-    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
-
-    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
-    let liveIds = new Set<string>();
-    if (candidates.length > 0) {
-      const rows = await db
-        .selectFrom('lists')
-        .select('id')
-        .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', candidates)
-        .execute();
-      liveIds = new Set(rows.map((r) => String(r.id)));
-    }
-
-    await db
-      .deleteFrom('map_newsletters_lists')
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', newsletterId)
-      .execute();
-
-    const values = [
-      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
-      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
-    ].map((v) => ({
-      tenant_id,
-      newsletter_id: newsletterId,
-      list_id: v.list_id,
-      mode: v.mode,
-      createdby_id: actorId,
-      updatedby_id: actorId,
-    }));
-    if (values.length > 0) {
-      await db.insertInto('map_newsletters_lists').values(values).execute();
-    }
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'newsletters',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  public async buildRecipientQuery(tenant_id: string, newsletter: Record<string, unknown>): Promise<any> {
-    let includeTags: string[] = [];
-    let excludeTags: string[] = [];
-
-    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
-    const listRows = await this.getRepo()
-      .db.selectFrom('map_newsletters_lists')
-      .select(['list_id', 'mode'])
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', String(newsletter['id']))
-      .execute();
-    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
-    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
-
-    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
-    // It stays JSONB deliberately: it holds tag *names*, not ids.
-    const parseJsonField = (value: unknown): unknown => {
-      if (value == null) return null;
-      if (typeof value === 'string') {
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      }
-      return value; // already parsed object from jsonb column
-    };
-
-    const segmentsObj = parseJsonField(newsletter['segments']);
-    if (Array.isArray(segmentsObj)) {
-      includeTags = segmentsObj as string[];
-    } else if (segmentsObj && typeof segmentsObj === 'object') {
-      const obj = segmentsObj as Record<string, unknown>;
-      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof segmentsObj === 'string' && segmentsObj) {
-      includeTags = (segmentsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    const db = this.getRepo().db;
-    const campaignId = String(newsletter['campaign_id']);
-    let query = db
-      .selectFrom('persons')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '')
-      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
-      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
-      .where((eb) =>
-        eb.exists(
-          db
-            .selectFrom('campaign_subscriptions')
-            .select('campaign_subscriptions.person_id')
-            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
-            .where('campaign_subscriptions.campaign_id', '=', campaignId)
-            .where('campaign_subscriptions.status', '=', 'subscribed')
-            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
-        ),
-      )
-      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
-      .where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('email_suppressions')
-              .select('email_suppressions.id')
-              .where('email_suppressions.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`email_suppressions.email = persons.email`),
-          ),
-        ),
-      )
-      // 3. Person-level do-not-contact (null channel list = all channels).
-      .where(
-        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
-      );
-
-    query = query.where((eb) => {
-      const conditions = [];
-      if (includeListIds.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', includeListIds),
-          ),
-        );
-      }
-      if (includeTags.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', includeTags),
-          ),
-        );
-      }
-
-      if (conditions.length === 0) {
-        return eb.val(false);
-      }
-      return eb.or(conditions);
-    });
-
-    if (excludeListIds.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', excludeListIds),
-          ),
-        ),
-      );
-    }
-
-    if (excludeTags.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', excludeTags),
-          ),
-        ),
-      );
-    }
-
-    return query;
-  }
-
-  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
-    // Sending is locked during the demo test drive (no plan yet, no sender identity).
-    await assertNotDemoMode(this.getRepo().db, tenant_id);
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) {
-      throw new NotFoundError('Newsletter not found');
-    }
-    if (newsletter['status'] === 'sent' || newsletter['status'] === 'queuing' || newsletter['status'] === 'sending') {
-      throw new BadRequestError('Newsletter has already been sent or is currently sending');
-    }
-
-    const db = this.getRepo().db;
-    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
-
-    // Get total count of unique recipients using a distinct count query
-    const countResult = await baseQuery
-      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
-      .executeTakeFirst();
-    const totalRecipients = Number(countResult?.count || 0);
-
-    if (totalRecipients === 0) {
-      throw new BadRequestError('No recipients found for the selected lists or tags');
-    }
-
-    // A 'paused' newsletter (tripwire fired mid-send) resumes from where it stopped once the
-    // tenant is unblocked, instead of double-sending the recipients before the pause point.
-    const resumeOffset = newsletter['status'] === 'paused' ? Number(newsletter['send_offset'] ?? 0) : 0;
-    const resumeDelivered = resumeOffset > 0 ? Number(newsletter['delivered_count'] ?? 0) : 0;
-
-    // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
-    await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
-
-    const updated = await this.update({
-      tenant_id,
-      id,
-      row: {
-        status: 'queuing',
-        total_recipients: totalRecipients,
-        delivered_count: resumeDelivered,
-        updatedby_id: userId,
-        updated_at: new Date(),
-      },
-    });
-
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-newsletter',
-          newsletterId: id,
-          tenantId: tenant_id,
-          userId: userId,
-          offset: resumeOffset,
-          deliveredCount: resumeDelivered,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return updated;
-  }
-
-  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
-    await assertNotDemoMode(this.getRepo().db, tenant_id);
-    const db = this.getRepo().db;
-
-    // Test sends are single-recipient but still outbound mail: blocked while the tenant is
-    // suspended/paused, and throttled so they can't be scripted into a bulk channel.
-    assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
-    checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
-
-    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
-    // from name/email, otherwise fall back to the workspace Communications settings.
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.default_from_name',
-        'communications.default_from_email',
-        'communications.reply_to',
-      ])
-      .execute();
-
-    const settingsMap: Record<string, string> = {};
-    for (const row of settingsRows) {
-      if (typeof row.value === 'string') {
-        settingsMap[row.key] = row.value;
-      }
-    }
-
-    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
-    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
-    const replyTo = settingsMap['communications.reply_to'] || undefined;
-    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-
-    // Apply the same send-time render as the real send so the test reflects what recipients receive:
-    // block-JSON stripped, relative images made absolute, merge tokens resolved (to their fallbacks
-    // here, since a test address carries no person record).
-    const html = renderNewsletterHtml(input.html, { baseUrl: env.appUrl, previewText: null });
-    const mergeTokens = extractMergeTokens(input.subject, html, input.text);
-    const substitutions = mergeTokens.length ? resolveMergeSubstitutions(mergeTokens, { email: input.to }) : undefined;
-
-    const mailSvc = new NewsletterEmailService();
-    const delivered = await mailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients: [{ email: input.to, substitutions }],
-      subject: input.subject,
-      html,
-      text: input.text,
-      sendgridApiKey,
-      subuserUsername,
-    });
-
-    return { to: input.to, delivered };
-  }
-
-  /**
-   * Everything the newsletter report page renders in one call.
-   *
-   * Engagement detail lives in two places: raw `newsletter_events` (recent) and
-   * the `person_newsletter_engagements` rollup (raw rows are aggregated into it
-   * and deleted by the prune job). The two are disjoint by construction, so
-   * per-email numbers are the sum of both sources.
-   */
-  public async getReport(tenant_id: string, id: string): Promise<NewsletterReportType> {
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) throw new NotFoundError('Newsletter not found');
-    const db = this.getRepo().db;
-
-    // --- per-email engagement, merged from raw events + the rollup ------------
-    const rawAgg = await db
-      .selectFrom('newsletter_events')
-      .select([
-        'email',
-        sql<number>`COUNT(*) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(*) FILTER (WHERE event_type = 'click')`.as('clicks'),
-        sql<number>`COUNT(DISTINCT url) FILTER (WHERE event_type = 'click' AND url IS NOT NULL)`.as('links'),
-        sql<boolean>`BOOL_OR(event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as('hard_bounced'),
-        sql<boolean>`BOOL_OR(event_type = 'bounce' AND bounce_type = 'blocked')`.as('soft_bounced'),
-        sql<boolean>`BOOL_OR(event_type = 'dropped')`.as('dropped'),
-        sql<string | null>`MAX(reason) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounce_reason'),
-        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced_at'),
-        sql<boolean>`BOOL_OR(event_type = 'unsubscribe')`.as('unsubscribed'),
-        sql<boolean>`BOOL_OR(event_type = 'spamreport')`.as('spam_reported'),
-        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type = 'spamreport')`.as('spam_reported_at'),
-      ])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email')
-      .execute();
-
-    const rollup = await db
-      .selectFrom('person_newsletter_engagements')
-      .select(['email', 'open_count', 'click_count', 'hard_bounced', 'soft_bounced', 'has_unsubscribed', 'bounced_at'])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    interface EmailEngagement {
-      opens: number;
-      clicks: number;
-      links: number;
-      hard: boolean;
-      soft: boolean;
-      dropped: boolean;
-      reason: string | null;
-      bouncedAt: Date | null;
-      unsubscribed: boolean;
-      spamReported: boolean;
-      spamReportedAt: Date | null;
-    }
-    const byEmail = new Map<string, EmailEngagement>();
-    const entryFor = (email: string): EmailEngagement => {
-      let e = byEmail.get(email);
-      if (!e) {
-        e = {
-          opens: 0,
-          clicks: 0,
-          links: 0,
-          hard: false,
-          soft: false,
-          dropped: false,
-          reason: null,
-          bouncedAt: null,
-          unsubscribed: false,
-          spamReported: false,
-          spamReportedAt: null,
-        };
-        byEmail.set(email, e);
-      }
-      return e;
-    };
-    for (const r of rollup) {
-      const e = entryFor(r.email);
-      e.opens += Number(r.open_count);
-      e.clicks += Number(r.click_count);
-      e.hard = e.hard || r.hard_bounced;
-      e.soft = e.soft || r.soft_bounced;
-      e.unsubscribed = e.unsubscribed || r.has_unsubscribed;
-      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
-    }
-    for (const r of rawAgg) {
-      const e = entryFor(r.email);
-      e.opens += Number(r.opens);
-      e.clicks += Number(r.clicks);
-      e.links += Number(r.links);
-      e.hard = e.hard || r.hard_bounced;
-      e.soft = e.soft || r.soft_bounced;
-      e.dropped = e.dropped || r.dropped;
-      e.reason = e.reason ?? r.bounce_reason;
-      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
-      e.unsubscribed = e.unsubscribed || r.unsubscribed;
-      e.spamReported = e.spamReported || r.spam_reported;
-      e.spamReportedAt =
-        e.spamReportedAt ?? (r.spam_reported_at ? new Date(r.spam_reported_at as unknown as string) : null);
-    }
-
-    const bounceKind = (e: EmailEngagement): 'hard' | 'soft' | 'dropped' | null =>
-      e.hard ? 'hard' : e.soft ? 'soft' : e.dropped ? 'dropped' : null;
-
-    // --- bounce rows, CRM-matched --------------------------------------------
-    const MAX_BOUNCE_ROWS = 500;
-    const bounceEntries = [...byEmail.entries()]
-      .map(([email, e]) => ({ email, e, kind: bounceKind(e) }))
-      .filter((b): b is { email: string; e: EmailEngagement; kind: 'hard' | 'soft' | 'dropped' } => b.kind !== null)
-      .sort((a, b) => (b.e.bouncedAt?.getTime() ?? 0) - (a.e.bouncedAt?.getTime() ?? 0));
-
-    const engagedEntries = [...byEmail.entries()]
-      .filter(([, e]) => e.opens + e.clicks > 0)
-      .sort(([, a], [, b]) => b.clicks - a.clicks || b.opens - a.opens)
-      .slice(0, 5);
-
-    const matchEmails = [
-      ...new Set(
-        [...bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => b.email), ...engagedEntries.map(([email]) => email)].map(
-          (m) => m.toLowerCase(),
-        ),
-      ),
-    ];
-    const personsByEmail = new Map<string, { id: string; public_id: string | null; name: string }>();
-    if (matchEmails.length > 0) {
-      const matches = await db
-        .selectFrom('persons')
-        .select(['id', 'public_id', 'first_name', 'last_name', 'email'])
-        .where('tenant_id', '=', tenant_id)
-        .where(sql<string>`LOWER(persons.email)`, 'in', matchEmails)
-        .execute();
-      for (const p of matches) {
-        if (!p.email) continue;
-        const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
-        personsByEmail.set(String(p.email).toLowerCase(), {
-          id: String(p.id),
-          public_id: p.public_id,
-          name: name || 'Unnamed person',
-        });
-      }
-    }
-    const personFor = (email: string) => personsByEmail.get(email.toLowerCase()) ?? null;
-
-    const bounceRows: NewsletterReportBounceType[] = bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => ({
-      email: b.email,
-      kind: b.kind,
-      reason: b.e.reason,
-      occurred_at: b.e.bouncedAt,
-      person: personFor(b.email),
-    }));
-
-    const mostEngaged: NewsletterReportEngagedType[] = engagedEntries.map(([email, e]) => ({
-      email,
-      opens: e.opens,
-      clicks: e.clicks,
-      links: e.links,
-      person: personFor(email),
-    }));
-
-    // --- hourly timeline (raw events only — empty once pruned) ----------------
-    const timeline = await db
-      .selectFrom('newsletter_events')
-      .select([
-        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
-      ])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', 'in', ['open', 'click'])
-      .groupBy('time_bucket')
-      .orderBy('time_bucket', 'asc')
-      .execute();
-    const timelinePoints = timeline.map((t) => ({
-      time: t.time_bucket,
-      opens: Number(t.opens),
-      clicks: Number(t.clicks),
-    }));
-
-    const sendDate = newsletter['send_date'] ? new Date(newsletter['send_date'] as string) : null;
-    let opensIn24hPct: number | null = null;
-    if (sendDate && timelinePoints.length > 0) {
-      const cutoff = sendDate.getTime() + 24 * 60 * 60 * 1000;
-      let within = 0;
-      let total = 0;
-      for (const t of timelinePoints) {
-        total += t.opens;
-        // Bucket keys are Postgres-local hour strings; treat them as local time.
-        if (new Date(t.time.replace(' ', 'T')).getTime() <= cutoff) within += t.opens;
-      }
-      opensIn24hPct = total > 0 ? (within / total) * 100 : null;
-    }
-
-    // --- links: stored top_links are authoritative for clicks (they survive
-    // pruning); unique-people counts only exist while raw events do ------------
-    const linkAgg = await db
-      .selectFrom('newsletter_events')
-      .select(['url', sql<number>`COUNT(*)`.as('clicks'), sql<number>`COUNT(DISTINCT email)`.as('people')])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', 'click')
-      .where('url', 'is not', null)
-      .groupBy('url')
-      .execute();
-    const peopleByUrl = new Map(
-      linkAgg.map((l) => [String(l.url), { clicks: Number(l.clicks), people: Number(l.people) }]),
-    );
-
-    let storedLinks: MarketingEmailTopLinkType[] = [];
-    const rawTopLinks = newsletter['top_links'];
-    if (Array.isArray(rawTopLinks)) {
-      storedLinks = rawTopLinks as MarketingEmailTopLinkType[];
-    } else if (typeof rawTopLinks === 'string' && rawTopLinks) {
-      try {
-        const parsed: unknown = JSON.parse(rawTopLinks);
-        if (Array.isArray(parsed)) storedLinks = parsed as MarketingEmailTopLinkType[];
-      } catch {
-        storedLinks = [];
-      }
-    }
-    const linkUrls = new Set<string>([...storedLinks.map((l) => l.url), ...peopleByUrl.keys()]);
-    const allLinks: NewsletterReportLinkType[] = [...linkUrls]
-      .map((url) => {
-        const stored = storedLinks.find((l) => l.url === url);
-        const raw = peopleByUrl.get(url);
-        const clicks = Math.max(stored?.clicks ?? 0, raw?.clicks ?? 0);
-        // A people count from a partial event window would understate — only
-        // report it when the raw window still covers every recorded click.
-        const people = raw && raw.clicks >= clicks ? raw.people : null;
-        return { url, clicks, people };
-      })
-      .sort((a, b) => b.clicks - a.clicks);
-
-    // --- audience composition (current list membership — see report footer) ---
-    const audienceLists: { id: string; name: string; mode: 'include' | 'exclude'; members: number }[] = [];
-    let overlapRemoved = 0;
-    let suppressedSkipped = 0;
-    const listRows = await db
-      .selectFrom('map_newsletters_lists')
-      .innerJoin('lists', 'lists.id', 'map_newsletters_lists.list_id')
-      .select(['lists.id as id', 'lists.name as name', 'map_newsletters_lists.mode as mode'])
-      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
-      .where('lists.tenant_id', '=', tenant_id)
-      .where('map_newsletters_lists.newsletter_id', '=', id)
-      .execute();
-    const includeIds = listRows.filter((l) => l.mode === 'include').map((l) => String(l.id));
-    if (listRows.length > 0) {
-      const allIds = listRows.map((l) => String(l.id));
-      const memberCounts = await db
-        .selectFrom('map_lists_persons')
-        .select(['list_id', sql<number>`COUNT(DISTINCT person_id)`.as('members')])
-        .where('tenant_id', '=', tenant_id)
-        .where('list_id', 'in', allIds)
-        .groupBy('list_id')
-        .execute();
-      const membersByList = new Map(memberCounts.map((m) => [String(m.list_id), Number(m.members)]));
-      for (const l of listRows) {
-        audienceLists.push({
-          id: String(l.id),
-          name: String(l.name),
-          mode: l.mode === 'exclude' ? 'exclude' : 'include',
-          members: membersByList.get(String(l.id)) ?? 0,
-        });
-      }
-      if (includeIds.length > 0) {
-        const distinctRow = await db
-          .selectFrom('map_lists_persons')
-          .select(sql<number>`COUNT(DISTINCT person_id)`.as('distinct_members'))
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', 'in', includeIds)
-          .executeTakeFirst();
-        const includeSum = audienceLists.filter((l) => l.mode === 'include').reduce((sum, l) => sum + l.members, 0);
-        overlapRemoved = Math.max(0, includeSum - Number(distinctRow?.distinct_members ?? 0));
-
-        const suppressedRow = await db
-          .selectFrom('map_lists_persons')
-          .innerJoin('persons', 'persons.id', 'map_lists_persons.person_id')
-          .select(sql<number>`COUNT(DISTINCT persons.id)`.as('suppressed'))
-          .where('map_lists_persons.tenant_id', '=', tenant_id)
-          .where('persons.tenant_id', '=', tenant_id)
-          .where('map_lists_persons.list_id', 'in', includeIds)
-          .where((eb) =>
-            eb.exists(
-              db
-                .selectFrom('email_suppressions')
-                .select('email_suppressions.id')
-                .where('email_suppressions.tenant_id', '=', tenant_id)
-                .where(sql<boolean>`email_suppressions.email = persons.email`),
-            ),
-          )
-          .executeTakeFirst();
-        suppressedSkipped = Number(suppressedRow?.suppressed ?? 0);
-      }
-    }
-
-    // --- the last 5 sends in this campaign, ending with this one --------------
-    let previousSends: NewsletterReportType['previous_sends'] = [];
-    if (sendDate) {
-      let prevQuery = db
-        .selectFrom('newsletters')
-        .select([
-          'id',
-          'name',
-          'send_date',
-          'open_rate',
-          'click_rate',
-          'unsubscribe_count',
-          'bounce_count',
-          'delivered_count',
-          'total_recipients',
-        ])
-        .where('tenant_id', '=', tenant_id)
-        .where('status', '=', 'sent')
-        .where('send_date', 'is not', null)
-        .where((eb) => eb.or([eb('send_date', '<', sendDate), eb('id', '=', id)]))
-        .orderBy('send_date', 'desc')
-        .limit(5);
-      const campaignId = newsletter['campaign_id'];
-      prevQuery =
-        campaignId != null
-          ? prevQuery.where('campaign_id', '=', String(campaignId))
-          : prevQuery.where('campaign_id', 'is', null);
-      const prevRows = await prevQuery.execute();
-      previousSends = prevRows.reverse().map((r) => {
-        const delivered = Number(r.delivered_count ?? 0);
-        const recipients = Number(r.total_recipients ?? 0);
-        return {
-          id: String(r.id),
-          name: String(r.name),
-          send_date: r.send_date ? new Date(r.send_date as unknown as string) : null,
-          open_rate: Number(r.open_rate ?? 0),
-          click_rate: Number(r.click_rate ?? 0),
-          unsubscribe_rate: delivered > 0 ? (Number(r.unsubscribe_count ?? 0) / delivered) * 100 : 0,
-          bounce_rate: recipients > 0 ? (Number(r.bounce_count ?? 0) / recipients) * 100 : 0,
-        };
-      });
-    }
-
-    // --- sender identity (workspace Communications settings) ------------------
-    const fromRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id)
-      .where('key', 'in', ['communications.default_from_name', 'communications.default_from_email'])
-      .execute();
-    const fromMap: Record<string, string> = {};
-    for (const row of fromRows) {
-      if (typeof row.value === 'string') fromMap[row.key] = row.value;
-    }
-    const fromName = fromMap['communications.default_from_name'] ?? null;
-    const fromEmail = fromMap['communications.default_from_email'] ?? null;
-
-    // --- totals ----------------------------------------------------------------
-    const hard = bounceEntries.filter((b) => b.kind === 'hard').length;
-    const soft = bounceEntries.filter((b) => b.kind === 'soft').length;
-    const dropped = bounceEntries.filter((b) => b.kind === 'dropped').length;
-    const unsubTotal = Math.max(
-      [...byEmail.values()].filter((e) => e.unsubscribed).length,
-      Number(newsletter['unsubscribe_count'] ?? 0),
-    );
-    const spamRows = [...byEmail.entries()]
-      .filter(([, e]) => e.spamReported)
-      .map(([email, e]) => ({ email: email || null, occurred_at: e.spamReportedAt }));
-    const spamTotal = Math.max(spamRows.length, Number(newsletter['spam_complaint_count'] ?? 0));
-    const clickers = [...byEmail.values()].filter((e) => e.clicks > 0);
-
-    return {
-      timeline: timelinePoints,
-      opens_in_24h_pct: opensIn24hPct,
-      bounces: { total: bounceEntries.length, hard, soft, dropped, rows: bounceRows },
-      top_links: allLinks.slice(0, 6),
-      tracked_links: allLinks.length,
-      total_clicks: clickers.reduce((sum, e) => sum + e.clicks, 0),
-      unique_clickers: clickers.length,
-      most_engaged: mostEngaged,
-      unsubscribes: { total: unsubTotal, reasons: unsubTotal > 0 ? [{ reason: null, count: unsubTotal }] : [] },
-      spam_reports: { total: spamTotal, rows: spamRows },
-      audience: { lists: audienceLists, overlap_removed: overlapRemoved, suppressed_skipped: suppressedSkipped },
-      previous_sends: previousSends,
-      from: fromName || fromEmail ? { name: fromName, email: fromEmail } : null,
-    };
-  }
-
-  /**
-   * "Create list of N clickers" — a static snapshot list of every CRM person
-   * whose address clicked this newsletter, so the next send can target the
-   * people who acted on this one.
-   */
-  public async createClickersList(auth: IAuthKeyPayload, id: string): Promise<CreateClickersListResultType> {
-    const tenant_id = auth.tenant_id;
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) throw new NotFoundError('Newsletter not found');
-    const db = this.getRepo().db;
-
-    const rawClickers = await db
-      .selectFrom('newsletter_events')
-      .select('email')
-      .distinct()
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', 'click')
-      .execute();
-    const rolledUpClickers = await db
-      .selectFrom('person_newsletter_engagements')
-      .select('email')
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('click_count', '>', 0)
-      .execute();
-    const emails = [
-      ...new Set([...rawClickers, ...rolledUpClickers].map((r) => r.email.toLowerCase()).filter(Boolean)),
-    ];
-    if (emails.length === 0) throw new BadRequestError('No one has clicked this newsletter yet.');
-
-    const persons = await db
-      .selectFrom('persons')
-      .select('id')
-      .where('tenant_id', '=', tenant_id)
-      .where(sql<string>`LOWER(persons.email)`, 'in', emails)
-      .execute();
-    const memberIds = [...new Set(persons.map((p) => String(p.id)))];
-    if (memberIds.length === 0) {
-      throw new BadRequestError('None of the clickers match a person in the CRM, so there is no one to add.');
-    }
-
-    const listsController = new ListsController();
-    const newsletterName = String(newsletter['name'] ?? 'newsletter');
-    // Lists cap names at 100 chars — leave room for a " (n)" de-dup suffix.
-    const baseName = `Clicked · ${newsletterName}`.slice(0, 90);
-    const description = `People who clicked "${newsletterName}" — snapshot taken ${new Date().toISOString().slice(0, 10)}.`;
-    const campaignId = newsletter['campaign_id'] != null ? String(newsletter['campaign_id']) : undefined;
-
-    const MAX_NAME_ATTEMPTS = 5;
-    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
-      const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
-      try {
-        const list = (await listsController.addList(
-          { name, description, object: 'people', is_dynamic: false, member_ids: memberIds, campaign_id: campaignId },
-          auth,
-        )) as Record<string, unknown>;
-        return { id: String(list['id']), name, members: memberIds.length };
-      } catch (err: unknown) {
-        const isNameConflict = err instanceof TRPCError && err.code === 'CONFLICT';
-        if (!isNameConflict || attempt === MAX_NAME_ATTEMPTS - 1) throw err;
-      }
-    }
-    // Unreachable — the loop either returns or rethrows on its last attempt.
-    throw new BadRequestError('Could not find a free list name.');
-  }
-}
-````
-
 ## File: apps/backend/src/env.ts
 ````typescript
 import { z } from 'zod';
@@ -68056,6 +68701,415 @@ export const env = {
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };
+````
+
+## File: apps/website/src/app/faq/faq-page.ts
+````typescript
+import { Component } from '@angular/core';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
+}
+
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'By default your data is stored in the US. On the Movement plan you choose your region (US, EU, Canada or UK) when you create your workspace, and it stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
+}
+````
+
+## File: apps/website/src/app/pricing/pricing-page.html
+````html
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Pricing</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Fair, simple pricing.</h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Start free forever with unlimited contacts and households on every plan. You pay only for features and email
+      subscribers, never for the size of your list.
+    </p>
+  </div>
+</section>
+
+<!-- Plan comparison -->
+<section class="px-5 py-14 sm:px-8">
+  <div class="site-wrap mb-6 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 text-center text-[14px]">
+    <span class="font-semibold text-primary">Unlimited contacts &amp; households on every plan.</span>
+    <span class="text-base-content/70">
+      Most tools charge for every contact you store; we never do. Plans differ only in features and email
+      subscribers.</span
+    >
+  </div>
+
+  <!-- Subscriber slider: the one input that re-prices every column below. -->
+  <div class="site-wrap rounded-xl border border-line bg-base-100 px-6 py-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+      <label for="subscriber-slider" class="text-[14.5px] font-semibold">
+        How many email subscribers do you have?
+      </label>
+      <div class="text-[15px] font-bold tabular-nums text-primary">{{ subscribersLabel() }} subscribers</div>
+    </div>
+    <input
+      id="subscriber-slider"
+      type="range"
+      min="0"
+      [max]="maxStopIndex"
+      step="1"
+      class="range range-primary range-sm mt-4 w-full"
+      [value]="stopIndex()"
+      (input)="onSlide($event)"
+    />
+    <div class="mt-1.5 flex justify-between text-[11px] tabular-nums text-base-content/40">
+      <span>1,000</span>
+      <span>200,000</span>
+    </div>
+  </div>
+
+  <!-- Comparison table -->
+  <div class="site-wrap mt-4 overflow-x-auto rounded-xl border border-line bg-base-100">
+    <table class="w-full min-w-[680px] border-separate border-spacing-0">
+      <thead>
+        <tr>
+          <th class="sticky left-0 z-[2] w-[220px] border-b border-line bg-base-100 px-5 py-5 text-left align-bottom">
+            <div class="text-[15px] font-semibold">Compare plans</div>
+            <div class="mt-1 text-[12.5px] font-normal text-base-content/50">
+              Prices shown at {{ subscribersLabel() }} subscribers
+            </div>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <th
+            class="min-w-[180px] border-b border-line px-4 py-5 text-left align-top"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            <div class="h-6">
+              @if (tier.featured) {
+              <span class="inline-block rounded-full bg-primary/12 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                Best value
+              </span>
+              }
+            </div>
+            <div class="mt-1 text-[16px] font-semibold">{{ tier.name }}</div>
+            <p class="mt-1 min-h-[57px] text-[12.5px] font-normal leading-snug text-base-content/60">
+              {{ tier.blurb }}
+            </p>
+            <div class="mt-3 min-h-[52px]">
+              @if (!overMax(tier)) {
+              <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
+              } @else if (tier.key === 'free') {
+              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
+              <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
+              } @else {
+              <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
+              <div class="mt-2 text-[12px] font-normal text-base-content/50">
+                For more than {{ maxSubscribersLabel(tier) }} subscribers
+              </div>
+              }
+            </div>
+            <a
+              [href]="signupUrl"
+              class="mt-4 block rounded-field px-4 py-2.5 text-center text-[13.5px] font-semibold"
+              [class]="
+                tier.featured
+                  ? 'btn btn-primary rounded-field'
+                  : 'border border-line text-base-content hover:border-primary hover:text-primary'
+              "
+              >Start free</a
+            >
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (group of matrix; track group.category; let groupLast = $last) {
+        <tr>
+          <th class="sticky left-0 z-[1] bg-base-100 px-5 pb-2 pt-7 text-left">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
+              {{ group.category }}
+            </span>
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <td class="pb-2 pt-7" [class]="tier.featured ? 'bg-primary/5' : ''"></td>
+          }
+        </tr>
+        @for (row of group.rows; track row.label; let rowLast = $last) {
+        <tr>
+          <th
+            class="sticky left-0 z-[1] border-line bg-base-100 px-5 py-3 text-left text-[13.5px] font-normal text-base-content/80"
+            [class.border-b]="!(groupLast && rowLast)"
+          >
+            {{ row.label }}
+          </th>
+          @for (tier of tiers; track tier.key) {
+          <!-- `relative` contains the absolute sr-only spans, so they can't widen the page
+               past the overflow-x wrapper on small screens. -->
+          <td
+            class="relative border-line px-4 py-3 text-center text-[13px] text-base-content/70"
+            [class.border-b]="!(groupLast && rowLast)"
+            [class]="tier.featured ? 'bg-primary/5' : ''"
+          >
+            @let value = matrixValue(row, tier); @if (value === true) {
+            <svg class="mx-auto h-4 w-4 text-primary" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path
+                fill-rule="evenodd"
+                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.3 3.3 6.8-6.8a1 1 0 0 1 1.4 0Z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="sr-only">Included</span>
+            } @else if (value === false) {
+            <span class="text-base-content/30" aria-hidden="true">—</span>
+            <span class="sr-only">Not included</span>
+            } @else { {{ value }} }
+          </td>
+          }
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  @if (isConverted()) {
+  <p
+    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
+  >
+    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
+  </p>
+  }
+
+  <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
+    Need more than 200,000 subscribers, SSO or custom contracts?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Talk to us</a>.
+  </p>
+
+  <p class="site-wrap mt-3 text-center text-[13px] text-base-content/50">
+    Volunteers join the companion apps by invite and never take a staff seat. Questions about a plan?
+    <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">Write to us</a> —
+    <a class="font-semibold text-primary hover:text-secondary" routerLink="/faq">or read the FAQ</a>.
+  </p>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Every plan starts on sample data.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+````
+
+## File: apps/website/src/app/pricing/pricing-page.ts
+````typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { bracketIndexForSubscribers, FEATURE_MATRIX, PLANS, priceForQuantity } from '@common';
+import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
+
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
+
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
+const DEFAULT_STOP_INDEX = 1;
+const DEFAULT_STOP = 2_500;
+
+/** The plan keys `FEATURE_MATRIX` carries values for (exactly the displayed plans). */
+type MatrixPlanKey = keyof FeatureMatrixRow['values'];
+
+function isMatrixPlanKey(key: string): key is MatrixPlanKey {
+  return key === 'free' || key === 'grassroots' || key === 'movement';
+}
+
+@Component({
+  selector: 'pc-pricing-page',
+  imports: [RouterLink, SiteHeader, SiteFooter],
+  templateUrl: './pricing-page.html',
+})
+export class PricingPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
+  /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+  protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
+
+  protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
+  protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
+  protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
+  protected readonly subscribersLabel = computed<string>(() => this.subscribers().toLocaleString('en-US'));
+
+  protected onSlide(event: Event): void {
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      this.stopIndex.set(Number(target.value));
+    }
+  }
+
+  /** Live price at the slider's subscriber count, formatted in the active display currency. */
+  protected priceLabel(plan: PlanDef): string {
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
+  }
+
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
+  protected overMax(plan: PlanDef): boolean {
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
+  }
+
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
+  protected maxSubscribersLabel(plan: PlanDef): string {
+    const brackets = plan.pricing?.brackets;
+    const last = brackets?.[brackets.length - 1];
+    return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One matrix cell: true = included, false = not included, string = text value. */
+  protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
+    return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/billing/usage-limits.ts
@@ -68607,270 +69661,6 @@ export async function queueUsageLimitCheck(tenantId: string, db: Kysely<Models>)
         max_attempts: 3,
       })
       .execute();
-  }
-}
-````
-
-## File: apps/website/src/app/home/home-page.ts
-````typescript
-import { Component, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { PLANS, startingPriceLabel } from '@common';
-import type { PlanDef } from '@common';
-
-import { AppPreview, type PreviewKind } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { Constellation } from '../ui/constellation';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-type Audience = 'office' | 'camp' | 'np';
-
-interface Hero {
-  readonly h1: string;
-  readonly sub: string;
-  readonly url: string;
-  readonly kind: PreviewKind;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly img?: string;
-}
-
-interface AudienceOption {
-  readonly id: Audience;
-  readonly label: string;
-}
-
-interface Step {
-  readonly n: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Feature {
-  readonly icon: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Door {
-  readonly addr: string;
-  readonly who: string;
-  readonly chip: string;
-  readonly chipClass: string;
-}
-
-const HEROES: Record<Audience, Hero> = {
-  office: {
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
-    url: 'app.pplcrm.com/inbox',
-    kind: 'inbox',
-    img: 'assets/site-shots/01-shot.png',
-  },
-  camp: {
-    h1: 'Built for the people who knock and win campaigns.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    url: 'app.pplcrm.com/canvassing',
-    kind: 'canvassing',
-    img: 'assets/site-shots/02-shot.png',
-  },
-  np: {
-    h1: 'Donors, volunteers and neighbors. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    url: 'app.pplcrm.com/donations',
-    kind: 'donations',
-    img: 'assets/site-shots/03-shot.png',
-  },
-};
-
-@Component({
-  selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
-  templateUrl: './home-page.html',
-})
-export class HomePage {
-  protected readonly signupUrl = SIGNUP_URL;
-
-  protected readonly aud = signal<Audience>('office');
-  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
-
-  protected readonly audiences: readonly AudienceOption[] = [
-    { id: 'office', label: 'Constituency office' },
-    { id: 'camp', label: 'Campaign' },
-    { id: 'np', label: 'Non-profit' },
-  ];
-
-  protected readonly steps: readonly Step[] = [
-    {
-      n: '1',
-      title: 'Create your free workspace',
-      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
-    },
-    {
-      n: '2',
-      title: 'Try everything on sample data',
-      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
-    },
-    {
-      n: '3',
-      title: 'Import your list when it clicks',
-      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
-    },
-  ];
-
-  protected readonly features: readonly Feature[] = [
-    {
-      icon: 'users',
-      title: 'People & households',
-      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
-    },
-    {
-      icon: 'inbox',
-      title: 'A shared inbox & tasks',
-      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
-    },
-    {
-      icon: 'megaphone',
-      title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
-    },
-    {
-      icon: 'map-pin',
-      title: 'Doors & the field',
-      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
-    },
-    {
-      icon: 'currency-dollar',
-      title: 'Donations, gratefully',
-      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-    },
-    {
-      icon: 'arrow-up-tray',
-      title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
-    },
-  ];
-
-  protected readonly growFeatures: readonly Feature[] = [
-    {
-      icon: 'clipboard-document-list',
-      title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
-    },
-    {
-      icon: 'calendar',
-      title: 'Events & volunteer shifts',
-      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
-    },
-    {
-      icon: 'credit-card',
-      title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
-    },
-    {
-      icon: 'rectangle-stack',
-      title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
-    },
-  ];
-
-  /** The three claims beside the constellation animation in the network band. */
-  protected readonly networkPoints: readonly Feature[] = [
-    {
-      icon: 'user-group',
-      title: 'See the web, not the spreadsheet',
-      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
-    },
-    {
-      icon: 'route',
-      title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
-    },
-    {
-      icon: 'presentation-chart-line',
-      title: 'Every touch sharpens the map',
-      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
-    },
-  ];
-
-  protected readonly companionFeatures: readonly Feature[] = [
-    {
-      icon: 'map-pin',
-      title: 'Canvass companion',
-      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
-    },
-    {
-      icon: 'ticket',
-      title: 'Yard sign routes',
-      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
-    },
-    {
-      icon: 'house-modern',
-      title: 'Deliveries',
-      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
-    },
-  ];
-
-  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $55'). */
-  protected readonly startingPrice = startingPriceLabel;
-
-  protected readonly faqs: readonly Qa[] = [
-    {
-      q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-    },
-    {
-      q: 'What is the demo workspace?',
-      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
-    },
-    {
-      q: 'Can I import my existing list?',
-      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
-    },
-    {
-      q: 'Can I get my data back out?',
-      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
-    },
-    {
-      q: 'Who owns the data?',
-      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
-    },
-    {
-      q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
-    },
-  ];
-
-  protected readonly doors: readonly Door[] = [
-    {
-      addr: '214 Alder St',
-      who: 'Elena & Marco Ramos',
-      chip: 'Supporter',
-      chipClass: 'bg-success/20 text-success-content',
-    },
-    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
-    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
-    {
-      addr: '226 Alder St',
-      who: 'Priya Natarajan',
-      chip: 'Remaining',
-      chipClass: 'bg-base-300/60 text-base-content/60',
-    },
-    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
-  ];
-
-  protected pick(id: Audience): void {
-    this.aud.set(id);
   }
 }
 ````
@@ -71478,4 +72268,276 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 </section>
 
 <pc-site-footer />
+````
+
+## File: apps/website/src/app/home/home-page.ts
+````typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PLANS, startingPriceUsd } from '@common';
+import type { PlanDef } from '@common';
+
+import { AppPreview, type PreviewKind } from '../ui/app-preview';
+import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
+import { CurrencyService } from '../ui/currency.service';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+type Audience = 'office' | 'camp' | 'np';
+
+interface Hero {
+  readonly h1: string;
+  readonly sub: string;
+  readonly url: string;
+  readonly kind: PreviewKind;
+  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
+  readonly img?: string;
+}
+
+interface AudienceOption {
+  readonly id: Audience;
+  readonly label: string;
+}
+
+interface Step {
+  readonly n: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Feature {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Door {
+  readonly addr: string;
+  readonly who: string;
+  readonly chip: string;
+  readonly chipClass: string;
+}
+
+const HEROES: Record<Audience, Hero> = {
+  office: {
+    h1: 'Every case answered. Every constituent remembered.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
+    url: 'app.pplcrm.com/inbox',
+    kind: 'inbox',
+    img: 'assets/site-shots/01-shot.png',
+  },
+  camp: {
+    h1: 'Built for the people who knock and win campaigns.',
+    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
+    url: 'app.pplcrm.com/canvassing',
+    kind: 'canvassing',
+    img: 'assets/site-shots/02-shot.png',
+  },
+  np: {
+    h1: 'Donors, volunteers and neighbors. One list.',
+    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
+    url: 'app.pplcrm.com/donations',
+    kind: 'donations',
+    img: 'assets/site-shots/03-shot.png',
+  },
+};
+
+@Component({
+  selector: 'pc-home-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
+  templateUrl: './home-page.html',
+})
+export class HomePage {
+  protected readonly signupUrl = SIGNUP_URL;
+
+  protected readonly aud = signal<Audience>('office');
+  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
+
+  protected readonly audiences: readonly AudienceOption[] = [
+    { id: 'office', label: 'Constituency office' },
+    { id: 'camp', label: 'Campaign' },
+    { id: 'np', label: 'Non-profit' },
+  ];
+
+  protected readonly steps: readonly Step[] = [
+    {
+      n: '1',
+      title: 'Create your free workspace',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
+    },
+    {
+      n: '2',
+      title: 'Try everything on sample data',
+      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
+    },
+    {
+      n: '3',
+      title: 'Import your list when it clicks',
+      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  protected readonly features: readonly Feature[] = [
+    {
+      icon: 'users',
+      title: 'People & households',
+      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
+    },
+    {
+      icon: 'inbox',
+      title: 'A shared inbox & tasks',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
+    },
+    {
+      icon: 'megaphone',
+      title: 'Newsletters that land',
+      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
+    },
+    {
+      icon: 'map-pin',
+      title: 'Doors & the field',
+      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
+    },
+    {
+      icon: 'currency-dollar',
+      title: 'Donations, gratefully',
+      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
+    },
+    {
+      icon: 'arrow-up-tray',
+      title: 'Your spreadsheet, welcomed',
+      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
+    },
+  ];
+
+  protected readonly companionFeatures: readonly Feature[] = [
+    {
+      icon: 'map-pin',
+      title: 'Canvass companion',
+      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
+    },
+    {
+      icon: 'ticket',
+      title: 'Yard sign routes',
+      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
+    },
+    {
+      icon: 'house-modern',
+      title: 'Deliveries',
+      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
+    },
+  ];
+
+  private readonly currency = inject(CurrencyService);
+
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
+  protected startingPrice(plan: PlanDef): string {
+    const usd = startingPriceUsd(plan);
+    if (usd === null) return 'Custom';
+    if (usd === 0) return this.currency.format(0);
+    return `From ${this.currency.format(usd)}`;
+  }
+
+  protected readonly faqs: readonly Qa[] = [
+    {
+      q: 'Is the free plan really free?',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+    },
+    {
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
+    },
+    {
+      q: 'Can I import my existing list?',
+      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
+    },
+    {
+      q: 'Can I get my data back out?',
+      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
+    },
+    {
+      q: 'Who owns the data?',
+      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'How does pricing work?',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+    },
+  ];
+
+  protected readonly doors: readonly Door[] = [
+    {
+      addr: '214 Alder St',
+      who: 'Elena & Marco Ramos',
+      chip: 'Supporter',
+      chipClass: 'bg-success/20 text-success-content',
+    },
+    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
+    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
+    {
+      addr: '226 Alder St',
+      who: 'Priya Natarajan',
+      chip: 'Remaining',
+      chipClass: 'bg-base-300/60 text-base-content/60',
+    },
+    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
+  ];
+
+  protected pick(id: Audience): void {
+    this.aud.set(id);
+  }
+}
 ````

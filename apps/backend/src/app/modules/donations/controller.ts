@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
+import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { DonationsRepo } from './repositories/donations.repo';
@@ -13,6 +14,13 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable, Updateable } from 'kysely';
 import { logger } from '../../logger';
+import { assertTenantMayAcceptDonations, tenantMayAcceptDonations, type SettingsLookup } from './donation-guards';
+import type { CheckoutInit } from './processors/donation-processor';
+import { resolveDonationProcessor, resolveProcessorKind, type ProcessorKind } from './processors/resolver';
+
+// Helcim recurring is out of scope this pass; recurring stays Stripe-only.
+const HELCIM_RECURRING_UNAVAILABLE_MESSAGE =
+  "Monthly (recurring) donations aren't available with Helcim yet — use Stripe for recurring, or switch this donation to one-time.";
 
 // The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
 // shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
@@ -33,6 +41,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   private periodsRepo = new DonationPeriodsRepo();
   private pledgesRepo = new DonationPledgesRepo();
   private campaignsRepo = new CampaignsRepo();
+
+  // Bound settings accessor handed to the fail-closed guards and the processor resolver, so they
+  // stay decoupled from the settings repo while reusing the same lookup the controller already uses.
+  private readonly settingsLookup: SettingsLookup = (tenantId, key) => this.getSettingVal(tenantId, key);
 
   constructor() {
     super(new DonationsRepo());
@@ -332,6 +344,36 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     };
   }
 
+  /** Whether this tenant has acknowledged residency settings and may accept donations (fail-closed).
+   * Used by the public donation page to gate rendering before showing a live donation form. */
+  public mayAcceptDonations(tenantId: string): Promise<boolean> {
+    return tenantMayAcceptDonations(this.settingsLookup, tenantId);
+  }
+
+  /**
+   * Context the donation UI needs to show the right residency disclaimer and processor affordances:
+   * the tenant's country, which processor is active, and whether residency has been acknowledged
+   * (the fail-closed gate). Shape is depended on by the frontend — keep name/fields stable.
+   */
+  public async getResidencyContext(
+    tenantId: string,
+  ): Promise<{ country: string | null; processor: ProcessorKind; residencyAcknowledged: boolean }> {
+    // `tenants` is looked up by primary id (it's on the tenant-scope allow-list — scoping the tenant
+    // table by tenant_id would be circular).
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select('country')
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const processor = await resolveProcessorKind(this.settingsLookup, tenantId);
+    const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
+    return {
+      country: tenant?.country != null ? String(tenant.country) : null,
+      processor,
+      residencyAcknowledged,
+    };
+  }
+
   // ── One-time Checkout ────────────────────────────────────────────────────────
 
   public async createCheckoutSession(
@@ -340,60 +382,25 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     amountCents: number,
     address: { country?: string; state?: string },
     customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
+  ): Promise<CheckoutInit> {
+    // Fail-closed residency gate FIRST — an org that hasn't confirmed residency can't take money.
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
     const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
     if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+      throw new BadRequestError(eligibility.reason);
     }
 
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      let redirectBase = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
-
-      if (customUrls?.successUrl) {
-        const separator = redirectBase.includes('?') ? '&' : '?';
-        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
-      }
-
-      return { url: redirectBase };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Campaign Donation' },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        amount: String(amountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-      },
+    // Stripe (default) returns a hosted-checkout redirect; Helcim returns a HelcimPay checkout token.
+    const resolved = await resolveDonationProcessor(this.settingsLookup, auth.tenant_id);
+    return resolved.adapter.createOneTimeCheckout({
+      tenantId: auth.tenant_id,
+      userId: auth.user_id,
+      personId,
+      amountCents,
+      address,
+      customUrls,
     });
-
-    return { url: session.url };
   }
 
   // ── Recurring Subscription Checkout ─────────────────────────────────────────
@@ -417,6 +424,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     address: { country?: string; state?: string },
     customUrls?: { successUrl?: string; cancelUrl?: string },
   ) {
+    // Fail-closed residency gate FIRST (same as one-time).
+    await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
+
+    // Recurring is Stripe-only this pass — Helcim recurring is cleanly disabled with a clear message.
+    const processorKind = await resolveProcessorKind(this.settingsLookup, auth.tenant_id);
+    if (processorKind === 'helcim') {
+      throw new PreconditionFailedError(HELCIM_RECURRING_UNAVAILABLE_MESSAGE);
+    }
+
     // Determine remaining months for limit enforcement
     const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
     const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
@@ -426,7 +442,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       remainingMonths: remainingMonths ?? 12,
     });
     if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+      throw new BadRequestError(eligibility.reason);
     }
 
     const tenantStripeKey =

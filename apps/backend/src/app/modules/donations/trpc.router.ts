@@ -61,9 +61,17 @@ export const DonationsRouter = router({
         }),
       }),
     )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const init = await controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address);
+      // Preserve the existing `{ url }` shape for the Stripe redirect path; add the HelcimPay token
+      // for tenants on Helcim (the client launches the modal from it instead of redirecting).
+      return init.kind === 'redirect'
+        ? { url: init.url, helcimCheckoutToken: null }
+        : { url: null, helcimCheckoutToken: init.checkoutToken };
+    }),
+
+  /** Country + active processor + residency-acknowledged flag for the donation UI disclaimer. */
+  getResidencyContext: authProcedure.query(({ ctx }) => controller.getResidencyContext(ctx.auth.tenant_id)),
 
   confirmDonation: authProcedure
     .input(z.object({ sessionId: z.string() }))

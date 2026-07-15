@@ -126,6 +126,11 @@ export class DonationsService extends TRPCService<'donations'> {
     return this.api.donations.getWebhookTokenStatus.query();
   }
 
+  /** Country / processor / residency-acknowledged context that drives the donation settings disclaimers. */
+  public getResidencyContext() {
+    return this.api.donations.getResidencyContext.query();
+  }
+
   public regenerateWebhookToken() {
     return this.api.donations.regenerateWebhookToken.mutate();
   }
