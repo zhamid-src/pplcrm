@@ -1,12 +1,12 @@
 import type { Route } from '@angular/router';
 
-import { AUDIENCE_CONFIG } from './audience/audience-content';
-
 /**
- * Two real pages (Home, FAQ). The design links to several pages we haven't
- * built yet (the audience pages and Pricing) — those resolve to a shared
- * "coming soon" stub so the nav never 404s. Swap a stub for a real component
- * when the page exists.
+ * The /for/… audience URLs render the home page with that audience's hero
+ * preselected (via route data) — the full story, tailored, instead of a thin
+ * duplicate page that would strand visitors who land on it first. Footer
+ * links to pages we haven't built yet resolve to the shared "coming soon"
+ * stub so the nav never 404s; swap a stub for a real component when the page
+ * exists.
  */
 export const appRoutes: Route[] = [
   {
@@ -23,20 +23,25 @@ export const appRoutes: Route[] = [
   {
     path: 'for/offices',
     title: 'For constituency offices — pplCRM',
-    data: { config: AUDIENCE_CONFIG['offices'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
+    data: { audience: 'office' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
   },
   {
     path: 'for/campaigns',
     title: 'For campaigns — pplCRM',
-    data: { config: AUDIENCE_CONFIG['campaigns'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
+    data: { audience: 'camp' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
   },
   {
     path: 'for/nonprofits',
     title: 'For non-profits — pplCRM',
-    data: { config: AUDIENCE_CONFIG['nonprofits'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
+    data: { audience: 'np' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'compare',
+    title: 'pplCRM vs. the spreadsheet stack — pplCRM',
+    loadComponent: () => import('./compare/compare-page').then((m) => m.ComparePage),
   },
   {
     path: 'pricing',

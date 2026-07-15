@@ -1,0 +1,85 @@
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">How we compare</div>
+    <h1 class="mt-3 text-balance text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      You’re probably not choosing between CRMs.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Most teams like yours run on a spreadsheet, an email tool and somebody’s inbox. That stack is free, familiar and
+      genuinely fine at first. Here is where it starts to cost you, job by job.
+    </p>
+  </div>
+</section>
+
+<!-- The same jobs, side by side -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto flex max-w-[880px] flex-col gap-3.5">
+    @for (row of rows; track row.job) {
+    <div class="rounded-xl border border-line bg-base-50 p-5 sm:p-6">
+      <div class="text-[15px] font-semibold">{{ row.job }}</div>
+      <div class="mt-3 grid gap-3.5 sm:grid-cols-2">
+        <div class="rounded-[10px] bg-base-200/70 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
+            The spreadsheet stack
+          </div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ row.stack }}</p>
+        </div>
+        <div class="rounded-[10px] bg-primary/8 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-primary">pplCRM</div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/70">{{ row.crm }}</p>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</section>
+
+<!-- The big platforms -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto max-w-[760px]">
+    <div class="mx-auto max-w-[620px] text-center">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Weighing one of the big organizing platforms?
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        They are capable tools, and feature checklists age badly, so we won’t pretend to score them. Three things are
+        structurally different here, whichever one you have in mind.
+      </p>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-3">
+      @for (point of platformPoints; track point.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[15px] font-semibold">{{ point.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ point.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    See the difference on sample data.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[540px] text-[15px] leading-relaxed text-white/75">
+    The free workspace opens with people, households, turfs and an inbox already in it. Compare with your own hands; no
+    card required.
+  </p>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />

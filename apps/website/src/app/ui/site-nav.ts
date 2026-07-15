@@ -11,6 +11,7 @@ export const PRIMARY_NAV: readonly NavLink[] = [
   { label: 'For constituency offices', path: '/for/offices' },
   { label: 'For campaigns', path: '/for/campaigns' },
   { label: 'For non-profits', path: '/for/nonprofits' },
+  { label: 'Compare', path: '/compare' },
   { label: 'Pricing', path: '/pricing' },
 ];
 

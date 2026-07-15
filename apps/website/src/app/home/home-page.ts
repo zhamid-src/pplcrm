@@ -1,5 +1,5 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { PLANS, startingPriceUsd } from '@common';
 import type { PlanDef } from '@common';
 
@@ -12,7 +12,12 @@ import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
 
-type Audience = 'office' | 'camp' | 'np';
+const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
+type Audience = (typeof AUDIENCE_IDS)[number];
+
+function isAudience(value: unknown): value is Audience {
+  return AUDIENCE_IDS.some((id) => id === value);
+}
 
 interface Hero {
   readonly h1: string;
@@ -84,7 +89,10 @@ const HEROES: Record<Audience, Hero> = {
 export class HomePage {
   protected readonly signupUrl = SIGNUP_URL;
 
-  protected readonly aud = signal<Audience>('office');
+  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
+  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
+
+  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
   protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
 
   protected readonly audiences: readonly AudienceOption[] = [
@@ -108,6 +116,25 @@ export class HomePage {
       n: '3',
       title: 'Import your list when it clicks',
       body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
+  protected readonly whyPillars: readonly Feature[] = [
+    {
+      icon: 'clock',
+      title: 'Built for the long game',
+      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
+    },
+    {
+      icon: 'lock-closed',
+      title: 'Your list is yours',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada (or the region you pick on Movement) in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+    },
+    {
+      icon: 'paper-airplane',
+      title: 'Email that lands',
+      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
     },
   ];
 
@@ -140,7 +167,7 @@ export class HomePage {
     {
       icon: 'arrow-up-tray',
       title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
     },
   ];
 
@@ -237,6 +264,14 @@ export class HomePage {
     {
       q: 'Who owns the data?',
       a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'Where does my data live?',
+      a: 'In Canada, isolated from every other organization’s workspace. On the Movement plan you choose the region yourself: Canada, US, EU or UK.',
+    },
+    {
+      q: 'Will my newsletter land in spam?',
+      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
     },
     {
       q: 'How does pricing work?',

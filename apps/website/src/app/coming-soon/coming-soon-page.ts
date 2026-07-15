@@ -7,7 +7,7 @@ import { SIGNUP_URL } from '../ui/site-nav';
 
 /**
  * Shared placeholder for pages the design links to but we haven't built yet
- * (the audience pages, Pricing, and assorted footer links). `pageTitle` is
+ * (assorted footer links). `pageTitle` is
  * bound from the route's `data` or a `?pageTitle=` query param via
  * withComponentInputBinding — swap the route to a real component when it exists.
  */

@@ -67,8 +67,8 @@ const CONTACT_EMAIL = 'hello@pplcrm.com';
         >
           <span>© 2026 pplCRM · pplcrm.com</span>
           <span
-            >Your data stays in your region — Canadian data in Canada, EU data in the EU. Export everything anytime.
-            Delete means deleted.</span
+            >Your data is stored in Canada, or the region you choose on Movement. Export everything anytime. Delete
+            means deleted.</span
           >
         </div>
       </div>
@@ -84,6 +84,7 @@ export class SiteFooter {
       heading: 'Product',
       links: [
         { label: 'Pricing', path: '/pricing' },
+        { label: 'Compare', path: '/compare' },
         { label: 'FAQ', path: '/faq' },
         { label: 'Start free', href: SIGNUP_URL },
       ],
