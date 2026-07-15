@@ -23,7 +23,7 @@ import { DemoService } from './services/demo.service';
   imports: [Icon, RouterLink],
   template: `
     @if (visible()) {
-      <div class="animate-drop card border border-info/40 bg-info/5 shadow-sm">
+      <div class="animate-drop card border border-info/40 bg-info/5 shadow-lg mb-5">
         <div class="card-body gap-3 p-5">
           <div class="pc-eyebrow flex items-center gap-2 text-info">
             <pc-icon name="information-circle" [size]="4"></pc-icon>
