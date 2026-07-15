@@ -41,6 +41,7 @@ libs/
     src/
       lib/
         billing/
+          currency.ts
           plans.ts
         help/
           articles/
@@ -215,6 +216,125 @@ libs/
 ```
 
 # Files
+
+## File: libs/common/src/lib/billing/currency.ts
+````typescript
+/**
+ * Display-currency helpers for the marketing website.
+ *
+ * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
+ * marketing site *show* those USD prices converted to a handful of local currencies at live
+ * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
+ * page carries that disclaimer whenever a non-USD currency is shown.
+ *
+ * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
+ * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
+ * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
+ * the "billed in USD" note.
+ */
+
+/** The currencies the marketing site can display prices in. USD is the billing currency. */
+export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
+export type CurrencyCode = (typeof CURRENCY_CODES)[number];
+
+export interface CurrencyDef {
+  readonly code: CurrencyCode;
+  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
+  readonly symbol: string;
+  /** Human label for the switcher menu. */
+  readonly label: string;
+}
+
+/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
+ * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
+export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
+  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
+  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
+  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
+  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
+};
+
+/** Locale used for number grouping in formatted prices (fixed for consistent English
+ * presentation on the marketing site). */
+const FORMAT_LOCALE = 'en-US';
+
+/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
+ * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
+ * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
+const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  CAD: 'C$',
+};
+
+/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
+export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
+
+/** Type guard: is a string one of our supported currency codes? */
+export function isCurrencyCode(value: string): value is CurrencyCode {
+  return (CURRENCY_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
+ * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
+ */
+export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
+  GB: 'GBP',
+  CA: 'CAD',
+  // Eurozone (the 20 EUR members).
+  AT: 'EUR',
+  BE: 'EUR',
+  HR: 'EUR',
+  CY: 'EUR',
+  EE: 'EUR',
+  FI: 'EUR',
+  FR: 'EUR',
+  DE: 'EUR',
+  GR: 'EUR',
+  IE: 'EUR',
+  IT: 'EUR',
+  LV: 'EUR',
+  LT: 'EUR',
+  LU: 'EUR',
+  MT: 'EUR',
+  NL: 'EUR',
+  PT: 'EUR',
+  SK: 'EUR',
+  SI: 'EUR',
+  ES: 'EUR',
+};
+
+/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
+export function currencyForCountry(country: string | null | undefined): CurrencyCode {
+  if (!country) return 'USD';
+  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
+}
+
+/**
+ * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
+ * Falls back to the original amount when the rate for `code` is missing (treated as USD).
+ */
+export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
+  const rate = code === 'USD' ? 1 : rates[code];
+  if (rate == null) return Math.round(usd);
+  return Math.round(usd * rate);
+}
+
+/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
+ * inline — kept consistent with `formatCurrency`'s output. */
+export function currencyPriceSymbol(code: CurrencyCode): string {
+  return PRICE_SYMBOLS[code];
+}
+
+/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
+ * (e.g. `$69`, `C$95`, `€65`, `£55`). */
+export function formatCurrency(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
+````
 
 ## File: libs/common/src/lib/schemas/activity.schema.ts
 ````typescript
@@ -2485,6 +2605,159 @@ type TFILTER = {
 };
 ````
 
+## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
+````typescript
+import { Injectable, signal } from '@angular/core';
+
+import { PcBreadcrumb } from './breadcrumbs';
+
+/**
+ * The full breadcrumb strip published by the current page: the crumb trail plus
+ * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
+ * The pager's prev/next are callbacks (not outputs) so they can route back to the
+ * page that owns the record-navigation handle from wherever the strip is rendered.
+ */
+export interface BreadcrumbTrail {
+  crumbs: PcBreadcrumb[];
+  positionLabel: string | null;
+  hasPrev: boolean;
+  hasNext: boolean;
+  prevLabel: string;
+  nextLabel: string;
+  onPrev: () => void;
+  onNext: () => void;
+}
+
+/**
+ * Hoists the breadcrumb trail out of the page body and into the navbar.
+ *
+ * Every navigation gets a route-driven default trail (built from `data.breadcrumb`
+ * by the frontend's BreadcrumbDefaultsService on NavigationEnd), so the strip is
+ * never empty or stale. Pages that own a richer trail (detail views via
+ * `pc-detail-header`, tabbed pages) `set()` theirs afterwards — their effects flush
+ * after NavigationEnd, so the page's trail wins. No page needs to clear on destroy
+ * anymore; the next navigation's default replaces whatever was published.
+ */
+@Injectable({ providedIn: 'root' })
+export class BreadcrumbsService {
+  private readonly _trail = signal<BreadcrumbTrail | null>(null);
+  public readonly trail = this._trail.asReadonly();
+
+  public set(trail: BreadcrumbTrail): void {
+    this._trail.set(trail);
+  }
+
+  /** Publish a plain crumb trail with no record pager — the common case. */
+  public setCrumbs(crumbs: PcBreadcrumb[]): void {
+    this._trail.set({
+      crumbs,
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
+  }
+
+  public clear(): void {
+    this._trail.set(null);
+  }
+}
+````
+
+## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
+````typescript
+import { Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+/**
+ * A single breadcrumb entry. Crumbs with a `route` render as links;
+ * the last crumb (the current page) renders as plain text.
+ */
+export interface PcBreadcrumb {
+  label: string;
+  route?: string | readonly unknown[];
+}
+
+@Component({
+  selector: 'pc-breadcrumbs',
+  imports: [RouterLink, Icon],
+  template: `
+    <div class="flex min-w-0 items-center justify-between gap-3">
+      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
+        <ol class="flex flex-wrap items-center gap-1.5">
+          @for (crumb of crumbs(); track $index; let last = $last; let first = $first) {
+            <li class="flex min-w-0 items-center gap-1.5">
+              <!-- The first crumb doubles as the page title (pages no longer repeat it
+                   in-body), so it renders larger and in full-contrast ink. -->
+              @if (!last && crumb.route) {
+                <a
+                  [routerLink]="crumb.route"
+                  class="max-w-48 truncate font-medium hover:underline"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-primary'"
+                >
+                  {{ crumb.label }}
+                </a>
+              } @else {
+                <span
+                  class="max-w-48 truncate font-medium"
+                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-base-content/60'"
+                  [attr.aria-current]="last ? 'page' : null"
+                >
+                  {{ crumb.label }}
+                </span>
+              }
+              @if (!last) {
+                <span class="select-none opacity-60" aria-hidden="true">/</span>
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+      @if (positionLabel()) {
+        <div class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-xs"
+            [attr.aria-label]="prevLabel()"
+            [disabled]="!hasPrev()"
+            (click)="prev.emit()"
+          >
+            <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          </button>
+          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-xs"
+            [attr.aria-label]="nextLabel()"
+            [disabled]="!hasNext()"
+            (click)="next.emit()"
+          >
+            <pc-icon name="chevron-right" [size]="4"></pc-icon>
+          </button>
+        </div>
+      }
+    </div>
+  `,
+})
+export class Breadcrumbs {
+  public readonly crumbs = input.required<PcBreadcrumb[]>();
+
+  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
+  public readonly positionLabel = input<string | null>(null);
+  public readonly hasPrev = input<boolean>(false);
+  public readonly hasNext = input<boolean>(false);
+  public readonly prevLabel = input<string>('Previous record');
+  public readonly nextLabel = input<string>('Next record');
+
+  public readonly prev = output<void>();
+  public readonly next = output<void>();
+}
+````
+
 ## File: libs/uxcommon/src/components/card/card.ts
 ````typescript
 import { Component, input } from '@angular/core';
@@ -2608,6 +2881,136 @@ ctx.onmessage = (e: MessageEvent) => {
     ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
   }
 };
+````
+
+## File: libs/uxcommon/src/components/csv-import/persons-field-mapping.ts
+````typescript
+/**
+ * Shared header-to-field auto-mapping heuristic for importing people from a
+ * CSV/TSV file. Originally lived inline in `persons-grid.ts` (the legacy
+ * modal importer); the CSV import wizard (spec §17, `/imports/new`) reuses it
+ * verbatim rather than re-deriving a second mapping table.
+ */
+export const PERSONS_MAPPABLE_FIELDS: string[] = [
+  'first_name',
+  'middle_names',
+  'last_name',
+  'email',
+  'email2',
+  'mobile',
+  'home_phone',
+  'street_num',
+  'street1',
+  'street2',
+  'apt',
+  'city',
+  'state',
+  'zip',
+  'country',
+  'company',
+  'tags',
+  'notes',
+];
+
+const HEADER_TO_FIELD: Record<string, string> = {
+  firstname: 'first_name',
+  fname: 'first_name',
+  givenname: 'first_name',
+  middlename: 'middle_names',
+  middlenames: 'middle_names',
+  middleinitial: 'middle_names',
+  lastname: 'last_name',
+  lname: 'last_name',
+  surname: 'last_name',
+  familyname: 'last_name',
+  name: 'first_name',
+  email: 'email',
+  emailaddress: 'email',
+  email1: 'email',
+  email1address: 'email',
+  primaryemail: 'email',
+  email2: 'email2',
+  email2address: 'email2',
+  secondaryemail: 'email2',
+  mobile: 'mobile',
+  mobilephone: 'mobile',
+  cellphone: 'mobile',
+  cell: 'mobile',
+  phone: 'mobile',
+  phonenumber: 'mobile',
+  telephone: 'mobile',
+  primaryphone: 'mobile',
+  businessphone: 'mobile',
+  homephone: 'home_phone',
+  streetnum: 'street_num',
+  streetnumber: 'street_num',
+  homestreet: 'street1',
+  homestreet1: 'street1',
+  homestreet2: 'street2',
+  homestreet3: 'street2',
+  homeaddress: 'street1',
+  homeaddresspobox: 'street2',
+  homecity: 'city',
+  homestate: 'state',
+  homepostalcode: 'zip',
+  homecountry: 'country',
+  businessstreet: 'street1',
+  businessstreet1: 'street1',
+  businessstreet2: 'street2',
+  businessstreet3: 'street2',
+  businessaddress: 'street1',
+  businessaddresspobox: 'street2',
+  businesscity: 'city',
+  businessstate: 'state',
+  businesspostalcode: 'zip',
+  businesscountry: 'country',
+  address: 'street1',
+  address1: 'street1',
+  address2: 'street2',
+  addressline1: 'street1',
+  addressline2: 'street2',
+  street: 'street1',
+  streetaddress: 'street1',
+  street1: 'street1',
+  street2: 'street2',
+  apt: 'apt',
+  apartment: 'apt',
+  unit: 'apt',
+  suite: 'apt',
+  city: 'city',
+  town: 'city',
+  state: 'state',
+  province: 'state',
+  stateprovince: 'state',
+  region: 'state',
+  zip: 'zip',
+  zipcode: 'zip',
+  postal: 'zip',
+  postalcode: 'zip',
+  postcode: 'zip',
+  country: 'country',
+  company: 'company',
+  companyname: 'company',
+  organization: 'company',
+  organisation: 'company',
+  employer: 'company',
+  business: 'company',
+  tag: 'tags',
+  tags: 'tags',
+  label: 'tags',
+  labels: 'tags',
+  groups: 'tags',
+  notes: 'notes',
+  note: 'notes',
+  comments: 'notes',
+};
+
+/** Best-effort guess of which persons field a CSV header maps to, or '' (skip) if unknown. */
+export function autoMapPersonsHeader(header: string): string {
+  const raw = (header || '').toLowerCase().trim();
+  const key = raw.replace(/[^a-z0-9]/g, '');
+  return HEADER_TO_FIELD[key] || '';
+}
 ````
 
 ## File: libs/uxcommon/src/components/detail-row/detail-row.ts
@@ -2910,6 +3313,91 @@ export class GeocodeChip {
   public readonly size = input<'sm' | 'md' | 'lg'>('sm');
 
   protected readonly spec = computed(() => geocodeChipSpec(this.status()));
+}
+````
+
+## File: libs/uxcommon/src/components/grid-header/grid-header.ts
+````typescript
+import { Component, computed, input, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+@Component({
+  selector: 'pc-grid-header',
+  imports: [Icon],
+  template: `
+    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <!-- The visible page title is the navbar breadcrumb's first crumb; keep an
+             sr-only h1 so the page still has an accessible heading. -->
+        <h1 class="sr-only">{{ title() }}</h1>
+        <div class="flex items-center gap-1.5">
+          @if (countText(); as text) {
+            <p class="text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
+          }
+          @if (description()) {
+            <button
+              type="button"
+              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
+              aria-label="About this page"
+              [attr.aria-expanded]="descriptionOpen()"
+              (click)="toggleDescription()"
+            >
+              <pc-icon name="information-circle" [size]="4"></pc-icon>
+            </button>
+          }
+        </div>
+        @if (descriptionOpen() && description()) {
+          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
+        }
+      </div>
+      <div class="flex items-center gap-2">
+        <ng-content></ng-content>
+      </div>
+    </header>
+  `,
+})
+export class GridHeaderComponent {
+  public readonly title = input.required<string>();
+  public readonly description = input<string>('');
+  public readonly eyebrow = input<string>('');
+
+  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
+  public readonly open = input<boolean>(false);
+
+  /** Total row count for the current query; null while unknown (before the first load). */
+  public readonly totalCount = input<number | null>(null);
+
+  /** Whether any user-applied filter is narrowing the results. */
+  public readonly filtered = input<boolean>(false);
+
+  /**
+   * Optional caller-provided sentence for the unfiltered total, e.g. "5,012 people total"
+   * or "1,890 households across 8 wards". When filters are active it is appended after the
+   * matched count: "43 match your filters · 5,012 people total".
+   */
+  public readonly totalSentence = input<string | null>(null);
+
+  private readonly descToggled = signal<boolean | null>(null);
+  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  protected readonly countText = computed<string | null>(() => {
+    const count = this.totalCount();
+    const sentence = this.totalSentence();
+    if (count !== null && this.filtered()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
+    }
+    if (sentence) return sentence;
+    if (count === null) return null;
+    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
+  });
+
+  protected toggleDescription(): void {
+    this.descToggled.set(!this.descriptionOpen());
+  }
 }
 ````
 
@@ -6493,263 +6981,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ];
 ````
 
-## File: libs/common/src/lib/help/articles/outreach.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
-      },
-      {
-        kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
-      },
-    ],
-  },
-  {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
-    summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
-    keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
-    ],
-    related: ['newsletters', 'settings', 'forms'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
-      },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
-          },
-          {
-            title: 'Verify a mobile number (Free plan)',
-            detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
-      {
-        kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
-      },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
-      {
-        kind: 'list',
-        items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/productivity.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -8812,289 +9043,6 @@ export class AlertService {
 export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 ````
 
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
-````typescript
-import { Injectable, signal } from '@angular/core';
-
-import { PcBreadcrumb } from './breadcrumbs';
-
-/**
- * The full breadcrumb strip published by the current page: the crumb trail plus
- * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
- * The pager's prev/next are callbacks (not outputs) so they can route back to the
- * page that owns the record-navigation handle from wherever the strip is rendered.
- */
-export interface BreadcrumbTrail {
-  crumbs: PcBreadcrumb[];
-  positionLabel: string | null;
-  hasPrev: boolean;
-  hasNext: boolean;
-  prevLabel: string;
-  nextLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-}
-
-/**
- * Hoists the breadcrumb trail out of the page body and into the navbar.
- *
- * Every navigation gets a route-driven default trail (built from `data.breadcrumb`
- * by the frontend's BreadcrumbDefaultsService on NavigationEnd), so the strip is
- * never empty or stale. Pages that own a richer trail (detail views via
- * `pc-detail-header`, tabbed pages) `set()` theirs afterwards — their effects flush
- * after NavigationEnd, so the page's trail wins. No page needs to clear on destroy
- * anymore; the next navigation's default replaces whatever was published.
- */
-@Injectable({ providedIn: 'root' })
-export class BreadcrumbsService {
-  private readonly _trail = signal<BreadcrumbTrail | null>(null);
-  public readonly trail = this._trail.asReadonly();
-
-  public set(trail: BreadcrumbTrail): void {
-    this._trail.set(trail);
-  }
-
-  /** Publish a plain crumb trail with no record pager — the common case. */
-  public setCrumbs(crumbs: PcBreadcrumb[]): void {
-    this._trail.set({
-      crumbs,
-      positionLabel: null,
-      hasPrev: false,
-      hasNext: false,
-      prevLabel: 'Previous record',
-      nextLabel: 'Next record',
-      onPrev: () => undefined,
-      onNext: () => undefined,
-    });
-  }
-
-  public clear(): void {
-    this._trail.set(null);
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-/**
- * A single breadcrumb entry. Crumbs with a `route` render as links;
- * the last crumb (the current page) renders as plain text.
- */
-export interface PcBreadcrumb {
-  label: string;
-  route?: string | readonly unknown[];
-}
-
-@Component({
-  selector: 'pc-breadcrumbs',
-  imports: [RouterLink, Icon],
-  template: `
-    <div class="flex min-w-0 items-center justify-between gap-3">
-      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
-        <ol class="flex flex-wrap items-center gap-1.5">
-          @for (crumb of crumbs(); track $index; let last = $last; let first = $first) {
-            <li class="flex min-w-0 items-center gap-1.5">
-              <!-- The first crumb doubles as the page title (pages no longer repeat it
-                   in-body), so it renders larger and in full-contrast ink. -->
-              @if (!last && crumb.route) {
-                <a
-                  [routerLink]="crumb.route"
-                  class="max-w-48 truncate font-medium hover:underline"
-                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-primary'"
-                >
-                  {{ crumb.label }}
-                </a>
-              } @else {
-                <span
-                  class="max-w-48 truncate font-medium"
-                  [class]="first ? 'text-sm font-semibold text-base-content' : 'text-base-content/60'"
-                  [attr.aria-current]="last ? 'page' : null"
-                >
-                  {{ crumb.label }}
-                </span>
-              }
-              @if (!last) {
-                <span class="select-none opacity-60" aria-hidden="true">/</span>
-              }
-            </li>
-          }
-        </ol>
-      </nav>
-      @if (positionLabel()) {
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="prevLabel()"
-            [disabled]="!hasPrev()"
-            (click)="prev.emit()"
-          >
-            <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          </button>
-          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="nextLabel()"
-            [disabled]="!hasNext()"
-            (click)="next.emit()"
-          >
-            <pc-icon name="chevron-right" [size]="4"></pc-icon>
-          </button>
-        </div>
-      }
-    </div>
-  `,
-})
-export class Breadcrumbs {
-  public readonly crumbs = input.required<PcBreadcrumb[]>();
-
-  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
-  public readonly positionLabel = input<string | null>(null);
-  public readonly hasPrev = input<boolean>(false);
-  public readonly hasNext = input<boolean>(false);
-  public readonly prevLabel = input<string>('Previous record');
-  public readonly nextLabel = input<string>('Next record');
-
-  public readonly prev = output<void>();
-  public readonly next = output<void>();
-}
-````
-
-## File: libs/uxcommon/src/components/csv-import/persons-field-mapping.ts
-````typescript
-/**
- * Shared header-to-field auto-mapping heuristic for importing people from a
- * CSV/TSV file. Originally lived inline in `persons-grid.ts` (the legacy
- * modal importer); the CSV import wizard (spec §17, `/imports/new`) reuses it
- * verbatim rather than re-deriving a second mapping table.
- */
-export const PERSONS_MAPPABLE_FIELDS: string[] = [
-  'first_name',
-  'middle_names',
-  'last_name',
-  'email',
-  'email2',
-  'mobile',
-  'home_phone',
-  'street_num',
-  'street1',
-  'street2',
-  'apt',
-  'city',
-  'state',
-  'zip',
-  'country',
-  'company',
-  'tags',
-  'notes',
-];
-
-const HEADER_TO_FIELD: Record<string, string> = {
-  firstname: 'first_name',
-  fname: 'first_name',
-  givenname: 'first_name',
-  middlename: 'middle_names',
-  middlenames: 'middle_names',
-  middleinitial: 'middle_names',
-  lastname: 'last_name',
-  lname: 'last_name',
-  surname: 'last_name',
-  familyname: 'last_name',
-  name: 'first_name',
-  email: 'email',
-  emailaddress: 'email',
-  email1: 'email',
-  email1address: 'email',
-  primaryemail: 'email',
-  email2: 'email2',
-  email2address: 'email2',
-  secondaryemail: 'email2',
-  mobile: 'mobile',
-  mobilephone: 'mobile',
-  cellphone: 'mobile',
-  cell: 'mobile',
-  phone: 'mobile',
-  phonenumber: 'mobile',
-  telephone: 'mobile',
-  primaryphone: 'mobile',
-  businessphone: 'mobile',
-  homephone: 'home_phone',
-  streetnum: 'street_num',
-  streetnumber: 'street_num',
-  homestreet: 'street1',
-  homestreet1: 'street1',
-  homestreet2: 'street2',
-  homestreet3: 'street2',
-  homeaddress: 'street1',
-  homeaddresspobox: 'street2',
-  homecity: 'city',
-  homestate: 'state',
-  homepostalcode: 'zip',
-  homecountry: 'country',
-  businessstreet: 'street1',
-  businessstreet1: 'street1',
-  businessstreet2: 'street2',
-  businessstreet3: 'street2',
-  businessaddress: 'street1',
-  businessaddresspobox: 'street2',
-  businesscity: 'city',
-  businessstate: 'state',
-  businesspostalcode: 'zip',
-  businesscountry: 'country',
-  address: 'street1',
-  address1: 'street1',
-  address2: 'street2',
-  addressline1: 'street1',
-  addressline2: 'street2',
-  street: 'street1',
-  streetaddress: 'street1',
-  street1: 'street1',
-  street2: 'street2',
-  apt: 'apt',
-  apartment: 'apt',
-  unit: 'apt',
-  suite: 'apt',
-  city: 'city',
-  town: 'city',
-  state: 'state',
-  province: 'state',
-  stateprovince: 'state',
-  region: 'state',
-  zip: 'zip',
-  zipcode: 'zip',
-  postal: 'zip',
-  postalcode: 'zip',
-  postcode: 'zip',
-  country: 'country',
-  company: 'company',
-  companyname: 'company',
-  organization: 'company',
-  organisation: 'company',
-  employer: 'company',
-  business: 'company',
-  tag: 'tags',
-  tags: 'tags',
-  label: 'tags',
-  labels: 'tags',
-  groups: 'tags',
-  notes: 'notes',
-  note: 'notes',
-  comments: 'notes',
-};
-
-/** Best-effort guess of which persons field a CSV header maps to, or '' (skip) if unknown. */
-export function autoMapPersonsHeader(header: string): string {
-  const raw = (header || '').toLowerCase().trim();
-  const key = raw.replace(/[^a-z0-9]/g, '');
-  return HEADER_TO_FIELD[key] || '';
-}
-````
-
 ## File: libs/uxcommon/src/components/detail-item/detail-item.ts
 ````typescript
 import { Component, inject, input, output } from '@angular/core';
@@ -9459,91 +9407,6 @@ export class FormActions {
       this.cancel();
     }
   };
-}
-````
-
-## File: libs/uxcommon/src/components/grid-header/grid-header.ts
-````typescript
-import { Component, computed, input, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-grid-header',
-  imports: [Icon],
-  template: `
-    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <!-- The visible page title is the navbar breadcrumb's first crumb; keep an
-             sr-only h1 so the page still has an accessible heading. -->
-        <h1 class="sr-only">{{ title() }}</h1>
-        <div class="flex items-center gap-1.5">
-          @if (countText(); as text) {
-            <p class="text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
-          }
-          @if (description()) {
-            <button
-              type="button"
-              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
-              aria-label="About this page"
-              [attr.aria-expanded]="descriptionOpen()"
-              (click)="toggleDescription()"
-            >
-              <pc-icon name="information-circle" [size]="4"></pc-icon>
-            </button>
-          }
-        </div>
-        @if (descriptionOpen() && description()) {
-          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
-        }
-      </div>
-      <div class="flex items-center gap-2">
-        <ng-content></ng-content>
-      </div>
-    </header>
-  `,
-})
-export class GridHeaderComponent {
-  public readonly title = input.required<string>();
-  public readonly description = input<string>('');
-  public readonly eyebrow = input<string>('');
-
-  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
-  public readonly open = input<boolean>(false);
-
-  /** Total row count for the current query; null while unknown (before the first load). */
-  public readonly totalCount = input<number | null>(null);
-
-  /** Whether any user-applied filter is narrowing the results. */
-  public readonly filtered = input<boolean>(false);
-
-  /**
-   * Optional caller-provided sentence for the unfiltered total, e.g. "5,012 people total"
-   * or "1,890 households across 8 wards". When filters are active it is appended after the
-   * matched count: "43 match your filters · 5,012 people total".
-   */
-  public readonly totalSentence = input<string | null>(null);
-
-  private readonly descToggled = signal<boolean | null>(null);
-  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  protected readonly countText = computed<string | null>(() => {
-    const count = this.totalCount();
-    const sentence = this.totalSentence();
-    if (count !== null && this.filtered()) {
-      const matched =
-        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
-      return sentence ? `${matched} · ${sentence}` : matched;
-    }
-    if (sentence) return sentence;
-    if (count === null) return null;
-    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
-  });
-
-  protected toggleDescription(): void {
-    this.descToggled.set(!this.descriptionOpen());
-  }
 }
 ````
 
@@ -10369,319 +10232,257 @@ export function createRequestGuard(): RequestGuard {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/administration.ts
+## File: libs/common/src/lib/help/articles/outreach.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const ADMIN_ARTICLES: HelpArticle[] = [
+export const OUTREACH_ARTICLES: HelpArticle[] = [
   {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms'],
     blocks: [
       {
         kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
       },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
       {
         kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
       },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
       {
         kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
       },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
       {
         kind: 'list',
         items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
         ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 2,500 emailable subscribers, then rises in steps as your list grows, up to $229 a month at its 50,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
-          '**Movement**: starts at $75 a month for up to 5,000 emailable subscribers, then rises in steps up to $1,275 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
       },
     ],
   },
   {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
     summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
     blocks: [
       {
         kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
       },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
       {
         kind: 'list',
         items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
         ],
       },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
       {
-        kind: 'list',
+        kind: 'steps',
         items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
         ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
       },
       {
         kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
       },
     ],
   },
@@ -11613,6 +11414,325 @@ export class ConfirmDialogHost {
 }
 ````
 
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan, live usage, and payment details.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/billing/plans.ts
 ````typescript
 /**
@@ -11652,20 +11772,22 @@ export class ConfirmDialogHost {
  *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
  *  - All prices are USD.
  *
- * Market calibration (competitive research 2026-07-14, monthly billing): Grassroots beats
- * every full-suite competitor at every count — $49 vs $75 (Mailchimp Essentials) at 5k,
- * $69 vs $110 at 10k, $109 vs $230 at 20k; only newsletter-only beehiiv Scale undercuts it at
- * 50k ($199 vs $229). Movement beats Mailchimp Standard at every count — $75 vs $100 at 5k,
- * $155 vs $230 at 15k, $375 vs $450 at 50k, $675 vs $800 at 100k. Not 75% under — 20–35% under,
+ * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
+ * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
+ * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
+ * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
+ * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
+ * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
  * "cheapest full-featured option" rather than "suspiciously cheap".
  *
  * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
  * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 'inf', unit_amount: 2000 }]
- *    → qty 1 = $29, qty N (N ≥ 2) = $29 + $20·(N−1) = the bracket ladder below.
- *  - Movement: [{ up_to: 1, unit_amount: 7500 }, { up_to: 4, unit_amount: 4000 }, { up_to: 'inf', unit_amount: 3000 }]
- *    → qty 1 = $75, qty 2–4 add $40/step, qty 5+ add $30/step (the piecewise step change at
- *    the 20,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
+ *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
+ *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
+ *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
+ *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
+ *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
  *
  * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
  * price IDs. Display names are intentionally allowed to differ from keys, but here they are
@@ -11729,48 +11851,42 @@ export interface PlanDef {
 }
 
 /**
- * Build one evenly-stepped run of brackets. `fromUpTo` is the emailable-subscriber cap of the
- * run's FIRST bracket, priced at `startPrice`; each subsequent bracket steps `upTo` by `step`
- * and price by `pricePerStep`, up to and including `toUpTo`. Tiers concatenate one or more
- * runs (plus, where the first bracket doesn't fit the pattern, literal leading brackets) to
- * build their full ladder — see GRASSROOTS_BRACKETS / MOVEMENT_BRACKETS below.
- */
-function linearBrackets(
-  fromUpTo: number,
-  toUpTo: number,
-  step: number,
-  startPrice: number,
-  pricePerStep: number,
-): PriceBracket[] {
-  const brackets: PriceBracket[] = [];
-  for (let upTo = fromUpTo, price = startPrice; upTo <= toUpTo; upTo += step, price += pricePerStep) {
-    brackets.push({ upTo, price });
-  }
-  return brackets;
-}
-
-/**
- * Grassroots ladder — $29 ≤2,500 · $49 ≤5,000 · then +$20 per 5,000 up to 50,000 (11 brackets).
- * Spot prices (qty = 1-based index): 1:$29 (2.5k) · 2:$49 (5k) · 3:$69 (10k) · 4:$89 (15k) ·
- * 5:$109 (20k) · 6:$129 (25k) · 7:$149 (30k) · 8:$169 (35k) · 9:$189 (40k) · 10:$209 (45k) ·
- * 11:$229 (50k, tier max).
+ * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
+ * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
+ * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
+ * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
  */
 const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 2_500, price: 29 },
-  { upTo: 5_000, price: 49 },
-  ...linearBrackets(10_000, 50_000, 5_000, 69, 20),
+  { upTo: 1_000, price: 29 },
+  { upTo: 2_500, price: 49 },
+  { upTo: 5_000, price: 69 },
+  { upTo: 10_000, price: 89 },
+  { upTo: 15_000, price: 109 },
+  { upTo: 20_000, price: 129 },
+  { upTo: 25_000, price: 149 },
+  { upTo: 50_000, price: 219 },
+  { upTo: 75_000, price: 289 },
+  { upTo: 100_000, price: 359 },
 ];
 
 /**
- * Movement ladder — $75 ≤5,000 · then +$40 per 5,000 up to 20,000 · then +$30 per 5,000 up to
- * 200,000 (40 brackets; piecewise step change at the 20,000-subscriber boundary).
- * Spot prices (qty = 1-based index): 1:$75 (5k) · 2:$115 (10k) · 3:$155 (15k) · 4:$195 (20k) ·
- * 5:$225 (25k) · 10:$375 (50k) · 20:$675 (100k) · 40:$1,275 (200k, tier max).
+ * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
+ * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
+ * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
+ * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
  */
 const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 5_000, price: 75 },
-  ...linearBrackets(10_000, 20_000, 5_000, 115, 40),
-  ...linearBrackets(25_000, 200_000, 5_000, 225, 30),
+  { upTo: 1_000, price: 55 },
+  { upTo: 2_500, price: 90 },
+  { upTo: 5_000, price: 125 },
+  { upTo: 10_000, price: 160 },
+  { upTo: 15_000, price: 195 },
+  { upTo: 20_000, price: 230 },
+  { upTo: 25_000, price: 265 },
+  { upTo: 50_000, price: 365 },
+  { upTo: 75_000, price: 465 },
+  { upTo: 100_000, price: 565 },
+  { upTo: 200_000, price: 665 },
 ];
 
 export const PLANS: readonly PlanDef[] = [
@@ -11813,7 +11929,7 @@ export const PLANS: readonly PlanDef[] = [
     features: [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
-      'Up to 50,000 email subscribers · 12× emails/month',
+      'Up to 100,000 email subscribers · 12× emails/month',
       '5 staff seats · 15 volunteers · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
@@ -11835,13 +11951,14 @@ export const PLANS: readonly PlanDef[] = [
     displayed: true,
     features: [
       'Everything in Grassroots, plus:',
-      'Scales smoothly from $75/month as your list grows',
+      'Scales smoothly from $55/month as your list grows',
       'Up to 200,000 email subscribers · 12× emails/month',
       'Unlimited staff seats & volunteers · 200 GB storage',
       'Canvassing & deliveries companion apps',
       'Yard signs & route optimization',
       'Turf cutting, walk lists & routes, field reports',
       'A/B testing & optional dedicated sending IP',
+      'Choose your data residency region (US, EU, Canada or UK)',
       'Priority support & onboarding',
     ],
   },
@@ -11957,7 +12074,7 @@ export function priceForQuantity(key: PlanKey, qty: number): number {
 }
 
 /** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $75' (movement), 'Custom' (enterprise). */
+ * 'From $55' (movement), 'Custom' (enterprise). */
 export function startingPriceLabel(plan: PlanDef): string {
   if (!plan.pricing) return 'Custom';
   const first = plan.pricing.brackets[0];
@@ -11966,6 +12083,19 @@ export function startingPriceLabel(plan: PlanDef): string {
     throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
   }
   return first.price === 0 ? '$0' : `From $${first.price}`;
+}
+
+/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
+ * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
+ * display currency (the marketing site's home teaser). */
+export function startingPriceUsd(plan: PlanDef): number | null {
+  if (!plan.pricing) return null;
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  return first.price;
 }
 
 /** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
@@ -12005,6 +12135,15 @@ export function planAllowsFeature(planName: string | null | undefined, feature: 
   return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
 }
 
+/** Regions a Movement customer can choose to store their data in, set when they create their
+ * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
+ * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
+export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
+export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
+
+/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
+export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
+
 /**
  * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
  * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
@@ -12030,7 +12169,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     rows: [
       {
         label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 50,000', movement: 'Up to 200,000' },
+        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
       },
       {
         label: 'Emails / month',
@@ -12094,6 +12233,10 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     rows: [
       { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
       { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+      {
+        label: 'Data residency',
+        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
+      },
       {
         label: 'Support',
         values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
@@ -12792,7 +12935,11 @@ export interface Tasks extends RecordType {
   file_id: string | null;
 }
 
-interface Tenants extends RecordType, AddressType {
+// Unlike every other record table, tenants.createdby_id is NULLABLE in the schema — the tenant
+// row is created before its first user, and the hard-delete job nulls it to break the
+// fk_createdby_id cycle before wiping authusers.
+interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
+  createdby_id: string | null;
   name: string;
   slug: string | null;
   admin_id: string | null;
@@ -13788,9 +13935,12 @@ export {
   emailCapForQuantity,
   priceForQuantity,
   startingPriceLabel,
+  startingPriceUsd,
   priceLabelAt,
   GATED_FEATURES,
   planAllowsFeature,
+  DATA_RESIDENCY_REGIONS,
+  DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
 export type {
   PlanKey,
@@ -13801,7 +13951,19 @@ export type {
   TierPricing,
   FeatureMatrixRow,
   FeatureMatrixGroup,
+  DataResidencyRegion,
 } from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
 
 export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
 

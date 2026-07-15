@@ -62,7 +62,7 @@ export class FaqPage {
         },
         {
           q: 'Where is my data stored?',
-          a: 'In your region. Canadian organizations’ data stays in Canada, EU organizations’ data stays in the EU, and so on. It doesn’t cross borders for processing or backups.',
+          a: 'By default your data is stored in the US. On the Movement plan you choose your region (US, EU, Canada or UK) when you create your workspace, and it stays there for processing and backups.',
         },
         {
           q: 'What happens when I delete something?',
@@ -97,6 +97,10 @@ export class FaqPage {
         {
           q: 'How is pricing metered?',
           a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
         },
         {
           q: 'What happens when my list grows?',

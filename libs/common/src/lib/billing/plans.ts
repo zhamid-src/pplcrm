@@ -221,6 +221,7 @@ export const PLANS: readonly PlanDef[] = [
       'Yard signs & route optimization',
       'Turf cutting, walk lists & routes, field reports',
       'A/B testing & optional dedicated sending IP',
+      'Choose your data residency region (US, EU, Canada or UK)',
       'Priority support & onboarding',
     ],
   },
@@ -347,6 +348,19 @@ export function startingPriceLabel(plan: PlanDef): string {
   return first.price === 0 ? '$0' : `From $${first.price}`;
 }
 
+/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
+ * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
+ * display currency (the marketing site's home teaser). */
+export function startingPriceUsd(plan: PlanDef): number | null {
+  if (!plan.pricing) return null;
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  return first.price;
+}
+
 /** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
  * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
  * website pricing slider and the frontend billing upgrade cards. */
@@ -383,6 +397,15 @@ export function planAllowsFeature(planName: string | null | undefined, feature: 
   const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
   return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
 }
+
+/** Regions a Movement customer can choose to store their data in, set when they create their
+ * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
+ * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
+export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
+export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
+
+/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
+export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
 
 /**
  * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
@@ -473,6 +496,10 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     rows: [
       { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
       { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+      {
+        label: 'Data residency',
+        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
+      },
       {
         label: 'Support',
         values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },

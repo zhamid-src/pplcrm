@@ -2,6 +2,7 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
 import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
 import { SiteLogo } from './site-logo';
 
@@ -15,7 +16,7 @@ type HeaderVariant = 'over-hero' | 'solid';
  */
 @Component({
   selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo],
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
   template: `
     <header [class]="barClass()">
       <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
@@ -28,6 +29,7 @@ type HeaderVariant = 'over-hero' | 'solid';
           @for (link of nav; track link.path) {
             <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
           }
+          <pc-currency-switcher [onDark]="onDark()" />
           @if (signedIn()) {
             <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
           } @else {
@@ -66,6 +68,9 @@ type HeaderVariant = 'over-hero' | 'solid';
             }}</a>
           }
           <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
             @if (signedIn()) {
               <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
             } @else {
@@ -93,7 +98,7 @@ export class SiteHeader {
   protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
 
   protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'bg-navy' : 'border-b border-line bg-base-100',
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
   );
 
   protected readonly linkClass = computed<string>(() =>

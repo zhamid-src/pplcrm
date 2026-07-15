@@ -1,8 +1,9 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { FEATURE_MATRIX, PLANS, priceLabelAt } from '@common';
+import { bracketIndexForSubscribers, FEATURE_MATRIX, PLANS, priceForQuantity } from '@common';
 import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
 
+import { CurrencyService } from '../ui/currency.service';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SIGNUP_URL } from '../ui/site-nav';
@@ -32,6 +33,12 @@ export class PricingPage {
   protected readonly signupUrl = SIGNUP_URL;
   protected readonly mailto = 'mailto:hello@pplcrm.com';
 
+  private readonly currency = inject(CurrencyService);
+  /** Whether prices are being shown in a non-USD currency (gates the billing disclaimer). */
+  protected readonly isConverted = this.currency.isConverted;
+  /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
+  protected readonly currencySymbol = this.currency.priceSymbol;
+
   /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
   protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
   protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
@@ -48,16 +55,21 @@ export class PricingPage {
     }
   }
 
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
+  /** Live price at the slider's subscriber count, formatted in the active display currency. */
   protected priceLabel(plan: PlanDef): string {
-    const label = priceLabelAt(plan, this.subscribers());
-    const amount = /^\$(\d+)$/.exec(label)?.[1];
-    return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return 'Contact us';
+    return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */
+  protected zeroPrice(): string {
+    return this.currency.format(0);
   }
 
   /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
   protected overMax(plan: PlanDef): boolean {
-    return priceLabelAt(plan, this.subscribers()) === 'Contact us';
+    return bracketIndexForSubscribers(plan.key, this.subscribers()) === null;
   }
 
   /** The tier's hard subscriber max, formatted (e.g. "100,000"). */

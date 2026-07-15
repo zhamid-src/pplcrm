@@ -379,9 +379,12 @@ export {
   emailCapForQuantity,
   priceForQuantity,
   startingPriceLabel,
+  startingPriceUsd,
   priceLabelAt,
   GATED_FEATURES,
   planAllowsFeature,
+  DATA_RESIDENCY_REGIONS,
+  DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
 export type {
   PlanKey,
@@ -392,7 +395,19 @@ export type {
   TierPricing,
   FeatureMatrixRow,
   FeatureMatrixGroup,
+  DataResidencyRegion,
 } from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
 
 export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
 
