@@ -78,7 +78,7 @@
               <div class="text-[28px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
               <div class="mt-1.5 text-[12px] font-normal text-base-content/50">{{ tier.cadence }}</div>
               } @else if (tier.key === 'free') {
-              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">$0</div>
+              <div class="text-[28px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
               <div class="mt-1.5 text-[12px] font-normal text-base-content/50">Covers up to 1,000 subscribers</div>
               } @else {
               <div class="pt-1.5 text-[18px] font-semibold leading-none text-base-content/70">Contact us</div>
@@ -149,6 +149,14 @@
       </tbody>
     </table>
   </div>
+
+  @if (isConverted()) {
+  <p
+    class="site-wrap mt-4 rounded-xl border border-line bg-base-200/60 px-5 py-3 text-center text-[13px] text-base-content/70"
+  >
+    Prices shown in {{ currencySymbol() }} are estimates at today's exchange rate. You'll be billed in US dollars.
+  </p>
+  }
 
   <p class="site-wrap mt-5 text-center text-[13.5px] text-base-content/60">
     Need more than 200,000 subscribers, SSO or custom contracts?

@@ -1,11 +1,12 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { PLANS, startingPriceLabel } from '@common';
+import { PLANS, startingPriceUsd } from '@common';
 import type { PlanDef } from '@common';
 
 import { AppPreview, type PreviewKind } from '../ui/app-preview';
 import { BrowserFrame } from '../ui/browser-frame';
 import { Constellation } from '../ui/constellation';
+import { CurrencyService } from '../ui/currency.service';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
@@ -203,11 +204,18 @@ export class HomePage {
     },
   ];
 
+  private readonly currency = inject(CurrencyService);
+
   /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
   protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
 
-  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $55'). */
-  protected readonly startingPrice = startingPriceLabel;
+  /** "Starting at" price for a teaser card, in the active display currency ('$0', 'From €65', …). */
+  protected startingPrice(plan: PlanDef): string {
+    const usd = startingPriceUsd(plan);
+    if (usd === null) return 'Custom';
+    if (usd === 0) return this.currency.format(0);
+    return `From ${this.currency.format(usd)}`;
+  }
 
   protected readonly faqs: readonly Qa[] = [
     {
