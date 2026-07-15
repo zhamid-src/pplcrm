@@ -156,6 +156,13 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'user-group',
         shortcut: 't',
       },
+      {
+        name: 'Volunteer access',
+        route: '/volunteer-access',
+        icon: 'identification',
+        // badgeCount = volunteers awaiting approval, populated at runtime by
+        // Sidebar from `companionAccess.pendingCount`.
+      },
     ],
   },
   {
@@ -207,13 +214,7 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/users',
         icon: 'users',
       },
-      {
-        name: 'Volunteer access',
-        route: '/volunteer-access',
-        icon: 'identification',
-        // badgeCount = volunteers awaiting approval, populated at runtime by
-        // Sidebar from `companionAccess.pendingCount`.
-      },
+
       {
         name: 'Activity',
         route: '/activity',
