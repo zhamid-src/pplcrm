@@ -201,14 +201,14 @@
           <span class="truncate text-sm font-medium" [class.text-base-content]="form.id !== selectedId()"
             >{{ form.name }}</span
           >
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form) }}</span>
           <pc-status-badge class="shrink-0" [type]="form.status === 'published' ? 'success' : 'ghost'">
             {{ form.status === 'published' ? 'Published' : 'Draft' }}
           </pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
-          form.updated_at | date: 'MMM d' }}
+          @if (isDonationForm(form)) { Donation form } @else { {{ form.submission_count }} {{ form.submission_count ===
+          1 ? 'submission' : 'submissions' }} } · Updated {{ form.updated_at | date: 'MMM d' }}
         </span>
       </button>
       }
@@ -230,11 +230,12 @@
       >
         <div class="flex items-center gap-2">
           <span class="truncate text-sm font-medium">{{ form.name }}</span>
-          <span class="badge badge-xs shrink-0">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-xs shrink-0">{{ typeChip(form) }}</span>
           <pc-status-badge type="ghost" class="shrink-0">Archived</pc-status-badge>
         </div>
         <span class="text-base-content/60 text-xs tabular-nums">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+          @if (isDonationForm(form)) { Donation form } @else { {{ form.submission_count }} {{ form.submission_count ===
+          1 ? 'submission' : 'submissions' }} }
         </span>
       </button>
       } } @if (archivedOpen() && archivedForms().length === 0) {

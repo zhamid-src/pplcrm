@@ -30,24 +30,28 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
   }
 
   /**
-   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
-   * forms keep their own /donation-pages experience and are excluded here.
+   * Cards for the new Forms page: every form with a live submission count. Donation forms are
+   * included here too so the list is unified, but the frontend routes clicks on them to their own
+   * /donation-pages (Stripe) editor rather than the living-funnel inline editor.
    */
   public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
-    return this.getSelect()
-      .selectAll('web_forms')
-      .select((eb) =>
-        eb
-          .selectFrom('form_submissions')
-          .select((eb2) => eb2.fn.countAll<number>().as('c'))
-          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
-          .where('form_submissions.tenant_id', '=', tenantId)
-          .as('submission_count'),
-      )
-      .where('web_forms.tenant_id', '=', tenantId)
-      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
-      .orderBy('web_forms.updated_at', 'desc')
-      .execute();
+    return (
+      this.getSelect()
+        .selectAll('web_forms')
+        .select((eb) =>
+          eb
+            .selectFrom('form_submissions')
+            .select((eb2) => eb2.fn.countAll<number>().as('c'))
+            .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+            .where('form_submissions.tenant_id', '=', tenantId)
+            .as('submission_count'),
+        )
+        .where('web_forms.tenant_id', '=', tenantId)
+        // Donation forms are surfaced in the unified Forms list too; the frontend routes clicks on
+        // them to the Stripe-backed fundraising editor rather than the living-funnel inline editor.
+        .orderBy('web_forms.updated_at', 'desc')
+        .execute()
+    );
   }
 
   public async countSubmissions(tenantId: string, formId: string): Promise<number> {
