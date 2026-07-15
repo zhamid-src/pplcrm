@@ -27,7 +27,10 @@ import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
 const DEFAULT_FROM_NAME = 'pplCRM Team';
-const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+// Fallback sender for TEST/preview sends only (sendTestEmail), which are allowed before a tenant has
+// verified a sending domain so they can preview to themselves. Real broadcasts never use this — they
+// require the tenant's own verified-domain From address (see send-guards assertTenantMaySendNewsletter).
+const DEFAULT_FROM_EMAIL = 'hello@pplcrm.com';
 
 export interface SendTestEmailInput {
   subject: string;
@@ -418,8 +421,10 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
     checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
 
-    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
-    // from name/email, otherwise fall back to the workspace Communications settings.
+    // Resolve the sender: prefer the caller-supplied from name/email, then the workspace
+    // Communications settings, then the platform preview fallback. Unlike a real broadcast, a test
+    // send is allowed before domain verification (you're previewing to yourself), so the fallback is
+    // acceptable here only.
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])

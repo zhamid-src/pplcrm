@@ -108,7 +108,14 @@ export async function handleSendNewsletter(
   const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
   const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
   const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
-  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+  // A newsletter is the tenant's mail to their own supporters, so it must send from the tenant's own
+  // verified-domain address — never a pplCRM address. assertTenantMaySendNewsletter (the verified-
+  // domain gate) runs before this job is enqueued, so a permitted broadcast always has this set; fail
+  // loudly rather than silently send from the platform domain if that gate is ever bypassed.
+  const fromEmail = settingsMap['communications.default_from_email'];
+  if (!fromEmail) {
+    throw new Error(`Newsletter ${newsletterId}: no verified From address (send-guard invariant violated)`);
+  }
 
   // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
   const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();

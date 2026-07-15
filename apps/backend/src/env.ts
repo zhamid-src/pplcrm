@@ -44,7 +44,7 @@ const envSchema = z.object({
   STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
   STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
   POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
   SENDGRID_API_KEY: z.string().optional(),
   SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
   // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
