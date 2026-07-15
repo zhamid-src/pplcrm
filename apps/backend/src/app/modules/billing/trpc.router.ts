@@ -1,9 +1,12 @@
 import { z } from 'zod';
-import { PURCHASABLE_PLAN_KEYS } from '@common';
+import { maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
 import { adminOrOwnerProcedure, router } from '../../../trpc';
 import { BillingController } from './controller';
 
 const controller = new BillingController();
+
+/** Largest valid Stripe quantity across the purchasable tiers (currently Movement's ladder). */
+const MAX_BRACKET_QUANTITY = Math.max(...PURCHASABLE_PLAN_KEYS.map((key) => maxQuantity(key)));
 
 export const BillingRouter = router({
   getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
@@ -21,7 +24,12 @@ export const BillingRouter = router({
 
   // Local mock testing mutation endpoints
   activateMockPlan: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS), quantity: z.number().int().min(1).max(40).optional() }))
+    .input(
+      z.object({
+        plan: z.enum(PURCHASABLE_PLAN_KEYS),
+        quantity: z.number().int().min(1).max(MAX_BRACKET_QUANTITY).optional(),
+      }),
+    )
     .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity)),
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),

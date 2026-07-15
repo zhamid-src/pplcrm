@@ -8,9 +8,11 @@ import { SiteHeader } from '../ui/site-header';
 import { SIGNUP_URL } from '../ui/site-nav';
 
 /** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000];
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
 
-/** Default slider position: 2,500 subscribers (Grassroots' first bracket). */
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
 const DEFAULT_STOP_INDEX = 1;
 const DEFAULT_STOP = 2_500;
 
@@ -46,19 +48,19 @@ export class PricingPage {
     }
   }
 
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275). */
+  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
   protected priceLabel(plan: PlanDef): string {
     const label = priceLabelAt(plan, this.subscribers());
     const amount = /^\$(\d+)$/.exec(label)?.[1];
     return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
   }
 
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 50,000). */
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
   protected overMax(plan: PlanDef): boolean {
     return priceLabelAt(plan, this.subscribers()) === 'Contact us';
   }
 
-  /** The tier's hard subscriber max, formatted (e.g. "50,000"). */
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
   protected maxSubscribersLabel(plan: PlanDef): string {
     const brackets = plan.pricing?.brackets;
     const last = brackets?.[brackets.length - 1];

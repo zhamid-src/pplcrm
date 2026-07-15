@@ -20,19 +20,21 @@ describe('bracketIndexForSubscribers', () => {
 
   it('grassroots: bracket boundaries including the tier max', () => {
     expect(bracketIndexForSubscribers('grassroots', 0)).toBe(1);
-    expect(bracketIndexForSubscribers('grassroots', 2_500)).toBe(1);
-    expect(bracketIndexForSubscribers('grassroots', 2_501)).toBe(2);
-    expect(bracketIndexForSubscribers('grassroots', 5_000)).toBe(2);
-    expect(bracketIndexForSubscribers('grassroots', 5_001)).toBe(3);
-    expect(bracketIndexForSubscribers('grassroots', 50_000)).toBe(11);
-    expect(bracketIndexForSubscribers('grassroots', 50_001)).toBeNull();
+    expect(bracketIndexForSubscribers('grassroots', 1_000)).toBe(1);
+    expect(bracketIndexForSubscribers('grassroots', 1_001)).toBe(2);
+    expect(bracketIndexForSubscribers('grassroots', 2_500)).toBe(2);
+    expect(bracketIndexForSubscribers('grassroots', 2_501)).toBe(3);
+    expect(bracketIndexForSubscribers('grassroots', 25_000)).toBe(7);
+    expect(bracketIndexForSubscribers('grassroots', 25_001)).toBe(8);
+    expect(bracketIndexForSubscribers('grassroots', 100_000)).toBe(10);
+    expect(bracketIndexForSubscribers('grassroots', 100_001)).toBeNull();
   });
 
-  it('movement: bracket boundaries including the piecewise step change at 20,000', () => {
-    expect(bracketIndexForSubscribers('movement', 5_000)).toBe(1);
-    expect(bracketIndexForSubscribers('movement', 20_000)).toBe(4);
-    expect(bracketIndexForSubscribers('movement', 20_001)).toBe(5);
-    expect(bracketIndexForSubscribers('movement', 200_000)).toBe(40);
+  it('movement: bracket boundaries including the piecewise step change at 25,000', () => {
+    expect(bracketIndexForSubscribers('movement', 1_000)).toBe(1);
+    expect(bracketIndexForSubscribers('movement', 25_000)).toBe(7);
+    expect(bracketIndexForSubscribers('movement', 25_001)).toBe(8);
+    expect(bracketIndexForSubscribers('movement', 200_000)).toBe(11);
     expect(bracketIndexForSubscribers('movement', 200_001)).toBeNull();
   });
 
@@ -42,24 +44,26 @@ describe('bracketIndexForSubscribers', () => {
 });
 
 describe('priceForQuantity', () => {
-  it('grassroots spot checks', () => {
+  it('grassroots spot checks, including the piecewise step change', () => {
+    expect(priceForQuantity('grassroots', 1)).toBe(29);
     expect(priceForQuantity('grassroots', 2)).toBe(49);
-    expect(priceForQuantity('grassroots', 11)).toBe(229);
+    expect(priceForQuantity('grassroots', 7)).toBe(149); // last +$20 bracket
+    expect(priceForQuantity('grassroots', 8)).toBe(219); // first +$70 bracket
+    expect(priceForQuantity('grassroots', 10)).toBe(359);
   });
 
   it('movement spot checks, including the piecewise step change', () => {
-    expect(priceForQuantity('movement', 4)).toBe(195);
-    expect(priceForQuantity('movement', 5)).toBe(225);
-    expect(priceForQuantity('movement', 10)).toBe(375);
-    expect(priceForQuantity('movement', 20)).toBe(675);
-    expect(priceForQuantity('movement', 40)).toBe(1_275);
+    expect(priceForQuantity('movement', 1)).toBe(55);
+    expect(priceForQuantity('movement', 7)).toBe(265); // last +$35 bracket
+    expect(priceForQuantity('movement', 8)).toBe(365); // first +$100 bracket
+    expect(priceForQuantity('movement', 11)).toBe(665);
   });
 });
 
 describe('emailCapForQuantity', () => {
   it('is 12x the subscriber cap on paid tiers', () => {
-    expect(emailCapForQuantity('grassroots', 1)).toBe(2_500 * 12);
-    expect(emailCapForQuantity('movement', 4)).toBe(20_000 * 12);
+    expect(emailCapForQuantity('grassroots', 1)).toBe(1_000 * 12);
+    expect(emailCapForQuantity('movement', 6)).toBe(20_000 * 12);
   });
 
   it('is 2x the subscriber cap on free', () => {
@@ -71,19 +75,19 @@ describe('startingPriceLabel', () => {
   it('labels each displayed plan', () => {
     expect(startingPriceLabel(PLANS_BY_KEY.free)).toBe('$0');
     expect(startingPriceLabel(PLANS_BY_KEY.grassroots)).toBe('From $29');
-    expect(startingPriceLabel(PLANS_BY_KEY.movement)).toBe('From $75');
+    expect(startingPriceLabel(PLANS_BY_KEY.movement)).toBe('From $55');
     expect(startingPriceLabel(PLANS_BY_KEY.enterprise)).toBe('Custom');
   });
 });
 
 describe('priceLabelAt', () => {
   it('returns the live price within the ladder', () => {
-    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 10_000)).toBe('$69');
-    expect(priceLabelAt(PLANS_BY_KEY.movement, 100_000)).toBe('$675');
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 10_000)).toBe('$89');
+    expect(priceLabelAt(PLANS_BY_KEY.movement, 100_000)).toBe('$565');
   });
 
   it('returns "Contact us" past the tier max', () => {
-    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 50_001)).toBe('Contact us');
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 100_001)).toBe('Contact us');
     expect(priceLabelAt(PLANS_BY_KEY.movement, 200_001)).toBe('Contact us');
   });
 

@@ -141,12 +141,12 @@ describe('BillingRouter', () => {
     );
   });
 
-  it('should reject activateMockPlan quantity above the max bracket (40)', async () => {
+  it('should reject activateMockPlan quantity above the max bracket (11, Movement ladder)', async () => {
     const caller = BillingRouter.createCaller({
       auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
     } as any);
 
-    await expect(caller.activateMockPlan({ plan: 'movement', quantity: 41 })).rejects.toMatchObject({
+    await expect(caller.activateMockPlan({ plan: 'movement', quantity: 12 })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     });
   });

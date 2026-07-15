@@ -126,13 +126,13 @@ describe('Usage Limits System', () => {
   describe('getPlanLimits — bracket-aware', () => {
     it('resolves Grassroots limits at quantity 1 vs 2', () => {
       const g1 = getPlanLimits('grassroots', 1);
-      expect(g1.subscribers).toBe(2_500);
-      expect(g1.emails).toBe(30_000); // 12x
+      expect(g1.subscribers).toBe(1_000);
+      expect(g1.emails).toBe(12_000); // 12x
       expect(g1.price).toBe('$29/month');
 
       const g2 = getPlanLimits('grassroots', 2);
-      expect(g2.subscribers).toBe(5_000);
-      expect(g2.emails).toBe(60_000);
+      expect(g2.subscribers).toBe(2_500);
+      expect(g2.emails).toBe(30_000);
       expect(g2.price).toBe('$49/month');
 
       // Seats/storage are flat per tier, independent of quantity.
@@ -140,15 +140,15 @@ describe('Usage Limits System', () => {
       expect(g2.storageBytes).toBe(g1.storageBytes);
     });
 
-    it('resolves the Movement piecewise step change across quantity 4 -> 5', () => {
-      const m4 = getPlanLimits('movement', 4);
-      expect(m4.subscribers).toBe(20_000);
-      expect(m4.price).toBe('$195/month');
+    it('resolves the Movement piecewise step change across quantity 7 -> 8', () => {
+      const m7 = getPlanLimits('movement', 7);
+      expect(m7.subscribers).toBe(25_000);
+      expect(m7.price).toBe('$265/month');
 
-      const m5 = getPlanLimits('movement', 5);
-      expect(m5.subscribers).toBe(25_000);
-      expect(m5.price).toBe('$225/month');
-      expect(m5.seats).toBe(Number.POSITIVE_INFINITY); // unlimited seats
+      const m8 = getPlanLimits('movement', 8);
+      expect(m8.subscribers).toBe(50_000);
+      expect(m8.price).toBe('$365/month');
+      expect(m8.seats).toBe(Number.POSITIVE_INFINITY); // unlimited seats
     });
 
     it('applies the Free plan 2x email multiplier (vs 12x on paid tiers)', () => {
@@ -282,8 +282,8 @@ describe('Usage Limits System', () => {
         .set({ subscription_plan: 'grassroots', subscription_quantity: 1 })
         .where('id', '=', tenantId)
         .execute();
-      // Grassroots bracket 1 tops out at 2,500 — cross it.
-      await insertEmailablePersons(db, tenantId, userId, householdId, 2_501);
+      // Grassroots bracket 1 tops out at 1,000 — cross it.
+      await insertEmailablePersons(db, tenantId, userId, householdId, 1_001);
 
       await checkTenantUsage(tenantId, db);
 
@@ -321,20 +321,20 @@ describe('Usage Limits System', () => {
         .set({ subscription_plan: 'grassroots', subscription_quantity: 5 })
         .where('id', '=', tenantId)
         .execute();
-      // Simulate "over the tier max" without seeding 50,000+ rows — the count itself is not
+      // Simulate "over the tier max" without seeding 100,000+ rows — the count itself is not
       // under test here, `bracketIndexForSubscribers` boundary values are covered in
       // libs/common/src/lib/billing/plans.spec.ts.
       vi.mocked(bracketIndexForSubscribers).mockImplementationOnce(() => null);
 
       await checkTenantUsage(tenantId, db);
 
-      expect(vi.mocked(syncSubscriptionQuantity)).toHaveBeenCalledWith(tenantId, 11); // maxQuantity('grassroots')
+      expect(vi.mocked(syncSubscriptionQuantity)).toHaveBeenCalledWith(tenantId, 10); // maxQuantity('grassroots')
       const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
       const maxEmail = findEmailJob(jobs, (s) => s.includes('outgrown'));
       expect(maxEmail).toBeDefined();
 
       // Second run — dedup flag suppresses a repeat email; the real sync already clamped
-      // subscription_quantity to 11 in mock mode, so a re-clamp doesn't fire again either.
+      // subscription_quantity to 10 in mock mode, so a re-clamp doesn't fire again either.
       vi.mocked(bracketIndexForSubscribers).mockImplementationOnce(() => null);
       await checkTenantUsage(tenantId, db);
       expect(vi.mocked(syncSubscriptionQuantity)).toHaveBeenCalledTimes(1);

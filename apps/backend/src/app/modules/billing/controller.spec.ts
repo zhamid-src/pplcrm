@@ -190,7 +190,7 @@ describe('BillingController.processWebhookEvent — subscription_quantity persis
   });
 
   it('downgrades the billed quantity on invoice.paid when the emailable count has dropped', async () => {
-    // Grassroots bracket 5 tops out at 12,500 — with zero emailable persons seeded, the current
+    // Grassroots bracket 5 tops out at 15,000 — with zero emailable persons seeded, the current
     // bracket resolves to 1, which is below the billed quantity of 5, so invoice.paid (proof
     // we've crossed a cycle boundary) should reconcile the billed quantity down to 1.
     ({ tenantId, customerId } = await seedBillingTenant(db, { subscription_quantity: 5 }));

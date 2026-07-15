@@ -35,20 +35,22 @@
  *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
  *  - All prices are USD.
  *
- * Market calibration (competitive research 2026-07-14, monthly billing): Grassroots beats
- * every full-suite competitor at every count — $49 vs $75 (Mailchimp Essentials) at 5k,
- * $69 vs $110 at 10k, $109 vs $230 at 20k; only newsletter-only beehiiv Scale undercuts it at
- * 50k ($199 vs $229). Movement beats Mailchimp Standard at every count — $75 vs $100 at 5k,
- * $155 vs $230 at 15k, $375 vs $450 at 50k, $675 vs $800 at 100k. Not 75% under — 20–35% under,
+ * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
+ * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
+ * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
+ * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
+ * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
+ * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
  * "cheapest full-featured option" rather than "suspiciously cheap".
  *
  * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
  * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 'inf', unit_amount: 2000 }]
- *    → qty 1 = $29, qty N (N ≥ 2) = $29 + $20·(N−1) = the bracket ladder below.
- *  - Movement: [{ up_to: 1, unit_amount: 7500 }, { up_to: 4, unit_amount: 4000 }, { up_to: 'inf', unit_amount: 3000 }]
- *    → qty 1 = $75, qty 2–4 add $40/step, qty 5+ add $30/step (the piecewise step change at
- *    the 20,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
+ *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
+ *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
+ *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
+ *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
+ *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
  *
  * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
  * price IDs. Display names are intentionally allowed to differ from keys, but here they are
@@ -112,48 +114,42 @@ export interface PlanDef {
 }
 
 /**
- * Build one evenly-stepped run of brackets. `fromUpTo` is the emailable-subscriber cap of the
- * run's FIRST bracket, priced at `startPrice`; each subsequent bracket steps `upTo` by `step`
- * and price by `pricePerStep`, up to and including `toUpTo`. Tiers concatenate one or more
- * runs (plus, where the first bracket doesn't fit the pattern, literal leading brackets) to
- * build their full ladder — see GRASSROOTS_BRACKETS / MOVEMENT_BRACKETS below.
- */
-function linearBrackets(
-  fromUpTo: number,
-  toUpTo: number,
-  step: number,
-  startPrice: number,
-  pricePerStep: number,
-): PriceBracket[] {
-  const brackets: PriceBracket[] = [];
-  for (let upTo = fromUpTo, price = startPrice; upTo <= toUpTo; upTo += step, price += pricePerStep) {
-    brackets.push({ upTo, price });
-  }
-  return brackets;
-}
-
-/**
- * Grassroots ladder — $29 ≤2,500 · $49 ≤5,000 · then +$20 per 5,000 up to 50,000 (11 brackets).
- * Spot prices (qty = 1-based index): 1:$29 (2.5k) · 2:$49 (5k) · 3:$69 (10k) · 4:$89 (15k) ·
- * 5:$109 (20k) · 6:$129 (25k) · 7:$149 (30k) · 8:$169 (35k) · 9:$189 (40k) · 10:$209 (45k) ·
- * 11:$229 (50k, tier max).
+ * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
+ * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
+ * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
+ * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
  */
 const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 2_500, price: 29 },
-  { upTo: 5_000, price: 49 },
-  ...linearBrackets(10_000, 50_000, 5_000, 69, 20),
+  { upTo: 1_000, price: 29 },
+  { upTo: 2_500, price: 49 },
+  { upTo: 5_000, price: 69 },
+  { upTo: 10_000, price: 89 },
+  { upTo: 15_000, price: 109 },
+  { upTo: 20_000, price: 129 },
+  { upTo: 25_000, price: 149 },
+  { upTo: 50_000, price: 219 },
+  { upTo: 75_000, price: 289 },
+  { upTo: 100_000, price: 359 },
 ];
 
 /**
- * Movement ladder — $75 ≤5,000 · then +$40 per 5,000 up to 20,000 · then +$30 per 5,000 up to
- * 200,000 (40 brackets; piecewise step change at the 20,000-subscriber boundary).
- * Spot prices (qty = 1-based index): 1:$75 (5k) · 2:$115 (10k) · 3:$155 (15k) · 4:$195 (20k) ·
- * 5:$225 (25k) · 10:$375 (50k) · 20:$675 (100k) · 40:$1,275 (200k, tier max).
+ * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
+ * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
+ * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
+ * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
  */
 const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 5_000, price: 75 },
-  ...linearBrackets(10_000, 20_000, 5_000, 115, 40),
-  ...linearBrackets(25_000, 200_000, 5_000, 225, 30),
+  { upTo: 1_000, price: 55 },
+  { upTo: 2_500, price: 90 },
+  { upTo: 5_000, price: 125 },
+  { upTo: 10_000, price: 160 },
+  { upTo: 15_000, price: 195 },
+  { upTo: 20_000, price: 230 },
+  { upTo: 25_000, price: 265 },
+  { upTo: 50_000, price: 365 },
+  { upTo: 75_000, price: 465 },
+  { upTo: 100_000, price: 565 },
+  { upTo: 200_000, price: 665 },
 ];
 
 export const PLANS: readonly PlanDef[] = [
@@ -196,7 +192,7 @@ export const PLANS: readonly PlanDef[] = [
     features: [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
-      'Up to 50,000 email subscribers · 12× emails/month',
+      'Up to 100,000 email subscribers · 12× emails/month',
       '5 staff seats · 15 volunteers · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
@@ -218,7 +214,7 @@ export const PLANS: readonly PlanDef[] = [
     displayed: true,
     features: [
       'Everything in Grassroots, plus:',
-      'Scales smoothly from $75/month as your list grows',
+      'Scales smoothly from $55/month as your list grows',
       'Up to 200,000 email subscribers · 12× emails/month',
       'Unlimited staff seats & volunteers · 200 GB storage',
       'Canvassing & deliveries companion apps',
@@ -340,7 +336,7 @@ export function priceForQuantity(key: PlanKey, qty: number): number {
 }
 
 /** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $75' (movement), 'Custom' (enterprise). */
+ * 'From $55' (movement), 'Custom' (enterprise). */
 export function startingPriceLabel(plan: PlanDef): string {
   if (!plan.pricing) return 'Custom';
   const first = plan.pricing.brackets[0];
@@ -413,7 +409,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     rows: [
       {
         label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 50,000', movement: 'Up to 200,000' },
+        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
       },
       {
         label: 'Emails / month',

@@ -43,7 +43,7 @@ export interface BillingUsageSnapshot {
 /** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
  * slider so the two surfaces feel identical. */
 const SUBSCRIBER_SLIDER_STOPS = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000,
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
 ] as const;
 
 function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
