@@ -64,6 +64,7 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
       await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletter_send_log').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
 
       // ── Ops & Platform ─────────────────────────────────────────────────
@@ -104,8 +105,9 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
       await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
 
       // ── Auth & Identity (last) ─────────────────────────────────────────
-      // Null out FK references on tenants before deleting authusers
-      await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
+      // Null out BOTH authusers FKs on tenants before deleting authusers (fk_admin_id AND
+      // fk_createdby_id — missing the latter aborts the whole wipe with a 23503).
+      await trx.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tid).execute();
       await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
