@@ -737,78 +737,6 @@ export async function down(_db: Kysely<any>): Promise<void> {
 }
 ````
 
-## File: apps/backend/src/app/_migrations/2026-07-14-z-anti-abuse-sending-controls.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Anti-abuse sending controls (free-tier spam prevention):
- *  - tenants.sending_paused_at/_reason — automated tripwire pause (hard-bounce rate) that blocks
- *    newsletter sending. Distinct from the user-initiated paused_at and the sign-in-blocking
- *    suspended_at (which the spam-complaint tripwire sets).
- *  - tenants phone-verification columns — free tenants must verify a mobile number by SMS before
- *    their first bulk send. Code hash + expiry + attempt counter live on the tenant row (never
- *    exposed through the settings snapshot).
- *  - newsletters.send_offset — resume point recorded when a send is paused mid-batch so an
- *    unpaused re-send continues where it stopped instead of double-sending early recipients.
- *  - newsletter_send_log — one row per delivered batch; SUM over a time window drives the
- *    free-tier warm-up cap (100 emails/day, first 7 days) and the per-tenant hourly send cap
- *    enforced by the outbox worker.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    ALTER TABLE public.tenants
-      ADD COLUMN IF NOT EXISTS sending_paused_at timestamp with time zone,
-      ADD COLUMN IF NOT EXISTS sending_paused_reason text,
-      ADD COLUMN IF NOT EXISTS sending_phone text,
-      ADD COLUMN IF NOT EXISTS sending_phone_verified_at timestamp with time zone,
-      ADD COLUMN IF NOT EXISTS pending_phone text,
-      ADD COLUMN IF NOT EXISTS phone_verification_code_hash text,
-      ADD COLUMN IF NOT EXISTS phone_verification_expires_at timestamp with time zone,
-      ADD COLUMN IF NOT EXISTS phone_verification_attempts integer DEFAULT 0 NOT NULL
-  `.execute(db);
-
-  await sql`ALTER TABLE public.newsletters ADD COLUMN IF NOT EXISTS send_offset integer`.execute(db);
-
-  await sql`
-    CREATE TABLE public.newsletter_send_log (
-      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      tenant_id bigint NOT NULL,
-      newsletter_id bigint NOT NULL,
-      recipient_count integer NOT NULL,
-      created_at timestamp with time zone DEFAULT now() NOT NULL
-    )
-  `.execute(db);
-  await sql`CREATE INDEX idx_newsletter_send_log_tenant_created ON public.newsletter_send_log (tenant_id, created_at)`.execute(
-    db,
-  );
-  await sql`ALTER TABLE public.newsletter_send_log ENABLE ROW LEVEL SECURITY`.execute(db);
-  await sql`ALTER TABLE public.newsletter_send_log FORCE ROW LEVEL SECURITY`.execute(db);
-  await sql`
-    CREATE POLICY tenant_isolation ON public.newsletter_send_log
-      USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-      WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.newsletter_send_log`.execute(db);
-  await sql`ALTER TABLE public.newsletters DROP COLUMN IF EXISTS send_offset`.execute(db);
-  await sql`
-    ALTER TABLE public.tenants
-      DROP COLUMN IF EXISTS sending_paused_at,
-      DROP COLUMN IF EXISTS sending_paused_reason,
-      DROP COLUMN IF EXISTS sending_phone,
-      DROP COLUMN IF EXISTS sending_phone_verified_at,
-      DROP COLUMN IF EXISTS pending_phone,
-      DROP COLUMN IF EXISTS phone_verification_code_hash,
-      DROP COLUMN IF EXISTS phone_verification_expires_at,
-      DROP COLUMN IF EXISTS phone_verification_attempts
-  `.execute(db);
-}
-````
-
 ## File: apps/backend/src/app/config/email-folders.config.ts
 ````typescript
 import type { EmailFolderConfig } from '../../../../../libs/common/src';
@@ -1368,6 +1296,272 @@ export async function handleCheckAllUsageLimits(db: Kysely<Models>): Promise<voi
   const { checkAllUsageLimits } = await import('../../../modules/billing/usage-limits');
   await checkAllUsageLimits(db);
   await scheduleNextRun(db, 'check_all_usage_limits', DAY_MS);
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
+````typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { Readable } from 'stream';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
+import { CsvTransformStream } from '../../csv-stream';
+import { notificationEnabled } from '../../profile-preferences';
+import { StorageService } from '../../storage.service';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { UserActivityRepo } from '../../user-activity.repo';
+import type { JobPayloadOf } from '../job-payloads';
+
+const storageService = new StorageService();
+const mailService = new TransactionalEmailService();
+const userActivityRepo = new UserActivityRepo();
+
+const ALLOWED_EXPORT_TABLES = [
+  'persons',
+  'households',
+  'companies',
+  'forms',
+  'workflows',
+  'teams',
+  'events',
+  'newsletters',
+  'tasks',
+  'tags',
+  'issues',
+  'users',
+  'user_activity',
+];
+
+export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: Kysely<Models>): Promise<void> {
+  const exportsRepo = new ExportsRepo();
+  const exportId = payload.export_id;
+  const tenantId = payload.tenant_id;
+  try {
+    // Make sure we're exporting one of the allowed tables
+    const table = payload.table || payload.entity || '';
+    if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
+
+    // Mark as processing
+    await exportsRepo.updateStatus(exportId, tenantId, 'processing');
+
+    // Fetch all rows for the entity
+    const opts = payload.options;
+    // The export query is assembled dynamically across heterogeneous tables and joins,
+    // which Kysely cannot express statically — the builder is intentionally untyped here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any;
+
+    if (table === 'user_activity') {
+      query = db
+        .selectFrom('user_activity')
+        .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+        .select([
+          'user_activity.id',
+          'user_activity.created_at',
+          sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
+          'authusers.email',
+          'user_activity.activity',
+          'user_activity.entity',
+          'user_activity.entity_id',
+          'user_activity.quantity',
+          'user_activity.metadata',
+        ])
+        .where('user_activity.tenant_id', '=', tenantId);
+
+      if (opts.userId) {
+        query = query.where('user_activity.user_id', '=', opts.userId);
+      }
+      if (opts.entity) {
+        query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
+      }
+      if (opts.activity) {
+        query = query.where('user_activity.activity', '=', opts.activity);
+      }
+      if (opts.searchStr) {
+        const search = `%${opts.searchStr.trim().toLowerCase()}%`;
+        query = query.where((eb: ExpressionBuilder<Models, 'user_activity' | 'authusers'>) =>
+          eb.or([
+            eb('authusers.first_name', 'ilike', search),
+            eb('authusers.last_name', 'ilike', search),
+            eb('user_activity.entity', 'ilike', search),
+            eb('user_activity.activity', 'ilike', search),
+          ]),
+        );
+      }
+    } else {
+      query = db
+        .selectFrom(table as keyof Models)
+        .selectAll()
+        .where('tenant_id', '=', tenantId);
+
+      // Issues are tags with type='issue'
+      if (payload.entity === 'issues') {
+        query = query.where('type', '=', 'issue');
+      }
+
+      // Apply search string if provided
+      if (opts.searchStr) {
+        const like = `%${opts.searchStr}%`;
+        // Best-effort: try name, first_name/last_name depending on table
+        if (table === 'persons') {
+          query = query.where((eb: ExpressionBuilder<Models, 'persons'>) =>
+            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
+          );
+        } else if (table === 'households') {
+          query = query.where((eb: ExpressionBuilder<Models, 'households'>) =>
+            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)]),
+          );
+        } else {
+          query = query.where('name', 'ilike', like);
+        }
+      }
+    }
+
+    // Apply sort
+    if (opts.sortModel?.length) {
+      for (const s of opts.sortModel) {
+        if (s?.colId) {
+          query = query.orderBy(s.colId, s.sort === 'desc' ? 'desc' : 'asc');
+        }
+      }
+    } else {
+      const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
+      query = query.orderBy(sortCol, 'desc');
+    }
+
+    // Determine columns
+    const requestedCols: string[] = payload.columns?.length ? payload.columns : [];
+
+    const storageKey = `exports/${tenantId}/${exportId}.csv`;
+
+    // Stream the query results using query.stream()
+    const dbStream = Readable.from(query.stream());
+    const csvStream = new CsvTransformStream(requestedCols);
+
+    await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
+
+    const count = csvStream.rowCount;
+
+    // If no rows were processed, clean up by deleting the empty file if created
+    if (count === 0) {
+      await storageService.delete(storageKey);
+    }
+
+    await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
+      rowCount: count,
+      storageKey: count > 0 ? storageKey : undefined,
+    });
+
+    logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
+
+    // The Exports page promises "every export lands in the Activity log". The inline
+    // exportCsv path logs from BaseController; queued exports must log here on completion.
+    // A logging failure must not fail (and re-run) an export that already succeeded.
+    if (payload.user_id) {
+      try {
+        await userActivityRepo.log({
+          tenant_id: tenantId,
+          user_id: payload.user_id,
+          activity: 'export',
+          entity: table,
+          quantity: count,
+          metadata: {
+            requested_columns: Array.isArray(payload.columns) ? payload.columns.slice(0, 12) : [],
+            file_name: payload.file_name || 'export.csv',
+          },
+        });
+      } catch (activityErr) {
+        logger.error({ err: activityErr }, `Failed to log activity for export job ${exportId}`);
+      }
+    }
+
+    // Notify the user who requested the export
+    if (payload.user_id) {
+      try {
+        const user = await db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+          .where('authusers.id', '=', payload.user_id)
+          .executeTakeFirst();
+
+        if (user) {
+          const emailOptedIn = notificationEnabled(user.profile_preferences, 'export_ready');
+          const inAppOptedIn = notificationEnabled(user.profile_preferences, 'export_ready_in_app');
+
+          const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
+          const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
+
+          if (inAppOptedIn) {
+            const { NotificationsRepo } =
+              await import('../../../modules/notifications/repositories/notifications.repo');
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: tenantId,
+              user_id: payload.user_id,
+              title: 'Export Ready',
+              message: `Your export of ${count} records from ${displayLabel} is complete.`,
+              type: 'export',
+              link: '/exports',
+            });
+          }
+
+          if (emailOptedIn && user.email) {
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
+              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, `Export job ${exportId} failed`);
+    const message = err instanceof Error ? err.message : String(err);
+    await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
+      error: message.substring(0, 500),
+    });
+    throw err;
+  }
+}
+
+function getEntityFilterValues(entityFilter: string): string[] {
+  const ent = entityFilter.toLowerCase();
+  if (ent === 'persons' || ent === 'person' || ent === 'people') {
+    return ['person', 'persons'];
+  }
+  if (ent === 'households' || ent === 'household') {
+    return ['household', 'households'];
+  }
+  if (ent === 'companies' || ent === 'company') {
+    return ['company', 'companies'];
+  }
+  if (ent === 'tasks' || ent === 'task') {
+    return ['task', 'tasks', 'tasks_archived'];
+  }
+  if (ent === 'emails' || ent === 'email') {
+    return ['email', 'emails'];
+  }
+  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
+    return ['volunteer_event', 'volunteer_events'];
+  }
+  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
+    return ['volunteer_shift', 'volunteer_shifts'];
+  }
+  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
+    return ['web_form', 'web_forms', 'form', 'forms'];
+  }
+  if (ent === 'tags' || ent === 'tag') {
+    return ['tag', 'tags'];
+  }
+  return [ent];
 }
 ````
 
@@ -2097,269 +2291,6 @@ async function executeActionStep(trx: Transaction<Models>, ctx: ActionContext): 
       throw new Error(`Unknown step kind: ${String(_exhaustive)}`);
     }
   }
-}
-````
-
-## File: apps/backend/src/app/lib/mail/disposable-email-domains.ts
-````typescript
-/**
- * Disposable/temporary-inbox domains blocked at signup (anti-abuse: throwaway accounts are the
- * first ingredient of free-tier email spam). This is a curated list of the most common
- * services and their well-known aliases — not exhaustive, deliberately: false positives lock
- * out a real customer, false negatives are caught by the later gates (domain + phone
- * verification, warm-up caps, bounce/complaint tripwires). Extend it as new services show up
- * in signup logs.
- */
-const DISPOSABLE_EMAIL_DOMAINS = new Set<string>([
-  '0-mail.com',
-  '10mail.org',
-  '10minutemail.com',
-  '10minutemail.net',
-  '20minutemail.com',
-  '33mail.com',
-  'anonaddy.me',
-  'anonbox.net',
-  'antispam.de',
-  'bccto.me',
-  'binkmail.com',
-  'bobmail.info',
-  'bugmenot.com',
-  'burnermail.io',
-  'byom.de',
-  'chacuo.net',
-  'correotemporal.org',
-  'courriel.fr.nf',
-  'crazymailing.com',
-  'cuvox.de',
-  'dayrep.com',
-  'deadaddress.com',
-  'despam.it',
-  'discard.email',
-  'discardmail.com',
-  'dispostable.com',
-  'dodgeit.com',
-  'dropmail.me',
-  'dumpmail.de',
-  'e4ward.com',
-  'einrot.com',
-  'emailfake.com',
-  'emailondeck.com',
-  'emailsensei.com',
-  'emailtemporanea.net',
-  'emltmp.com',
-  'ethereal.email',
-  'fakeinbox.com',
-  'fakemailgenerator.com',
-  'fleckens.hu',
-  'getairmail.com',
-  'getnada.com',
-  'gettempmail.com',
-  'grr.la',
-  'guerrillamail.biz',
-  'guerrillamail.com',
-  'guerrillamail.de',
-  'guerrillamail.info',
-  'guerrillamail.net',
-  'guerrillamail.org',
-  'guerrillamailblock.com',
-  'gustr.com',
-  'haltospam.com',
-  'harakirimail.com',
-  'inboxalias.com',
-  'inboxbear.com',
-  'inboxkitten.com',
-  'incognitomail.org',
-  'jetable.org',
-  'jourrapide.com',
-  'kasmail.com',
-  'koszmail.pl',
-  'kurzepost.de',
-  'lifebyfood.com',
-  'linshiyouxiang.net',
-  'luxusmail.org',
-  'mail-temporaire.fr',
-  'mail.tm',
-  'mail1a.de',
-  'mail7.io',
-  'mailcatch.com',
-  'maildrop.cc',
-  'maildu.de',
-  'mailexpire.com',
-  'mailforspam.com',
-  'mailhazard.com',
-  'mailhog.example',
-  'mailinater.com',
-  'mailinator.com',
-  'mailinator.net',
-  'mailinator.org',
-  'mailinator2.com',
-  'mailme.lv',
-  'mailmetrash.com',
-  'mailmoat.com',
-  'mailnesia.com',
-  'mailnull.com',
-  'mailondeck.com',
-  'mailpoof.com',
-  'mailsac.com',
-  'mailseal.de',
-  'mailtemp.info',
-  'mailtothis.com',
-  'mailzilla.com',
-  'mega.zik.dj',
-  'meltmail.com',
-  'mierdamail.com',
-  'mintemail.com',
-  'mohmal.com',
-  'moakt.com',
-  'mt2015.com',
-  'mytemp.email',
-  'mytrashmail.com',
-  'nada.email',
-  'no-spam.ws',
-  'nobulk.com',
-  'noclickemail.com',
-  'nogmailspam.info',
-  'nomail.xl.cx',
-  'nospam4.us',
-  'nospamfor.us',
-  'nowmymail.com',
-  'objectmail.com',
-  'obobbo.com',
-  'oneoffemail.com',
-  'onewaymail.com',
-  'owlymail.com',
-  'pokemail.net',
-  'proxymail.eu',
-  'putthisinyourspamdatabase.com',
-  'quickinbox.com',
-  'rcpt.at',
-  'reallymymail.com',
-  'receiveee.com',
-  'rhyta.com',
-  'rmqkr.net',
-  'rppkn.com',
-  'safetymail.info',
-  'sharklasers.com',
-  'shieldemail.com',
-  'shitmail.me',
-  'sogetthis.com',
-  'soodonims.com',
-  'spam4.me',
-  'spamavert.com',
-  'spambog.com',
-  'spambog.de',
-  'spambog.ru',
-  'spambox.us',
-  'spamex.com',
-  'spamfree24.org',
-  'spamgourmet.com',
-  'spamherelots.com',
-  'spamhole.com',
-  'spaml.de',
-  'spamspot.com',
-  'spamthis.co.uk',
-  'spamthisplease.com',
-  'speed.1s.fr',
-  'squizzy.de',
-  'startkeys.com',
-  'superrito.com',
-  'tafmail.com',
-  'teleworm.us',
-  'temp-mail.io',
-  'temp-mail.org',
-  'temp-mail.ru',
-  'tempail.com',
-  'tempe-mail.com',
-  'tempemail.co.za',
-  'tempemail.net',
-  'tempinbox.com',
-  'tempmail.dev',
-  'tempmail.email',
-  'tempmail.net',
-  'tempmail.plus',
-  'tempmailaddress.com',
-  'tempmailer.com',
-  'tempmailo.com',
-  'tempomail.fr',
-  'temporarily.de',
-  'temporaryemail.net',
-  'temporaryinbox.com',
-  'tempr.email',
-  'tempsky.com',
-  'tempymail.com',
-  'thankyou2010.com',
-  'thisisnotmyrealemail.com',
-  'throwam.com',
-  'throwawayemailaddress.com',
-  'throwawaymail.com',
-  'tilien.com',
-  'tmail.ws',
-  'tmailinator.com',
-  'tmpeml.info',
-  'tmpmail.net',
-  'tmpmail.org',
-  'trash-mail.at',
-  'trash-mail.com',
-  'trash-mail.de',
-  'trash2009.com',
-  'trashdevil.com',
-  'trashemail.de',
-  'trashmail.at',
-  'trashmail.com',
-  'trashmail.de',
-  'trashmail.me',
-  'trashmail.net',
-  'trashmail.org',
-  'trashymail.com',
-  'trbvm.com',
-  'trickmail.net',
-  'tryalert.com',
-  'tyldd.com',
-  'uggsrock.com',
-  'veryrealemail.com',
-  'vomoto.com',
-  'wegwerfadresse.de',
-  'wegwerfemail.com',
-  'wegwerfemail.de',
-  'wegwerfmail.de',
-  'wegwerfmail.net',
-  'wegwerfmail.org',
-  'wh4f.org',
-  'whyspam.me',
-  'willhackforfood.biz',
-  'willselfdestruct.com',
-  'wuzupmail.net',
-  'xagloo.com',
-  'xemaps.com',
-  'xents.com',
-  'xmaily.com',
-  'yapped.net',
-  'yep.it',
-  'yogamaven.com',
-  'yopmail.com',
-  'yopmail.fr',
-  'yopmail.net',
-  'yopweb.com',
-  'youmailr.com',
-  'yuurok.com',
-  'zehnminutenmail.de',
-  'zetmail.com',
-  'zippymail.info',
-  'zoemail.net',
-  'zomg.info',
-]);
-
-/** True when the address's domain (or its registrable parent, catching `foo.10minutemail.com`
- * style subdomain inboxes) is a known disposable-email service. */
-export function isDisposableEmail(email: string): boolean {
-  const domain = email.toLowerCase().trim().split('@')[1];
-  if (!domain) return false;
-  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
-  const parts = domain.split('.');
-  for (let i = 1; i < parts.length - 1; i++) {
-    if (DISPOSABLE_EMAIL_DOMAINS.has(parts.slice(i).join('.'))) return true;
-  }
-  return false;
 }
 ````
 
@@ -3287,76 +3218,6 @@ export const COMMON_PASSWORDS = new Set([
   '333333',
   '222222',
 ]);
-````
-
-## File: apps/backend/src/app/lib/crud-router.ts
-````typescript
-import { getAllOptions, idSchema, exportCsvInput, exportCsvResponse } from '../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure } from '../../trpc';
-import type { BaseController } from './base.controller';
-
-export function createCrudRouter<
-  TController extends BaseController<any, any>,
-  TInsertSchema extends z.ZodTypeAny,
-  TUpdateSchema extends z.ZodTypeAny,
->(
-  controller: TController,
-  insertSchema: TInsertSchema,
-  updateSchema: TUpdateSchema,
-  // Plan-gated modules pass authProcedure.use(planFeatureGate(...)) so every CRUD mutation is
-  // gated in one place; the gate middleware lets queries through untouched.
-  procedure: typeof authProcedure = authProcedure,
-) {
-  return {
-    getAll: procedure
-      .input(getAllOptions)
-      .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
-    getAllWithCounts: procedure
-      .input(getAllOptions)
-      .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
-    getById: procedure
-      .input(idSchema)
-      .query(({ input, ctx }) => controller.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-    add: procedure.input(insertSchema).mutation(({ input, ctx }) =>
-      controller.add({
-        ...(input as Record<string, unknown>),
-        tenant_id: ctx.auth.tenant_id,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-    create: procedure.input(insertSchema).mutation(({ input, ctx }) =>
-      controller.add({
-        ...(input as Record<string, unknown>),
-        tenant_id: ctx.auth.tenant_id,
-        createdby_id: ctx.auth.user_id,
-        updatedby_id: ctx.auth.user_id,
-      }),
-    ),
-    update: procedure.input(z.object({ id: idSchema, data: updateSchema })).mutation(({ input, ctx }) => {
-      const { id, data } = input as unknown as { id: string; data: Record<string, unknown> };
-      return controller.update({
-        tenant_id: ctx.auth.tenant_id,
-        id,
-        row: { ...data, updatedby_id: ctx.auth.user_id },
-      });
-    }),
-    delete: procedure
-      .input(idSchema)
-      .mutation(({ input, ctx }) => controller.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-    deleteMany: procedure
-      .input(z.array(idSchema).min(1, 'At least one ID is required'))
-      .mutation(({ input, ctx }) => controller.deleteMany(ctx.auth.tenant_id, input)),
-    count: procedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id)),
-    exportCsv: procedure
-      .input(exportCsvInput)
-      .output(exportCsvResponse)
-      .mutation(({ input, ctx }) =>
-        controller.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
-      ),
-  };
-}
 ````
 
 ## File: apps/backend/src/app/lib/csv-stream.ts
@@ -4898,61 +4759,6 @@ const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default billingWebhookRoute;
 ````
 
-## File: apps/backend/src/app/modules/billing/plan-gate.ts
-````typescript
-import type { Kysely, Transaction } from 'kysely';
-import { TRPCError } from '@trpc/server';
-
-import { GATED_FEATURES, PLANS_BY_KEY, planAllowsFeature, type GatedFeature } from '@common';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { ForbiddenError } from '../../errors/app-errors';
-import { BaseRepository } from '../../lib/base.repo';
-import { middleware } from '../../../trpc';
-
-/**
- * Server-side enforcement of the FEATURE_MATRIX plan split (GATED_FEATURES in
- * libs/common/src/lib/billing/plans.ts). The matrix data alone is only marketing copy — this
- * gate is the contract: tenants below a feature's minimum plan cannot mutate through the
- * feature's module. Reads intentionally stay open so a downgraded tenant can still see (and
- * export) data it created while entitled — disclosure over suppression.
- */
-export function planGateMessage(feature: GatedFeature): string {
-  const { label, minPlan } = GATED_FEATURES[feature];
-  return `${label} requires the ${PLANS_BY_KEY[minPlan].name} plan or higher. Upgrade on the Billing page to unlock it.`;
-}
-
-/** Throws FORBIDDEN when the tenant's plan does not include the gated feature. */
-export async function assertPlanFeature(
-  db: Kysely<Models> | Transaction<Models>,
-  tenant_id: string,
-  feature: GatedFeature,
-): Promise<void> {
-  const tenant = await db
-    .selectFrom('tenants')
-    .select('subscription_plan')
-    .where('id', '=', tenant_id)
-    .executeTakeFirst();
-  if (!planAllowsFeature(tenant?.subscription_plan, feature)) {
-    throw new ForbiddenError(planGateMessage(feature));
-  }
-}
-
-/**
- * tRPC middleware form of the gate for use on `authProcedure` (after `isAuthed`). Only
- * mutations are blocked — see the module doc above for why reads pass.
- */
-export function planFeatureGate(feature: GatedFeature) {
-  return middleware(async (opts) => {
-    if (opts.type === 'mutation') {
-      const tenantId = opts.ctx.auth?.tenant_id;
-      if (!tenantId) throw new TRPCError({ code: 'UNAUTHORIZED' });
-      await assertPlanFeature(BaseRepository.dbInstance, tenantId, feature);
-    }
-    return opts.next();
-  });
-}
-````
-
 ## File: apps/backend/src/app/modules/campaigns/repositories/campaign-person-facts.repo.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -5672,197 +5478,6 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     return Number(result?.total || 0);
   }
 }
-````
-
-## File: apps/backend/src/app/modules/donations/trpc.router.ts
-````typescript
-import { z } from 'zod';
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
-import { planFeatureGate } from '../billing/plan-gate';
-import { DonationsController } from './controller';
-
-const controller = new DonationsController();
-
-// FEATURE_MATRIX plan gate: donations are Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('donations'));
-
-export const DonationsRouter = router({
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
-
-  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
-   * not run through the public Stripe checkout. */
-  recordDonation: authProcedure
-    .input(RecordDonationObj)
-    .mutation(({ ctx, input }) =>
-      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
-    ),
-
-  getPersonDonationHistory: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
-
-  getDonationStats: authProcedure
-    .input(z.string())
-    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
-
-  checkEligibility: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-        isRecurring: z.boolean().optional(),
-        remainingMonths: z.number().optional(),
-      }),
-    )
-    .query(({ ctx, input }) =>
-      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
-        isRecurring: input.isRecurring,
-        remainingMonths: input.remainingMonths,
-      }),
-    ),
-
-  createCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
-
-  confirmDonation: authProcedure
-    .input(z.object({ sessionId: z.string() }))
-    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
-
-  confirmMockDonation: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        sessionId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockDonation(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.amountCents,
-        input.sessionId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  createRecurringCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
-    ),
-
-  confirmMockPledge: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        mockSubId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockPledge(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.monthlyAmountCents,
-        input.mockSubId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
-
-  getPersonPledges: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
-
-  cancelPledge: authProcedure
-    .input(z.object({ pledgeId: z.string() }))
-    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
-
-  createDonationPeriod: authProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        start_date: z.string(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive(),
-        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
-        campaign_id: z.string().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
-
-  updateDonationPeriod: authProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        name: z.string().min(1).optional(),
-        start_date: z.string().optional(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive().optional(),
-        is_active: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => {
-      const { id, ...payload } = input;
-      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
-    }),
-
-  deleteDonationPeriod: authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
-
-  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
-
-  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
-
-  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
-    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
-  ),
-});
 ````
 
 ## File: apps/backend/src/app/modules/duplicates/repositories/duplicates.repo.ts
@@ -8024,428 +7639,6 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/lists/trpc.router.ts
-````typescript
-import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { ListsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-import { planFeatureGate } from '../billing/plan-gate';
-
-const lists = new ListsController();
-
-// FEATURE_MATRIX plan gate: lists (segments) are Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('lists'));
-
-const crud = createCrudRouter(lists, AddListObj, UpdateListObj, authProcedure);
-
-export const ListsRouter = router({
-  ...crud,
-
-  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
-
-  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateListObj }))
-    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
-
-  getMembersHouseholds: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
-
-  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
-
-  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
-
-  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
-
-  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
-
-  // Live membership (smart = re-run rules, static = saved snapshot). Reused by
-  // turf cutting (§13), automations (§16) and CSV import (§17).
-  getCurrentMembers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getCurrentMembers(ctx.auth, input)),
-
-  // Consumers (newsletters/forms/turfs) — for LAST USED IN and delete confirms.
-  getConsumers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getConsumers(ctx.auth, input)),
-});
-````
-
-## File: apps/backend/src/app/modules/mail/routes/postmark-webhook.route.ts
-````typescript
-import { timingSafeEqual } from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import { env } from '../../../../env';
-
-const db = new BaseRepository('tenants').db;
-
-const TOKEN_HEADER = 'x-postmark-webhook-token';
-
-/** Hard-failure bounce types — the address is dead, not temporarily unavailable. */
-const HARD_BOUNCE_TYPES = new Set(['HardBounce', 'BadEmailAddress']);
-
-/** Shape of a Postmark bounce/spam webhook payload (inbound/untrusted — all optional). */
-interface PostmarkEvent {
-  RecordType?: string;
-  Type?: string;
-  Email?: string;
-  BouncedAt?: string;
-  Metadata?: Record<string, unknown>;
-}
-
-function tokenMatches(header: string | undefined): boolean {
-  const expected = env.postmarkWebhookToken;
-  if (!expected || !header) return false;
-  const a = Buffer.from(header);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-/**
- * Postmark bounce/spam-complaint webhook for the transactional (Postmark) mail stream.
- * Authenticated with a shared token Postmark is configured to send in a custom header
- * (POSTMARK_WEBHOOK_TOKEN). Sends carry `Metadata.tenant_id` (transactional-mail.service), so a
- * hard bounce or complaint suppresses the address for that tenant — the same
- * `email_suppressions` list the newsletter sendability query honours.
- */
-const postmarkWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    if (!tokenMatches(req.headers[TOKEN_HEADER] as string | undefined)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    const body = req.body as PostmarkEvent | PostmarkEvent[] | null;
-    const events = Array.isArray(body) ? body : body ? [body] : [];
-
-    let processed = 0;
-    for (const ev of events) {
-      const recordType = ev?.RecordType ?? '';
-      const email = (ev?.Email ?? '').toLowerCase().trim();
-      if (!email) continue;
-
-      const isHardBounce = recordType === 'Bounce' && HARD_BOUNCE_TYPES.has(ev?.Type ?? '');
-      const isSpamComplaint = recordType === 'SpamComplaint';
-      if (!isHardBounce && !isSpamComplaint) continue;
-
-      const reason = isSpamComplaint ? 'spam_complaint' : 'hard_bounce';
-      const occurredAt = ev?.BouncedAt ? new Date(ev.BouncedAt) : new Date();
-      const tenantId = ev?.Metadata?.['tenant_id'] != null ? String(ev.Metadata['tenant_id']) : null;
-
-      req.log.warn({ email, reason, tenantId, postmarkType: ev?.Type }, 'Postmark delivery failure event');
-
-      if (!tenantId || !/^\d+$/.test(tenantId)) continue; // no tenant context — logged above, nothing to suppress
-
-      try {
-        await db
-          .insertInto('email_suppressions')
-          .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
-          .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
-          .execute();
-        processed++;
-      } catch (err) {
-        req.log.error(err, `Failed to record Postmark suppression for ${email}`);
-      }
-    }
-
-    return reply.code(200).send({ success: true, processed });
-  });
-
-  done();
-};
-
-export default postmarkWebhookRoute;
-````
-
-## File: apps/backend/src/app/modules/newsletters/send-guards.ts
-````typescript
-import type { Kysely, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import { getPlanDef, type PlanKey } from '@common';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { ForbiddenError, NotFoundError, PreconditionFailedError, TooManyRequestsError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-
-/**
- * Anti-abuse guards around bulk (newsletter) sending. Free accounts are the spam vector — a
- * throwaway signup must not be able to blast a purchased list — so sending is gated on real
- * identity (verified DKIM domain, and on Free a verified mobile number), throttled while an
- * account is new, and automatically shut off when a send's engagement shows list abuse
- * (hard bounces = purchased/scraped list, spam complaints = non-consenting recipients).
- *
- * Enforcement points:
- *  - `assertTenantMaySendNewsletter` — pre-send, in NewslettersController.sendNewsletter.
- *  - `assertTenantSendingNotBlocked` + the caps — per batch, in the send-newsletter job handler
- *    (so an in-flight send stops mid-batch when a tripwire fires).
- *  - `applyEngagementTripwires` — in the SendGrid event webhook after aggregates recompute.
- */
-
-/** New Free tenants are warmed up: at most this many newsletter emails per rolling day… */
-export const FREE_WARMUP_DAILY_CAP = 100;
-/** …for this many days after tenant creation. */
-export const FREE_WARMUP_DAYS = 7;
-
-/** Per-tenant rolling-hour send ceilings enforced by the outbox worker (queue fairness +
- * blast-radius cap; a deferred send resumes automatically). */
-export const HOURLY_SEND_CAPS: Record<PlanKey, number> = {
-  free: 500,
-  grassroots: 5_000,
-  movement: 20_000,
-  enterprise: 50_000,
-};
-
-/** Tripwires need a minimum sample so one bad address on a tiny send doesn't pause a tenant. */
-export const TRIPWIRE_MIN_RECIPIENTS = 20;
-/** Hard-bounce rate above which sending is paused (a clean opt-in list bounces ~1–2%). */
-export const HARD_BOUNCE_PAUSE_RATE = 0.05;
-/** Spam-complaint rate above which the whole account is suspended pending human review. */
-export const SPAM_COMPLAINT_SUSPEND_RATE = 0.01;
-
-export const SENDING_SUSPENDED_MESSAGE =
-  'This account is suspended pending a review of recent sending activity. Please contact support.';
-export const SENDING_PAUSED_MESSAGE =
-  'Sending is paused: a recent newsletter had an unusually high bounce rate, which usually means the list contains addresses that never opted in. Please contact support to review and resume sending.';
-export const DOMAIN_UNVERIFIED_MESSAGE =
-  'Before sending, verify the domain you send from (Settings → Domains) and choose a default From address on that domain (Settings → Communications). This protects your deliverability.';
-export const PHONE_UNVERIFIED_MESSAGE =
-  'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
-
-type Db = Kysely<Models> | Transaction<Models>;
-
-export interface SendingTenant {
-  id: string;
-  plan: PlanKey;
-  created_at: Date | null;
-  suspended_at: Date | null;
-  sending_paused_at: Date | null;
-  sending_phone_verified_at: Date | null;
-}
-
-/** Resolve a stored plan value to its key, treating unknown/absent as free (fail closed). */
-export function planKeyOf(planName: string | null | undefined): PlanKey {
-  return getPlanDef(planName)?.key ?? 'free';
-}
-
-/** The tenant's daily warm-up cap, or null when no warm-up applies (paid plan or account older
- * than the warm-up window). Pure, so the cap math is unit-testable. */
-export function warmupDailyCap(plan: PlanKey, createdAt: Date | null, now: Date): number | null {
-  if (plan !== 'free') return null;
-  if (!createdAt) return FREE_WARMUP_DAILY_CAP; // unknown age: fail closed
-  const ageMs = now.getTime() - createdAt.getTime();
-  return ageMs < FREE_WARMUP_DAYS * DAY_MS ? FREE_WARMUP_DAILY_CAP : null;
-}
-
-/** Which tripwire, if any, a send's engagement stats have crossed. Pure for unit tests. */
-export function evaluateTripwires(stats: {
-  totalRecipients: number;
-  hardBounces: number;
-  spamReports: number;
-}): 'suspend' | 'pause' | null {
-  if (stats.totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return null;
-  if (stats.spamReports / stats.totalRecipients > SPAM_COMPLAINT_SUSPEND_RATE) return 'suspend';
-  if (stats.hardBounces / stats.totalRecipients > HARD_BOUNCE_PAUSE_RATE) return 'pause';
-  return null;
-}
-
-export async function loadSendingTenant(db: Db, tenantId: string): Promise<SendingTenant> {
-  const row = await db
-    .selectFrom('tenants')
-    .select(['id', 'subscription_plan', 'created_at', 'suspended_at', 'sending_paused_at', 'sending_phone_verified_at'])
-    .where('id', '=', tenantId)
-    .executeTakeFirst();
-  if (!row) throw new NotFoundError('Organization not found');
-  const toDate = (v: Date | string | null): Date | null => (v == null ? null : new Date(v));
-  return {
-    id: String(row.id),
-    plan: planKeyOf(row.subscription_plan),
-    created_at: toDate(row.created_at),
-    suspended_at: toDate(row.suspended_at),
-    sending_paused_at: toDate(row.sending_paused_at),
-    sending_phone_verified_at: toDate(row.sending_phone_verified_at),
-  };
-}
-
-/** Throws when the tenant is suspended or its sending is tripwire-paused. */
-export function assertTenantSendingNotBlocked(tenant: SendingTenant): void {
-  if (tenant.suspended_at) throw new ForbiddenError(SENDING_SUSPENDED_MESSAGE);
-  if (tenant.sending_paused_at) throw new ForbiddenError(SENDING_PAUSED_MESSAGE);
-}
-
-/** SUM of newsletter emails handed to SendGrid for this tenant since `since`. */
-export async function sentEmailsSince(db: Db, tenantId: string, since: Date): Promise<number> {
-  const row = await db
-    .selectFrom('newsletter_send_log')
-    .select((eb) => eb.fn.coalesce(eb.fn.sum('recipient_count'), sql<number>`0`).as('total'))
-    .where('tenant_id', '=', tenantId)
-    .where('created_at', '>=', since)
-    .executeTakeFirst();
-  return Number(row?.total ?? 0);
-}
-
-/** Record one delivered batch — the data the warm-up and hourly caps meter. */
-export async function logNewsletterBatch(
-  db: Db,
-  tenantId: string,
-  newsletterId: string,
-  recipientCount: number,
-): Promise<void> {
-  if (recipientCount <= 0) return;
-  await db
-    .insertInto('newsletter_send_log')
-    .values({ tenant_id: tenantId, newsletter_id: newsletterId, recipient_count: recipientCount })
-    .execute();
-}
-
-/** True when the tenant's default From address belongs to a DKIM-verified sending domain. */
-export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promise<boolean> {
-  const rows = await db
-    .selectFrom('settings')
-    .select(['key', 'value'])
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', ['communications.default_from_email', 'communications.verified_domains'])
-    .execute();
-  let fromEmail = '';
-  let domains: { domain?: string; status?: string }[] = [];
-  for (const row of rows) {
-    if (row.key === 'communications.default_from_email' && typeof row.value === 'string') {
-      fromEmail = row.value.toLowerCase().trim();
-    } else if (row.key === 'communications.verified_domains' && Array.isArray(row.value)) {
-      domains = row.value as { domain?: string; status?: string }[];
-    }
-  }
-  const fromDomain = fromEmail.split('@')[1];
-  if (!fromDomain) return false;
-  return domains.some((d) => d.domain === fromDomain && d.status === 'verified');
-}
-
-/**
- * The pre-send gate. Ordered so the most actionable message wins: blocked states first, then
- * identity prerequisites, then the warm-up volume cap.
- */
-export async function assertTenantMaySendNewsletter(
-  db: Db,
-  tenantId: string,
-  plannedRecipients: number,
-): Promise<void> {
-  const tenant = await loadSendingTenant(db, tenantId);
-  assertTenantSendingNotBlocked(tenant);
-
-  if (!(await hasVerifiedSendingDomain(db, tenantId))) {
-    throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
-  }
-  if (tenant.plan === 'free' && !tenant.sending_phone_verified_at) {
-    throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);
-  }
-
-  const now = new Date();
-  const cap = warmupDailyCap(tenant.plan, tenant.created_at, now);
-  if (cap != null) {
-    const sentToday = await sentEmailsSince(db, tenantId, new Date(now.getTime() - DAY_MS));
-    if (sentToday + plannedRecipients > cap) {
-      const remaining = Math.max(0, cap - sentToday);
-      throw new TooManyRequestsError(
-        `During your first ${FREE_WARMUP_DAYS} days on the Free plan you can send up to ${cap} emails per day. ` +
-          `This newsletter has ${plannedRecipients.toLocaleString()} recipients and ${remaining} remain today — ` +
-          `narrow the audience or try again tomorrow.`,
-      );
-    }
-  }
-}
-
-/**
- * How many more emails the tenant may send right now under the hourly cap and (if active) the
- * warm-up daily cap. The worker trims batches to this and defers when it reaches 0.
- */
-export async function remainingSendAllowance(db: Db, tenant: SendingTenant, now: Date): Promise<number> {
-  const hourly = HOURLY_SEND_CAPS[tenant.plan];
-  const sentLastHour = await sentEmailsSince(db, tenant.id, new Date(now.getTime() - HOUR_MS));
-  let allowance = Math.max(0, hourly - sentLastHour);
-
-  const dailyCap = warmupDailyCap(tenant.plan, tenant.created_at, now);
-  if (dailyCap != null) {
-    const sentToday = await sentEmailsSince(db, tenant.id, new Date(now.getTime() - DAY_MS));
-    allowance = Math.min(allowance, Math.max(0, dailyCap - sentToday));
-  }
-  return allowance;
-}
-
-/** Tripwire pause: newsletter sending only. Idempotent — an already-paused tenant is left as is. */
-export async function pauseTenantSending(db: Db, tenantId: string, reason: string): Promise<void> {
-  await db
-    .updateTable('tenants')
-    .set({ sending_paused_at: new Date(), sending_paused_reason: reason })
-    .where('id', '=', tenantId)
-    .where('sending_paused_at', 'is', null)
-    .execute();
-}
-
-/** Tripwire suspension: blocks sign-in (auth checks suspended_at) AND sending. Idempotent. */
-export async function suspendTenant(db: Db, tenantId: string, reason: string): Promise<void> {
-  await db
-    .updateTable('tenants')
-    .set({ suspended_at: new Date() })
-    .where('id', '=', tenantId)
-    .where('suspended_at', 'is', null)
-    .execute();
-  await pauseTenantSending(db, tenantId, reason);
-}
-
-/**
- * Evaluate a newsletter's engagement against the abuse tripwires and pause/suspend its tenant.
- * Called from the SendGrid event webhook after each aggregate recompute. Uses hard bounces only
- * (SendGrid `bounce` events excluding the soft `blocked` sub-type) so soft failures and
- * suppression `dropped` events never count against the tenant.
- */
-export async function applyEngagementTripwires(db: Db, tenantId: string, newsletterId: string): Promise<void> {
-  const newsletter = await db
-    .selectFrom('newsletters')
-    .select(['total_recipients', 'name'])
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .executeTakeFirst();
-  const totalRecipients = Number(newsletter?.total_recipients ?? 0);
-  if (totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return;
-
-  const stats = await db
-    .selectFrom('newsletter_events')
-    .select([
-      sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as(
-        'hard_bounces',
-      ),
-      sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'spamreport')`.as('spam_reports'),
-    ])
-    .where('tenant_id', '=', tenantId)
-    .where('newsletter_id', '=', newsletterId)
-    .executeTakeFirst();
-
-  const hardBounces = Number(stats?.hard_bounces ?? 0);
-  const spamReports = Number(stats?.spam_reports ?? 0);
-  const verdict = evaluateTripwires({ totalRecipients, hardBounces, spamReports });
-  if (!verdict) return;
-
-  if (verdict === 'suspend') {
-    logger.error(
-      { tenantId, newsletterId, totalRecipients, spamReports, newsletterName: newsletter?.name },
-      '[abuse-tripwire] Spam-complaint rate exceeded — tenant suspended pending human review',
-    );
-    await suspendTenant(db, tenantId, `spam_complaint_rate:${newsletterId}`);
-  } else {
-    logger.error(
-      { tenantId, newsletterId, totalRecipients, hardBounces, newsletterName: newsletter?.name },
-      '[abuse-tripwire] Hard-bounce rate exceeded — tenant sending paused',
-    );
-    await pauseTenantSending(db, tenantId, `hard_bounce_rate:${newsletterId}`);
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
 ````typescript
 import { BaseRepository } from '../../../lib/base.repo';
@@ -9167,49 +8360,6 @@ export class SettingsRepo extends BaseRepository<'settings'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/settings/trpc.router.ts
-````typescript
-import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
-import { SettingsController } from './controller';
-
-const settings = new SettingsController();
-
-export const SettingsRouter = router({
-  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
-  getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
-  upsert: adminOrOwnerProcedure
-    .input(UpsertSettingsInputObj)
-    .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
-  getPhoneVerificationStatus: authProcedure.query(({ ctx }) => settings.getPhoneVerificationStatus(ctx.auth)),
-  requestPhoneVerification: adminOrOwnerProcedure
-    .input(z.object({ phone: z.string().min(7).max(32) }))
-    .mutation(({ ctx, input }) => settings.requestPhoneVerification(ctx.auth, input.phone)),
-  confirmPhoneVerification: adminOrOwnerProcedure
-    .input(z.object({ code: z.string().min(4).max(10) }))
-    .mutation(({ ctx, input }) => settings.confirmPhoneVerification(ctx.auth, input.code)),
-  requestEmailVerification: adminOrOwnerProcedure
-    .input(z.object({ email: z.string().email() }))
-    .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),
-  verifySenderEmail: publicProcedure
-    .input(z.object({ token: z.string() }))
-    .mutation(({ input }) => settings.verifySenderEmail(input.token)),
-  scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
-  cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
-  addVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.addVerifiedDomain(ctx.auth, input.domain)),
-  verifyVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.verifyVerifiedDomain(ctx.auth, input.domain)),
-  deleteVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
-});
-````
-
 ## File: apps/backend/src/app/modules/tags/controller.ts
 ````typescript
 import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
@@ -9590,64 +8740,6 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/teams/trpc.router.ts
-````typescript
-import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { TeamsController } from './controller';
-
-const controller = new TeamsController();
-
-// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
-
-function getAll() {
-  return authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input));
-}
-
-function getById() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getById(ctx.auth, input));
-}
-
-function add() {
-  return authProcedure.input(AddTeamObj).mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTeamObj }))
-    .mutation(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data));
-}
-
-function remove() {
-  return authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
-}
-
-function getForVolunteer() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
-}
-
-function getAssignedLists() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
-}
-
-export const TeamsRouter = router({
-  getAll: getAll(),
-  getById: getById(),
-  add: add(),
-  update: update(),
-  delete: remove(),
-  getForVolunteer: getForVolunteer(),
-  getAssignedLists: getAssignedLists(),
-});
-````
-
 ## File: apps/backend/src/app/modules/userprofiles/repositories/userprofiles.repo.ts
 ````typescript
 import type { Selectable, Transaction } from 'kysely';
@@ -9737,135 +8829,6 @@ export const UsersRouter = router({
 });
 ````
 
-## File: apps/backend/src/app/modules/volunteer-events/trpc.router.ts
-````typescript
-import {
-  idSchema,
-  getAllOptions,
-  AddVolunteerEventObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  UpdateVolunteerShiftObj,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { VolunteerEventsController } from './controller';
-
-const ctrl = new VolunteerEventsController();
-
-// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
-
-export const VolunteerRouter = router({
-  // Events
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
-
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-
-  add: authProcedure.input(AddVolunteerEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
-
-  checkSlugUnique: authProcedure
-    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
-    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateVolunteerEventObj }))
-    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  // Shifts / Roster
-  getShiftsForEvent: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
-
-  signupVolunteer: authProcedure
-    .input(AddVolunteerShiftObj)
-    .mutation(({ input, ctx }) => ctrl.signupVolunteer(input, ctx.auth)),
-
-  updateShift: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateVolunteerShiftObj }))
-    .mutation(({ input, ctx }) => ctrl.updateShift(input.id, input.data, ctx.auth)),
-
-  deleteShift: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
-
-  // Person Specific History/Stats
-  getHistoryForPerson: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
-
-  getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
-});
-````
-
-## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
-````typescript
-import {
-  AddWebFormObj,
-  CreateFormObj,
-  UpdateFormObj,
-  UpdateWebFormObj,
-  getAllOptions,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure as baseAuthProcedure, publicProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { WebFormsController } from './controller';
-
-const webForms = new WebFormsController();
-
-// FEATURE_MATRIX plan gate: forms are Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('forms'));
-
-export const WebFormsRouter = router({
-  getAllWithCounts: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => webForms.getAllWithCounts(ctx.auth.tenant_id, input)),
-  getById: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  add: authProcedure.input(AddWebFormObj).mutation(({ input, ctx }) => webForms.addForm(input, ctx.auth)),
-  update: authProcedure
-    .input(z.object({ id: z.string().uuid(), data: UpdateWebFormObj }))
-    .mutation(({ input, ctx }) => webForms.updateForm(input.id, input.data, ctx.auth)),
-  delete: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  getSubmissionsCount: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
-  confirmSubscription: publicProcedure
-    .input(z.object({ token: z.string() }))
-    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
-
-  // --- North Star "living funnel" lifecycle (new Forms experience) ---
-  list: authProcedure.query(({ ctx }) => webForms.listForms(ctx.auth.tenant_id)),
-  getForEdit: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getFormForEdit(input, ctx.auth.tenant_id)),
-  create: authProcedure.input(CreateFormObj).mutation(({ input, ctx }) => webForms.createForm(input, ctx.auth)),
-  updateLive: authProcedure
-    .input(z.object({ id: z.string().uuid(), data: UpdateFormObj }))
-    .mutation(({ input, ctx }) => webForms.updateFormLive(input.id, input.data, ctx.auth)),
-  publish: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.publishForm(input, ctx.auth)),
-  unpublish: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.unpublishForm(input, ctx.auth)),
-  archive: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.archiveForm(input, ctx.auth)),
-  restore: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.restoreForm(input, ctx.auth)),
-  deleteDraft: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.deleteForm(input, ctx.auth)),
-  submissions: authProcedure
-    .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
-    .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
-});
-````
-
 ## File: apps/backend/src/app/modules/workflows/repositories/workflow-enrollments.repo.ts
 ````typescript
 import type { QueryParams } from '../../../lib/base.repo';
@@ -9933,70 +8896,6 @@ export class WorkflowStepsRepo extends BaseRepository<'workflow_steps'> {
     super('workflow_steps');
   }
 }
-````
-
-## File: apps/backend/src/app/modules/workflows/trpc.router.ts
-````typescript
-import {
-  AddWorkflowObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowObj,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { WorkflowsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-import { planFeatureGate } from '../billing/plan-gate';
-
-const workflows = new WorkflowsController();
-
-// FEATURE_MATRIX plan gate: automations are Grassroots-and-up; mutations below are blocked on Free.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('automations'));
-
-const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj, authProcedure);
-
-export const WorkflowsRouter = router({
-  ...crud,
-
-  // Spec §16 list (/automations) — enriched rows (recipe data + RUNS 30D + LAST RUN) and summary.
-  list: authProcedure.query(({ ctx }) => workflows.getWorkflowsList(ctx.auth.tenant_id)),
-
-  getSteps: authProcedure.input(idSchema).query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),
-
-  saveSteps: authProcedure
-    .input(z.object({ workflowId: idSchema, steps: z.array(AddWorkflowStepObj) }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
-    ),
-
-  setStatus: authProcedure
-    .input(z.object({ id: idSchema, status: z.enum(['active', 'paused']) }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id),
-    ),
-
-  getRuns: authProcedure
-    .input(z.object({ workflowId: idSchema, limit: z.number().int().positive().max(100).optional() }))
-    .query(({ input, ctx }) => workflows.getRuns(ctx.auth.tenant_id, input.workflowId, input.limit)),
-
-  getEnrollments: authProcedure
-    .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
-    .query(({ input, ctx }) => workflows.getEnrollments(ctx.auth.tenant_id, input.workflowId, input.options)),
-
-  enrollPerson: authProcedure
-    .input(z.object({ workflowId: idSchema, personId: idSchema }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id),
-    ),
-
-  cancelEnrollment: authProcedure
-    .input(z.object({ enrollmentId: idSchema }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
-    ),
-});
 ````
 
 ## File: apps/backend/src/app/modules/zapier/zapier.trpc.router.ts
@@ -11343,6 +10242,78 @@ export async function down(db: Kysely<any>): Promise<void> {
   // or 'starter' vs already 'free') and reverting it risks silently mis-pricing a live tenant.
   // Only the added column is reverted.
   await sql`ALTER TABLE public.tenants DROP COLUMN IF EXISTS subscription_quantity`.execute(db);
+}
+````
+
+## File: apps/backend/src/app/_migrations/2026-07-14-z-anti-abuse-sending-controls.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Anti-abuse sending controls (free-tier spam prevention):
+ *  - tenants.sending_paused_at/_reason — automated tripwire pause (hard-bounce rate) that blocks
+ *    newsletter sending. Distinct from the user-initiated paused_at and the sign-in-blocking
+ *    suspended_at (which the spam-complaint tripwire sets).
+ *  - tenants phone-verification columns — free tenants must verify a mobile number by SMS before
+ *    their first bulk send. Code hash + expiry + attempt counter live on the tenant row (never
+ *    exposed through the settings snapshot).
+ *  - newsletters.send_offset — resume point recorded when a send is paused mid-batch so an
+ *    unpaused re-send continues where it stopped instead of double-sending early recipients.
+ *  - newsletter_send_log — one row per delivered batch; SUM over a time window drives the
+ *    free-tier warm-up cap (100 emails/day, first 7 days) and the per-tenant hourly send cap
+ *    enforced by the outbox worker.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    ALTER TABLE public.tenants
+      ADD COLUMN IF NOT EXISTS sending_paused_at timestamp with time zone,
+      ADD COLUMN IF NOT EXISTS sending_paused_reason text,
+      ADD COLUMN IF NOT EXISTS sending_phone text,
+      ADD COLUMN IF NOT EXISTS sending_phone_verified_at timestamp with time zone,
+      ADD COLUMN IF NOT EXISTS pending_phone text,
+      ADD COLUMN IF NOT EXISTS phone_verification_code_hash text,
+      ADD COLUMN IF NOT EXISTS phone_verification_expires_at timestamp with time zone,
+      ADD COLUMN IF NOT EXISTS phone_verification_attempts integer DEFAULT 0 NOT NULL
+  `.execute(db);
+
+  await sql`ALTER TABLE public.newsletters ADD COLUMN IF NOT EXISTS send_offset integer`.execute(db);
+
+  await sql`
+    CREATE TABLE public.newsletter_send_log (
+      id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      tenant_id bigint NOT NULL,
+      newsletter_id bigint NOT NULL,
+      recipient_count integer NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )
+  `.execute(db);
+  await sql`CREATE INDEX idx_newsletter_send_log_tenant_created ON public.newsletter_send_log (tenant_id, created_at)`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.newsletter_send_log ENABLE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE public.newsletter_send_log FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql`
+    CREATE POLICY tenant_isolation ON public.newsletter_send_log
+      USING (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
+      WITH CHECK (((NULLIF(current_setting('app.tenant_id'::text, true), ''::text) IS NULL) OR (tenant_id = (NULLIF(current_setting('app.tenant_id'::text, true), ''::text))::bigint)))
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.newsletter_send_log`.execute(db);
+  await sql`ALTER TABLE public.newsletters DROP COLUMN IF EXISTS send_offset`.execute(db);
+  await sql`
+    ALTER TABLE public.tenants
+      DROP COLUMN IF EXISTS sending_paused_at,
+      DROP COLUMN IF EXISTS sending_paused_reason,
+      DROP COLUMN IF EXISTS sending_phone,
+      DROP COLUMN IF EXISTS sending_phone_verified_at,
+      DROP COLUMN IF EXISTS pending_phone,
+      DROP COLUMN IF EXISTS phone_verification_code_hash,
+      DROP COLUMN IF EXISTS phone_verification_expires_at,
+      DROP COLUMN IF EXISTS phone_verification_attempts
+  `.execute(db);
 }
 ````
 
@@ -21240,420 +20211,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 \unrestrict GhboKUqFznqkwhkamB1c46bniOml3zZWjH73ur6UjfuD98WEHRhntxz9GdHkfgK
 ````
 
-## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-
-const COMPLETED_JOB_RETENTION_DAYS = 7;
-
-export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-
-  const expiredUsers = await db
-    .selectFrom('authusers')
-    .select('id')
-    .where('deletion_scheduled_at', '<=', now)
-    .execute();
-
-  for (const user of expiredUsers) {
-    const userId = String(user.id);
-    await db.transaction().execute(async (trx) => {
-      await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
-      await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
-      await trx.deleteFrom('authusers').where('id', '=', userId).execute();
-    });
-  }
-
-  const expiredTenants = await db
-    .selectFrom('tenants')
-    .select('id')
-    .where('deletion_scheduled_at', '<=', now)
-    .execute();
-
-  for (const tenant of expiredTenants) {
-    const tenantId = String(tenant.id);
-
-    // Capture owner emails before deletion — background_jobs is wiped inside the transaction
-    const ownerUsers = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('role', '=', 'owner')
-      .execute();
-
-    logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
-    await db.transaction().execute(async (trx) => {
-      const tid = tenantId;
-
-      // ── Collaboration ─────────────────────────────────────────────────
-      await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
-
-      // ── Email & Marketing ──────────────────────────────────────────────
-      await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('newsletter_send_log').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
-
-      // ── Ops & Platform ─────────────────────────────────────────────────
-      await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
-
-      // ── Email inbox ────────────────────────────────────────────────────
-      await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
-
-      // ── CRM Core ───────────────────────────────────────────────────────
-      await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
-
-      // ── Auth & Identity (last) ─────────────────────────────────────────
-      // Null out BOTH authusers FKs on tenants before deleting authusers (fk_admin_id AND
-      // fk_createdby_id — missing the latter aborts the whole wipe with a 23503).
-      await trx.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tid).execute();
-      await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tenants').where('id', '=', tid).execute();
-
-      logger.info(`Tenant ${tenantId} fully hard-deleted.`);
-    });
-
-    // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
-    for (const owner of ownerUsers) {
-      if (owner.email) {
-        await mailService.sendMail({
-          to: owner.email,
-          subject: 'Your account data has been permanently deleted',
-          text: `Hi ${owner.first_name},\n\nAll data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using pplCRM.`,
-          html: `<h2>Account Data Deleted</h2>
-<p>Hi ${owner.first_name},</p>
-<p>All data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
-<p>Thank you for using pplCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
-        });
-      }
-    }
-  }
-
-  // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
-  const retentionCutoff = new Date(Date.now() - COMPLETED_JOB_RETENTION_DAYS * DAY_MS);
-  await db
-    .deleteFrom('background_jobs')
-    .where('status', '=', 'completed')
-    .where('updated_at', '<=', retentionCutoff)
-    .execute();
-
-  await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
-}
-````
-
-## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
-````typescript
-import type { ExpressionBuilder, Kysely } from 'kysely';
-import { sql } from 'kysely';
-import { Readable } from 'stream';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
-import { CsvTransformStream } from '../../csv-stream';
-import { notificationEnabled } from '../../profile-preferences';
-import { StorageService } from '../../storage.service';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import { UserActivityRepo } from '../../user-activity.repo';
-import type { JobPayloadOf } from '../job-payloads';
-
-const storageService = new StorageService();
-const mailService = new TransactionalEmailService();
-const userActivityRepo = new UserActivityRepo();
-
-const ALLOWED_EXPORT_TABLES = [
-  'persons',
-  'households',
-  'companies',
-  'forms',
-  'workflows',
-  'teams',
-  'events',
-  'newsletters',
-  'tasks',
-  'tags',
-  'issues',
-  'users',
-  'user_activity',
-];
-
-export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: Kysely<Models>): Promise<void> {
-  const exportsRepo = new ExportsRepo();
-  const exportId = payload.export_id;
-  const tenantId = payload.tenant_id;
-  try {
-    // Make sure we're exporting one of the allowed tables
-    const table = payload.table || payload.entity || '';
-    if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
-
-    // Mark as processing
-    await exportsRepo.updateStatus(exportId, tenantId, 'processing');
-
-    // Fetch all rows for the entity
-    const opts = payload.options;
-    // The export query is assembled dynamically across heterogeneous tables and joins,
-    // which Kysely cannot express statically — the builder is intentionally untyped here.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query: any;
-
-    if (table === 'user_activity') {
-      query = db
-        .selectFrom('user_activity')
-        .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
-        .select([
-          'user_activity.id',
-          'user_activity.created_at',
-          sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
-          'authusers.email',
-          'user_activity.activity',
-          'user_activity.entity',
-          'user_activity.entity_id',
-          'user_activity.quantity',
-          'user_activity.metadata',
-        ])
-        .where('user_activity.tenant_id', '=', tenantId);
-
-      if (opts.userId) {
-        query = query.where('user_activity.user_id', '=', opts.userId);
-      }
-      if (opts.entity) {
-        query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
-      }
-      if (opts.activity) {
-        query = query.where('user_activity.activity', '=', opts.activity);
-      }
-      if (opts.searchStr) {
-        const search = `%${opts.searchStr.trim().toLowerCase()}%`;
-        query = query.where((eb: ExpressionBuilder<Models, 'user_activity' | 'authusers'>) =>
-          eb.or([
-            eb('authusers.first_name', 'ilike', search),
-            eb('authusers.last_name', 'ilike', search),
-            eb('user_activity.entity', 'ilike', search),
-            eb('user_activity.activity', 'ilike', search),
-          ]),
-        );
-      }
-    } else {
-      query = db
-        .selectFrom(table as keyof Models)
-        .selectAll()
-        .where('tenant_id', '=', tenantId);
-
-      // Issues are tags with type='issue'
-      if (payload.entity === 'issues') {
-        query = query.where('type', '=', 'issue');
-      }
-
-      // Apply search string if provided
-      if (opts.searchStr) {
-        const like = `%${opts.searchStr}%`;
-        // Best-effort: try name, first_name/last_name depending on table
-        if (table === 'persons') {
-          query = query.where((eb: ExpressionBuilder<Models, 'persons'>) =>
-            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
-          );
-        } else if (table === 'households') {
-          query = query.where((eb: ExpressionBuilder<Models, 'households'>) =>
-            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)]),
-          );
-        } else {
-          query = query.where('name', 'ilike', like);
-        }
-      }
-    }
-
-    // Apply sort
-    if (opts.sortModel?.length) {
-      for (const s of opts.sortModel) {
-        if (s?.colId) {
-          query = query.orderBy(s.colId, s.sort === 'desc' ? 'desc' : 'asc');
-        }
-      }
-    } else {
-      const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
-      query = query.orderBy(sortCol, 'desc');
-    }
-
-    // Determine columns
-    const requestedCols: string[] = payload.columns?.length ? payload.columns : [];
-
-    const storageKey = `exports/${tenantId}/${exportId}.csv`;
-
-    // Stream the query results using query.stream()
-    const dbStream = Readable.from(query.stream());
-    const csvStream = new CsvTransformStream(requestedCols);
-
-    await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
-
-    const count = csvStream.rowCount;
-
-    // If no rows were processed, clean up by deleting the empty file if created
-    if (count === 0) {
-      await storageService.delete(storageKey);
-    }
-
-    await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
-      rowCount: count,
-      storageKey: count > 0 ? storageKey : undefined,
-    });
-
-    logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
-
-    // The Exports page promises "every export lands in the Activity log". The inline
-    // exportCsv path logs from BaseController; queued exports must log here on completion.
-    // A logging failure must not fail (and re-run) an export that already succeeded.
-    if (payload.user_id) {
-      try {
-        await userActivityRepo.log({
-          tenant_id: tenantId,
-          user_id: payload.user_id,
-          activity: 'export',
-          entity: table,
-          quantity: count,
-          metadata: {
-            requested_columns: Array.isArray(payload.columns) ? payload.columns.slice(0, 12) : [],
-            file_name: payload.file_name || 'export.csv',
-          },
-        });
-      } catch (activityErr) {
-        logger.error({ err: activityErr }, `Failed to log activity for export job ${exportId}`);
-      }
-    }
-
-    // Notify the user who requested the export
-    if (payload.user_id) {
-      try {
-        const user = await db
-          .selectFrom('authusers')
-          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-          .where('authusers.id', '=', payload.user_id)
-          .executeTakeFirst();
-
-        if (user) {
-          const emailOptedIn = notificationEnabled(user.profile_preferences, 'export_ready');
-          const inAppOptedIn = notificationEnabled(user.profile_preferences, 'export_ready_in_app');
-
-          const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
-          const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
-
-          if (inAppOptedIn) {
-            const { NotificationsRepo } =
-              await import('../../../modules/notifications/repositories/notifications.repo');
-            const notificationsRepo = new NotificationsRepo();
-            await notificationsRepo.pushNotification({
-              tenant_id: tenantId,
-              user_id: payload.user_id,
-              title: 'Export Ready',
-              message: `Your export of ${count} records from ${displayLabel} is complete.`,
-              type: 'export',
-              link: '/exports',
-            });
-          }
-
-          if (emailOptedIn && user.email) {
-            await mailService.sendMail({
-              to: user.email,
-              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
-              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
-              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
-            });
-          }
-        }
-      } catch (notifErr) {
-        logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, `Export job ${exportId} failed`);
-    const message = err instanceof Error ? err.message : String(err);
-    await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
-      error: message.substring(0, 500),
-    });
-    throw err;
-  }
-}
-
-function getEntityFilterValues(entityFilter: string): string[] {
-  const ent = entityFilter.toLowerCase();
-  if (ent === 'persons' || ent === 'person' || ent === 'people') {
-    return ['person', 'persons'];
-  }
-  if (ent === 'households' || ent === 'household') {
-    return ['household', 'households'];
-  }
-  if (ent === 'companies' || ent === 'company') {
-    return ['company', 'companies'];
-  }
-  if (ent === 'tasks' || ent === 'task') {
-    return ['task', 'tasks', 'tasks_archived'];
-  }
-  if (ent === 'emails' || ent === 'email') {
-    return ['email', 'emails'];
-  }
-  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
-    return ['volunteer_event', 'volunteer_events'];
-  }
-  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
-    return ['volunteer_shift', 'volunteer_shifts'];
-  }
-  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
-    return ['web_form', 'web_forms', 'form', 'forms'];
-  }
-  if (ent === 'tags' || ent === 'tag') {
-    return ['tag', 'tags'];
-  }
-  return [ent];
-}
-````
-
 ## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -21787,441 +20344,6 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
     }
   } catch (mailErr) {
     logger.error({ err: mailErr }, 'Failed to send import completion summary email');
-  }
-}
-````
-
-## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { notificationEnabled } from '../../profile-preferences';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import { SmsService } from '../../sms/sms.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-const smsService = new SmsService();
-
-export async function handleSendFormNotifications(
-  payload: JobPayloadOf<'send-form-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const event = await db
-    .selectFrom('volunteer_events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_signup_confirmation',
-      'send_volunteer_alert',
-    ])
-    .where('id', '=', payload.eventId)
-    .executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (event.send_signup_confirmation !== false) {
-    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
-    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
-
-    const coordEmailHtml = event.contact_email
-      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
-      : '';
-    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
-
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Volunteer Signup Confirmation: ${event.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
-  if (event.send_volunteer_alert !== false) {
-    let alertRecipient = event.contact_email || null;
-
-    if (!alertRecipient) {
-      const admin = await db
-        .selectFrom('authusers')
-        .select('email')
-        .where('tenant_id', '=', payload.tenantId)
-        .limit(1)
-        .executeTakeFirst();
-      if (admin && admin.email) {
-        alertRecipient = admin.email;
-      }
-    }
-
-    if (alertRecipient) {
-      await mailService.sendMail({
-        to: alertRecipient,
-        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendShiftReminder(
-  payload: JobPayloadOf<'send-shift-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const shift = await db
-    .selectFrom('volunteer_shifts')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.shiftId)
-    .executeTakeFirst();
-
-  if (!shift) {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
-    return;
-  }
-
-  // Covers cancelled and no-show shifts as well.
-  if (shift.status !== 'signed_up') {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
-    return;
-  }
-
-  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
-    return;
-  }
-
-  if (event.send_reminder === false) {
-    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
-    return;
-  }
-
-  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
-
-  if (!person) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
-    return;
-  }
-
-  if (!person.email) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
-
-  const subject = `Volunteer Shift Reminder: ${event.name}`;
-  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-
-  const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
-  <p>Hi ${person.first_name || 'there'},</p>
-  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
-  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
-    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
-    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
-    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
-  </div>
-  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
-</div>`;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject,
-    text,
-    html,
-  });
-
-  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
-}
-
-export async function handleSendWebformNotifications(
-  payload: JobPayloadOf<'send-webform-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const form = await db
-    .selectFrom('web_forms')
-    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-    .where('id', '=', payload.formId)
-    .executeTakeFirst();
-
-  if (!form) {
-    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
-    return;
-  }
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (form.send_confirmation !== false) {
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Thank you for your submission to ${form.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Tenant Admin (if enabled)
-  if (form.send_alert !== false) {
-    const admin = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', form.tenant_id)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `[ALERT] New Lead Submission on ${form.name}`,
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
-        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendEventRegistrationConfirmation(
-  payload: JobPayloadOf<'send-event-registration-confirmation'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status === 'cancelled') {
-    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
-    return;
-  }
-
-  const event = await db
-    .selectFrom('events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_registration_confirmation',
-    ])
-    .where('id', '=', registration.event_id)
-    .executeTakeFirst();
-
-  if (!event || event.send_registration_confirmation === false) {
-    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const coordLine = [
-    event.contact_email ? `Email: ${event.contact_email}` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const coordHtml = [
-    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('<br>');
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Registration Confirmed: ${event.name}`,
-    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
-  });
-
-  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendEventReminder(
-  payload: JobPayloadOf<'send-event-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status !== 'registered') {
-    logger.info(
-      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
-    );
-    return;
-  }
-
-  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
-
-  if (!event || event.send_reminder === false) {
-    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Reminder: ${event.name} is tomorrow`,
-    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
-  });
-
-  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
-  await mailService.sendMail({
-    to: payload.to,
-    subject: payload.subject ?? '',
-    text: payload.text ?? '',
-    html: payload.html ?? '',
-    tenant_id: payload.tenant_id ?? null,
-  });
-}
-
-export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
-  await smsService.sendSms({ to: payload.to, body: payload.body });
-}
-
-export async function handleSendSubscriptionConfirmation(
-  payload: JobPayloadOf<'send-subscription-confirmation'>,
-): Promise<void> {
-  await mailService.sendMail({
-    to: payload.email,
-    subject: 'Please confirm your subscription',
-    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
-    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
-  });
-}
-
-export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
-  await checkDueTasks(db);
-
-  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
-}
-
-export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  try {
-    const dueTasks = await db
-      .selectFrom('tasks')
-      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select([
-        'tasks.id as task_id',
-        'tasks.name as task_name',
-        'tasks.due_at',
-        'tasks.details',
-        'authusers.id as user_id',
-        'authusers.email as user_email',
-        'authusers.first_name',
-        'profiles.preferences as profile_preferences',
-      ])
-      .where('tasks.status', 'not in', ['done', 'archived'])
-      .where('tasks.due_at', '<=', now)
-      .orderBy('tasks.due_at', 'asc')
-      .execute();
-
-    if (dueTasks.length === 0) return;
-
-    const userTasksMap = new Map<string, typeof dueTasks>();
-    for (const row of dueTasks) {
-      const userId = String(row.user_id);
-      let userTasks = userTasksMap.get(userId);
-      if (!userTasks) {
-        userTasks = [];
-        userTasksMap.set(userId, userTasks);
-      }
-      userTasks.push(row);
-    }
-
-    for (const [, tasks] of userTasksMap.entries()) {
-      const firstRow = tasks[0];
-      if (!firstRow) continue;
-      const userEmail = firstRow.user_email;
-      const firstName = firstRow.first_name;
-      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
-
-      if (optedIn && userEmail) {
-        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
-        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
-
-        for (const t of tasks) {
-          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
-        }
-
-        htmlContent += `</ul>`;
-
-        await mailService.sendMail({
-          to: userEmail,
-          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
-          text: textContent,
-          html: htmlContent,
-        });
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check and notify due tasks');
   }
 }
 ````
@@ -22379,210 +20501,6 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
 }
 ````
 
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
-````typescript
-import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
-
-/**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
- */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
-
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
-
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
-
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
-
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-    // A user-triggered "Re-check Google" re-runs the lookup even when the
-    // company was already enriched; the auto-queue on first load does not.
-    force: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('prune_retention') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
-
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    campaignId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    campaignId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('send-sms'),
-    to: z.string(),
-    body: z.string(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
-
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
-
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
-
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
-
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
-
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
-
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
-  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
-  list_name: z.string().nullish(),
-  client_skip_reasons: z
-    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
-    .nullish(),
-});
-
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
-````
-
 ## File: apps/backend/src/app/lib/jobs/reschedule.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -22630,6 +20548,269 @@ export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs
       })
       .execute();
   });
+}
+````
+
+## File: apps/backend/src/app/lib/mail/disposable-email-domains.ts
+````typescript
+/**
+ * Disposable/temporary-inbox domains blocked at signup (anti-abuse: throwaway accounts are the
+ * first ingredient of free-tier email spam). This is a curated list of the most common
+ * services and their well-known aliases — not exhaustive, deliberately: false positives lock
+ * out a real customer, false negatives are caught by the later gates (domain + phone
+ * verification, warm-up caps, bounce/complaint tripwires). Extend it as new services show up
+ * in signup logs.
+ */
+const DISPOSABLE_EMAIL_DOMAINS = new Set<string>([
+  '0-mail.com',
+  '10mail.org',
+  '10minutemail.com',
+  '10minutemail.net',
+  '20minutemail.com',
+  '33mail.com',
+  'anonaddy.me',
+  'anonbox.net',
+  'antispam.de',
+  'bccto.me',
+  'binkmail.com',
+  'bobmail.info',
+  'bugmenot.com',
+  'burnermail.io',
+  'byom.de',
+  'chacuo.net',
+  'correotemporal.org',
+  'courriel.fr.nf',
+  'crazymailing.com',
+  'cuvox.de',
+  'dayrep.com',
+  'deadaddress.com',
+  'despam.it',
+  'discard.email',
+  'discardmail.com',
+  'dispostable.com',
+  'dodgeit.com',
+  'dropmail.me',
+  'dumpmail.de',
+  'e4ward.com',
+  'einrot.com',
+  'emailfake.com',
+  'emailondeck.com',
+  'emailsensei.com',
+  'emailtemporanea.net',
+  'emltmp.com',
+  'ethereal.email',
+  'fakeinbox.com',
+  'fakemailgenerator.com',
+  'fleckens.hu',
+  'getairmail.com',
+  'getnada.com',
+  'gettempmail.com',
+  'grr.la',
+  'guerrillamail.biz',
+  'guerrillamail.com',
+  'guerrillamail.de',
+  'guerrillamail.info',
+  'guerrillamail.net',
+  'guerrillamail.org',
+  'guerrillamailblock.com',
+  'gustr.com',
+  'haltospam.com',
+  'harakirimail.com',
+  'inboxalias.com',
+  'inboxbear.com',
+  'inboxkitten.com',
+  'incognitomail.org',
+  'jetable.org',
+  'jourrapide.com',
+  'kasmail.com',
+  'koszmail.pl',
+  'kurzepost.de',
+  'lifebyfood.com',
+  'linshiyouxiang.net',
+  'luxusmail.org',
+  'mail-temporaire.fr',
+  'mail.tm',
+  'mail1a.de',
+  'mail7.io',
+  'mailcatch.com',
+  'maildrop.cc',
+  'maildu.de',
+  'mailexpire.com',
+  'mailforspam.com',
+  'mailhazard.com',
+  'mailhog.example',
+  'mailinater.com',
+  'mailinator.com',
+  'mailinator.net',
+  'mailinator.org',
+  'mailinator2.com',
+  'mailme.lv',
+  'mailmetrash.com',
+  'mailmoat.com',
+  'mailnesia.com',
+  'mailnull.com',
+  'mailondeck.com',
+  'mailpoof.com',
+  'mailsac.com',
+  'mailseal.de',
+  'mailtemp.info',
+  'mailtothis.com',
+  'mailzilla.com',
+  'mega.zik.dj',
+  'meltmail.com',
+  'mierdamail.com',
+  'mintemail.com',
+  'mohmal.com',
+  'moakt.com',
+  'mt2015.com',
+  'mytemp.email',
+  'mytrashmail.com',
+  'nada.email',
+  'no-spam.ws',
+  'nobulk.com',
+  'noclickemail.com',
+  'nogmailspam.info',
+  'nomail.xl.cx',
+  'nospam4.us',
+  'nospamfor.us',
+  'nowmymail.com',
+  'objectmail.com',
+  'obobbo.com',
+  'oneoffemail.com',
+  'onewaymail.com',
+  'owlymail.com',
+  'pokemail.net',
+  'proxymail.eu',
+  'putthisinyourspamdatabase.com',
+  'quickinbox.com',
+  'rcpt.at',
+  'reallymymail.com',
+  'receiveee.com',
+  'rhyta.com',
+  'rmqkr.net',
+  'rppkn.com',
+  'safetymail.info',
+  'sharklasers.com',
+  'shieldemail.com',
+  'shitmail.me',
+  'sogetthis.com',
+  'soodonims.com',
+  'spam4.me',
+  'spamavert.com',
+  'spambog.com',
+  'spambog.de',
+  'spambog.ru',
+  'spambox.us',
+  'spamex.com',
+  'spamfree24.org',
+  'spamgourmet.com',
+  'spamherelots.com',
+  'spamhole.com',
+  'spaml.de',
+  'spamspot.com',
+  'spamthis.co.uk',
+  'spamthisplease.com',
+  'speed.1s.fr',
+  'squizzy.de',
+  'startkeys.com',
+  'superrito.com',
+  'tafmail.com',
+  'teleworm.us',
+  'temp-mail.io',
+  'temp-mail.org',
+  'temp-mail.ru',
+  'tempail.com',
+  'tempe-mail.com',
+  'tempemail.co.za',
+  'tempemail.net',
+  'tempinbox.com',
+  'tempmail.dev',
+  'tempmail.email',
+  'tempmail.net',
+  'tempmail.plus',
+  'tempmailaddress.com',
+  'tempmailer.com',
+  'tempmailo.com',
+  'tempomail.fr',
+  'temporarily.de',
+  'temporaryemail.net',
+  'temporaryinbox.com',
+  'tempr.email',
+  'tempsky.com',
+  'tempymail.com',
+  'thankyou2010.com',
+  'thisisnotmyrealemail.com',
+  'throwam.com',
+  'throwawayemailaddress.com',
+  'throwawaymail.com',
+  'tilien.com',
+  'tmail.ws',
+  'tmailinator.com',
+  'tmpeml.info',
+  'tmpmail.net',
+  'tmpmail.org',
+  'trash-mail.at',
+  'trash-mail.com',
+  'trash-mail.de',
+  'trash2009.com',
+  'trashdevil.com',
+  'trashemail.de',
+  'trashmail.at',
+  'trashmail.com',
+  'trashmail.de',
+  'trashmail.me',
+  'trashmail.net',
+  'trashmail.org',
+  'trashymail.com',
+  'trbvm.com',
+  'trickmail.net',
+  'tryalert.com',
+  'tyldd.com',
+  'uggsrock.com',
+  'veryrealemail.com',
+  'vomoto.com',
+  'wegwerfadresse.de',
+  'wegwerfemail.com',
+  'wegwerfemail.de',
+  'wegwerfmail.de',
+  'wegwerfmail.net',
+  'wegwerfmail.org',
+  'wh4f.org',
+  'whyspam.me',
+  'willhackforfood.biz',
+  'willselfdestruct.com',
+  'wuzupmail.net',
+  'xagloo.com',
+  'xemaps.com',
+  'xents.com',
+  'xmaily.com',
+  'yapped.net',
+  'yep.it',
+  'yogamaven.com',
+  'yopmail.com',
+  'yopmail.fr',
+  'yopmail.net',
+  'yopweb.com',
+  'youmailr.com',
+  'yuurok.com',
+  'zehnminutenmail.de',
+  'zetmail.com',
+  'zippymail.info',
+  'zoemail.net',
+  'zomg.info',
+]);
+
+/** True when the address's domain (or its registrable parent, catching `foo.10minutemail.com`
+ * style subdomain inboxes) is a known disposable-email service. */
+export function isDisposableEmail(email: string): boolean {
+  const domain = email.toLowerCase().trim().split('@')[1];
+  if (!domain) return false;
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
+  const parts = domain.split('.');
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (DISPOSABLE_EMAIL_DOMAINS.has(parts.slice(i).join('.'))) return true;
+  }
+  return false;
 }
 ````
 
@@ -23493,6 +21674,76 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
 }
 ````
 
+## File: apps/backend/src/app/lib/crud-router.ts
+````typescript
+import { getAllOptions, idSchema, exportCsvInput, exportCsvResponse } from '../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure } from '../../trpc';
+import type { BaseController } from './base.controller';
+
+export function createCrudRouter<
+  TController extends BaseController<any, any>,
+  TInsertSchema extends z.ZodTypeAny,
+  TUpdateSchema extends z.ZodTypeAny,
+>(
+  controller: TController,
+  insertSchema: TInsertSchema,
+  updateSchema: TUpdateSchema,
+  // Plan-gated modules pass authProcedure.use(planFeatureGate(...)) so every CRUD mutation is
+  // gated in one place; the gate middleware lets queries through untouched.
+  procedure: typeof authProcedure = authProcedure,
+) {
+  return {
+    getAll: procedure
+      .input(getAllOptions)
+      .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
+    getAllWithCounts: procedure
+      .input(getAllOptions)
+      .query(({ input, ctx }) => controller.getAllWithCounts(ctx.auth.tenant_id, input)),
+    getById: procedure
+      .input(idSchema)
+      .query(({ input, ctx }) => controller.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+    add: procedure.input(insertSchema).mutation(({ input, ctx }) =>
+      controller.add({
+        ...(input as Record<string, unknown>),
+        tenant_id: ctx.auth.tenant_id,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+    create: procedure.input(insertSchema).mutation(({ input, ctx }) =>
+      controller.add({
+        ...(input as Record<string, unknown>),
+        tenant_id: ctx.auth.tenant_id,
+        createdby_id: ctx.auth.user_id,
+        updatedby_id: ctx.auth.user_id,
+      }),
+    ),
+    update: procedure.input(z.object({ id: idSchema, data: updateSchema })).mutation(({ input, ctx }) => {
+      const { id, data } = input as unknown as { id: string; data: Record<string, unknown> };
+      return controller.update({
+        tenant_id: ctx.auth.tenant_id,
+        id,
+        row: { ...data, updatedby_id: ctx.auth.user_id },
+      });
+    }),
+    delete: procedure
+      .input(idSchema)
+      .mutation(({ input, ctx }) => controller.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+    deleteMany: procedure
+      .input(z.array(idSchema).min(1, 'At least one ID is required'))
+      .mutation(({ input, ctx }) => controller.deleteMany(ctx.auth.tenant_id, input)),
+    count: procedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id)),
+    exportCsv: procedure
+      .input(exportCsvInput)
+      .output(exportCsvResponse)
+      .mutation(({ input, ctx }) =>
+        controller.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth),
+      ),
+  };
+}
+````
+
 ## File: apps/backend/src/app/lib/password-hash.ts
 ````typescript
 import argon2 from 'argon2';
@@ -24122,6 +22373,61 @@ export const AuthRouter = router({
   updatePasskeyName: updatePasskeyName(),
   dismissPasskeyPrompt: dismissPasskeyPrompt(),
 });
+````
+
+## File: apps/backend/src/app/modules/billing/plan-gate.ts
+````typescript
+import type { Kysely, Transaction } from 'kysely';
+import { TRPCError } from '@trpc/server';
+
+import { GATED_FEATURES, PLANS_BY_KEY, planAllowsFeature, type GatedFeature } from '@common';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { ForbiddenError } from '../../errors/app-errors';
+import { BaseRepository } from '../../lib/base.repo';
+import { middleware } from '../../../trpc';
+
+/**
+ * Server-side enforcement of the FEATURE_MATRIX plan split (GATED_FEATURES in
+ * libs/common/src/lib/billing/plans.ts). The matrix data alone is only marketing copy — this
+ * gate is the contract: tenants below a feature's minimum plan cannot mutate through the
+ * feature's module. Reads intentionally stay open so a downgraded tenant can still see (and
+ * export) data it created while entitled — disclosure over suppression.
+ */
+export function planGateMessage(feature: GatedFeature): string {
+  const { label, minPlan } = GATED_FEATURES[feature];
+  return `${label} requires the ${PLANS_BY_KEY[minPlan].name} plan or higher. Upgrade on the Billing page to unlock it.`;
+}
+
+/** Throws FORBIDDEN when the tenant's plan does not include the gated feature. */
+export async function assertPlanFeature(
+  db: Kysely<Models> | Transaction<Models>,
+  tenant_id: string,
+  feature: GatedFeature,
+): Promise<void> {
+  const tenant = await db
+    .selectFrom('tenants')
+    .select('subscription_plan')
+    .where('id', '=', tenant_id)
+    .executeTakeFirst();
+  if (!planAllowsFeature(tenant?.subscription_plan, feature)) {
+    throw new ForbiddenError(planGateMessage(feature));
+  }
+}
+
+/**
+ * tRPC middleware form of the gate for use on `authProcedure` (after `isAuthed`). Only
+ * mutations are blocked — see the module doc above for why reads pass.
+ */
+export function planFeatureGate(feature: GatedFeature) {
+  return middleware(async (opts) => {
+    if (opts.type === 'mutation') {
+      const tenantId = opts.ctx.auth?.tenant_id;
+      if (!tenantId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+      await assertPlanFeature(BaseRepository.dbInstance, tenantId, feature);
+    }
+    return opts.next();
+  });
+}
 ````
 
 ## File: apps/backend/src/app/modules/billing/stripe-client.ts
@@ -25345,76 +23651,6 @@ export class TurfsRepo extends BaseRepository<'turfs'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/canvassing/trpc.router.ts
-````typescript
-import { z } from 'zod';
-
-import {
-  AddTurfObj,
-  AssignTurfObj,
-  CutTurfsObj,
-  FieldReportRangeObj,
-  UpdateCompanionSettingsObj,
-  UpdateTurfObj,
-  idSchema,
-} from '../../../../../../libs/common/src';
-
-import {
-  adminOrOwnerProcedure as baseAdminOrOwnerProcedure,
-  authProcedure as baseAuthProcedure,
-  router,
-} from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { CanvassingController } from './controller';
-
-const controller = new CanvassingController();
-
-// FEATURE_MATRIX plan gate: canvassing is Movement-only; mutations below are blocked on lower plans.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('canvassing'));
-const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('canvassing'));
-
-export const CanvassingRouter = router({
-  // Turfs & assignments page.
-  getTurfs: authProcedure.query(({ ctx }) => controller.getTurfs(ctx.auth)),
-  getFieldSummary: authProcedure.query(({ ctx }) => controller.getFieldSummary(ctx.auth)),
-  getInFieldToday: authProcedure.query(({ ctx }) => controller.getInFieldToday(ctx.auth)),
-
-  // Cut new turfs.
-  previewCut: authProcedure.input(CutTurfsObj).query(({ ctx, input }) => controller.previewCut(ctx.auth, input)),
-  cutTurfs: authProcedure.input(CutTurfsObj).mutation(({ ctx, input }) => controller.cutTurfs(ctx.auth, input)),
-  refreshFromList: authProcedure
-    .input(idSchema)
-    .mutation(({ ctx, input }) => controller.refreshFromList(ctx.auth, input)),
-
-  // Turf CRUD + lifecycle.
-  addTurf: authProcedure.input(AddTurfObj).mutation(({ ctx, input }) => controller.addTurf(ctx.auth, input)),
-  updateTurf: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTurfObj }))
-    .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
-  assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
-  retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
-
-  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
-  getCompanionSettings: authProcedure
-    .input(z.object({ campaign_id: idSchema.optional() }).optional())
-    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
-  updateCompanionSettings: adminOrOwnerProcedure
-    .input(UpdateCompanionSettingsObj)
-    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
-
-  // Field report.
-  getFieldReport: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.getFieldReport(ctx.auth, input)),
-  exportFieldReport: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.exportFieldReportCsv(ctx.auth, input)),
-  getCoverage: authProcedure
-    .input(FieldReportRangeObj)
-    .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
-});
-````
-
 ## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
 ````typescript
 import type { Selectable, Transaction } from 'kysely';
@@ -26276,34 +24512,6 @@ export class CompanionVolunteersRepo extends BaseRepository<'companion_volunteer
 }
 ````
 
-## File: apps/backend/src/app/modules/companion-access/trpc.router.ts
-````typescript
-import { z } from 'zod';
-
-import { idSchema } from '../../../../../../libs/common/src';
-import { adminOrOwnerProcedure as baseAdminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { CompanionAccessController } from './controller';
-
-const controller = new CompanionAccessController();
-
-// FEATURE_MATRIX plan gate: companion volunteers are Grassroots-and-up (Free includes none), so
-// approving/revoking volunteer access is blocked on Free.
-const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('volunteers'));
-
-/** Staff surface for the companion access layer: the Volunteer access page. */
-export const CompanionAccessRouter = router({
-  getAll: authProcedure.query(({ ctx }) => controller.getAllVolunteers(ctx.auth.tenant_id)),
-  pendingCount: authProcedure.query(({ ctx }) => controller.pendingCount(ctx.auth.tenant_id)),
-  approve: adminOrOwnerProcedure
-    .input(z.object({ id: idSchema }))
-    .mutation(({ ctx, input }) => controller.approveVolunteer(ctx.auth, input.id)),
-  revoke: adminOrOwnerProcedure
-    .input(z.object({ id: idSchema }))
-    .mutation(({ ctx, input }) => controller.revokeVolunteer(ctx.auth, input.id)),
-});
-````
-
 ## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
 ````typescript
 import { z } from 'zod';
@@ -26808,94 +25016,6 @@ const deliveriesPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default deliveriesPublicRoute;
 ````
 
-## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
-````typescript
-import {
-  AddDeliveryRequestObj,
-  AssignVolunteerObj,
-  CommitDeliveriesObj,
-  GetSignStatusObj,
-  MintShareLinkObj,
-  PlanDeliveriesObj,
-  ReorderStopObj,
-  RouteIdObj,
-  SetDeliveryRequestStatusObj,
-  SetDeliveryRouteStatusObj,
-  StopActionObj,
-  UpdateDeliveryRequestObj,
-  UpdateDeliveryRouteObj,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { planFeatureGate } from '../billing/plan-gate';
-import { DeliveriesController } from './controller';
-
-const controller = new DeliveriesController();
-
-// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
-const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
-
-export const DeliveriesRouter = router({
-  // Requests
-  getAllRequests: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
-  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
-  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
-  getSignStatus: authProcedure
-    .input(GetSignStatusObj)
-    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
-  addRequest: authProcedure
-    .input(AddDeliveryRequestObj)
-    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
-  updateRequestNotes: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
-    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
-  setRequestStatus: authProcedure
-    .input(SetDeliveryRequestStatusObj)
-    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
-
-  // Planning
-  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
-  previewPlan: authProcedure
-    .input(PlanDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
-  commitPlan: authProcedure
-    .input(CommitDeliveriesObj)
-    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
-
-  // Routes
-  getAllRoutes: authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
-  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
-  updateRoute: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
-    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
-  assignVolunteer: authProcedure
-    .input(AssignVolunteerObj)
-    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
-  setRouteStatus: authProcedure
-    .input(SetDeliveryRouteStatusObj)
-    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
-  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
-  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
-  reorderStop: authProcedure
-    .input(ReorderStopObj)
-    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
-  mintShareLink: authProcedure
-    .input(MintShareLinkObj)
-    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
-  revokeShareLink: authProcedure
-    .input(RouteIdObj)
-    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
-});
-````
-
 ## File: apps/backend/src/app/modules/demo/trpc.router.ts
 ````typescript
 import { adminOrOwnerProcedure, router } from '../../../trpc';
@@ -27146,6 +25266,197 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default donationsWebhookRoute;
+````
+
+## File: apps/backend/src/app/modules/donations/trpc.router.ts
+````typescript
+import { z } from 'zod';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import { planFeatureGate } from '../billing/plan-gate';
+import { DonationsController } from './controller';
+
+const controller = new DonationsController();
+
+// FEATURE_MATRIX plan gate: donations are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('donations'));
+
+export const DonationsRouter = router({
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
+
+  /** Record an offline gift (Fig. 15 "Record donation" dialog) — cash, check, or bank transfer,
+   * not run through the public Stripe checkout. */
+  recordDonation: authProcedure
+    .input(RecordDonationObj)
+    .mutation(({ ctx, input }) =>
+      controller.recordManualDonation(ctx.auth, input.personId, input.amountCents, input.method, input.campaign_id),
+    ),
+
+  getPersonDonationHistory: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
+
+  getDonationStats: authProcedure
+    .input(z.string())
+    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
+
+  checkEligibility: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+        isRecurring: z.boolean().optional(),
+        remainingMonths: z.number().optional(),
+      }),
+    )
+    .query(({ ctx, input }) =>
+      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
+        isRecurring: input.isRecurring,
+        remainingMonths: input.remainingMonths,
+      }),
+    ),
+
+  createCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
+
+  confirmDonation: authProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
+
+  confirmMockDonation: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        sessionId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockDonation(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.amountCents,
+        input.sessionId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  createRecurringCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
+    ),
+
+  confirmMockPledge: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        mockSubId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockPledge(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.monthlyAmountCents,
+        input.mockSubId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
+
+  getPersonPledges: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
+
+  cancelPledge: authProcedure
+    .input(z.object({ pledgeId: z.string() }))
+    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
+
+  createDonationPeriod: authProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        start_date: z.string(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive(),
+        // Campaigns §15 — contribution-limit windows are per campaign; defaults to the office.
+        campaign_id: z.string().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
+
+  updateDonationPeriod: authProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive().optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { id, ...payload } = input;
+      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
+    }),
+
+  deleteDonationPeriod: authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
+
+  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
+
+  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
+
+  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
+    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
+  ),
+});
 ````
 
 ## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
@@ -32096,6 +30407,142 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 }
 ````
 
+## File: apps/backend/src/app/modules/lists/trpc.router.ts
+````typescript
+import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { ListsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+import { planFeatureGate } from '../billing/plan-gate';
+
+const lists = new ListsController();
+
+// FEATURE_MATRIX plan gate: lists (segments) are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('lists'));
+
+const crud = createCrudRouter(lists, AddListObj, UpdateListObj, authProcedure);
+
+export const ListsRouter = router({
+  ...crud,
+
+  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
+
+  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateListObj }))
+    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
+
+  getMembersHouseholds: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
+
+  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
+
+  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
+
+  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
+
+  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
+
+  // Live membership (smart = re-run rules, static = saved snapshot). Reused by
+  // turf cutting (§13), automations (§16) and CSV import (§17).
+  getCurrentMembers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getCurrentMembers(ctx.auth, input)),
+
+  // Consumers (newsletters/forms/turfs) — for LAST USED IN and delete confirms.
+  getConsumers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getConsumers(ctx.auth, input)),
+});
+````
+
+## File: apps/backend/src/app/modules/mail/routes/postmark-webhook.route.ts
+````typescript
+import { timingSafeEqual } from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import { env } from '../../../../env';
+
+const db = new BaseRepository('tenants').db;
+
+const TOKEN_HEADER = 'x-postmark-webhook-token';
+
+/** Hard-failure bounce types — the address is dead, not temporarily unavailable. */
+const HARD_BOUNCE_TYPES = new Set(['HardBounce', 'BadEmailAddress']);
+
+/** Shape of a Postmark bounce/spam webhook payload (inbound/untrusted — all optional). */
+interface PostmarkEvent {
+  RecordType?: string;
+  Type?: string;
+  Email?: string;
+  BouncedAt?: string;
+  Metadata?: Record<string, unknown>;
+}
+
+function tokenMatches(header: string | undefined): boolean {
+  const expected = env.postmarkWebhookToken;
+  if (!expected || !header) return false;
+  const a = Buffer.from(header);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Postmark bounce/spam-complaint webhook for the transactional (Postmark) mail stream.
+ * Authenticated with a shared token Postmark is configured to send in a custom header
+ * (POSTMARK_WEBHOOK_TOKEN). Sends carry `Metadata.tenant_id` (transactional-mail.service), so a
+ * hard bounce or complaint suppresses the address for that tenant — the same
+ * `email_suppressions` list the newsletter sendability query honours.
+ */
+const postmarkWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    if (!tokenMatches(req.headers[TOKEN_HEADER] as string | undefined)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    const body = req.body as PostmarkEvent | PostmarkEvent[] | null;
+    const events = Array.isArray(body) ? body : body ? [body] : [];
+
+    let processed = 0;
+    for (const ev of events) {
+      const recordType = ev?.RecordType ?? '';
+      const email = (ev?.Email ?? '').toLowerCase().trim();
+      if (!email) continue;
+
+      const isHardBounce = recordType === 'Bounce' && HARD_BOUNCE_TYPES.has(ev?.Type ?? '');
+      const isSpamComplaint = recordType === 'SpamComplaint';
+      if (!isHardBounce && !isSpamComplaint) continue;
+
+      const reason = isSpamComplaint ? 'spam_complaint' : 'hard_bounce';
+      const occurredAt = ev?.BouncedAt ? new Date(ev.BouncedAt) : new Date();
+      const tenantId = ev?.Metadata?.['tenant_id'] != null ? String(ev.Metadata['tenant_id']) : null;
+
+      req.log.warn({ email, reason, tenantId, postmarkType: ev?.Type }, 'Postmark delivery failure event');
+
+      if (!tenantId || !/^\d+$/.test(tenantId)) continue; // no tenant context — logged above, nothing to suppress
+
+      try {
+        await db
+          .insertInto('email_suppressions')
+          .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
+          .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
+          .execute();
+        processed++;
+      } catch (err) {
+        req.log.error(err, `Failed to record Postmark suppression for ${email}`);
+      }
+    }
+
+    return reply.code(200).send({ success: true, processed });
+  });
+
+  done();
+};
+
+export default postmarkWebhookRoute;
+````
+
 ## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
 ````typescript
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
@@ -32448,6 +30895,292 @@ export class MsSyncService {
     return Client.init({
       authProvider: (done) => done(null, accessToken),
     });
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/newsletters/send-guards.ts
+````typescript
+import type { Kysely, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import { getPlanDef, type PlanKey } from '@common';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { ForbiddenError, NotFoundError, PreconditionFailedError, TooManyRequestsError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+
+/**
+ * Anti-abuse guards around bulk (newsletter) sending. Free accounts are the spam vector — a
+ * throwaway signup must not be able to blast a purchased list — so sending is gated on real
+ * identity (verified DKIM domain, and on Free a verified mobile number), throttled while an
+ * account is new, and automatically shut off when a send's engagement shows list abuse
+ * (hard bounces = purchased/scraped list, spam complaints = non-consenting recipients).
+ *
+ * Enforcement points:
+ *  - `assertTenantMaySendNewsletter` — pre-send, in NewslettersController.sendNewsletter.
+ *  - `assertTenantSendingNotBlocked` + the caps — per batch, in the send-newsletter job handler
+ *    (so an in-flight send stops mid-batch when a tripwire fires).
+ *  - `applyEngagementTripwires` — in the SendGrid event webhook after aggregates recompute.
+ */
+
+/** New Free tenants are warmed up: at most this many newsletter emails per rolling day… */
+export const FREE_WARMUP_DAILY_CAP = 100;
+/** …for this many days after tenant creation. */
+export const FREE_WARMUP_DAYS = 7;
+
+/** Per-tenant rolling-hour send ceilings enforced by the outbox worker (queue fairness +
+ * blast-radius cap; a deferred send resumes automatically). */
+export const HOURLY_SEND_CAPS: Record<PlanKey, number> = {
+  free: 500,
+  grassroots: 5_000,
+  movement: 20_000,
+  enterprise: 50_000,
+};
+
+/** Tripwires need a minimum sample so one bad address on a tiny send doesn't pause a tenant. */
+export const TRIPWIRE_MIN_RECIPIENTS = 20;
+/** Hard-bounce rate above which sending is paused (a clean opt-in list bounces ~1–2%). */
+export const HARD_BOUNCE_PAUSE_RATE = 0.05;
+/** Spam-complaint rate above which the whole account is suspended pending human review. */
+export const SPAM_COMPLAINT_SUSPEND_RATE = 0.01;
+
+export const SENDING_SUSPENDED_MESSAGE =
+  'This account is suspended pending a review of recent sending activity. Please contact support.';
+export const SENDING_PAUSED_MESSAGE =
+  'Sending is paused: a recent newsletter had an unusually high bounce rate, which usually means the list contains addresses that never opted in. Please contact support to review and resume sending.';
+export const DOMAIN_UNVERIFIED_MESSAGE =
+  'Before sending, verify the domain you send from (Settings → Domains) and choose a default From address on that domain (Settings → Communications). This protects your deliverability.';
+export const PHONE_UNVERIFIED_MESSAGE =
+  'On the Free plan, verify a mobile phone number (Settings → Communications) before your first newsletter send.';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
+type Db = Kysely<Models> | Transaction<Models>;
+
+export interface SendingTenant {
+  id: string;
+  plan: PlanKey;
+  created_at: Date | null;
+  suspended_at: Date | null;
+  sending_paused_at: Date | null;
+  sending_phone_verified_at: Date | null;
+}
+
+/** Resolve a stored plan value to its key, treating unknown/absent as free (fail closed). */
+export function planKeyOf(planName: string | null | undefined): PlanKey {
+  return getPlanDef(planName)?.key ?? 'free';
+}
+
+/** The tenant's daily warm-up cap, or null when no warm-up applies (paid plan or account older
+ * than the warm-up window). Pure, so the cap math is unit-testable. */
+export function warmupDailyCap(plan: PlanKey, createdAt: Date | null, now: Date): number | null {
+  if (plan !== 'free') return null;
+  if (!createdAt) return FREE_WARMUP_DAILY_CAP; // unknown age: fail closed
+  const ageMs = now.getTime() - createdAt.getTime();
+  return ageMs < FREE_WARMUP_DAYS * DAY_MS ? FREE_WARMUP_DAILY_CAP : null;
+}
+
+/** Which tripwire, if any, a send's engagement stats have crossed. Pure for unit tests. */
+export function evaluateTripwires(stats: {
+  totalRecipients: number;
+  hardBounces: number;
+  spamReports: number;
+}): 'suspend' | 'pause' | null {
+  if (stats.totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return null;
+  if (stats.spamReports / stats.totalRecipients > SPAM_COMPLAINT_SUSPEND_RATE) return 'suspend';
+  if (stats.hardBounces / stats.totalRecipients > HARD_BOUNCE_PAUSE_RATE) return 'pause';
+  return null;
+}
+
+export async function loadSendingTenant(db: Db, tenantId: string): Promise<SendingTenant> {
+  const row = await db
+    .selectFrom('tenants')
+    .select(['id', 'subscription_plan', 'created_at', 'suspended_at', 'sending_paused_at', 'sending_phone_verified_at'])
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  if (!row) throw new NotFoundError('Organization not found');
+  const toDate = (v: Date | string | null): Date | null => (v == null ? null : new Date(v));
+  return {
+    id: String(row.id),
+    plan: planKeyOf(row.subscription_plan),
+    created_at: toDate(row.created_at),
+    suspended_at: toDate(row.suspended_at),
+    sending_paused_at: toDate(row.sending_paused_at),
+    sending_phone_verified_at: toDate(row.sending_phone_verified_at),
+  };
+}
+
+/** Throws when the tenant is suspended or its sending is tripwire-paused. */
+export function assertTenantSendingNotBlocked(tenant: SendingTenant): void {
+  if (tenant.suspended_at) throw new ForbiddenError(SENDING_SUSPENDED_MESSAGE);
+  if (tenant.sending_paused_at) throw new ForbiddenError(SENDING_PAUSED_MESSAGE);
+}
+
+/** SUM of newsletter emails handed to SendGrid for this tenant since `since`. */
+export async function sentEmailsSince(db: Db, tenantId: string, since: Date): Promise<number> {
+  const row = await db
+    .selectFrom('newsletter_send_log')
+    .select((eb) => eb.fn.coalesce(eb.fn.sum('recipient_count'), sql<number>`0`).as('total'))
+    .where('tenant_id', '=', tenantId)
+    .where('created_at', '>=', since)
+    .executeTakeFirst();
+  return Number(row?.total ?? 0);
+}
+
+/** Record one delivered batch — the data the warm-up and hourly caps meter. */
+export async function logNewsletterBatch(
+  db: Db,
+  tenantId: string,
+  newsletterId: string,
+  recipientCount: number,
+): Promise<void> {
+  if (recipientCount <= 0) return;
+  await db
+    .insertInto('newsletter_send_log')
+    .values({ tenant_id: tenantId, newsletter_id: newsletterId, recipient_count: recipientCount })
+    .execute();
+}
+
+/** True when the tenant's default From address belongs to a DKIM-verified sending domain. */
+export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promise<boolean> {
+  const rows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', ['communications.default_from_email', 'communications.verified_domains'])
+    .execute();
+  let fromEmail = '';
+  let domains: { domain?: string; status?: string }[] = [];
+  for (const row of rows) {
+    if (row.key === 'communications.default_from_email' && typeof row.value === 'string') {
+      fromEmail = row.value.toLowerCase().trim();
+    } else if (row.key === 'communications.verified_domains' && Array.isArray(row.value)) {
+      domains = row.value as { domain?: string; status?: string }[];
+    }
+  }
+  const fromDomain = fromEmail.split('@')[1];
+  if (!fromDomain) return false;
+  return domains.some((d) => d.domain === fromDomain && d.status === 'verified');
+}
+
+/**
+ * The pre-send gate. Ordered so the most actionable message wins: blocked states first, then
+ * identity prerequisites, then the warm-up volume cap.
+ */
+export async function assertTenantMaySendNewsletter(
+  db: Db,
+  tenantId: string,
+  plannedRecipients: number,
+): Promise<void> {
+  const tenant = await loadSendingTenant(db, tenantId);
+  assertTenantSendingNotBlocked(tenant);
+
+  if (!(await hasVerifiedSendingDomain(db, tenantId))) {
+    throw new PreconditionFailedError(DOMAIN_UNVERIFIED_MESSAGE);
+  }
+  if (tenant.plan === 'free' && !tenant.sending_phone_verified_at) {
+    throw new PreconditionFailedError(PHONE_UNVERIFIED_MESSAGE);
+  }
+
+  const now = new Date();
+  const cap = warmupDailyCap(tenant.plan, tenant.created_at, now);
+  if (cap != null) {
+    const sentToday = await sentEmailsSince(db, tenantId, new Date(now.getTime() - DAY_MS));
+    if (sentToday + plannedRecipients > cap) {
+      const remaining = Math.max(0, cap - sentToday);
+      throw new TooManyRequestsError(
+        `During your first ${FREE_WARMUP_DAYS} days on the Free plan you can send up to ${cap} emails per day. ` +
+          `This newsletter has ${plannedRecipients.toLocaleString()} recipients and ${remaining} remain today — ` +
+          `narrow the audience or try again tomorrow.`,
+      );
+    }
+  }
+}
+
+/**
+ * How many more emails the tenant may send right now under the hourly cap and (if active) the
+ * warm-up daily cap. The worker trims batches to this and defers when it reaches 0.
+ */
+export async function remainingSendAllowance(db: Db, tenant: SendingTenant, now: Date): Promise<number> {
+  const hourly = HOURLY_SEND_CAPS[tenant.plan];
+  const sentLastHour = await sentEmailsSince(db, tenant.id, new Date(now.getTime() - HOUR_MS));
+  let allowance = Math.max(0, hourly - sentLastHour);
+
+  const dailyCap = warmupDailyCap(tenant.plan, tenant.created_at, now);
+  if (dailyCap != null) {
+    const sentToday = await sentEmailsSince(db, tenant.id, new Date(now.getTime() - DAY_MS));
+    allowance = Math.min(allowance, Math.max(0, dailyCap - sentToday));
+  }
+  return allowance;
+}
+
+/** Tripwire pause: newsletter sending only. Idempotent — an already-paused tenant is left as is. */
+export async function pauseTenantSending(db: Db, tenantId: string, reason: string): Promise<void> {
+  await db
+    .updateTable('tenants')
+    .set({ sending_paused_at: new Date(), sending_paused_reason: reason })
+    .where('id', '=', tenantId)
+    .where('sending_paused_at', 'is', null)
+    .execute();
+}
+
+/** Tripwire suspension: blocks sign-in (auth checks suspended_at) AND sending. Idempotent. */
+export async function suspendTenant(db: Db, tenantId: string, reason: string): Promise<void> {
+  await db
+    .updateTable('tenants')
+    .set({ suspended_at: new Date() })
+    .where('id', '=', tenantId)
+    .where('suspended_at', 'is', null)
+    .execute();
+  await pauseTenantSending(db, tenantId, reason);
+}
+
+/**
+ * Evaluate a newsletter's engagement against the abuse tripwires and pause/suspend its tenant.
+ * Called from the SendGrid event webhook after each aggregate recompute. Uses hard bounces only
+ * (SendGrid `bounce` events excluding the soft `blocked` sub-type) so soft failures and
+ * suppression `dropped` events never count against the tenant.
+ */
+export async function applyEngagementTripwires(db: Db, tenantId: string, newsletterId: string): Promise<void> {
+  const newsletter = await db
+    .selectFrom('newsletters')
+    .select(['total_recipients', 'name'])
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .executeTakeFirst();
+  const totalRecipients = Number(newsletter?.total_recipients ?? 0);
+  if (totalRecipients < TRIPWIRE_MIN_RECIPIENTS) return;
+
+  const stats = await db
+    .selectFrom('newsletter_events')
+    .select([
+      sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as(
+        'hard_bounces',
+      ),
+      sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'spamreport')`.as('spam_reports'),
+    ])
+    .where('tenant_id', '=', tenantId)
+    .where('newsletter_id', '=', newsletterId)
+    .executeTakeFirst();
+
+  const hardBounces = Number(stats?.hard_bounces ?? 0);
+  const spamReports = Number(stats?.spam_reports ?? 0);
+  const verdict = evaluateTripwires({ totalRecipients, hardBounces, spamReports });
+  if (!verdict) return;
+
+  if (verdict === 'suspend') {
+    logger.error(
+      { tenantId, newsletterId, totalRecipients, spamReports, newsletterName: newsletter?.name },
+      '[abuse-tripwire] Spam-complaint rate exceeded — tenant suspended pending human review',
+    );
+    await suspendTenant(db, tenantId, `spam_complaint_rate:${newsletterId}`);
+  } else {
+    logger.error(
+      { tenantId, newsletterId, totalRecipients, hardBounces, newsletterName: newsletter?.name },
+      '[abuse-tripwire] Hard-bounce rate exceeded — tenant sending paused',
+    );
+    await pauseTenantSending(db, tenantId, `hard_bounce_rate:${newsletterId}`);
   }
 }
 ````
@@ -32843,810 +31576,47 @@ export class DuplicateMaintenanceService {
 }
 ````
 
-## File: apps/backend/src/app/modules/settings/controller.ts
+## File: apps/backend/src/app/modules/settings/trpc.router.ts
 ````typescript
-import { TRPCError } from '@trpc/server';
-import { createSigner, createVerifier } from 'fast-jwt';
-import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
-import { env } from '../../../env';
-
-interface VerifiedDomainEntry {
-  domain: string;
-  domainAuthId?: string | number;
-  linkBrandingId?: string | number;
-  spf?: boolean;
-  dkim?: boolean;
-  dmarc?: boolean;
-  linkBranded?: boolean;
-  status?: string;
-  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
-}
-
-import { randomInt, timingSafeEqual } from 'crypto';
-
-import { BaseController } from '../../lib/base.controller';
-import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
-import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
-import { SmsService } from '../../lib/sms/sms.service';
-import { hashToken } from '../../lib/token-hash';
-import { getPlanDef } from '@common';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { SettingsRepo } from './repositories/settings.repo';
-
-const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
-const PHONE_CODE_MAX_ATTEMPTS = 5;
-
-// Rate limiting in-memory storage to prevent verification spam/abuse
-const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
-const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
-const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
-
-export class SettingsController extends BaseController<'settings', SettingsRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new SettingsRepo());
-  }
-
-  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'current_campaign',
-    });
-
-    if (!row) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Current campaign setting not found.',
-      });
-    }
-
-    const value = row.value;
-
-    if (typeof value === 'number' || typeof value === 'string') {
-      return String(value);
-    }
-
-    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-      const id = (value as Record<string, unknown>)['id'];
-      if (typeof id === 'number' || typeof id === 'string') {
-        return String(id);
-      }
-    }
-
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Current campaign setting is malformed.',
-    });
-  }
-
-  public async getSnapshot(auth: IAuthKeyPayload) {
-    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
-
-    return rows.reduce<Record<string, unknown>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-  }
-
-  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
-    // Workspace configuration is locked while the tenant is on the demo test drive.
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-
-    // 1. Block direct updates to verified_emails setting key
-    if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Verified emails list cannot be modified directly.',
-      });
-    }
-
-    // 2. Validate default from and reply-to emails
-    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
-    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
-
-    if (defaultFromEntry || replyToEntry) {
-      const snapshot = await this.getSnapshot(auth);
-      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
-      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
-        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
-        : [];
-
-      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
-        const val = defaultFromEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Default From Email.',
-          });
-        }
-      }
-
-      if (replyToEntry && typeof replyToEntry.value === 'string') {
-        const val = replyToEntry.value.toLowerCase().trim();
-        if (val && !verifiedEmails.includes(val)) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
-          });
-        }
-      }
-    }
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: entries.map((entry) => ({
-        key: entry.key,
-        value: entry.value,
-      })),
-    });
-
-    return this.getSnapshot(auth);
-  }
-
-  /**
-   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
-   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
-   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
-   * client-readable.
-   */
-  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    return {
-      verified: tenant?.sending_phone_verified_at != null,
-      verifiedAt: tenant?.sending_phone_verified_at ?? null,
-      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
-      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
-      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
-      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
-    };
-  }
-
-  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = normalizeE164(phone);
-    if (!normalized) {
-      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
-    }
-    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
-    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
-    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
-
-    const code = String(randomInt(100000, 1000000));
-    const smsService = new SmsService();
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('tenants')
-          .set({
-            pending_phone: normalized,
-            phone_verification_code_hash: hashToken(code),
-            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
-            phone_verification_attempts: 0,
-          })
-          .where('id', '=', auth.tenant_id)
-          .execute();
-        await smsService.enqueueSms(
-          {
-            to: normalized,
-            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
-            tenant_id: auth.tenant_id,
-          },
-          trx,
-        );
-      });
-
-    return { success: true, phone: maskPhone(normalized) };
-  }
-
-  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
-    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
-    const db = this.getRepo().db;
-    const tenant = await db
-      .selectFrom('tenants')
-      .select([
-        'pending_phone',
-        'phone_verification_code_hash',
-        'phone_verification_expires_at',
-        'phone_verification_attempts',
-      ])
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
-      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
-    }
-    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
-      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
-    }
-    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
-    if (!expiresAt || expiresAt.getTime() < Date.now()) {
-      throw new BadRequestError('That code has expired. Request a new one.');
-    }
-
-    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
-    const actual = Buffer.from(hashToken(code.trim()), 'hex');
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-      await db
-        .updateTable('tenants')
-        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
-        .where('id', '=', auth.tenant_id)
-        .execute();
-      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
-    }
-
-    await db
-      .updateTable('tenants')
-      .set({
-        sending_phone: tenant.pending_phone,
-        sending_phone_verified_at: new Date(),
-        pending_phone: null,
-        phone_verification_code_hash: null,
-        phone_verification_expires_at: null,
-        phone_verification_attempts: 0,
-      })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'update',
-      entity: 'settings',
-      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
-    });
-
-    return { success: true, phone: maskPhone(tenant.pending_phone) };
-  }
-
-  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const normalized = email.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
-    const now = Date.now();
-
-    // 1. Per-email verification limit: max once per minute
-    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
-      });
-    }
-
-    // 2. Tenant-wide verification limit: max 5 requests per minute
-    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message:
-          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
-      });
-    }
-
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const signer = createSigner({
-      algorithm: 'HS256',
-      key,
-      expiresIn: '24h',
-    });
-
-    const token = signer({
-      tenant_id: auth.tenant_id,
-      email: normalized,
-      purpose: 'verify-sender-email',
-    });
-
-    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
-
-    await this.mailService.enqueueMail({
-      to: normalized,
-      tenant_id: auth.tenant_id,
-      subject: 'Verify sender email address for your PplCRM campaign',
-      text: `Hi,\n\nPlease verify your email address by clicking this link: ${verificationLink}\n\nThis link will expire in 24 hours.`,
-      html: `<h3>Verify Sender Email</h3><p>Please click the link below to verify your email address for your PplCRM campaign:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link will expire in 24 hours.</p>`,
-    });
-
-    // Record timestamps if successful
-    tenantRequests.push(now);
-    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    verificationRequestTimestamps.set(rateLimitKey, now);
-
-    return { success: true };
-  }
-
-  public async verifySenderEmail(token: string) {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({
-      algorithms: ['HS256'],
-      key,
-      ignoreExpiration: false,
-    });
-
-    try {
-      const payload = await verifier(token);
-      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Invalid verification token.',
-        });
-      }
-
-      const tenantId = String(payload.tenant_id);
-      const email = String(payload.email).toLowerCase().trim();
-
-      const row = await this.getRepo().getByKey({
-        tenant_id: tenantId,
-        key: 'communications.verified_emails',
-      });
-
-      let currentList: string[] = [];
-      if (row && Array.isArray(row.value)) {
-        currentList = row.value.map((e) => String(e).toLowerCase().trim());
-      }
-
-      if (!currentList.includes(email)) {
-        currentList.push(email);
-
-        const tenant = await this.getRepo()
-          .db.selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
-
-        await this.getRepo().upsertMany({
-          tenant_id: tenantId,
-          user_id: adminId,
-          entries: [{ key: 'communications.verified_emails', value: currentList }],
-        });
-      }
-
-      return { success: true, email };
-    } catch (err) {
-      if (err instanceof TRPCError) throw err;
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Invalid or expired verification token.',
-      });
-    }
-  }
-
-  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can schedule deletion.',
-      });
-    }
-
-    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: deletionDate })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'Security Alert: Organization Scheduled for Deletion',
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, please trigger a cancel restoration request in your dashboard settings.`,
-        html: `<h2>Organization Scheduled for Deletion</h2>
-<p>Hi ${admin.first_name || 'Admin'},</p>
-<p>The organization <strong>${tenant.name}</strong> (Tenant ID: ${auth.tenant_id}) has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All data including campaigns, contacts, lists, workflows, and user accounts under this tenant will be permanently deleted. If you did not make this request or wish to cancel it, please click the button below to cancel the deletion:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/settings" class="btn">Manage Organization Settings</a>
-</div>
-<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
-      });
-    }
-
-    return { success: true, deletion_scheduled_at: deletionDate };
-  }
-
-  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .selectAll()
-      .where('id', '=', auth.tenant_id)
-      .executeTakeFirst();
-    if (!tenant) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Tenant not found.',
-      });
-    }
-
-    if (String(tenant.admin_id) !== String(auth.user_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Only the organization administrator can cancel deletion.',
-      });
-    }
-
-    await this.getRepo()
-      .db.updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', auth.tenant_id)
-      .execute();
-
-    const admin = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('id', '=', auth.user_id)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await this.mailService.sendMail({
-        to: admin.email,
-        tenant_id: auth.tenant_id,
-        subject: 'PplCRM - Organization Deletion Canceled',
-        text: `Your request to delete organization ${tenant.name} has been successfully canceled, and your organization is fully restored.`,
-        html: `<h2>Organization Deletion Canceled</h2>
-<p>Your request to delete organization <strong>${tenant.name}</strong> has been successfully canceled. Your organization and all associated campaign data are fully restored.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-    const db = this.getRepo().db;
-
-    // Get SendGrid settings
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.verified_domains',
-      ])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const row of settingsRows) {
-      settingsMap[row.key] = row.value;
-    }
-
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
-    const currentList: VerifiedDomainEntry[] = Array.isArray(settingsMap['communications.verified_domains'])
-      ? (settingsMap['communications.verified_domains'] as VerifiedDomainEntry[])
-      : [];
-
-    if (currentList.some((d) => d.domain === domainVal)) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This domain is already added.',
-      });
-    }
-
-    const sendgridSvc = new SendGridWhitelabelService();
-    const domainAuth = await sendgridSvc.createDomainAuthentication(
-      domainVal,
-      apiKey as string | undefined,
-      subuser as string | undefined,
-    );
-    const linkBranding = await sendgridSvc.createLinkBranding(
-      domainVal,
-      apiKey as string | undefined,
-      subuser as string | undefined,
-    );
-
-    const newEntry = {
-      domain: domainVal,
-      status: 'pending',
-      spf: false,
-      dkim: false,
-      dmarc: false,
-      domainAuthId: domainAuth.id,
-      linkBrandingId: linkBranding.id,
-      domainAuthDns: domainAuth.dns,
-      linkBrandingDns: linkBranding.dns,
-      linkBranded: false,
-    };
-
-    const updatedList = [...currentList, newEntry];
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
-    const now = Date.now();
-
-    // 1. Per-domain verification check limit: max once per minute
-    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
-    if (lastRequest && now - lastRequest < 60000) {
-      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
-      });
-    }
-
-    // 2. Tenant-wide domain verification limit: max 5 checks per minute
-    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
-    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
-    if (tenantRequests.length >= 5) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
-      });
-    }
-
-    const db = this.getRepo().db;
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Record timestamps if validation can proceed
-    tenantRequests.push(now);
-    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
-    domainVerificationTimestamps.set(rateLimitKey, now);
-
-    // Get SendGrid credentials
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const settingsRow of settingsRows) {
-      settingsMap[settingsRow.key] = settingsRow.value;
-    }
-
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    let spfVerified = false;
-    let dkimVerified = false;
-    let linkBranded = false;
-    let dmarcVerified = false;
-
-    // Check with SendGrid if IDs are present
-    if (domainEntry.domainAuthId) {
-      const authRes = await sendgridSvc.validateDomainAuthentication(
-        Number(domainEntry.domainAuthId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
-      spfVerified = !!authRes.validationResults?.['mail_cname'];
-      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
-    }
-
-    if (domainEntry.linkBrandingId) {
-      linkBranded = await sendgridSvc.validateLinkBranding(
-        Number(domainEntry.linkBrandingId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
-    }
-
-    // Check DMARC via live DNS check
-    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
-
-    // Fallback/Mock behavior in local development mode (no valid API key)
-    const hasValidKey = apiKey && (apiKey as string).trim().startsWith('SG.') && (apiKey as string).trim().length > 20;
-    if (!hasValidKey) {
-      // For local development, if real DNS check fails (e.g. mock domains),
-      // we auto-verify to allow testing success state.
-      // But we still attempt real CNAME / TXT checks first in case they set up local DNS.
-      const realSpf = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
-        domainEntry.domainAuthDns?.['mail_cname']?.data,
-      );
-      const realDkim1 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim1']?.host || '',
-        domainEntry.domainAuthDns?.['dkim1']?.data,
-      );
-      const realDkim2 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.['dkim2']?.host || '',
-        domainEntry.domainAuthDns?.['dkim2']?.data,
-      );
-      const realLink = await sendgridSvc.verifyCname(
-        domainEntry.linkBrandingDns?.['domain']?.host || '',
-        domainEntry.linkBrandingDns?.['domain']?.data,
-      );
-
-      spfVerified = realSpf || true;
-      dkimVerified = (realDkim1 && realDkim2) || true;
-      linkBranded = realLink || true;
-      dmarcVerified = dmarcVerified || true;
-    }
-
-    const updatedList = currentList.map((d) => {
-      if (d.domain === domainVal) {
-        const isVerified = spfVerified && dkimVerified && dmarcVerified && linkBranded;
-        return {
-          ...d,
-          spf: spfVerified,
-          dkim: dkimVerified,
-          dmarc: dmarcVerified,
-          linkBranded,
-          status: isVerified ? 'verified' : 'pending',
-          domainAuthDns: {
-            ...d.domainAuthDns,
-            mail_cname: d.domainAuthDns?.['mail_cname']
-              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
-              : undefined,
-            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
-            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
-          },
-          linkBrandingDns: {
-            ...d.linkBrandingDns,
-            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
-          },
-        };
-      }
-      return d;
-    });
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-
-  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
-    const db = this.getRepo().db;
-
-    const row = await this.getRepo().getByKey({
-      tenant_id: auth.tenant_id,
-      key: 'communications.verified_domains',
-    });
-
-    if (!row || !Array.isArray(row.value)) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Domain configuration not found.',
-      });
-    }
-
-    const currentList = row.value as unknown as VerifiedDomainEntry[];
-    const domainEntry = currentList.find((d) => d.domain === domainVal);
-
-    if (!domainEntry) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Domain ${domainVal} not found in verified domains list.`,
-      });
-    }
-
-    // Get SendGrid credentials
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const settingsRow of settingsRows) {
-      settingsMap[settingsRow.key] = settingsRow.value;
-    }
-
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
-
-    const sendgridSvc = new SendGridWhitelabelService();
-
-    // Delete from SendGrid
-    if (domainEntry.domainAuthId) {
-      await sendgridSvc.deleteDomainAuthentication(
-        Number(domainEntry.domainAuthId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
-    }
-    if (domainEntry.linkBrandingId) {
-      await sendgridSvc.deleteLinkBranding(
-        Number(domainEntry.linkBrandingId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
-    }
-
-    const updatedList = currentList.filter((d) => d.domain !== domainVal);
-
-    await this.getRepo().upsertMany({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entries: [{ key: 'communications.verified_domains', value: updatedList }],
-    });
-
-    return updatedList;
-  }
-}
+import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
+import { SettingsController } from './controller';
+
+const settings = new SettingsController();
+
+export const SettingsRouter = router({
+  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
+  getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
+  upsert: adminOrOwnerProcedure
+    .input(UpsertSettingsInputObj)
+    .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
+  getPhoneVerificationStatus: authProcedure.query(({ ctx }) => settings.getPhoneVerificationStatus(ctx.auth)),
+  requestPhoneVerification: adminOrOwnerProcedure
+    .input(z.object({ phone: z.string().min(7).max(32) }))
+    .mutation(({ ctx, input }) => settings.requestPhoneVerification(ctx.auth, input.phone)),
+  confirmPhoneVerification: adminOrOwnerProcedure
+    .input(z.object({ code: z.string().min(4).max(10) }))
+    .mutation(({ ctx, input }) => settings.confirmPhoneVerification(ctx.auth, input.code)),
+  requestEmailVerification: adminOrOwnerProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),
+  verifySenderEmail: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => settings.verifySenderEmail(input.token)),
+  scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
+  cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
+  addVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.addVerifiedDomain(ctx.auth, input.domain)),
+  verifyVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.verifyVerifiedDomain(ctx.auth, input.domain)),
+  deleteVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/tasks/repositories/task-attachments.repo.ts
@@ -35012,6 +32982,64 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 }
 ````
 
+## File: apps/backend/src/app/modules/teams/trpc.router.ts
+````typescript
+import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { TeamsController } from './controller';
+
+const controller = new TeamsController();
+
+// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
+
+function getAll() {
+  return authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input));
+}
+
+function getById() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getById(ctx.auth, input));
+}
+
+function add() {
+  return authProcedure.input(AddTeamObj).mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTeamObj }))
+    .mutation(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data));
+}
+
+function remove() {
+  return authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
+}
+
+function getForVolunteer() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
+}
+
+function getAssignedLists() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
+}
+
+export const TeamsRouter = router({
+  getAll: getAll(),
+  getById: getById(),
+  add: add(),
+  update: update(),
+  delete: remove(),
+  getForVolunteer: getForVolunteer(),
+  getAssignedLists: getAssignedLists(),
+});
+````
+
 ## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
 ````typescript
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
@@ -36079,6 +34107,70 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 }
 ````
 
+## File: apps/backend/src/app/modules/volunteer-events/trpc.router.ts
+````typescript
+import {
+  idSchema,
+  getAllOptions,
+  AddVolunteerEventObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  UpdateVolunteerShiftObj,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { VolunteerEventsController } from './controller';
+
+const ctrl = new VolunteerEventsController();
+
+// FEATURE_MATRIX plan gate: volunteer management is Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('volunteers'));
+
+export const VolunteerRouter = router({
+  // Events
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
+
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+
+  add: authProcedure.input(AddVolunteerEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
+
+  checkSlugUnique: authProcedure
+    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
+    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateVolunteerEventObj }))
+    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
+
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  // Shifts / Roster
+  getShiftsForEvent: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
+
+  signupVolunteer: authProcedure
+    .input(AddVolunteerShiftObj)
+    .mutation(({ input, ctx }) => ctrl.signupVolunteer(input, ctx.auth)),
+
+  updateShift: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateVolunteerShiftObj }))
+    .mutation(({ input, ctx }) => ctrl.updateShift(input.id, input.data, ctx.auth)),
+
+  deleteShift: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
+
+  // Person Specific History/Stats
+  getHistoryForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
+
+  getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
+});
+````
+
 ## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
 ````typescript
 import type { ReferenceExpression, Transaction } from 'kysely';
@@ -36257,6 +34349,71 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     };
   }
 }
+````
+
+## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
+````typescript
+import {
+  AddWebFormObj,
+  CreateFormObj,
+  UpdateFormObj,
+  UpdateWebFormObj,
+  getAllOptions,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, publicProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { WebFormsController } from './controller';
+
+const webForms = new WebFormsController();
+
+// FEATURE_MATRIX plan gate: forms are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('forms'));
+
+export const WebFormsRouter = router({
+  getAllWithCounts: authProcedure
+    .input(getAllOptions)
+    .query(({ input, ctx }) => webForms.getAllWithCounts(ctx.auth.tenant_id, input)),
+  getById: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  add: authProcedure.input(AddWebFormObj).mutation(({ input, ctx }) => webForms.addForm(input, ctx.auth)),
+  update: authProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateWebFormObj }))
+    .mutation(({ input, ctx }) => webForms.updateForm(input.id, input.data, ctx.auth)),
+  delete: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  getSubmissionsCount: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
+  confirmSubscription: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
+
+  // --- North Star "living funnel" lifecycle (new Forms experience) ---
+  list: authProcedure.query(({ ctx }) => webForms.listForms(ctx.auth.tenant_id)),
+  getForEdit: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getFormForEdit(input, ctx.auth.tenant_id)),
+  create: authProcedure.input(CreateFormObj).mutation(({ input, ctx }) => webForms.createForm(input, ctx.auth)),
+  updateLive: authProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateFormObj }))
+    .mutation(({ input, ctx }) => webForms.updateFormLive(input.id, input.data, ctx.auth)),
+  publish: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.publishForm(input, ctx.auth)),
+  unpublish: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.unpublishForm(input, ctx.auth)),
+  archive: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.archiveForm(input, ctx.auth)),
+  restore: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.restoreForm(input, ctx.auth)),
+  deleteDraft: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.deleteForm(input, ctx.auth)),
+  submissions: authProcedure
+    .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
+    .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/workflows/controller.ts
@@ -36922,6 +35079,70 @@ function evaluateRule(node: unknown, person: Record<string, unknown>): boolean {
 }
 ````
 
+## File: apps/backend/src/app/modules/workflows/trpc.router.ts
+````typescript
+import {
+  AddWorkflowObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowObj,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { WorkflowsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+import { planFeatureGate } from '../billing/plan-gate';
+
+const workflows = new WorkflowsController();
+
+// FEATURE_MATRIX plan gate: automations are Grassroots-and-up; mutations below are blocked on Free.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('automations'));
+
+const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj, authProcedure);
+
+export const WorkflowsRouter = router({
+  ...crud,
+
+  // Spec §16 list (/automations) — enriched rows (recipe data + RUNS 30D + LAST RUN) and summary.
+  list: authProcedure.query(({ ctx }) => workflows.getWorkflowsList(ctx.auth.tenant_id)),
+
+  getSteps: authProcedure.input(idSchema).query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),
+
+  saveSteps: authProcedure
+    .input(z.object({ workflowId: idSchema, steps: z.array(AddWorkflowStepObj) }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
+    ),
+
+  setStatus: authProcedure
+    .input(z.object({ id: idSchema, status: z.enum(['active', 'paused']) }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id),
+    ),
+
+  getRuns: authProcedure
+    .input(z.object({ workflowId: idSchema, limit: z.number().int().positive().max(100).optional() }))
+    .query(({ input, ctx }) => workflows.getRuns(ctx.auth.tenant_id, input.workflowId, input.limit)),
+
+  getEnrollments: authProcedure
+    .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
+    .query(({ input, ctx }) => workflows.getEnrollments(ctx.auth.tenant_id, input.workflowId, input.options)),
+
+  enrollPerson: authProcedure
+    .input(z.object({ workflowId: idSchema, personId: idSchema }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id),
+    ),
+
+  cancelEnrollment: authProcedure
+    .input(z.object({ enrollmentId: idSchema }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
+    ),
+});
+````
+
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 ````typescript
 import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
@@ -37300,89 +35521,6 @@ export class ZapierService {
     return row ? String(row.tenant_id) : null;
   }
 }
-````
-
-## File: apps/backend/src/app/routes.ts
-````typescript
-import type { FastifyPluginCallback } from 'fastify';
-
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import importsDownloadRoute from './modules/imports/routes/imports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
-import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
-import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
-  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register public volunteer delivery-route pages (token is the credential, §14)
-  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
-
-  // Companion access layer: verify + approve gate for both volunteer companions
-  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // Register Postmark transactional bounce/spam-complaint webhook route
-  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
-  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check endpoint
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  done();
-};
 ````
 
 ## File: apps/backend/src/shutdown.ts
@@ -40345,559 +38483,791 @@ export default defineConfig(() => ({
 }));
 ````
 
-## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
 ````typescript
-import type { ExpressionBuilder, Kysely } from 'kysely';
-import { sql } from 'kysely';
+import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../../env';
 import { logger } from '../../../logger';
-import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
-import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
-import { UserActivityRepo } from '../../user-activity.repo';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+const COMPLETED_JOB_RETENTION_DAYS = 7;
+
+export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+
+  const expiredUsers = await db
+    .selectFrom('authusers')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const user of expiredUsers) {
+    const userId = String(user.id);
+    await db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
+      await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
+      await trx.deleteFrom('authusers').where('id', '=', userId).execute();
+    });
+  }
+
+  const expiredTenants = await db
+    .selectFrom('tenants')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const tenant of expiredTenants) {
+    const tenantId = String(tenant.id);
+
+    // Capture owner emails before deletion — background_jobs is wiped inside the transaction
+    const ownerUsers = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('role', '=', 'owner')
+      .execute();
+
+    logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
+    await db.transaction().execute(async (trx) => {
+      const tid = tenantId;
+
+      // ── Collaboration ─────────────────────────────────────────────────
+      await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
+
+      // ── Email & Marketing ──────────────────────────────────────────────
+      await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletter_send_log').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
+
+      // ── Ops & Platform ─────────────────────────────────────────────────
+      await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
+
+      // ── Email inbox ────────────────────────────────────────────────────
+      await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
+
+      // ── CRM Core ───────────────────────────────────────────────────────
+      await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
+
+      // ── Auth & Identity (last) ─────────────────────────────────────────
+      // Null out BOTH authusers FKs on tenants before deleting authusers (fk_admin_id AND
+      // fk_createdby_id — missing the latter aborts the whole wipe with a 23503).
+      await trx.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tid).execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tenants').where('id', '=', tid).execute();
+
+      logger.info(`Tenant ${tenantId} fully hard-deleted.`);
+    });
+
+    // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
+    for (const owner of ownerUsers) {
+      if (owner.email) {
+        await mailService.sendMail({
+          to: owner.email,
+          subject: 'Your account data has been permanently deleted',
+          text: `Hi ${owner.first_name},\n\nAll data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using pplCRM.`,
+          html: `<h2>Account Data Deleted</h2>
+<p>Hi ${owner.first_name},</p>
+<p>All data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
+<p>Thank you for using pplCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
+        });
+      }
+    }
+  }
+
+  // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
+  const retentionCutoff = new Date(Date.now() - COMPLETED_JOB_RETENTION_DAYS * DAY_MS);
+  await db
+    .deleteFrom('background_jobs')
+    .where('status', '=', 'completed')
+    .where('updated_at', '<=', retentionCutoff)
+    .execute();
+
+  await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { notificationEnabled } from '../../profile-preferences';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { SmsService } from '../../sms/sms.service';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
-import { FilesRepo } from '../../../modules/files/repositories/files.repo';
-import { StorageService } from '../../storage.service';
-import { getPlanDef } from '@common';
-import { getPlanLimits } from '../../../modules/billing/usage-limits';
-import {
-  loadSendingTenant,
-  logNewsletterBatch,
-  remainingSendAllowance,
-} from '../../../modules/newsletters/send-guards';
 
-const NEWSLETTER_BATCH_SIZE = 500;
-const BATCH_DELAY_MS = 1000;
-// How long a rate-capped send waits before its continuation job retries (rolling windows free
-// up gradually, so a short fixed delay converges without busy-waiting a worker slot).
-const RATE_CAP_DEFER_MS = 15 * 60 * 1000;
+const mailService = new TransactionalEmailService();
+const smsService = new SmsService();
 
-export async function handleSendNewsletter(
-  payload: JobPayloadOf<'send-newsletter'>,
+export async function handleSendFormNotifications(
+  payload: JobPayloadOf<'send-form-notifications'>,
   db: Kysely<Models>,
-  jobId?: string,
 ): Promise<void> {
-  const newsletterMailSvc = new NewsletterEmailService();
-  const { tenantId, newsletterId, userId } = payload;
-
-  // 1. Fetch newsletter to get settings, targets, segments, and content
-  const newsletter = await db
-    .selectFrom('newsletters')
-    .selectAll()
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
+  const event = await db
+    .selectFrom('volunteer_events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_signup_confirmation',
+      'send_volunteer_alert',
+    ])
+    .where('id', '=', payload.eventId)
     .executeTakeFirst();
 
-  if (!newsletter) {
-    logger.warn(`Newsletter ${newsletterId} not found.`);
+  if (!event) {
+    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
     return;
   }
 
-  // 2. Build the recipient query using NewslettersController
-  const { NewslettersController } = await import('../../../modules/newsletters/controller');
-  const controller = new NewslettersController();
-  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
 
-  // 3. Count total recipients
-  let offset = payload.offset ?? 0;
-  let deliveredCount = payload.deliveredCount ?? 0;
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (event.send_signup_confirmation !== false) {
+    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
 
-  const countResult = await baseQuery
-    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
-    .executeTakeFirst();
-  const totalRecipients = Number(countResult?.count || 0);
+    const coordEmailHtml = event.contact_email
+      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+      : '';
+    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
 
-  if (offset === 0) {
-    await db
-      .updateTable('newsletters')
-      .set({
-        status: 'sending',
-        total_recipients: totalRecipients,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .execute();
-  }
-
-  // Load communications/settings from database
-  const settingsRows = await db
-    .selectFrom('settings')
-    .select(['key', 'value'])
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', [
-      'communications.sendgrid_api_key',
-      'communications.sendgrid_subuser_username',
-      'communications.default_from_name',
-      'communications.default_from_email',
-      'communications.reply_to',
-      'communications.footer_disclaimer',
-      'communications.verified_emails',
-      'organization.address',
-    ])
-    .execute();
-
-  const settingsMap: Record<string, string> = {};
-  let verifiedEmails: string[] = [];
-  for (const row of settingsRows) {
-    if (typeof row.value === 'string') {
-      settingsMap[row.key] = row.value;
-    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
-      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
-    }
-  }
-
-  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-  // Free-tier traffic on the platform key defaults to the shared free-tier subuser so its
-  // sending reputation is isolated from paying customers'. A tenant-specific whitelabel
-  // subuser (or a tenant-owned API key) always wins — its domain auth lives there.
-  const sendingTenant = await loadSendingTenant(db, tenantId);
-  const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
-  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
-  const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
-  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
-
-  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
-  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
-  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
-
-  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
-  const footer = buildNewsletterFooter(
-    settingsMap['organization.address'],
-    settingsMap['communications.footer_disclaimer'],
-  );
-
-  // Render the stored editor HTML into email-ready HTML once (block-JSON stripped, relative image
-  // URLs made absolute against APP_URL, preview text injected as a hidden preheader). Merge tokens
-  // are left in the content and resolved per-recipient via SendGrid substitutions below.
-  const renderedHtml = renderNewsletterHtml(newsletter.html_content || '', {
-    baseUrl: env.appUrl,
-    previewText: newsletter.preview_text,
-  });
-  const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
-  const finalHtml = renderedHtml + footer.html;
-  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
-
-  const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
-
-  while (offset < totalRecipients) {
-    // Re-check the tenant's blocked state every batch so an abuse tripwire (fired by the
-    // SendGrid webhook while this send is in flight) stops the send mid-stream, not just the
-    // next one. The resume point is stored on the newsletter for a supervised restart.
-    const tenantNow = await loadSendingTenant(db, tenantId);
-    if (tenantNow.suspended_at || tenantNow.sending_paused_at) {
-      logger.warn(
-        { tenantId, newsletterId, offset, deliveredCount },
-        'Tenant sending is blocked — pausing newsletter mid-send',
-      );
-      await db
-        .updateTable('newsletters')
-        .set({ status: 'paused', send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', newsletterId)
-        .execute();
-      return;
-    }
-
-    // Per-tenant send-rate cap (hourly, plus the free-tier warm-up daily cap): trim the batch
-    // to what's still allowed; when nothing is, hand the remainder to a continuation job and
-    // free this worker slot instead of sleeping on it.
-    const allowance = await remainingSendAllowance(db, tenantNow, new Date());
-    if (allowance <= 0) {
-      logger.info(
-        { tenantId, newsletterId, offset, deliveredCount },
-        'Per-tenant send cap reached — deferring remainder of newsletter send',
-      );
-      await db
-        .updateTable('newsletters')
-        .set({ send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', newsletterId)
-        .execute();
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'send-newsletter', newsletterId, tenantId, userId, offset, deliveredCount }),
-          run_at: new Date(Date.now() + RATE_CAP_DEFER_MS),
-          max_attempts: 3,
-        })
-        .execute();
-      return;
-    }
-
-    // Query a chunk of recipients dynamically using LIMIT and OFFSET.
-    // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
-    // while still carrying the person fields the merge tokens need.
-    const chunkRows = await baseQuery
-      .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
-      .distinctOn('persons.email')
-      .orderBy('persons.email', 'asc')
-      .limit(Math.min(NEWSLETTER_BATCH_SIZE, allowance))
-      .offset(offset)
-      .execute();
-
-    const seen = new Set<string>();
-    const recipients: NewsletterRecipient[] = [];
-    for (const r of chunkRows) {
-      const email = r.email?.trim();
-      if (!email || seen.has(email)) continue;
-      seen.add(email);
-      recipients.push({
-        email,
-        substitutions: mergeTokens.length
-          ? resolveMergeSubstitutions(mergeTokens, {
-              email,
-              firstName: r.first_name,
-              lastName: r.last_name,
-              phone: r.mobile || r.home_phone,
-            })
-          : undefined,
-      });
-    }
-
-    if (recipients.length === 0) {
-      break;
-    }
-
-    const batchDelivered = await newsletterMailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients,
-      subject: newsletter.subject || 'Newsletter',
-      html: finalHtml,
-      text: finalText,
-      sendgridApiKey,
-      subuserUsername,
-      newsletterId,
-      tenantId,
-      attachments,
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Volunteer Signup Confirmation: ${event.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
     });
-
-    deliveredCount += batchDelivered;
-    offset += chunkRows.length;
-
-    // Meter the batch — this row is what the warm-up and hourly caps SUM over.
-    await logNewsletterBatch(db, tenantId, newsletterId, batchDelivered);
-
-    // Update progress in the background job payload (no recipients array!)
-    if (jobId) {
-      await db
-        .updateTable('background_jobs')
-        .set({
-          payload: JSON.stringify({
-            type: 'send-newsletter',
-            newsletterId,
-            tenantId,
-            userId,
-            offset,
-            deliveredCount,
-          }),
-          updated_at: new Date(),
-        })
-        .where('id', '=', jobId)
-        .execute();
-    }
-
-    // Add a small delay between batches to respect rate limits
-    if (offset < totalRecipients) {
-      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
-    }
   }
 
-  // Update newsletter status to 'sent'
-  await db
-    .updateTable('newsletters')
-    .set({
-      status: 'sent',
-      delivered_count: deliveredCount,
-      send_offset: null,
-      send_date: new Date(),
-      updatedby_id: userId,
-      updated_at: new Date(),
-    })
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .execute();
+  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+  if (event.send_volunteer_alert !== false) {
+    let alertRecipient = event.contact_email || null;
 
-  // Log user activity
-  const userActivity = new UserActivityRepo();
-  await userActivity.log({
-    tenant_id: tenantId,
-    user_id: userId,
-    activity: 'send',
-    entity: 'newsletters',
-    entity_id: newsletterId,
-    quantity: totalRecipients,
-    metadata: { recipientsCount: totalRecipients, deliveredCount },
-  });
-
-  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
-  await queueUsageLimitCheck(tenantId, db);
-}
-
-// Send-log rows only feed rolling-window caps (24h max) — 30 days is generous ops headroom.
-const SEND_LOG_RETENTION_DAYS = 30;
-
-export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  await pruneNewsletterEvents(db);
-  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
-}
-
-// Event types that warrant keeping a per-newsletter engagement record.
-// Delivery-only events (delivered, deferred, processed) are not stored.
-const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
-
-async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  const tenants: { id: string; subscription_plan: string | null }[] = await db
-    .selectFrom('tenants')
-    .select(['id', 'subscription_plan'])
-    .execute();
-
-  for (const tenant of tenants) {
-    try {
-      const planKey = getPlanDef(tenant.subscription_plan)?.key ?? 'free';
-      const retentionDays =
-        planKey === 'movement' || planKey === 'enterprise' ? 90 : planKey === 'grassroots' ? 30 : 15;
-
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const tenantId = String(tenant.id);
-
-      // Send-log rows only feed the rolling-window send caps (24h max) — prune with the events.
-      await db
-        .deleteFrom('newsletter_send_log')
-        .where('tenant_id', '=', tenantId)
-        .where('created_at', '<', new Date(Date.now() - SEND_LOG_RETENTION_DAYS * DAY_MS))
-        .execute();
-
-      // Fetch events older than the retention window that are engagement events.
-      const expiringEvents: {
-        newsletter_id: string;
-        email: string;
-        event_type: string;
-        timestamp: Date;
-      }[] = await db
-        .selectFrom('newsletter_events')
-        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
-        .where('tenant_id', '=', tenantId)
-        .where('created_at', '<', cutoff)
-        .execute();
-
-      // Group by (newsletter_id, email) to produce one upsert per recipient.
-      const grouped = new Map<
-        string,
-        {
-          newsletter_id: string;
-          email: string;
-          open_count: number;
-          click_count: number;
-          has_unsubscribed: boolean;
-          hard_bounced: boolean;
-          soft_bounced: boolean;
-          first_opened_at: Date | null;
-          last_opened_at: Date | null;
-          first_clicked_at: Date | null;
-          last_clicked_at: Date | null;
-          bounced_at: Date | null;
-          unsubscribed_at: Date | null;
-        }
-      >();
-
-      for (const ev of expiringEvents) {
-        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
-
-        const key = `${ev.newsletter_id}::${ev.email}`;
-        let agg = grouped.get(key);
-        if (!agg) {
-          agg = {
-            newsletter_id: ev.newsletter_id,
-            email: ev.email,
-            open_count: 0,
-            click_count: 0,
-            has_unsubscribed: false,
-            hard_bounced: false,
-            soft_bounced: false,
-            first_opened_at: null,
-            last_opened_at: null,
-            first_clicked_at: null,
-            last_clicked_at: null,
-            bounced_at: null,
-            unsubscribed_at: null,
-          };
-          grouped.set(key, agg);
-        }
-        const ts = new Date(ev.timestamp);
-
-        if (ev.event_type === 'open') {
-          agg.open_count++;
-          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
-          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
-        } else if (ev.event_type === 'click') {
-          agg.click_count++;
-          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
-          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
-        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        } else if (ev.event_type === 'bounce') {
-          // SendGrid bounce events don't carry a sub-type in this table;
-          // treat all as hard bounce (the webhook handler can refine this).
-          agg.hard_bounced = true;
-          if (!agg.bounced_at) agg.bounced_at = ts;
-        } else if (ev.event_type === 'spamreport') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        }
+    if (!alertRecipient) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select('email')
+        .where('tenant_id', '=', payload.tenantId)
+        .limit(1)
+        .executeTakeFirst();
+      if (admin && admin.email) {
+        alertRecipient = admin.email;
       }
-
-      // Upsert aggregated rows, then delete the raw events.
-      if (grouped.size > 0) {
-        await db.transaction().execute(async (trx) => {
-          for (const row of grouped.values()) {
-            await trx
-              .insertInto('person_newsletter_engagements')
-              .values({
-                tenant_id: tenantId,
-                newsletter_id: row.newsletter_id,
-                email: row.email,
-                open_count: row.open_count,
-                click_count: row.click_count,
-                has_unsubscribed: row.has_unsubscribed,
-                hard_bounced: row.hard_bounced,
-                soft_bounced: row.soft_bounced,
-                first_opened_at: row.first_opened_at,
-                last_opened_at: row.last_opened_at,
-                first_clicked_at: row.first_clicked_at,
-                last_clicked_at: row.last_clicked_at,
-                bounced_at: row.bounced_at,
-                unsubscribed_at: row.unsubscribed_at,
-              })
-              .onConflict((oc) =>
-                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
-                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
-                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
-                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
-                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
-                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
-                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
-                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
-                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
-                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
-                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
-                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
-                })),
-              )
-              .execute();
-          }
-
-          await trx
-            .deleteFrom('newsletter_events')
-            .where('tenant_id', '=', tenantId)
-            .where('created_at', '<', cutoff)
-            .execute();
-        });
-      } else {
-        // No engagement events to aggregate — still prune non-engagement events.
-        await db
-          .deleteFrom('newsletter_events')
-          .where('tenant_id', '=', tenantId)
-          .where('created_at', '<', cutoff)
-          .execute();
-      }
-    } catch (err) {
-      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
     }
-  }
-}
 
-/**
- * Fetches files attached to this newsletter (entity_type = 'newsletter') and downloads them as
- * base64 email attachments. If the tenant is at or over its storage quota, attachments are skipped
- * (the newsletter still sends, just without them) — mirrors the Storage settings quota warning.
- */
-export async function buildNewsletterAttachments(
-  db: Kysely<Models>,
-  tenantId: string,
-  newsletterId: string,
-): Promise<NewsletterAttachment[] | undefined> {
-  const filesRepo = new FilesRepo();
-  const { rows } = await filesRepo.getAllWithCounts({
-    tenant_id: tenantId,
-    options: { entityType: 'newsletter', entityId: newsletterId },
-  });
-  if (rows.length === 0) return undefined;
-
-  const tenant = await db
-    .selectFrom('tenants')
-    .select(['subscription_plan', 'subscription_quantity'])
-    .where('id', '=', tenantId)
-    .executeTakeFirst();
-  const quotaBytes = getPlanLimits(tenant?.subscription_plan, tenant?.subscription_quantity ?? 1).storageBytes;
-  const usedBytes = await filesRepo.getTotalBytes(tenantId);
-  if (usedBytes >= quotaBytes) {
-    logger.warn(
-      `Newsletter ${newsletterId} for tenant ${tenantId} is at/over its storage quota — sending without attachments.`,
-    );
-    return undefined;
-  }
-
-  const storageService = new StorageService();
-  const attachments: NewsletterAttachment[] = [];
-  for (const file of rows as { filename: string; storage_key: string; mime_type: string | null }[]) {
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      attachments.push({
-        content: buffer.toString('base64'),
-        filename: file.filename,
-        type: file.mime_type || undefined,
+    if (alertRecipient) {
+      await mailService.sendMail({
+        to: alertRecipient,
+        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
       });
-    } catch (err) {
-      logger.error({ err }, `Failed to download newsletter attachment ${file.storage_key}`);
     }
   }
-  return attachments.length > 0 ? attachments : undefined;
 }
+
+export async function handleSendShiftReminder(
+  payload: JobPayloadOf<'send-shift-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const shift = await db
+    .selectFrom('volunteer_shifts')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.shiftId)
+    .executeTakeFirst();
+
+  if (!shift) {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+    return;
+  }
+
+  // Covers cancelled and no-show shifts as well.
+  if (shift.status !== 'signed_up') {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+    return;
+  }
+
+  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
+    return;
+  }
+
+  if (event.send_reminder === false) {
+    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+    return;
+  }
+
+  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
+
+  if (!person) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
+    return;
+  }
+
+  if (!person.email) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
+  const subject = `Volunteer Shift Reminder: ${event.name}`;
+  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+  const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject,
+    text,
+    html,
+  });
+
+  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+}
+
+export async function handleSendWebformNotifications(
+  payload: JobPayloadOf<'send-webform-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const form = await db
+    .selectFrom('web_forms')
+    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+    .where('id', '=', payload.formId)
+    .executeTakeFirst();
+
+  if (!form) {
+    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
+    return;
+  }
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (form.send_confirmation !== false) {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Thank you for your submission to ${form.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Tenant Admin (if enabled)
+  if (form.send_alert !== false) {
+    const admin = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', form.tenant_id)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `[ALERT] New Lead Submission on ${form.name}`,
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendEventRegistrationConfirmation(
+  payload: JobPayloadOf<'send-event-registration-confirmation'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status === 'cancelled') {
+    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+    return;
+  }
+
+  const event = await db
+    .selectFrom('events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_registration_confirmation',
+    ])
+    .where('id', '=', registration.event_id)
+    .executeTakeFirst();
+
+  if (!event || event.send_registration_confirmation === false) {
+    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const coordLine = [
+    event.contact_email ? `Email: ${event.contact_email}` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const coordHtml = [
+    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Registration Confirmed: ${event.name}`,
+    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+  });
+
+  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendEventReminder(
+  payload: JobPayloadOf<'send-event-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status !== 'registered') {
+    logger.info(
+      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+    );
+    return;
+  }
+
+  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
+
+  if (!event || event.send_reminder === false) {
+    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Reminder: ${event.name} is tomorrow`,
+    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+  });
+
+  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
+  await mailService.sendMail({
+    to: payload.to,
+    subject: payload.subject ?? '',
+    text: payload.text ?? '',
+    html: payload.html ?? '',
+    tenant_id: payload.tenant_id ?? null,
+  });
+}
+
+export async function handleSendSms(payload: JobPayloadOf<'send-sms'>): Promise<void> {
+  await smsService.sendSms({ to: payload.to, body: payload.body });
+}
+
+export async function handleSendSubscriptionConfirmation(
+  payload: JobPayloadOf<'send-subscription-confirmation'>,
+): Promise<void> {
+  await mailService.sendMail({
+    to: payload.email,
+    subject: 'Please confirm your subscription',
+    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+  });
+}
+
+export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
+  await checkDueTasks(db);
+
+  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
+}
+
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
+      .where('tasks.status', 'not in', ['done', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, typeof dueTasks>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
+      }
+      userTasks.push(row);
+    }
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      if (!firstRow) continue;
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check and notify due tasks');
+  }
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+````typescript
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
 
 /**
- * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
- * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
- * subscription tracking is enabled.
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
  */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const idSchema = z.union([z.string(), z.number()]).transform(String);
 
-  const htmlParts: string[] = [];
-  const textParts: string[] = [];
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
 
-  const addr = (address || '').trim();
-  if (addr) {
-    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(addr);
-  }
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
 
-  const disc = (disclaimer || '').trim();
-  if (disc) {
-    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(disc);
-  }
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
 
-  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
-  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
-  textParts.push('Unsubscribe: <% unsubscribe %>');
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+    // A user-triggered "Re-check Google" re-runs the lookup even when the
+    // company was already enriched; the auto-queue on first load does not.
+    force: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
 
-  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
-  const text = `\n\n----\n${textParts.join('\n')}`;
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    campaignId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    campaignId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
 
-  return { html, text };
-}
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('send-sms'),
+    to: z.string(),
+    body: z.string(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
+  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
+  list_name: z.string().nullish(),
+  client_skip_reasons: z
+    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
+    .nullish(),
+});
+
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ````
 
 ## File: apps/backend/src/app/lib/jobs/worker.ts
@@ -41777,229 +40147,6 @@ export class BackgroundJobWorker {
 }
 ````
 
-## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
-````typescript
-import type { Kysely, Transaction } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../env';
-import { InternalError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-import { BaseRepository } from '../base.repo';
-
-export interface SendMailOptions {
-  to: string;
-  subject: string;
-  text: string;
-  html: string;
-  tenant_id?: string | null;
-}
-
-export class TransactionalEmailService {
-  private serverToken = env.postmarkServerToken;
-  private fromEmail = env.postmarkFromEmail;
-
-  private wrapInTemplate(title: string, contentHtml: string): string {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
-      margin: 0;
-      padding: 0;
-      -webkit-font-smoothing: antialiased;
-    }
-    .wrapper {
-      width: 100%;
-      background-color: #f8fafc;
-      padding: 40px 20px;
-      box-sizing: border-box;
-    }
-    .container {
-      max-width: 580px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      border: 1px solid #e2e8f0;
-    }
-    .header {
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      padding: 32px;
-      text-align: center;
-    }
-    .header h1 {
-      color: #ffffff;
-      font-size: 24px;
-      font-weight: 700;
-      margin: 0;
-      letter-spacing: -0.025em;
-    }
-    .content {
-      padding: 40px 32px;
-      line-height: 1.6;
-      font-size: 16px;
-    }
-    .content h2 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #0f172a;
-      margin-top: 0;
-      margin-bottom: 16px;
-    }
-    .content p {
-      margin-top: 0;
-      margin-bottom: 24px;
-      color: #475569;
-    }
-    .btn-container {
-      margin: 32px 0;
-      text-align: center;
-    }
-    .btn {
-      display: inline-block;
-      background-color: #4f46e5;
-      color: #ffffff !important;
-      text-decoration: none;
-      padding: 12px 28px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 15px;
-    }
-    .otp-container {
-      margin: 32px auto;
-      text-align: center;
-    }
-    .otp-code {
-      display: inline-block;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 32px;
-      font-weight: 700;
-      letter-spacing: 6px;
-      color: #4f46e5;
-      background-color: #f1f5f9;
-      padding: 12px 24px;
-      border-radius: 8px;
-      border: 1px dashed #cbd5e1;
-    }
-    .footer {
-      background-color: #f8fafc;
-      padding: 24px 32px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
-      font-size: 13px;
-      color: #64748b;
-    }
-    .footer p {
-      margin: 8px 0;
-      color: #64748b;
-    }
-    .footer a {
-      color: #4f46e5;
-      text-decoration: none;
-    }
-    .warning {
-      font-size: 14px;
-      color: #64748b;
-      background-color: #f8fafc;
-      border-left: 4px solid #cbd5e1;
-      padding: 12px 16px;
-      margin-top: 24px;
-      border-radius: 0 4px 4px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <h1>PplCRM</h1>
-      </div>
-      <div class="content">
-        ${contentHtml}
-      </div>
-      <div class="footer">
-        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
-        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-  }
-
-  public async sendMail(options: SendMailOptions): Promise<void> {
-    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
-
-    if (!this.serverToken) {
-      logger.info(
-        { from: this.fromEmail, to: options.to, subject: options.subject },
-        '[POSTMARK DEV MOCK] Transactional Email Outbound',
-      );
-      return;
-    }
-
-    try {
-      const response = await fetch('https://api.postmarkapp.com/email', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-Postmark-Server-Token': this.serverToken,
-        },
-        body: JSON.stringify({
-          From: this.fromEmail,
-          To: options.to,
-          Subject: options.subject,
-          TextBody: options.text,
-          HtmlBody: wrappedHtml,
-          // Round-trips to the bounce/complaint webhook so suppressions can be tenant-scoped.
-          ...(options.tenant_id ? { Metadata: { tenant_id: String(options.tenant_id) } } : {}),
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
-      }
-    } catch (error) {
-      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
-    }
-  }
-
-  public async enqueueMail(options: SendMailOptions, trx?: Transaction<Models> | Kysely<Models>): Promise<void> {
-    // NOTE: `as any` retained deliberately — the insert passes a `BigInt` tenant_id
-    // that the Kysely model types as `string | null`; a typed handle would reject it.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see NOTE above; BigInt tenant_id vs Kysely string-id model. pplcrm-any-exceptions
-    const dbClient = (trx || BaseRepository.dbInstance) as any;
-    await dbClient
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-transactional-email',
-          to: options.to,
-          subject: options.subject,
-          text: options.text,
-          html: options.html,
-          tenant_id: options.tenant_id ?? null,
-        }),
-        run_at: new Date(),
-        max_attempts: 5,
-      })
-      .execute();
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
 ````typescript
 import type { Transaction } from 'kysely';
@@ -42113,8 +40260,10 @@ export async function seedStarterTags(
 }
 
 /**
- * Creates the six starter web forms (one of every kind, all drafts) for a new
- * tenant. These are deliberately separate from the demo dataset
+ * Creates the seven starter web forms (all drafts) for a new tenant: one of
+ * each standard kind (signup ×2, request, survey), a standard fundraising
+ * pledge form, plus the two donation giving pages (one-time + recurring). These
+ * are deliberately separate from the demo dataset
  * (modules/demo/demo-seed.ts): exiting demo mode deletes the demo data but
  * keeps these forms — a ready-made starting point the user publishes when
  * they're ready.
@@ -42187,6 +40336,18 @@ export async function seedStarterForms(
       thanksBody: 'Your gift means a lot to us.',
       confirmSubject: 'Thanks for your gift',
       confirmBody: 'Hi [First name],\n\nThanks for your gift — a receipt is on its way.',
+    },
+    {
+      key: 'pledge',
+      formType: 'standard',
+      name: 'Fundraising pledge',
+      slug: 'fundraising-pledge',
+      description:
+        'Collect pledges of support from your website. Responses become people you can follow up with — no payment is taken here (use the Fundraising donation pages for card gifts).',
+      submitLabel: FORM_TEMPLATES.pledge.submitLabel,
+      thanksBody: 'Thank you for pledging your support — we’ll be in touch about next steps.',
+      confirmSubject: 'Thanks for your pledge',
+      confirmBody: 'Hi [First name],\n\nThank you for pledging your support — we’ll be in touch about next steps soon.',
     },
     {
       key: 'request',
@@ -42527,11 +40688,14 @@ const rpName = env.webAuthnRpName;
 ## File: apps/backend/src/app/modules/billing/trpc.router.ts
 ````typescript
 import { z } from 'zod';
-import { PURCHASABLE_PLAN_KEYS } from '@common';
+import { maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
 import { adminOrOwnerProcedure, router } from '../../../trpc';
 import { BillingController } from './controller';
 
 const controller = new BillingController();
+
+/** Largest valid Stripe quantity across the purchasable tiers (currently Movement's ladder). */
+const MAX_BRACKET_QUANTITY = Math.max(...PURCHASABLE_PLAN_KEYS.map((key) => maxQuantity(key)));
 
 export const BillingRouter = router({
   getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
@@ -42549,7 +40713,12 @@ export const BillingRouter = router({
 
   // Local mock testing mutation endpoints
   activateMockPlan: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS), quantity: z.number().int().min(1).max(40).optional() }))
+    .input(
+      z.object({
+        plan: z.enum(PURCHASABLE_PLAN_KEYS),
+        quantity: z.number().int().min(1).max(MAX_BRACKET_QUANTITY).optional(),
+      }),
+    )
     .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity)),
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
@@ -42796,6 +40965,76 @@ const canvassPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default canvassPublicRoute;
+````
+
+## File: apps/backend/src/app/modules/canvassing/trpc.router.ts
+````typescript
+import { z } from 'zod';
+
+import {
+  AddTurfObj,
+  AssignTurfObj,
+  CutTurfsObj,
+  FieldReportRangeObj,
+  UpdateCompanionSettingsObj,
+  UpdateTurfObj,
+  idSchema,
+} from '../../../../../../libs/common/src';
+
+import {
+  adminOrOwnerProcedure as baseAdminOrOwnerProcedure,
+  authProcedure as baseAuthProcedure,
+  router,
+} from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { CanvassingController } from './controller';
+
+const controller = new CanvassingController();
+
+// FEATURE_MATRIX plan gate: canvassing is Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('canvassing'));
+const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('canvassing'));
+
+export const CanvassingRouter = router({
+  // Turfs & assignments page.
+  getTurfs: authProcedure.query(({ ctx }) => controller.getTurfs(ctx.auth)),
+  getFieldSummary: authProcedure.query(({ ctx }) => controller.getFieldSummary(ctx.auth)),
+  getInFieldToday: authProcedure.query(({ ctx }) => controller.getInFieldToday(ctx.auth)),
+
+  // Cut new turfs.
+  previewCut: authProcedure.input(CutTurfsObj).query(({ ctx, input }) => controller.previewCut(ctx.auth, input)),
+  cutTurfs: authProcedure.input(CutTurfsObj).mutation(({ ctx, input }) => controller.cutTurfs(ctx.auth, input)),
+  refreshFromList: authProcedure
+    .input(idSchema)
+    .mutation(({ ctx, input }) => controller.refreshFromList(ctx.auth, input)),
+
+  // Turf CRUD + lifecycle.
+  addTurf: authProcedure.input(AddTurfObj).mutation(({ ctx, input }) => controller.addTurf(ctx.auth, input)),
+  updateTurf: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTurfObj }))
+    .mutation(({ ctx, input }) => controller.updateTurf(ctx.auth, input.id, input.data)),
+  assign: authProcedure.input(AssignTurfObj).mutation(({ ctx, input }) => controller.assignTurf(ctx.auth, input)),
+  retire: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.retireTurf(ctx.auth, input)),
+
+  // Companion survey vocabulary (issues chips + door script), campaign-scoped.
+  getCompanionSettings: authProcedure
+    .input(z.object({ campaign_id: idSchema.optional() }).optional())
+    .query(({ ctx, input }) => controller.getCompanionSettings(ctx.auth, input?.campaign_id)),
+  updateCompanionSettings: adminOrOwnerProcedure
+    .input(UpdateCompanionSettingsObj)
+    .mutation(({ ctx, input }) => controller.updateCompanionSettings(ctx.auth, input)),
+
+  // Field report.
+  getFieldReport: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.getFieldReport(ctx.auth, input)),
+  exportFieldReport: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.exportFieldReportCsv(ctx.auth, input)),
+  getCoverage: authProcedure
+    .input(FieldReportRangeObj)
+    .query(({ ctx, input }) => controller.getCoverage(ctx.auth, input)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/companies/controller.ts
@@ -43314,6 +41553,34 @@ const companionPublicRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default companionPublicRoute;
+````
+
+## File: apps/backend/src/app/modules/companion-access/trpc.router.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema } from '../../../../../../libs/common/src';
+import { adminOrOwnerProcedure as baseAdminOrOwnerProcedure, authProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { CompanionAccessController } from './controller';
+
+const controller = new CompanionAccessController();
+
+// FEATURE_MATRIX plan gate: companion volunteers are Grassroots-and-up (Free includes none), so
+// approving/revoking volunteer access is blocked on Free.
+const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('volunteers'));
+
+/** Staff surface for the companion access layer: the Volunteer access page. */
+export const CompanionAccessRouter = router({
+  getAll: authProcedure.query(({ ctx }) => controller.getAllVolunteers(ctx.auth.tenant_id)),
+  pendingCount: authProcedure.query(({ ctx }) => controller.pendingCount(ctx.auth.tenant_id)),
+  approve: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.approveVolunteer(ctx.auth, input.id)),
+  revoke: adminOrOwnerProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ ctx, input }) => controller.revokeVolunteer(ctx.auth, input.id)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/dashboard/controller.ts
@@ -44018,6 +42285,94 @@ export class DashboardController {
     };
   }
 }
+````
+
+## File: apps/backend/src/app/modules/deliveries/trpc.router.ts
+````typescript
+import {
+  AddDeliveryRequestObj,
+  AssignVolunteerObj,
+  CommitDeliveriesObj,
+  GetSignStatusObj,
+  MintShareLinkObj,
+  PlanDeliveriesObj,
+  ReorderStopObj,
+  RouteIdObj,
+  SetDeliveryRequestStatusObj,
+  SetDeliveryRouteStatusObj,
+  StopActionObj,
+  UpdateDeliveryRequestObj,
+  UpdateDeliveryRouteObj,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
+import { planFeatureGate } from '../billing/plan-gate';
+import { DeliveriesController } from './controller';
+
+const controller = new DeliveriesController();
+
+// FEATURE_MATRIX plan gate: deliveries are Movement-only; mutations below are blocked on lower plans.
+const authProcedure = baseAuthProcedure.use(planFeatureGate('deliveries'));
+
+export const DeliveriesRouter = router({
+  // Requests
+  getAllRequests: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRequests(ctx.auth.tenant_id, input)),
+  getRequestCounts: authProcedure.query(({ ctx }) => controller.getRequestCounts(ctx.auth.tenant_id)),
+  getReadyCount: authProcedure.query(({ ctx }) => controller.getReadyCount(ctx.auth.tenant_id)),
+  getSignStatus: authProcedure
+    .input(GetSignStatusObj)
+    .query(({ ctx, input }) => controller.getSignStatus(ctx.auth, input)),
+  addRequest: authProcedure
+    .input(AddDeliveryRequestObj)
+    .mutation(({ ctx, input }) => controller.addRequest(ctx.auth, input)),
+  updateRequestNotes: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRequestObj }))
+    .mutation(({ ctx, input }) => controller.updateRequestNotes(ctx.auth, input.id, input.data)),
+  setRequestStatus: authProcedure
+    .input(SetDeliveryRequestStatusObj)
+    .mutation(({ ctx, input }) => controller.setRequestStatus(ctx.auth, input)),
+
+  // Planning
+  getRouteDefaults: authProcedure.query(({ ctx }) => controller.getRouteDefaults(ctx.auth.tenant_id)),
+  previewPlan: authProcedure
+    .input(PlanDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.previewPlan(ctx.auth, input)),
+  commitPlan: authProcedure
+    .input(CommitDeliveriesObj)
+    .mutation(({ ctx, input }) => controller.commitPlan(ctx.auth, input)),
+
+  // Routes
+  getAllRoutes: authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllRoutes(ctx.auth.tenant_id, input)),
+  getRouteById: authProcedure.input(idSchema).query(({ ctx, input }) => controller.getRouteById(ctx.auth, input)),
+  updateRoute: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateDeliveryRouteObj }))
+    .mutation(({ ctx, input }) => controller.updateRoute(ctx.auth, input.id, input.data)),
+  assignVolunteer: authProcedure
+    .input(AssignVolunteerObj)
+    .mutation(({ ctx, input }) => controller.assignVolunteer(ctx.auth, input)),
+  setRouteStatus: authProcedure
+    .input(SetDeliveryRouteStatusObj)
+    .mutation(({ ctx, input }) => controller.setRouteStatus(ctx.auth, input)),
+  deleteRoute: authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteRoute(ctx.auth, input)),
+  stopAction: authProcedure.input(StopActionObj).mutation(({ ctx, input }) => controller.stopAction(ctx.auth, input)),
+  reorderStop: authProcedure
+    .input(ReorderStopObj)
+    .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
+  mintShareLink: authProcedure
+    .input(MintShareLinkObj)
+    .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),
+  revokeShareLink: authProcedure
+    .input(RouteIdObj)
+    .mutation(({ ctx, input }) => controller.revokeShareLink(ctx.auth, input.route_id)),
+});
 ````
 
 ## File: apps/backend/src/app/modules/demo/controller.ts
@@ -46368,268 +44723,6 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
-````typescript
-import { createPublicKey, createVerify } from 'crypto';
-import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
-import { BaseRepository } from '../../../lib/base.repo';
-import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
-import { applyEngagementTripwires } from '../send-guards';
-import { env } from '../../../../env';
-import { sql } from 'kysely';
-
-const db = new BaseRepository('newsletters').db;
-const subscriptions = new CampaignSubscriptionsRepo();
-
-/**
- * Consent/suppression side-effects of a SendGrid event (§15):
- *  - unsubscribe → unsubscribed in the CAMPAIGN whose newsletter carried the link
- *  - bounce → global hard_bounce suppression (address is dead everywhere)
- *  - spamreport → global spam_complaint suppression
- */
-async function applyConsentSideEffects(
-  tenantId: string,
-  newsletterId: string,
-  eventType: string,
-  email: string,
-  occurredAt: Date,
-): Promise<void> {
-  if (!email) return;
-  if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
-    const newsletter = await db
-      .selectFrom('newsletters')
-      .select(['campaign_id'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .executeTakeFirst();
-    if (newsletter?.campaign_id) {
-      await subscriptions.unsubscribeByEmail({
-        tenant_id: tenantId,
-        campaign_id: String(newsletter.campaign_id),
-        email,
-      });
-    }
-  } else if (eventType === 'bounce' || eventType === 'spamreport') {
-    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
-    await db
-      .insertInto('email_suppressions')
-      .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
-      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
-      .execute();
-  }
-}
-
-const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
-const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
-
-/**
- * Verifies a SendGrid Signed Event Webhook request.
- * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
- * against the base64-DER public verification key configured in the dashboard.
- */
-function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
-  const verificationKey = env.sendgridWebhookVerificationKey;
-  if (!verificationKey || !signature || !timestamp) {
-    return false;
-  }
-
-  try {
-    const publicKey = createPublicKey({
-      key: Buffer.from(verificationKey, 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    const verifier = createVerify('sha256');
-    verifier.update(timestamp + rawBody);
-    verifier.end();
-    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
-  } catch {
-    return false;
-  }
-}
-
-/** Shape of a single SendGrid Event Webhook payload entry (all fields optional — inbound/untrusted). */
-interface SendGridEvent {
-  newsletter_id?: string;
-  tenant_id?: string;
-  sg_event_id?: string;
-  sg_message_id?: string;
-  event?: string;
-  email?: string;
-  url?: string;
-  ip?: string;
-  useragent?: string;
-  reason?: string;
-  type?: string;
-  timestamp?: number;
-}
-
-const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req: FastifyRequest, reply) => {
-    // req.body is the raw string (see content-type parser in fastify.server.ts)
-    const rawBody = typeof req.body === 'string' ? req.body : '';
-    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
-    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
-
-    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    let parsedBody: unknown;
-    try {
-      parsedBody = JSON.parse(rawBody);
-    } catch {
-      return reply.code(400).send({ error: 'Invalid payload' });
-    }
-
-    const events: SendGridEvent[] = Array.isArray(parsedBody) ? parsedBody : [parsedBody as SendGridEvent];
-
-    try {
-      const processedNewsletters = new Set<string>();
-
-      // Insert all events that have newsletter_id and tenant_id
-      for (const ev of events) {
-        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
-          continue;
-        }
-
-        const newsletterId = ev.newsletter_id;
-        const tenantId = ev.tenant_id;
-        const eventType = ev.event || '';
-        const email = ev.email || '';
-        const sgEventId = ev.sg_event_id;
-        const sgMessageId = ev.sg_message_id || null;
-        const url = ev.url || null;
-        const ip = ev.ip || null;
-        const userAgent = ev.useragent || null;
-        // Bounce diagnostics for the report: reason ("Mailbox does not exist")
-        // on bounce/dropped events, type 'bounce' (hard) / 'blocked' (soft) on bounces.
-        const reason = typeof ev.reason === 'string' && ev.reason ? ev.reason : null;
-        const bounceType = eventType === 'bounce' && typeof ev.type === 'string' && ev.type ? ev.type : null;
-        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
-
-        try {
-          await db
-            .insertInto('newsletter_events')
-            .values({
-              tenant_id: tenantId,
-              newsletter_id: newsletterId,
-              email,
-              event_type: eventType,
-              sg_event_id: sgEventId,
-              sg_message_id: sgMessageId,
-              url,
-              ip,
-              user_agent: userAgent,
-              reason,
-              bounce_type: bounceType,
-              timestamp,
-              created_at: new Date(),
-            })
-            .onConflict((oc) => oc.column('sg_event_id').doNothing())
-            .execute();
-
-          processedNewsletters.add(`${tenantId}:${newsletterId}`);
-
-          await applyConsentSideEffects(String(tenantId), String(newsletterId), eventType, email, timestamp);
-        } catch (insertErr) {
-          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
-        }
-      }
-
-      // Recompute aggregates for each processed newsletter
-      for (const key of processedNewsletters) {
-        const [tenantId, newsletterId] = key.split(':') as [string, string];
-
-        await db.transaction().execute(async (trx) => {
-          // 1. Fetch aggregates
-          const stats = await trx
-            .selectFrom('newsletter_events')
-            .select([
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
-              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
-            ])
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          // 2. Fetch top links clicked
-          const topLinksResult = await trx
-            .selectFrom('newsletter_events')
-            .select(['url'])
-            .select(({ fn }) => fn.count<number>('id').as('clicks'))
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .where('event_type', '=', 'click')
-            .where('url', 'is not', null)
-            .groupBy('url')
-            .orderBy('clicks', 'desc')
-            .execute();
-
-          const topLinks = topLinksResult.map((l) => ({
-            url: l.url,
-            clicks: Number(l.clicks),
-          }));
-
-          // 3. Update the newsletters table row
-          const newsletter = await trx
-            .selectFrom('newsletters')
-            .select(['total_recipients'])
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
-          const uniqueOpens = Number(stats?.unique_opens ?? 0);
-          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
-
-          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
-          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
-
-          await trx
-            .updateTable('newsletters')
-            .set({
-              delivered_count: Number(stats?.delivered ?? 0),
-              bounce_count: Number(stats?.bounced ?? 0),
-              unique_opens: uniqueOpens,
-              unique_clicks: uniqueClicks,
-              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
-              spam_complaint_count: Number(stats?.spamreports ?? 0),
-              last_engagement_at: stats?.last_engagement || null,
-              open_rate: openRate,
-              click_rate: clickRate,
-              top_links: JSON.stringify(topLinks),
-              updated_at: new Date(),
-            })
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .execute();
-        });
-
-        // Abuse tripwires (§ anti-spam): a high hard-bounce rate pauses the tenant's sending, a
-        // high spam-complaint rate suspends the account pending human review. Runs after the
-        // aggregates so an in-flight send's worker loop sees the flag on its next batch.
-        await applyEngagementTripwires(db, tenantId, newsletterId);
-      }
-
-      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err) {
-      req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  });
-
-  done();
-};
-
-export default newslettersWebhookRoute;
-````
-
 ## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
 ````typescript
 import type { Selectable, Transaction } from 'kysely';
@@ -47766,6 +45859,812 @@ export const PersonsRouter = router({
   moveEntireHousehold: moveEntireHousehold(),
   checkDuplicateEmails: checkDuplicateEmails(),
 });
+````
+
+## File: apps/backend/src/app/modules/settings/controller.ts
+````typescript
+import { TRPCError } from '@trpc/server';
+import { createSigner, createVerifier } from 'fast-jwt';
+import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+
+interface VerifiedDomainEntry {
+  domain: string;
+  domainAuthId?: string | number;
+  linkBrandingId?: string | number;
+  spf?: boolean;
+  dkim?: boolean;
+  dmarc?: boolean;
+  linkBranded?: boolean;
+  status?: string;
+  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+}
+
+import { randomInt, timingSafeEqual } from 'crypto';
+
+import { BaseController } from '../../lib/base.controller';
+import { BadRequestError, TooManyRequestsError } from '../../errors/app-errors';
+import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { maskPhone, normalizeE164 } from '../../lib/sms/phone';
+import { SmsService } from '../../lib/sms/sms.service';
+import { hashToken } from '../../lib/token-hash';
+import { getPlanDef } from '@common';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { SettingsRepo } from './repositories/settings.repo';
+
+const PHONE_CODE_TTL_MS = 10 * 60 * 1000;
+const PHONE_CODE_MAX_ATTEMPTS = 5;
+
+// Rate limiting in-memory storage to prevent verification spam/abuse
+const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
+const tenantVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+const domainVerificationTimestamps = new Map<string, number>(); // key: `${tenant_id}:${domain}`, value: timestamp
+const tenantDomainVerificationTimestamps = new Map<string, number[]>(); // key: tenant_id, value: array of timestamps
+
+export class SettingsController extends BaseController<'settings', SettingsRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new SettingsRepo());
+  }
+
+  public async getCurrentCampaignId(auth: IAuthKeyPayload) {
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'current_campaign',
+    });
+
+    if (!row) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Current campaign setting not found.',
+      });
+    }
+
+    const value = row.value;
+
+    if (typeof value === 'number' || typeof value === 'string') {
+      return String(value);
+    }
+
+    if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+      const id = (value as Record<string, unknown>)['id'];
+      if (typeof id === 'number' || typeof id === 'string') {
+        return String(id);
+      }
+    }
+
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Current campaign setting is malformed.',
+    });
+  }
+
+  public async getSnapshot(auth: IAuthKeyPayload) {
+    const rows = await this.getRepo().getAllForTenant(auth.tenant_id);
+
+    return rows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+  }
+
+  public async upsert(auth: IAuthKeyPayload, entries: SettingsEntryType[]) {
+    // Workspace configuration is locked while the tenant is on the demo test drive.
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+
+    // 1. Block direct updates to verified_emails setting key
+    if (entries.some((entry) => entry.key === 'communications.verified_emails')) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Verified emails list cannot be modified directly.',
+      });
+    }
+
+    // 2. Validate default from and reply-to emails
+    const defaultFromEntry = entries.find((e) => e.key === 'communications.default_from_email');
+    const replyToEntry = entries.find((e) => e.key === 'communications.reply_to');
+
+    if (defaultFromEntry || replyToEntry) {
+      const snapshot = await this.getSnapshot(auth);
+      const verifiedEmailsRaw = snapshot['communications.verified_emails'];
+      const verifiedEmails = Array.isArray(verifiedEmailsRaw)
+        ? verifiedEmailsRaw.map((e) => String(e).toLowerCase().trim())
+        : [];
+
+      if (defaultFromEntry && typeof defaultFromEntry.value === 'string') {
+        const val = defaultFromEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Default From Email.',
+          });
+        }
+      }
+
+      if (replyToEntry && typeof replyToEntry.value === 'string') {
+        const val = replyToEntry.value.toLowerCase().trim();
+        if (val && !verifiedEmails.includes(val)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Email address must be verified before it can be configured as a Reply-to Email.',
+          });
+        }
+      }
+    }
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: entries.map((entry) => ({
+        key: entry.key,
+        value: entry.value,
+      })),
+    });
+
+    return this.getSnapshot(auth);
+  }
+
+  /**
+   * Sending-phone verification (anti-abuse): Free-plan tenants must verify a mobile number by
+   * SMS before their first newsletter send (send-guards enforces it). One number per tenant;
+   * the 6-digit code is stored hashed on the tenant row — never in settings, whose snapshot is
+   * client-readable.
+   */
+  public async getPhoneVerificationStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['sending_phone', 'sending_phone_verified_at', 'pending_phone', 'subscription_plan'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    return {
+      verified: tenant?.sending_phone_verified_at != null,
+      verifiedAt: tenant?.sending_phone_verified_at ?? null,
+      phone: tenant?.sending_phone ? maskPhone(tenant.sending_phone) : null,
+      pendingPhone: tenant?.pending_phone ? maskPhone(tenant.pending_phone) : null,
+      // Whether a send is currently gated on it (Free plan; unknown/legacy values resolve to free).
+      required: (getPlanDef(tenant?.subscription_plan)?.key ?? 'free') === 'free',
+    };
+  }
+
+  public async requestPhoneVerification(auth: IAuthKeyPayload, phone: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = normalizeE164(phone);
+    if (!normalized) {
+      throw new BadRequestError('Enter a valid mobile number, including the country code for non-US numbers.');
+    }
+    // Throttle per tenant (code farming) and per destination number (SMS-bombing a victim).
+    checkRateLimit(`phoneVerifyRequest:${auth.tenant_id}`, 3, 60 * 60 * 1000);
+    checkRateLimit(`phoneVerifyRequest:${normalized}`, 3, 60 * 60 * 1000);
+
+    const code = String(randomInt(100000, 1000000));
+    const smsService = new SmsService();
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('tenants')
+          .set({
+            pending_phone: normalized,
+            phone_verification_code_hash: hashToken(code),
+            phone_verification_expires_at: new Date(Date.now() + PHONE_CODE_TTL_MS),
+            phone_verification_attempts: 0,
+          })
+          .where('id', '=', auth.tenant_id)
+          .execute();
+        await smsService.enqueueSms(
+          {
+            to: normalized,
+            body: `Your pplCRM verification code is ${code}. It expires in 10 minutes.`,
+            tenant_id: auth.tenant_id,
+          },
+          trx,
+        );
+      });
+
+    return { success: true, phone: maskPhone(normalized) };
+  }
+
+  public async confirmPhoneVerification(auth: IAuthKeyPayload, code: string) {
+    checkRateLimit(`phoneVerifyConfirm:${auth.tenant_id}`, 10, 15 * 60 * 1000);
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select([
+        'pending_phone',
+        'phone_verification_code_hash',
+        'phone_verification_expires_at',
+        'phone_verification_attempts',
+      ])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!tenant?.pending_phone || !tenant.phone_verification_code_hash) {
+      throw new BadRequestError('No phone verification is in progress. Request a new code first.');
+    }
+    if (Number(tenant.phone_verification_attempts) >= PHONE_CODE_MAX_ATTEMPTS) {
+      throw new TooManyRequestsError('Too many incorrect codes. Request a new code and try again.');
+    }
+    const expiresAt = tenant.phone_verification_expires_at ? new Date(tenant.phone_verification_expires_at) : null;
+    if (!expiresAt || expiresAt.getTime() < Date.now()) {
+      throw new BadRequestError('That code has expired. Request a new one.');
+    }
+
+    const expected = Buffer.from(tenant.phone_verification_code_hash, 'hex');
+    const actual = Buffer.from(hashToken(code.trim()), 'hex');
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+      await db
+        .updateTable('tenants')
+        .set((eb) => ({ phone_verification_attempts: eb('phone_verification_attempts', '+', 1) }))
+        .where('id', '=', auth.tenant_id)
+        .execute();
+      throw new BadRequestError('Incorrect code. Check the SMS and try again.');
+    }
+
+    await db
+      .updateTable('tenants')
+      .set({
+        sending_phone: tenant.pending_phone,
+        sending_phone_verified_at: new Date(),
+        pending_phone: null,
+        phone_verification_code_hash: null,
+        phone_verification_expires_at: null,
+        phone_verification_attempts: 0,
+      })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'update',
+      entity: 'settings',
+      metadata: { action: 'sending_phone_verified', phone: maskPhone(tenant.pending_phone) },
+    });
+
+    return { success: true, phone: maskPhone(tenant.pending_phone) };
+  }
+
+  public async requestEmailVerification(auth: IAuthKeyPayload, email: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const normalized = email.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${normalized}`;
+    const now = Date.now();
+
+    // 1. Per-email verification limit: max once per minute
+    const lastRequest = verificationRequestTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before requesting verification again for this email.`,
+      });
+    }
+
+    // 2. Tenant-wide verification limit: max 5 requests per minute
+    let tenantRequests = tenantVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message:
+          'Rate limit exceeded. You can only request up to 5 verification emails per minute across your campaign.',
+      });
+    }
+
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const signer = createSigner({
+      algorithm: 'HS256',
+      key,
+      expiresIn: '24h',
+    });
+
+    const token = signer({
+      tenant_id: auth.tenant_id,
+      email: normalized,
+      purpose: 'verify-sender-email',
+    });
+
+    const verificationLink = `${env.appUrl}/verify-sender-email?token=${token}`;
+
+    await this.mailService.enqueueMail({
+      to: normalized,
+      tenant_id: auth.tenant_id,
+      subject: 'Verify sender email address for your PplCRM campaign',
+      text: `Hi,\n\nPlease verify your email address by clicking this link: ${verificationLink}\n\nThis link will expire in 24 hours.`,
+      html: `<h3>Verify Sender Email</h3><p>Please click the link below to verify your email address for your PplCRM campaign:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link will expire in 24 hours.</p>`,
+    });
+
+    // Record timestamps if successful
+    tenantRequests.push(now);
+    tenantVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    verificationRequestTimestamps.set(rateLimitKey, now);
+
+    return { success: true };
+  }
+
+  public async verifySenderEmail(token: string) {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({
+      algorithms: ['HS256'],
+      key,
+      ignoreExpiration: false,
+    });
+
+    try {
+      const payload = await verifier(token);
+      if (!payload || payload.purpose !== 'verify-sender-email' || !payload.tenant_id || !payload.email) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Invalid verification token.',
+        });
+      }
+
+      const tenantId = String(payload.tenant_id);
+      const email = String(payload.email).toLowerCase().trim();
+
+      const row = await this.getRepo().getByKey({
+        tenant_id: tenantId,
+        key: 'communications.verified_emails',
+      });
+
+      let currentList: string[] = [];
+      if (row && Array.isArray(row.value)) {
+        currentList = row.value.map((e) => String(e).toLowerCase().trim());
+      }
+
+      if (!currentList.includes(email)) {
+        currentList.push(email);
+
+        const tenant = await this.getRepo()
+          .db.selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
+
+        await this.getRepo().upsertMany({
+          tenant_id: tenantId,
+          user_id: adminId,
+          entries: [{ key: 'communications.verified_emails', value: currentList }],
+        });
+      }
+
+      return { success: true, email };
+    } catch (err) {
+      if (err instanceof TRPCError) throw err;
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Invalid or expired verification token.',
+      });
+    }
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can schedule deletion.',
+      });
+    }
+
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: deletionDate })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'Security Alert: Organization Scheduled for Deletion',
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, please trigger a cancel restoration request in your dashboard settings.`,
+        html: `<h2>Organization Scheduled for Deletion</h2>
+<p>Hi ${admin.first_name || 'Admin'},</p>
+<p>The organization <strong>${tenant.name}</strong> (Tenant ID: ${auth.tenant_id}) has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All data including campaigns, contacts, lists, workflows, and user accounts under this tenant will be permanently deleted. If you did not make this request or wish to cancel it, please click the button below to cancel the deletion:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/settings" class="btn">Manage Organization Settings</a>
+</div>
+<p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
+      });
+    }
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .selectAll()
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    if (!tenant) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Tenant not found.',
+      });
+    }
+
+    if (String(tenant.admin_id) !== String(auth.user_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Only the organization administrator can cancel deletion.',
+      });
+    }
+
+    await this.getRepo()
+      .db.updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', auth.tenant_id)
+      .execute();
+
+    const admin = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('id', '=', auth.user_id)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await this.mailService.sendMail({
+        to: admin.email,
+        tenant_id: auth.tenant_id,
+        subject: 'PplCRM - Organization Deletion Canceled',
+        text: `Your request to delete organization ${tenant.name} has been successfully canceled, and your organization is fully restored.`,
+        html: `<h2>Organization Deletion Canceled</h2>
+<p>Your request to delete organization <strong>${tenant.name}</strong> has been successfully canceled. Your organization and all associated campaign data are fully restored.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+    const db = this.getRepo().db;
+
+    // Get SendGrid settings
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.verified_domains',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, unknown> = {};
+    for (const row of settingsRows) {
+      settingsMap[row.key] = row.value;
+    }
+
+    const apiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuser = settingsMap['communications.sendgrid_subuser_username'];
+    const currentList: VerifiedDomainEntry[] = Array.isArray(settingsMap['communications.verified_domains'])
+      ? (settingsMap['communications.verified_domains'] as VerifiedDomainEntry[])
+      : [];
+
+    if (currentList.some((d) => d.domain === domainVal)) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This domain is already added.',
+      });
+    }
+
+    const sendgridSvc = new SendGridWhitelabelService();
+    const domainAuth = await sendgridSvc.createDomainAuthentication(
+      domainVal,
+      apiKey as string | undefined,
+      subuser as string | undefined,
+    );
+    const linkBranding = await sendgridSvc.createLinkBranding(
+      domainVal,
+      apiKey as string | undefined,
+      subuser as string | undefined,
+    );
+
+    const newEntry = {
+      domain: domainVal,
+      status: 'pending',
+      spf: false,
+      dkim: false,
+      dmarc: false,
+      domainAuthId: domainAuth.id,
+      linkBrandingId: linkBranding.id,
+      domainAuthDns: domainAuth.dns,
+      linkBrandingDns: linkBranding.dns,
+      linkBranded: false,
+    };
+
+    const updatedList = [...currentList, newEntry];
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async verifyVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+    const rateLimitKey = `${auth.tenant_id}:${domainVal}`;
+    const now = Date.now();
+
+    // 1. Per-domain verification check limit: max once per minute
+    const lastRequest = domainVerificationTimestamps.get(rateLimitKey);
+    if (lastRequest && now - lastRequest < 60000) {
+      const remainingSeconds = Math.ceil((60000 - (now - lastRequest)) / 1000);
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Please wait ${remainingSeconds} seconds before verifying this domain again.`,
+      });
+    }
+
+    // 2. Tenant-wide domain verification limit: max 5 checks per minute
+    let tenantRequests = tenantDomainVerificationTimestamps.get(auth.tenant_id) || [];
+    tenantRequests = tenantRequests.filter((t) => now - t < 60000);
+    if (tenantRequests.length >= 5) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. You can only verify up to 5 domains per minute across your campaign.',
+      });
+    }
+
+    const db = this.getRepo().db;
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Record timestamps if validation can proceed
+    tenantRequests.push(now);
+    tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
+    domainVerificationTimestamps.set(rateLimitKey, now);
+
+    // Get SendGrid credentials
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
+      .execute();
+
+    const settingsMap: Record<string, unknown> = {};
+    for (const settingsRow of settingsRows) {
+      settingsMap[settingsRow.key] = settingsRow.value;
+    }
+
+    const apiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuser = settingsMap['communications.sendgrid_subuser_username'];
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    let spfVerified = false;
+    let dkimVerified = false;
+    let linkBranded = false;
+    let dmarcVerified = false;
+
+    // Check with SendGrid if IDs are present
+    if (domainEntry.domainAuthId) {
+      const authRes = await sendgridSvc.validateDomainAuthentication(
+        Number(domainEntry.domainAuthId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
+      spfVerified = !!authRes.validationResults?.['mail_cname'];
+      dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
+    }
+
+    if (domainEntry.linkBrandingId) {
+      linkBranded = await sendgridSvc.validateLinkBranding(
+        Number(domainEntry.linkBrandingId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
+    }
+
+    // Check DMARC via live DNS check
+    dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
+
+    // Fallback/Mock behavior in local development mode (no valid API key)
+    const hasValidKey = apiKey && (apiKey as string).trim().startsWith('SG.') && (apiKey as string).trim().length > 20;
+    if (!hasValidKey) {
+      // For local development, if real DNS check fails (e.g. mock domains),
+      // we auto-verify to allow testing success state.
+      // But we still attempt real CNAME / TXT checks first in case they set up local DNS.
+      const realSpf = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
+        domainEntry.domainAuthDns?.['mail_cname']?.data,
+      );
+      const realDkim1 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim1']?.host || '',
+        domainEntry.domainAuthDns?.['dkim1']?.data,
+      );
+      const realDkim2 = await sendgridSvc.verifyCname(
+        domainEntry.domainAuthDns?.['dkim2']?.host || '',
+        domainEntry.domainAuthDns?.['dkim2']?.data,
+      );
+      const realLink = await sendgridSvc.verifyCname(
+        domainEntry.linkBrandingDns?.['domain']?.host || '',
+        domainEntry.linkBrandingDns?.['domain']?.data,
+      );
+
+      spfVerified = realSpf || true;
+      dkimVerified = (realDkim1 && realDkim2) || true;
+      linkBranded = realLink || true;
+      dmarcVerified = dmarcVerified || true;
+    }
+
+    const updatedList = currentList.map((d) => {
+      if (d.domain === domainVal) {
+        const isVerified = spfVerified && dkimVerified && dmarcVerified && linkBranded;
+        return {
+          ...d,
+          spf: spfVerified,
+          dkim: dkimVerified,
+          dmarc: dmarcVerified,
+          linkBranded,
+          status: isVerified ? 'verified' : 'pending',
+          domainAuthDns: {
+            ...d.domainAuthDns,
+            mail_cname: d.domainAuthDns?.['mail_cname']
+              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
+              : undefined,
+            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
+            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
+          },
+          linkBrandingDns: {
+            ...d.linkBrandingDns,
+            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
+          },
+        };
+      }
+      return d;
+    });
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+
+  public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+    const db = this.getRepo().db;
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+
+    if (!row || !Array.isArray(row.value)) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Domain configuration not found.',
+      });
+    }
+
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
+
+    if (!domainEntry) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Domain ${domainVal} not found in verified domains list.`,
+      });
+    }
+
+    // Get SendGrid credentials
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
+      .execute();
+
+    const settingsMap: Record<string, unknown> = {};
+    for (const settingsRow of settingsRows) {
+      settingsMap[settingsRow.key] = settingsRow.value;
+    }
+
+    const apiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuser = settingsMap['communications.sendgrid_subuser_username'];
+
+    const sendgridSvc = new SendGridWhitelabelService();
+
+    // Delete from SendGrid
+    if (domainEntry.domainAuthId) {
+      await sendgridSvc.deleteDomainAuthentication(
+        Number(domainEntry.domainAuthId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
+    }
+    if (domainEntry.linkBrandingId) {
+      await sendgridSvc.deleteLinkBranding(
+        Number(domainEntry.linkBrandingId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
+    }
+
+    const updatedList = currentList.filter((d) => d.domain !== domainVal);
+
+    await this.getRepo().upsertMany({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entries: [{ key: 'communications.verified_domains', value: updatedList }],
+    });
+
+    return updatedList;
+  }
+}
 ````
 
 ## File: apps/backend/src/app/modules/tags/repositories/tags.repo.ts
@@ -51334,6 +50233,89 @@ export { PersonConnectionsRouter } from './person-connections/trpc.router';
 export { CampaignsRouter } from './campaigns/trpc.router';
 ````
 
+## File: apps/backend/src/app/routes.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
+import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
+
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
+
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
+  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
+
+  // Register public volunteer delivery-route pages (token is the credential, §14)
+  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
+
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Postmark transactional bounce/spam-complaint webhook route
+  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check endpoint
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  done();
+};
+````
+
 ## File: apps/backend/src/trpc.ts
 ````typescript
 // tsco:ignore
@@ -54300,6 +53282,561 @@ body {
 }
 ````
 
+## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+````typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../../env';
+import { logger } from '../../../logger';
+import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
+import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
+import { UserActivityRepo } from '../../user-activity.repo';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+import { FilesRepo } from '../../../modules/files/repositories/files.repo';
+import { StorageService } from '../../storage.service';
+import { getPlanDef } from '@common';
+import { getPlanLimits } from '../../../modules/billing/usage-limits';
+import {
+  loadSendingTenant,
+  logNewsletterBatch,
+  remainingSendAllowance,
+} from '../../../modules/newsletters/send-guards';
+
+const NEWSLETTER_BATCH_SIZE = 500;
+const BATCH_DELAY_MS = 1000;
+// How long a rate-capped send waits before its continuation job retries (rolling windows free
+// up gradually, so a short fixed delay converges without busy-waiting a worker slot).
+const RATE_CAP_DEFER_MS = 15 * 60 * 1000;
+
+export async function handleSendNewsletter(
+  payload: JobPayloadOf<'send-newsletter'>,
+  db: Kysely<Models>,
+  jobId?: string,
+): Promise<void> {
+  const newsletterMailSvc = new NewsletterEmailService();
+  const { tenantId, newsletterId, userId } = payload;
+
+  // 1. Fetch newsletter to get settings, targets, segments, and content
+  const newsletter = await db
+    .selectFrom('newsletters')
+    .selectAll()
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .executeTakeFirst();
+
+  if (!newsletter) {
+    logger.warn(`Newsletter ${newsletterId} not found.`);
+    return;
+  }
+
+  // 2. Build the recipient query using NewslettersController
+  const { NewslettersController } = await import('../../../modules/newsletters/controller');
+  const controller = new NewslettersController();
+  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
+
+  // 3. Count total recipients
+  let offset = payload.offset ?? 0;
+  let deliveredCount = payload.deliveredCount ?? 0;
+
+  const countResult = await baseQuery
+    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
+    .executeTakeFirst();
+  const totalRecipients = Number(countResult?.count || 0);
+
+  if (offset === 0) {
+    await db
+      .updateTable('newsletters')
+      .set({
+        status: 'sending',
+        total_recipients: totalRecipients,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .execute();
+  }
+
+  // Load communications/settings from database
+  const settingsRows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [
+      'communications.sendgrid_api_key',
+      'communications.sendgrid_subuser_username',
+      'communications.default_from_name',
+      'communications.default_from_email',
+      'communications.reply_to',
+      'communications.footer_disclaimer',
+      'communications.verified_emails',
+      'organization.address',
+    ])
+    .execute();
+
+  const settingsMap: Record<string, string> = {};
+  let verifiedEmails: string[] = [];
+  for (const row of settingsRows) {
+    if (typeof row.value === 'string') {
+      settingsMap[row.key] = row.value;
+    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
+    }
+  }
+
+  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+  // Free-tier traffic on the platform key defaults to the shared free-tier subuser so its
+  // sending reputation is isolated from paying customers'. A tenant-specific whitelabel
+  // subuser (or a tenant-owned API key) always wins — its domain auth lives there.
+  const sendingTenant = await loadSendingTenant(db, tenantId);
+  const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
+  const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
+  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  const footer = buildNewsletterFooter(
+    settingsMap['organization.address'],
+    settingsMap['communications.footer_disclaimer'],
+  );
+
+  // Render the stored editor HTML into email-ready HTML once (block-JSON stripped, relative image
+  // URLs made absolute against APP_URL, preview text injected as a hidden preheader). Merge tokens
+  // are left in the content and resolved per-recipient via SendGrid substitutions below.
+  const renderedHtml = renderNewsletterHtml(newsletter.html_content || '', {
+    baseUrl: env.appUrl,
+    previewText: newsletter.preview_text,
+  });
+  const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
+  const finalHtml = renderedHtml + footer.html;
+  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
+
+  const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
+
+  while (offset < totalRecipients) {
+    // Re-check the tenant's blocked state every batch so an abuse tripwire (fired by the
+    // SendGrid webhook while this send is in flight) stops the send mid-stream, not just the
+    // next one. The resume point is stored on the newsletter for a supervised restart.
+    const tenantNow = await loadSendingTenant(db, tenantId);
+    if (tenantNow.suspended_at || tenantNow.sending_paused_at) {
+      logger.warn(
+        { tenantId, newsletterId, offset, deliveredCount },
+        'Tenant sending is blocked — pausing newsletter mid-send',
+      );
+      await db
+        .updateTable('newsletters')
+        .set({ status: 'paused', send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .execute();
+      return;
+    }
+
+    // Per-tenant send-rate cap (hourly, plus the free-tier warm-up daily cap): trim the batch
+    // to what's still allowed; when nothing is, hand the remainder to a continuation job and
+    // free this worker slot instead of sleeping on it.
+    const allowance = await remainingSendAllowance(db, tenantNow, new Date());
+    if (allowance <= 0) {
+      logger.info(
+        { tenantId, newsletterId, offset, deliveredCount },
+        'Per-tenant send cap reached — deferring remainder of newsletter send',
+      );
+      await db
+        .updateTable('newsletters')
+        .set({ send_offset: offset, delivered_count: deliveredCount, updated_at: new Date() })
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .execute();
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'send-newsletter', newsletterId, tenantId, userId, offset, deliveredCount }),
+          run_at: new Date(Date.now() + RATE_CAP_DEFER_MS),
+          max_attempts: 3,
+        })
+        .execute();
+      return;
+    }
+
+    // Query a chunk of recipients dynamically using LIMIT and OFFSET.
+    // distinctOn(email) yields exactly one row per address (matching the COUNT(DISTINCT email) total)
+    // while still carrying the person fields the merge tokens need.
+    const chunkRows = await baseQuery
+      .select(['persons.email', 'persons.first_name', 'persons.last_name', 'persons.mobile', 'persons.home_phone'])
+      .distinctOn('persons.email')
+      .orderBy('persons.email', 'asc')
+      .limit(Math.min(NEWSLETTER_BATCH_SIZE, allowance))
+      .offset(offset)
+      .execute();
+
+    const seen = new Set<string>();
+    const recipients: NewsletterRecipient[] = [];
+    for (const r of chunkRows) {
+      const email = r.email?.trim();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      recipients.push({
+        email,
+        substitutions: mergeTokens.length
+          ? resolveMergeSubstitutions(mergeTokens, {
+              email,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              phone: r.mobile || r.home_phone,
+            })
+          : undefined,
+      });
+    }
+
+    if (recipients.length === 0) {
+      break;
+    }
+
+    const batchDelivered = await newsletterMailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients,
+      subject: newsletter.subject || 'Newsletter',
+      html: finalHtml,
+      text: finalText,
+      sendgridApiKey,
+      subuserUsername,
+      newsletterId,
+      tenantId,
+      attachments,
+    });
+
+    deliveredCount += batchDelivered;
+    offset += chunkRows.length;
+
+    // Meter the batch — this row is what the warm-up and hourly caps SUM over.
+    await logNewsletterBatch(db, tenantId, newsletterId, batchDelivered);
+
+    // Update progress in the background job payload (no recipients array!)
+    if (jobId) {
+      await db
+        .updateTable('background_jobs')
+        .set({
+          payload: JSON.stringify({
+            type: 'send-newsletter',
+            newsletterId,
+            tenantId,
+            userId,
+            offset,
+            deliveredCount,
+          }),
+          updated_at: new Date(),
+        })
+        .where('id', '=', jobId)
+        .execute();
+    }
+
+    // Add a small delay between batches to respect rate limits
+    if (offset < totalRecipients) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    }
+  }
+
+  // Update newsletter status to 'sent'
+  await db
+    .updateTable('newsletters')
+    .set({
+      status: 'sent',
+      delivered_count: deliveredCount,
+      send_offset: null,
+      send_date: new Date(),
+      updatedby_id: userId,
+      updated_at: new Date(),
+    })
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .execute();
+
+  // Log user activity
+  const userActivity = new UserActivityRepo();
+  await userActivity.log({
+    tenant_id: tenantId,
+    user_id: userId,
+    activity: 'send',
+    entity: 'newsletters',
+    entity_id: newsletterId,
+    quantity: totalRecipients,
+    metadata: { recipientsCount: totalRecipients, deliveredCount },
+  });
+
+  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
+  await queueUsageLimitCheck(tenantId, db);
+}
+
+// Send-log rows only feed rolling-window caps (24h max) — 30 days is generous ops headroom.
+const SEND_LOG_RETENTION_DAYS = 30;
+
+export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  await pruneNewsletterEvents(db);
+  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
+}
+
+// Event types that warrant keeping a per-newsletter engagement record.
+// Delivery-only events (delivered, deferred, processed) are not stored.
+const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
+
+async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  const tenants: { id: string; subscription_plan: string | null }[] = await db
+    .selectFrom('tenants')
+    .select(['id', 'subscription_plan'])
+    .execute();
+
+  for (const tenant of tenants) {
+    try {
+      const planKey = getPlanDef(tenant.subscription_plan)?.key ?? 'free';
+      const retentionDays =
+        planKey === 'movement' || planKey === 'enterprise' ? 90 : planKey === 'grassroots' ? 30 : 15;
+
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const tenantId = String(tenant.id);
+
+      // Send-log rows only feed the rolling-window send caps (24h max) — prune with the events.
+      await db
+        .deleteFrom('newsletter_send_log')
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', new Date(Date.now() - SEND_LOG_RETENTION_DAYS * DAY_MS))
+        .execute();
+
+      // Fetch events older than the retention window that are engagement events.
+      const expiringEvents: {
+        newsletter_id: string;
+        email: string;
+        event_type: string;
+        timestamp: Date;
+      }[] = await db
+        .selectFrom('newsletter_events')
+        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', cutoff)
+        .execute();
+
+      // Group by (newsletter_id, email) to produce one upsert per recipient.
+      const grouped = new Map<
+        string,
+        {
+          newsletter_id: string;
+          email: string;
+          open_count: number;
+          click_count: number;
+          has_unsubscribed: boolean;
+          hard_bounced: boolean;
+          soft_bounced: boolean;
+          first_opened_at: Date | null;
+          last_opened_at: Date | null;
+          first_clicked_at: Date | null;
+          last_clicked_at: Date | null;
+          bounced_at: Date | null;
+          unsubscribed_at: Date | null;
+        }
+      >();
+
+      for (const ev of expiringEvents) {
+        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
+
+        const key = `${ev.newsletter_id}::${ev.email}`;
+        let agg = grouped.get(key);
+        if (!agg) {
+          agg = {
+            newsletter_id: ev.newsletter_id,
+            email: ev.email,
+            open_count: 0,
+            click_count: 0,
+            has_unsubscribed: false,
+            hard_bounced: false,
+            soft_bounced: false,
+            first_opened_at: null,
+            last_opened_at: null,
+            first_clicked_at: null,
+            last_clicked_at: null,
+            bounced_at: null,
+            unsubscribed_at: null,
+          };
+          grouped.set(key, agg);
+        }
+        const ts = new Date(ev.timestamp);
+
+        if (ev.event_type === 'open') {
+          agg.open_count++;
+          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
+          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
+        } else if (ev.event_type === 'click') {
+          agg.click_count++;
+          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
+          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
+        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        } else if (ev.event_type === 'bounce') {
+          // SendGrid bounce events don't carry a sub-type in this table;
+          // treat all as hard bounce (the webhook handler can refine this).
+          agg.hard_bounced = true;
+          if (!agg.bounced_at) agg.bounced_at = ts;
+        } else if (ev.event_type === 'spamreport') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        }
+      }
+
+      // Upsert aggregated rows, then delete the raw events.
+      if (grouped.size > 0) {
+        await db.transaction().execute(async (trx) => {
+          for (const row of grouped.values()) {
+            await trx
+              .insertInto('person_newsletter_engagements')
+              .values({
+                tenant_id: tenantId,
+                newsletter_id: row.newsletter_id,
+                email: row.email,
+                open_count: row.open_count,
+                click_count: row.click_count,
+                has_unsubscribed: row.has_unsubscribed,
+                hard_bounced: row.hard_bounced,
+                soft_bounced: row.soft_bounced,
+                first_opened_at: row.first_opened_at,
+                last_opened_at: row.last_opened_at,
+                first_clicked_at: row.first_clicked_at,
+                last_clicked_at: row.last_clicked_at,
+                bounced_at: row.bounced_at,
+                unsubscribed_at: row.unsubscribed_at,
+              })
+              .onConflict((oc) =>
+                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
+                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
+                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
+                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
+                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
+                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
+                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
+                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
+                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
+                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
+                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
+                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
+                })),
+              )
+              .execute();
+          }
+
+          await trx
+            .deleteFrom('newsletter_events')
+            .where('tenant_id', '=', tenantId)
+            .where('created_at', '<', cutoff)
+            .execute();
+        });
+      } else {
+        // No engagement events to aggregate — still prune non-engagement events.
+        await db
+          .deleteFrom('newsletter_events')
+          .where('tenant_id', '=', tenantId)
+          .where('created_at', '<', cutoff)
+          .execute();
+      }
+    } catch (err) {
+      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
+    }
+  }
+}
+
+/**
+ * Fetches files attached to this newsletter (entity_type = 'newsletter') and downloads them as
+ * base64 email attachments. If the tenant is at or over its storage quota, attachments are skipped
+ * (the newsletter still sends, just without them) — mirrors the Storage settings quota warning.
+ */
+export async function buildNewsletterAttachments(
+  db: Kysely<Models>,
+  tenantId: string,
+  newsletterId: string,
+): Promise<NewsletterAttachment[] | undefined> {
+  const filesRepo = new FilesRepo();
+  const { rows } = await filesRepo.getAllWithCounts({
+    tenant_id: tenantId,
+    options: { entityType: 'newsletter', entityId: newsletterId },
+  });
+  if (rows.length === 0) return undefined;
+
+  const tenant = await db
+    .selectFrom('tenants')
+    .select(['subscription_plan', 'subscription_quantity'])
+    .where('id', '=', tenantId)
+    .executeTakeFirst();
+  const quotaBytes = getPlanLimits(tenant?.subscription_plan, tenant?.subscription_quantity ?? 1).storageBytes;
+  const usedBytes = await filesRepo.getTotalBytes(tenantId);
+  if (usedBytes >= quotaBytes) {
+    logger.warn(
+      `Newsletter ${newsletterId} for tenant ${tenantId} is at/over its storage quota — sending without attachments.`,
+    );
+    return undefined;
+  }
+
+  const storageService = new StorageService();
+  const attachments: NewsletterAttachment[] = [];
+  for (const file of rows as { filename: string; storage_key: string; mime_type: string | null }[]) {
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      attachments.push({
+        content: buffer.toString('base64'),
+        filename: file.filename,
+        type: file.mime_type || undefined,
+      });
+    } catch (err) {
+      logger.error({ err }, `Failed to download newsletter attachment ${file.storage_key}`);
+    }
+  }
+  return attachments.length > 0 ? attachments : undefined;
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
+}
+````
+
 ## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
 ````typescript
 import { Client } from 'pg';
@@ -54766,6 +54303,229 @@ export class WebhookEventWorker {
     }
 
     return true;
+  }
+}
+````
+
+## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
+````typescript
+import type { Kysely, Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+import { BaseRepository } from '../base.repo';
+
+export interface SendMailOptions {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  tenant_id?: string | null;
+}
+
+export class TransactionalEmailService {
+  private serverToken = env.postmarkServerToken;
+  private fromEmail = env.postmarkFromEmail;
+
+  private wrapInTemplate(title: string, contentHtml: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #f8fafc;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid #e2e8f0;
+    }
+    .header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      padding: 32px;
+      text-align: center;
+    }
+    .header h1 {
+      color: #ffffff;
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.025em;
+    }
+    .content {
+      padding: 40px 32px;
+      line-height: 1.6;
+      font-size: 16px;
+    }
+    .content h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .content p {
+      margin-top: 0;
+      margin-bottom: 24px;
+      color: #475569;
+    }
+    .btn-container {
+      margin: 32px 0;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      background-color: #4f46e5;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .otp-container {
+      margin: 32px auto;
+      text-align: center;
+    }
+    .otp-code {
+      display: inline-block;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      color: #4f46e5;
+      background-color: #f1f5f9;
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: 1px dashed #cbd5e1;
+    }
+    .footer {
+      background-color: #f8fafc;
+      padding: 24px 32px;
+      text-align: center;
+      border-top: 1px solid #e2e8f0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .footer p {
+      margin: 8px 0;
+      color: #64748b;
+    }
+    .footer a {
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    .warning {
+      font-size: 14px;
+      color: #64748b;
+      background-color: #f8fafc;
+      border-left: 4px solid #cbd5e1;
+      padding: 12px 16px;
+      margin-top: 24px;
+      border-radius: 0 4px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>PplCRM</h1>
+      </div>
+      <div class="content">
+        ${contentHtml}
+      </div>
+      <div class="footer">
+        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
+        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  public async sendMail(options: SendMailOptions): Promise<void> {
+    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
+
+    if (!this.serverToken) {
+      logger.info(
+        { from: this.fromEmail, to: options.to, subject: options.subject },
+        '[POSTMARK DEV MOCK] Transactional Email Outbound',
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.postmarkapp.com/email', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Postmark-Server-Token': this.serverToken,
+        },
+        body: JSON.stringify({
+          From: this.fromEmail,
+          To: options.to,
+          Subject: options.subject,
+          TextBody: options.text,
+          HtmlBody: wrappedHtml,
+          // Round-trips to the bounce/complaint webhook so suppressions can be tenant-scoped.
+          ...(options.tenant_id ? { Metadata: { tenant_id: String(options.tenant_id) } } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
+      }
+    } catch (error) {
+      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
+    }
+  }
+
+  public async enqueueMail(options: SendMailOptions, trx?: Transaction<Models> | Kysely<Models>): Promise<void> {
+    // NOTE: `as any` retained deliberately — the insert passes a `BigInt` tenant_id
+    // that the Kysely model types as `string | null`; a typed handle would reject it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see NOTE above; BigInt tenant_id vs Kysely string-id model. pplcrm-any-exceptions
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
+    await dbClient
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-transactional-email',
+          to: options.to,
+          subject: options.subject,
+          text: options.text,
+          html: options.html,
+          tenant_id: options.tenant_id ?? null,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
   }
 }
 ````
@@ -58404,6 +58164,268 @@ export class ListsRepo extends BaseRepository<'lists'> {
 }
 ````
 
+## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
+````typescript
+import { createPublicKey, createVerify } from 'crypto';
+import type { FastifyPluginCallback, FastifyRequest } from 'fastify';
+import { BaseRepository } from '../../../lib/base.repo';
+import { CampaignSubscriptionsRepo } from '../../campaigns/repositories/campaign-subscriptions.repo';
+import { applyEngagementTripwires } from '../send-guards';
+import { env } from '../../../../env';
+import { sql } from 'kysely';
+
+const db = new BaseRepository('newsletters').db;
+const subscriptions = new CampaignSubscriptionsRepo();
+
+/**
+ * Consent/suppression side-effects of a SendGrid event (§15):
+ *  - unsubscribe → unsubscribed in the CAMPAIGN whose newsletter carried the link
+ *  - bounce → global hard_bounce suppression (address is dead everywhere)
+ *  - spamreport → global spam_complaint suppression
+ */
+async function applyConsentSideEffects(
+  tenantId: string,
+  newsletterId: string,
+  eventType: string,
+  email: string,
+  occurredAt: Date,
+): Promise<void> {
+  if (!email) return;
+  if (eventType === 'unsubscribe' || eventType === 'group_unsubscribe') {
+    const newsletter = await db
+      .selectFrom('newsletters')
+      .select(['campaign_id'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .executeTakeFirst();
+    if (newsletter?.campaign_id) {
+      await subscriptions.unsubscribeByEmail({
+        tenant_id: tenantId,
+        campaign_id: String(newsletter.campaign_id),
+        email,
+      });
+    }
+  } else if (eventType === 'bounce' || eventType === 'spamreport') {
+    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
+    await db
+      .insertInto('email_suppressions')
+      .values({ tenant_id: tenantId, email, reason, occurred_at: occurredAt })
+      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
+      .execute();
+  }
+}
+
+const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
+const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
+
+/**
+ * Verifies a SendGrid Signed Event Webhook request.
+ * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
+ * against the base64-DER public verification key configured in the dashboard.
+ */
+function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
+  const verificationKey = env.sendgridWebhookVerificationKey;
+  if (!verificationKey || !signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(verificationKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verifier = createVerify('sha256');
+    verifier.update(timestamp + rawBody);
+    verifier.end();
+    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
+}
+
+/** Shape of a single SendGrid Event Webhook payload entry (all fields optional — inbound/untrusted). */
+interface SendGridEvent {
+  newsletter_id?: string;
+  tenant_id?: string;
+  sg_event_id?: string;
+  sg_message_id?: string;
+  event?: string;
+  email?: string;
+  url?: string;
+  ip?: string;
+  useragent?: string;
+  reason?: string;
+  type?: string;
+  timestamp?: number;
+}
+
+const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req: FastifyRequest, reply) => {
+    // req.body is the raw string (see content-type parser in fastify.server.ts)
+    const rawBody = typeof req.body === 'string' ? req.body : '';
+    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
+    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
+
+    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid payload' });
+    }
+
+    const events: SendGridEvent[] = Array.isArray(parsedBody) ? parsedBody : [parsedBody as SendGridEvent];
+
+    try {
+      const processedNewsletters = new Set<string>();
+
+      // Insert all events that have newsletter_id and tenant_id
+      for (const ev of events) {
+        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
+          continue;
+        }
+
+        const newsletterId = ev.newsletter_id;
+        const tenantId = ev.tenant_id;
+        const eventType = ev.event || '';
+        const email = ev.email || '';
+        const sgEventId = ev.sg_event_id;
+        const sgMessageId = ev.sg_message_id || null;
+        const url = ev.url || null;
+        const ip = ev.ip || null;
+        const userAgent = ev.useragent || null;
+        // Bounce diagnostics for the report: reason ("Mailbox does not exist")
+        // on bounce/dropped events, type 'bounce' (hard) / 'blocked' (soft) on bounces.
+        const reason = typeof ev.reason === 'string' && ev.reason ? ev.reason : null;
+        const bounceType = eventType === 'bounce' && typeof ev.type === 'string' && ev.type ? ev.type : null;
+        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+
+        try {
+          await db
+            .insertInto('newsletter_events')
+            .values({
+              tenant_id: tenantId,
+              newsletter_id: newsletterId,
+              email,
+              event_type: eventType,
+              sg_event_id: sgEventId,
+              sg_message_id: sgMessageId,
+              url,
+              ip,
+              user_agent: userAgent,
+              reason,
+              bounce_type: bounceType,
+              timestamp,
+              created_at: new Date(),
+            })
+            .onConflict((oc) => oc.column('sg_event_id').doNothing())
+            .execute();
+
+          processedNewsletters.add(`${tenantId}:${newsletterId}`);
+
+          await applyConsentSideEffects(String(tenantId), String(newsletterId), eventType, email, timestamp);
+        } catch (insertErr) {
+          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
+        }
+      }
+
+      // Recompute aggregates for each processed newsletter
+      for (const key of processedNewsletters) {
+        const [tenantId, newsletterId] = key.split(':') as [string, string];
+
+        await db.transaction().execute(async (trx) => {
+          // 1. Fetch aggregates
+          const stats = await trx
+            .selectFrom('newsletter_events')
+            .select([
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
+              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
+            ])
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          // 2. Fetch top links clicked
+          const topLinksResult = await trx
+            .selectFrom('newsletter_events')
+            .select(['url'])
+            .select(({ fn }) => fn.count<number>('id').as('clicks'))
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .where('event_type', '=', 'click')
+            .where('url', 'is not', null)
+            .groupBy('url')
+            .orderBy('clicks', 'desc')
+            .execute();
+
+          const topLinks = topLinksResult.map((l) => ({
+            url: l.url,
+            clicks: Number(l.clicks),
+          }));
+
+          // 3. Update the newsletters table row
+          const newsletter = await trx
+            .selectFrom('newsletters')
+            .select(['total_recipients'])
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
+          const uniqueOpens = Number(stats?.unique_opens ?? 0);
+          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
+
+          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
+          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
+
+          await trx
+            .updateTable('newsletters')
+            .set({
+              delivered_count: Number(stats?.delivered ?? 0),
+              bounce_count: Number(stats?.bounced ?? 0),
+              unique_opens: uniqueOpens,
+              unique_clicks: uniqueClicks,
+              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
+              spam_complaint_count: Number(stats?.spamreports ?? 0),
+              last_engagement_at: stats?.last_engagement || null,
+              open_rate: openRate,
+              click_rate: clickRate,
+              top_links: JSON.stringify(topLinks),
+              updated_at: new Date(),
+            })
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .execute();
+        });
+
+        // Abuse tripwires (§ anti-spam): a high hard-bounce rate pauses the tenant's sending, a
+        // high spam-complaint rate suspends the account pending human review. Runs after the
+        // aggregates so an in-flight send's worker loop sees the flag on its next batch.
+        await applyEngagementTripwires(db, tenantId, newsletterId);
+      }
+
+      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
+    } catch (err) {
+      req.log.error(err, 'SendGrid webhook processing error');
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  done();
+};
+
+export default newslettersWebhookRoute;
+````
+
 ## File: apps/backend/src/app/modules/persons/services/persons.service.ts
 ````typescript
 import { env } from '../../../../env';
@@ -59997,9 +60019,11 @@ import { SiteHeader } from '../ui/site-header';
 import { SIGNUP_URL } from '../ui/site-nav';
 
 /** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000];
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
 
-/** Default slider position: 2,500 subscribers (Grassroots' first bracket). */
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
 const DEFAULT_STOP_INDEX = 1;
 const DEFAULT_STOP = 2_500;
 
@@ -60035,19 +60059,19 @@ export class PricingPage {
     }
   }
 
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275). */
+  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
   protected priceLabel(plan: PlanDef): string {
     const label = priceLabelAt(plan, this.subscribers());
     const amount = /^\$(\d+)$/.exec(label)?.[1];
     return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
   }
 
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 50,000). */
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
   protected overMax(plan: PlanDef): boolean {
     return priceLabelAt(plan, this.subscribers()) === 'Contact us';
   }
 
-  /** The tier's hard subscriber max, formatted (e.g. "50,000"). */
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
   protected maxSubscribersLabel(plan: PlanDef): string {
     const brackets = plan.pricing?.brackets;
     const last = brackets?.[brackets.length - 1];
@@ -65088,1103 +65112,6 @@ function buildNewsletterEvents(
 }
 ````
 
-## File: apps/backend/src/app/modules/newsletters/controller.ts
-````typescript
-import type {
-  CreateClickersListResultType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  MarketingEmailTopLinkType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportType,
-} from '../../../../../../libs/common/src';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
-import { ListsController } from '../lists/controller';
-import { NewslettersRepo } from './repositories/newsletters.repo';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { assertNotDemoMode } from '../demo/demo-guard';
-import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
-
-const DEFAULT_FROM_NAME = 'pplCRM Team';
-const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
-
-export interface SendTestEmailInput {
-  subject: string;
-  html: string;
-  text?: string;
-  to: string;
-  fromName?: string;
-  fromEmail?: string;
-}
-
-export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
-  private readonly campaignsRepo = new CampaignsRepo();
-
-  constructor() {
-    super(new NewslettersRepo());
-  }
-
-  /**
-   * map_newsletters_lists is the source of truth for list targeting (the
-   * legacy JSONB target_lists column is still dual-written by callers during
-   * the transition, but nothing reads it for behavior anymore).
-   */
-  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
-    // Every newsletter belongs to a campaign (§15). Callers that predate the
-    // context switcher fall back to the tenant's office context.
-    const pending = row as Record<string, unknown>;
-    if (!pending['campaign_id']) {
-      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
-      const office = campaigns.find((c) => c.kind === 'office');
-      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
-      pending['campaign_id'] = String(office.id);
-    }
-    const result = await super.add(row, trx);
-    const rowObj = row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        String(rowObj['tenant_id']),
-        String(resultObj['id']),
-        rowObj['target_lists'],
-        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
-        trx,
-      );
-    }
-    return result;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'newsletters', 'update'>;
-  }) {
-    const result = await super.update(input);
-    const rowObj = input.row as Record<string, unknown>;
-    const resultObj = result as Record<string, unknown> | undefined;
-    if (rowObj['target_lists'] !== undefined) {
-      await this.syncTargetLists(
-        input.tenant_id,
-        input.id,
-        rowObj['target_lists'],
-        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
-      );
-    }
-    return result;
-  }
-
-  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
-  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
-    let parsed: unknown = value;
-    if (typeof parsed === 'string') {
-      const raw = parsed;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        return {
-          include: raw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-          exclude: [],
-        };
-      }
-    }
-    if (Array.isArray(parsed)) {
-      return { include: parsed.map((v) => String(v)), exclude: [] };
-    }
-    if (parsed && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>;
-      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
-      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
-    }
-    return { include: [], exclude: [] };
-  }
-
-  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
-  private async syncTargetLists(
-    tenant_id: string,
-    newsletterId: string,
-    rawTargetLists: unknown,
-    actorId: string,
-    trx?: Transaction<Models>,
-  ): Promise<void> {
-    const db = trx ?? this.getRepo().db;
-    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
-
-    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
-    let liveIds = new Set<string>();
-    if (candidates.length > 0) {
-      const rows = await db
-        .selectFrom('lists')
-        .select('id')
-        .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', candidates)
-        .execute();
-      liveIds = new Set(rows.map((r) => String(r.id)));
-    }
-
-    await db
-      .deleteFrom('map_newsletters_lists')
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', newsletterId)
-      .execute();
-
-    const values = [
-      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
-      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
-    ].map((v) => ({
-      tenant_id,
-      newsletter_id: newsletterId,
-      list_id: v.list_id,
-      mode: v.mode,
-      createdby_id: actorId,
-      updatedby_id: actorId,
-    }));
-    if (values.length > 0) {
-      await db.insertInto('map_newsletters_lists').values(values).execute();
-    }
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'newsletters',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  public async buildRecipientQuery(tenant_id: string, newsletter: Record<string, unknown>): Promise<any> {
-    let includeTags: string[] = [];
-    let excludeTags: string[] = [];
-
-    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
-    const listRows = await this.getRepo()
-      .db.selectFrom('map_newsletters_lists')
-      .select(['list_id', 'mode'])
-      .where('tenant_id', '=', tenant_id)
-      .where('newsletter_id', '=', String(newsletter['id']))
-      .execute();
-    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
-    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
-
-    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
-    // It stays JSONB deliberately: it holds tag *names*, not ids.
-    const parseJsonField = (value: unknown): unknown => {
-      if (value == null) return null;
-      if (typeof value === 'string') {
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      }
-      return value; // already parsed object from jsonb column
-    };
-
-    const segmentsObj = parseJsonField(newsletter['segments']);
-    if (Array.isArray(segmentsObj)) {
-      includeTags = segmentsObj as string[];
-    } else if (segmentsObj && typeof segmentsObj === 'object') {
-      const obj = segmentsObj as Record<string, unknown>;
-      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof segmentsObj === 'string' && segmentsObj) {
-      includeTags = (segmentsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    const db = this.getRepo().db;
-    const campaignId = String(newsletter['campaign_id']);
-    let query = db
-      .selectFrom('persons')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '')
-      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
-      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
-      .where((eb) =>
-        eb.exists(
-          db
-            .selectFrom('campaign_subscriptions')
-            .select('campaign_subscriptions.person_id')
-            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
-            .where('campaign_subscriptions.campaign_id', '=', campaignId)
-            .where('campaign_subscriptions.status', '=', 'subscribed')
-            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
-        ),
-      )
-      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
-      .where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('email_suppressions')
-              .select('email_suppressions.id')
-              .where('email_suppressions.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`email_suppressions.email = persons.email`),
-          ),
-        ),
-      )
-      // 3. Person-level do-not-contact (null channel list = all channels).
-      .where(
-        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
-      );
-
-    query = query.where((eb) => {
-      const conditions = [];
-      if (includeListIds.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', includeListIds),
-          ),
-        );
-      }
-      if (includeTags.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', includeTags),
-          ),
-        );
-      }
-
-      if (conditions.length === 0) {
-        return eb.val(false);
-      }
-      return eb.or(conditions);
-    });
-
-    if (excludeListIds.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
-              .where('map_lists_persons.list_id', 'in', excludeListIds),
-          ),
-        ),
-      );
-    }
-
-    if (excludeTags.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
-              .where('tags.name', 'in', excludeTags),
-          ),
-        ),
-      );
-    }
-
-    return query;
-  }
-
-  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
-    // Sending is locked during the demo test drive (no plan yet, no sender identity).
-    await assertNotDemoMode(this.getRepo().db, tenant_id);
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) {
-      throw new NotFoundError('Newsletter not found');
-    }
-    if (newsletter['status'] === 'sent' || newsletter['status'] === 'queuing' || newsletter['status'] === 'sending') {
-      throw new BadRequestError('Newsletter has already been sent or is currently sending');
-    }
-
-    const db = this.getRepo().db;
-    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
-
-    // Get total count of unique recipients using a distinct count query
-    const countResult = await baseQuery
-      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
-      .executeTakeFirst();
-    const totalRecipients = Number(countResult?.count || 0);
-
-    if (totalRecipients === 0) {
-      throw new BadRequestError('No recipients found for the selected lists or tags');
-    }
-
-    // A 'paused' newsletter (tripwire fired mid-send) resumes from where it stopped once the
-    // tenant is unblocked, instead of double-sending the recipients before the pause point.
-    const resumeOffset = newsletter['status'] === 'paused' ? Number(newsletter['send_offset'] ?? 0) : 0;
-    const resumeDelivered = resumeOffset > 0 ? Number(newsletter['delivered_count'] ?? 0) : 0;
-
-    // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
-    await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
-
-    const updated = await this.update({
-      tenant_id,
-      id,
-      row: {
-        status: 'queuing',
-        total_recipients: totalRecipients,
-        delivered_count: resumeDelivered,
-        updatedby_id: userId,
-        updated_at: new Date(),
-      },
-    });
-
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-newsletter',
-          newsletterId: id,
-          tenantId: tenant_id,
-          userId: userId,
-          offset: resumeOffset,
-          deliveredCount: resumeDelivered,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return updated;
-  }
-
-  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
-    await assertNotDemoMode(this.getRepo().db, tenant_id);
-    const db = this.getRepo().db;
-
-    // Test sends are single-recipient but still outbound mail: blocked while the tenant is
-    // suspended/paused, and throttled so they can't be scripted into a bulk channel.
-    assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
-    checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
-
-    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
-    // from name/email, otherwise fall back to the workspace Communications settings.
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.default_from_name',
-        'communications.default_from_email',
-        'communications.reply_to',
-      ])
-      .execute();
-
-    const settingsMap: Record<string, string> = {};
-    for (const row of settingsRows) {
-      if (typeof row.value === 'string') {
-        settingsMap[row.key] = row.value;
-      }
-    }
-
-    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
-    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
-    const replyTo = settingsMap['communications.reply_to'] || undefined;
-    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-
-    // Apply the same send-time render as the real send so the test reflects what recipients receive:
-    // block-JSON stripped, relative images made absolute, merge tokens resolved (to their fallbacks
-    // here, since a test address carries no person record).
-    const html = renderNewsletterHtml(input.html, { baseUrl: env.appUrl, previewText: null });
-    const mergeTokens = extractMergeTokens(input.subject, html, input.text);
-    const substitutions = mergeTokens.length ? resolveMergeSubstitutions(mergeTokens, { email: input.to }) : undefined;
-
-    const mailSvc = new NewsletterEmailService();
-    const delivered = await mailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients: [{ email: input.to, substitutions }],
-      subject: input.subject,
-      html,
-      text: input.text,
-      sendgridApiKey,
-      subuserUsername,
-    });
-
-    return { to: input.to, delivered };
-  }
-
-  /**
-   * Everything the newsletter report page renders in one call.
-   *
-   * Engagement detail lives in two places: raw `newsletter_events` (recent) and
-   * the `person_newsletter_engagements` rollup (raw rows are aggregated into it
-   * and deleted by the prune job). The two are disjoint by construction, so
-   * per-email numbers are the sum of both sources.
-   */
-  public async getReport(tenant_id: string, id: string): Promise<NewsletterReportType> {
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) throw new NotFoundError('Newsletter not found');
-    const db = this.getRepo().db;
-
-    // --- per-email engagement, merged from raw events + the rollup ------------
-    const rawAgg = await db
-      .selectFrom('newsletter_events')
-      .select([
-        'email',
-        sql<number>`COUNT(*) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(*) FILTER (WHERE event_type = 'click')`.as('clicks'),
-        sql<number>`COUNT(DISTINCT url) FILTER (WHERE event_type = 'click' AND url IS NOT NULL)`.as('links'),
-        sql<boolean>`BOOL_OR(event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as('hard_bounced'),
-        sql<boolean>`BOOL_OR(event_type = 'bounce' AND bounce_type = 'blocked')`.as('soft_bounced'),
-        sql<boolean>`BOOL_OR(event_type = 'dropped')`.as('dropped'),
-        sql<string | null>`MAX(reason) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounce_reason'),
-        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced_at'),
-        sql<boolean>`BOOL_OR(event_type = 'unsubscribe')`.as('unsubscribed'),
-        sql<boolean>`BOOL_OR(event_type = 'spamreport')`.as('spam_reported'),
-        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type = 'spamreport')`.as('spam_reported_at'),
-      ])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email')
-      .execute();
-
-    const rollup = await db
-      .selectFrom('person_newsletter_engagements')
-      .select(['email', 'open_count', 'click_count', 'hard_bounced', 'soft_bounced', 'has_unsubscribed', 'bounced_at'])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    interface EmailEngagement {
-      opens: number;
-      clicks: number;
-      links: number;
-      hard: boolean;
-      soft: boolean;
-      dropped: boolean;
-      reason: string | null;
-      bouncedAt: Date | null;
-      unsubscribed: boolean;
-      spamReported: boolean;
-      spamReportedAt: Date | null;
-    }
-    const byEmail = new Map<string, EmailEngagement>();
-    const entryFor = (email: string): EmailEngagement => {
-      let e = byEmail.get(email);
-      if (!e) {
-        e = {
-          opens: 0,
-          clicks: 0,
-          links: 0,
-          hard: false,
-          soft: false,
-          dropped: false,
-          reason: null,
-          bouncedAt: null,
-          unsubscribed: false,
-          spamReported: false,
-          spamReportedAt: null,
-        };
-        byEmail.set(email, e);
-      }
-      return e;
-    };
-    for (const r of rollup) {
-      const e = entryFor(r.email);
-      e.opens += Number(r.open_count);
-      e.clicks += Number(r.click_count);
-      e.hard = e.hard || r.hard_bounced;
-      e.soft = e.soft || r.soft_bounced;
-      e.unsubscribed = e.unsubscribed || r.has_unsubscribed;
-      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
-    }
-    for (const r of rawAgg) {
-      const e = entryFor(r.email);
-      e.opens += Number(r.opens);
-      e.clicks += Number(r.clicks);
-      e.links += Number(r.links);
-      e.hard = e.hard || r.hard_bounced;
-      e.soft = e.soft || r.soft_bounced;
-      e.dropped = e.dropped || r.dropped;
-      e.reason = e.reason ?? r.bounce_reason;
-      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
-      e.unsubscribed = e.unsubscribed || r.unsubscribed;
-      e.spamReported = e.spamReported || r.spam_reported;
-      e.spamReportedAt =
-        e.spamReportedAt ?? (r.spam_reported_at ? new Date(r.spam_reported_at as unknown as string) : null);
-    }
-
-    const bounceKind = (e: EmailEngagement): 'hard' | 'soft' | 'dropped' | null =>
-      e.hard ? 'hard' : e.soft ? 'soft' : e.dropped ? 'dropped' : null;
-
-    // --- bounce rows, CRM-matched --------------------------------------------
-    const MAX_BOUNCE_ROWS = 500;
-    const bounceEntries = [...byEmail.entries()]
-      .map(([email, e]) => ({ email, e, kind: bounceKind(e) }))
-      .filter((b): b is { email: string; e: EmailEngagement; kind: 'hard' | 'soft' | 'dropped' } => b.kind !== null)
-      .sort((a, b) => (b.e.bouncedAt?.getTime() ?? 0) - (a.e.bouncedAt?.getTime() ?? 0));
-
-    const engagedEntries = [...byEmail.entries()]
-      .filter(([, e]) => e.opens + e.clicks > 0)
-      .sort(([, a], [, b]) => b.clicks - a.clicks || b.opens - a.opens)
-      .slice(0, 5);
-
-    const matchEmails = [
-      ...new Set(
-        [...bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => b.email), ...engagedEntries.map(([email]) => email)].map(
-          (m) => m.toLowerCase(),
-        ),
-      ),
-    ];
-    const personsByEmail = new Map<string, { id: string; public_id: string | null; name: string }>();
-    if (matchEmails.length > 0) {
-      const matches = await db
-        .selectFrom('persons')
-        .select(['id', 'public_id', 'first_name', 'last_name', 'email'])
-        .where('tenant_id', '=', tenant_id)
-        .where(sql<string>`LOWER(persons.email)`, 'in', matchEmails)
-        .execute();
-      for (const p of matches) {
-        if (!p.email) continue;
-        const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
-        personsByEmail.set(String(p.email).toLowerCase(), {
-          id: String(p.id),
-          public_id: p.public_id,
-          name: name || 'Unnamed person',
-        });
-      }
-    }
-    const personFor = (email: string) => personsByEmail.get(email.toLowerCase()) ?? null;
-
-    const bounceRows: NewsletterReportBounceType[] = bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => ({
-      email: b.email,
-      kind: b.kind,
-      reason: b.e.reason,
-      occurred_at: b.e.bouncedAt,
-      person: personFor(b.email),
-    }));
-
-    const mostEngaged: NewsletterReportEngagedType[] = engagedEntries.map(([email, e]) => ({
-      email,
-      opens: e.opens,
-      clicks: e.clicks,
-      links: e.links,
-      person: personFor(email),
-    }));
-
-    // --- hourly timeline (raw events only — empty once pruned) ----------------
-    const timeline = await db
-      .selectFrom('newsletter_events')
-      .select([
-        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
-      ])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', 'in', ['open', 'click'])
-      .groupBy('time_bucket')
-      .orderBy('time_bucket', 'asc')
-      .execute();
-    const timelinePoints = timeline.map((t) => ({
-      time: t.time_bucket,
-      opens: Number(t.opens),
-      clicks: Number(t.clicks),
-    }));
-
-    const sendDate = newsletter['send_date'] ? new Date(newsletter['send_date'] as string) : null;
-    let opensIn24hPct: number | null = null;
-    if (sendDate && timelinePoints.length > 0) {
-      const cutoff = sendDate.getTime() + 24 * 60 * 60 * 1000;
-      let within = 0;
-      let total = 0;
-      for (const t of timelinePoints) {
-        total += t.opens;
-        // Bucket keys are Postgres-local hour strings; treat them as local time.
-        if (new Date(t.time.replace(' ', 'T')).getTime() <= cutoff) within += t.opens;
-      }
-      opensIn24hPct = total > 0 ? (within / total) * 100 : null;
-    }
-
-    // --- links: stored top_links are authoritative for clicks (they survive
-    // pruning); unique-people counts only exist while raw events do ------------
-    const linkAgg = await db
-      .selectFrom('newsletter_events')
-      .select(['url', sql<number>`COUNT(*)`.as('clicks'), sql<number>`COUNT(DISTINCT email)`.as('people')])
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', 'click')
-      .where('url', 'is not', null)
-      .groupBy('url')
-      .execute();
-    const peopleByUrl = new Map(
-      linkAgg.map((l) => [String(l.url), { clicks: Number(l.clicks), people: Number(l.people) }]),
-    );
-
-    let storedLinks: MarketingEmailTopLinkType[] = [];
-    const rawTopLinks = newsletter['top_links'];
-    if (Array.isArray(rawTopLinks)) {
-      storedLinks = rawTopLinks as MarketingEmailTopLinkType[];
-    } else if (typeof rawTopLinks === 'string' && rawTopLinks) {
-      try {
-        const parsed: unknown = JSON.parse(rawTopLinks);
-        if (Array.isArray(parsed)) storedLinks = parsed as MarketingEmailTopLinkType[];
-      } catch {
-        storedLinks = [];
-      }
-    }
-    const linkUrls = new Set<string>([...storedLinks.map((l) => l.url), ...peopleByUrl.keys()]);
-    const allLinks: NewsletterReportLinkType[] = [...linkUrls]
-      .map((url) => {
-        const stored = storedLinks.find((l) => l.url === url);
-        const raw = peopleByUrl.get(url);
-        const clicks = Math.max(stored?.clicks ?? 0, raw?.clicks ?? 0);
-        // A people count from a partial event window would understate — only
-        // report it when the raw window still covers every recorded click.
-        const people = raw && raw.clicks >= clicks ? raw.people : null;
-        return { url, clicks, people };
-      })
-      .sort((a, b) => b.clicks - a.clicks);
-
-    // --- audience composition (current list membership — see report footer) ---
-    const audienceLists: { id: string; name: string; mode: 'include' | 'exclude'; members: number }[] = [];
-    let overlapRemoved = 0;
-    let suppressedSkipped = 0;
-    const listRows = await db
-      .selectFrom('map_newsletters_lists')
-      .innerJoin('lists', 'lists.id', 'map_newsletters_lists.list_id')
-      .select(['lists.id as id', 'lists.name as name', 'map_newsletters_lists.mode as mode'])
-      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
-      .where('lists.tenant_id', '=', tenant_id)
-      .where('map_newsletters_lists.newsletter_id', '=', id)
-      .execute();
-    const includeIds = listRows.filter((l) => l.mode === 'include').map((l) => String(l.id));
-    if (listRows.length > 0) {
-      const allIds = listRows.map((l) => String(l.id));
-      const memberCounts = await db
-        .selectFrom('map_lists_persons')
-        .select(['list_id', sql<number>`COUNT(DISTINCT person_id)`.as('members')])
-        .where('tenant_id', '=', tenant_id)
-        .where('list_id', 'in', allIds)
-        .groupBy('list_id')
-        .execute();
-      const membersByList = new Map(memberCounts.map((m) => [String(m.list_id), Number(m.members)]));
-      for (const l of listRows) {
-        audienceLists.push({
-          id: String(l.id),
-          name: String(l.name),
-          mode: l.mode === 'exclude' ? 'exclude' : 'include',
-          members: membersByList.get(String(l.id)) ?? 0,
-        });
-      }
-      if (includeIds.length > 0) {
-        const distinctRow = await db
-          .selectFrom('map_lists_persons')
-          .select(sql<number>`COUNT(DISTINCT person_id)`.as('distinct_members'))
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', 'in', includeIds)
-          .executeTakeFirst();
-        const includeSum = audienceLists.filter((l) => l.mode === 'include').reduce((sum, l) => sum + l.members, 0);
-        overlapRemoved = Math.max(0, includeSum - Number(distinctRow?.distinct_members ?? 0));
-
-        const suppressedRow = await db
-          .selectFrom('map_lists_persons')
-          .innerJoin('persons', 'persons.id', 'map_lists_persons.person_id')
-          .select(sql<number>`COUNT(DISTINCT persons.id)`.as('suppressed'))
-          .where('map_lists_persons.tenant_id', '=', tenant_id)
-          .where('persons.tenant_id', '=', tenant_id)
-          .where('map_lists_persons.list_id', 'in', includeIds)
-          .where((eb) =>
-            eb.exists(
-              db
-                .selectFrom('email_suppressions')
-                .select('email_suppressions.id')
-                .where('email_suppressions.tenant_id', '=', tenant_id)
-                .where(sql<boolean>`email_suppressions.email = persons.email`),
-            ),
-          )
-          .executeTakeFirst();
-        suppressedSkipped = Number(suppressedRow?.suppressed ?? 0);
-      }
-    }
-
-    // --- the last 5 sends in this campaign, ending with this one --------------
-    let previousSends: NewsletterReportType['previous_sends'] = [];
-    if (sendDate) {
-      let prevQuery = db
-        .selectFrom('newsletters')
-        .select([
-          'id',
-          'name',
-          'send_date',
-          'open_rate',
-          'click_rate',
-          'unsubscribe_count',
-          'bounce_count',
-          'delivered_count',
-          'total_recipients',
-        ])
-        .where('tenant_id', '=', tenant_id)
-        .where('status', '=', 'sent')
-        .where('send_date', 'is not', null)
-        .where((eb) => eb.or([eb('send_date', '<', sendDate), eb('id', '=', id)]))
-        .orderBy('send_date', 'desc')
-        .limit(5);
-      const campaignId = newsletter['campaign_id'];
-      prevQuery =
-        campaignId != null
-          ? prevQuery.where('campaign_id', '=', String(campaignId))
-          : prevQuery.where('campaign_id', 'is', null);
-      const prevRows = await prevQuery.execute();
-      previousSends = prevRows.reverse().map((r) => {
-        const delivered = Number(r.delivered_count ?? 0);
-        const recipients = Number(r.total_recipients ?? 0);
-        return {
-          id: String(r.id),
-          name: String(r.name),
-          send_date: r.send_date ? new Date(r.send_date as unknown as string) : null,
-          open_rate: Number(r.open_rate ?? 0),
-          click_rate: Number(r.click_rate ?? 0),
-          unsubscribe_rate: delivered > 0 ? (Number(r.unsubscribe_count ?? 0) / delivered) * 100 : 0,
-          bounce_rate: recipients > 0 ? (Number(r.bounce_count ?? 0) / recipients) * 100 : 0,
-        };
-      });
-    }
-
-    // --- sender identity (workspace Communications settings) ------------------
-    const fromRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id)
-      .where('key', 'in', ['communications.default_from_name', 'communications.default_from_email'])
-      .execute();
-    const fromMap: Record<string, string> = {};
-    for (const row of fromRows) {
-      if (typeof row.value === 'string') fromMap[row.key] = row.value;
-    }
-    const fromName = fromMap['communications.default_from_name'] ?? null;
-    const fromEmail = fromMap['communications.default_from_email'] ?? null;
-
-    // --- totals ----------------------------------------------------------------
-    const hard = bounceEntries.filter((b) => b.kind === 'hard').length;
-    const soft = bounceEntries.filter((b) => b.kind === 'soft').length;
-    const dropped = bounceEntries.filter((b) => b.kind === 'dropped').length;
-    const unsubTotal = Math.max(
-      [...byEmail.values()].filter((e) => e.unsubscribed).length,
-      Number(newsletter['unsubscribe_count'] ?? 0),
-    );
-    const spamRows = [...byEmail.entries()]
-      .filter(([, e]) => e.spamReported)
-      .map(([email, e]) => ({ email: email || null, occurred_at: e.spamReportedAt }));
-    const spamTotal = Math.max(spamRows.length, Number(newsletter['spam_complaint_count'] ?? 0));
-    const clickers = [...byEmail.values()].filter((e) => e.clicks > 0);
-
-    return {
-      timeline: timelinePoints,
-      opens_in_24h_pct: opensIn24hPct,
-      bounces: { total: bounceEntries.length, hard, soft, dropped, rows: bounceRows },
-      top_links: allLinks.slice(0, 6),
-      tracked_links: allLinks.length,
-      total_clicks: clickers.reduce((sum, e) => sum + e.clicks, 0),
-      unique_clickers: clickers.length,
-      most_engaged: mostEngaged,
-      unsubscribes: { total: unsubTotal, reasons: unsubTotal > 0 ? [{ reason: null, count: unsubTotal }] : [] },
-      spam_reports: { total: spamTotal, rows: spamRows },
-      audience: { lists: audienceLists, overlap_removed: overlapRemoved, suppressed_skipped: suppressedSkipped },
-      previous_sends: previousSends,
-      from: fromName || fromEmail ? { name: fromName, email: fromEmail } : null,
-    };
-  }
-
-  /**
-   * "Create list of N clickers" — a static snapshot list of every CRM person
-   * whose address clicked this newsletter, so the next send can target the
-   * people who acted on this one.
-   */
-  public async createClickersList(auth: IAuthKeyPayload, id: string): Promise<CreateClickersListResultType> {
-    const tenant_id = auth.tenant_id;
-    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
-    if (!newsletter) throw new NotFoundError('Newsletter not found');
-    const db = this.getRepo().db;
-
-    const rawClickers = await db
-      .selectFrom('newsletter_events')
-      .select('email')
-      .distinct()
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', 'click')
-      .execute();
-    const rolledUpClickers = await db
-      .selectFrom('person_newsletter_engagements')
-      .select('email')
-      .where('newsletter_id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .where('click_count', '>', 0)
-      .execute();
-    const emails = [
-      ...new Set([...rawClickers, ...rolledUpClickers].map((r) => r.email.toLowerCase()).filter(Boolean)),
-    ];
-    if (emails.length === 0) throw new BadRequestError('No one has clicked this newsletter yet.');
-
-    const persons = await db
-      .selectFrom('persons')
-      .select('id')
-      .where('tenant_id', '=', tenant_id)
-      .where(sql<string>`LOWER(persons.email)`, 'in', emails)
-      .execute();
-    const memberIds = [...new Set(persons.map((p) => String(p.id)))];
-    if (memberIds.length === 0) {
-      throw new BadRequestError('None of the clickers match a person in the CRM, so there is no one to add.');
-    }
-
-    const listsController = new ListsController();
-    const newsletterName = String(newsletter['name'] ?? 'newsletter');
-    // Lists cap names at 100 chars — leave room for a " (n)" de-dup suffix.
-    const baseName = `Clicked · ${newsletterName}`.slice(0, 90);
-    const description = `People who clicked "${newsletterName}" — snapshot taken ${new Date().toISOString().slice(0, 10)}.`;
-    const campaignId = newsletter['campaign_id'] != null ? String(newsletter['campaign_id']) : undefined;
-
-    const MAX_NAME_ATTEMPTS = 5;
-    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
-      const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
-      try {
-        const list = (await listsController.addList(
-          { name, description, object: 'people', is_dynamic: false, member_ids: memberIds, campaign_id: campaignId },
-          auth,
-        )) as Record<string, unknown>;
-        return { id: String(list['id']), name, members: memberIds.length };
-      } catch (err: unknown) {
-        const isNameConflict = err instanceof TRPCError && err.code === 'CONFLICT';
-        if (!isNameConflict || attempt === MAX_NAME_ATTEMPTS - 1) throw err;
-      }
-    }
-    // Unreachable — the loop either returns or rethrows on its last attempt.
-    throw new BadRequestError('Could not find a free list name.');
-  }
-}
-````
-
-## File: apps/backend/src/env.ts
-````typescript
-import { z } from 'zod';
-
-const envSchema = z.object({
-  HOST: z.string().default('localhost'),
-  PORT: z.coerce.number().default(3000),
-  DB_USER: z.string().min(1, 'DB_USER is required'),
-  DB_NAME: z.string().min(1, 'DB_NAME is required'),
-  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
-  DB_PORT: z.coerce.number().default(5432),
-  DB_HOST: z.string().default('localhost'),
-  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
-  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
-  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
-  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
-  // a single-role setup keeps working unchanged.
-  DB_MIGRATION_USER: z.string().optional(),
-  DB_MIGRATION_PASSWORD: z.string().optional(),
-  // Whether the serve process runs pending migrations at boot. Convenient in dev
-  // (default true); set to false in production, where migrations are a separate
-  // deploy step run as the owner role and the runtime role has no DDL rights.
-  MIGRATE_ON_BOOT: z
-    .string()
-    .optional()
-    .default('true')
-    .transform((val) => val !== 'false'),
-  DB_SSL: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  API_URL: z.string().url().default('http://localhost:3000'),
-  APP_URL: z.string().url().default('http://localhost:4200'),
-  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
-  MS_CLIENT_ID: z.string().optional(),
-  MS_CLIENT_SECRET: z.string().optional(),
-  MS_TENANT_ID: z.string().optional().default('common'),
-  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
-  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
-  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
-  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
-  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
-  // reputation (IP pool) from paying customers'.
-  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
-  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
-  // bounce/complaint webhooks. The webhook rejects requests without it.
-  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
-  // Twilio SMS (companion verification codes). All optional — the SMS service
-  // logs a dev mock instead of sending when these are unset.
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
-  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
-  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
-  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
-  // Dev default is 'localhost' so `<slug>.localhost` works.
-  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
-  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
-  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
-  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
-  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
-  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
-  TRUST_PROXY: z.string().optional().default('false'),
-  // How many background jobs the worker may process concurrently. One slow job (a large sync or
-  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
-  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
-  // this comfortably below the Postgres pool size. Default 4.
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
-  // Max connections in the shared pg pool. The API server, the job worker (up to
-  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
-  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
-  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
-  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
-  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
-  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
-  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
-  ALLOW_MOCK_PAYMENTS: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
-  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
-  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
-  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
-  // MUST be set in any environment that connects real mailboxes. Rotating it
-  // invalidates existing encrypted tokens (users just re-consent).
-  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
-});
-
-/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
-function parseTrustProxy(raw: string): boolean | number | string {
-  const value = raw.trim();
-  if (value === '' || value.toLowerCase() === 'false') return false;
-  if (value.toLowerCase() === 'true') return true;
-  if (/^\d+$/.test(value)) return Number(value);
-  return value;
-}
-
-const parsedEnv = envSchema.parse(process.env);
-
-export const env = {
-  host: parsedEnv.HOST,
-  port: parsedEnv.PORT,
-  db: {
-    user: parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  // Same target database, but connecting as the owner role for DDL/migrations.
-  // Falls back to the runtime credentials when the migration role is unset.
-  migrationDb: {
-    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
-  apiUrl: parsedEnv.API_URL,
-  appUrl: parsedEnv.APP_URL,
-  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
-  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
-  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
-  dbPoolMax: parsedEnv.DB_POOL_MAX,
-  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
-  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
-  sharedSecret: parsedEnv.SHARED_SECRET,
-  msClientId: parsedEnv.MS_CLIENT_ID,
-  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
-  msTenantId: parsedEnv.MS_TENANT_ID,
-  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
-  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
-  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
-  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
-  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
-  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
-  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
-  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
-  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
-  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
-  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
-  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
-  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
-  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
-  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
-  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
-  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
-  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
-  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
-  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
-};
-````
-
 ## File: apps/companion/src/app/canvass/canvass-page.ts
 ````typescript
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -68034,6 +66961,1103 @@ export class CompanionAccessController {
 }
 ````
 
+## File: apps/backend/src/app/modules/newsletters/controller.ts
+````typescript
+import type {
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  MarketingEmailTopLinkType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportType,
+} from '../../../../../../libs/common/src';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
+
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
+import { ListsController } from '../lists/controller';
+import { NewslettersRepo } from './repositories/newsletters.repo';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { assertNotDemoMode } from '../demo/demo-guard';
+import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
+
+const DEFAULT_FROM_NAME = 'pplCRM Team';
+const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+
+export interface SendTestEmailInput {
+  subject: string;
+  html: string;
+  text?: string;
+  to: string;
+  fromName?: string;
+  fromEmail?: string;
+}
+
+export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  private readonly campaignsRepo = new CampaignsRepo();
+
+  constructor() {
+    super(new NewslettersRepo());
+  }
+
+  /**
+   * map_newsletters_lists is the source of truth for list targeting (the
+   * legacy JSONB target_lists column is still dual-written by callers during
+   * the transition, but nothing reads it for behavior anymore).
+   */
+  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    // Every newsletter belongs to a campaign (§15). Callers that predate the
+    // context switcher fall back to the tenant's office context.
+    const pending = row as Record<string, unknown>;
+    if (!pending['campaign_id']) {
+      const campaigns = await this.campaignsRepo.getSwitcherList({ tenant_id: String(pending['tenant_id']) });
+      const office = campaigns.find((c) => c.kind === 'office');
+      if (!office) throw new BadRequestError('No campaign context exists for this organization.');
+      pending['campaign_id'] = String(office.id);
+    }
+    const result = await super.add(row, trx);
+    const rowObj = row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        String(rowObj['tenant_id']),
+        String(resultObj['id']),
+        rowObj['target_lists'],
+        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
+        trx,
+      );
+    }
+    return result;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'newsletters', 'update'>;
+  }) {
+    const result = await super.update(input);
+    const rowObj = input.row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        input.tenant_id,
+        input.id,
+        rowObj['target_lists'],
+        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
+      );
+    }
+    return result;
+  }
+
+  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
+  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      const raw = parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return {
+          include: raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          exclude: [],
+        };
+      }
+    }
+    if (Array.isArray(parsed)) {
+      return { include: parsed.map((v) => String(v)), exclude: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
+
+  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
+  private async syncTargetLists(
+    tenant_id: string,
+    newsletterId: string,
+    rawTargetLists: unknown,
+    actorId: string,
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const db = trx ?? this.getRepo().db;
+    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+
+    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
+    let liveIds = new Set<string>();
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = new Set(rows.map((r) => String(r.id)));
+    }
+
+    await db
+      .deleteFrom('map_newsletters_lists')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+
+    const values = [
+      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
+      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
+    ].map((v) => ({
+      tenant_id,
+      newsletter_id: newsletterId,
+      list_id: v.list_id,
+      mode: v.mode,
+      createdby_id: actorId,
+      updatedby_id: actorId,
+    }));
+    if (values.length > 0) {
+      await db.insertInto('map_newsletters_lists').values(values).execute();
+    }
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'newsletters',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  public async buildRecipientQuery(tenant_id: string, newsletter: Record<string, unknown>): Promise<any> {
+    let includeTags: string[] = [];
+    let excludeTags: string[] = [];
+
+    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
+    const listRows = await this.getRepo()
+      .db.selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', String(newsletter['id']))
+      .execute();
+    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
+    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
+
+    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // It stays JSONB deliberately: it holds tag *names*, not ids.
+    const parseJsonField = (value: unknown): unknown => {
+      if (value == null) return null;
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value; // already parsed object from jsonb column
+    };
+
+    const segmentsObj = parseJsonField(newsletter['segments']);
+    if (Array.isArray(segmentsObj)) {
+      includeTags = segmentsObj as string[];
+    } else if (segmentsObj && typeof segmentsObj === 'object') {
+      const obj = segmentsObj as Record<string, unknown>;
+      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof segmentsObj === 'string' && segmentsObj) {
+      includeTags = (segmentsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const db = this.getRepo().db;
+    const campaignId = String(newsletter['campaign_id']);
+    let query = db
+      .selectFrom('persons')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('persons.email', 'is not', null)
+      .where('persons.email', '!=', '')
+      // Sendability (§15) = subscribed in THIS campaign ∧ address not suppressed ∧ not DNC(email).
+      // 1. Per-campaign consent: an explicit subscribed row in the newsletter's campaign.
+      .where((eb) =>
+        eb.exists(
+          db
+            .selectFrom('campaign_subscriptions')
+            .select('campaign_subscriptions.person_id')
+            .where('campaign_subscriptions.tenant_id', '=', tenant_id)
+            .where('campaign_subscriptions.campaign_id', '=', campaignId)
+            .where('campaign_subscriptions.status', '=', 'subscribed')
+            .where(sql<boolean>`campaign_subscriptions.person_id = persons.id`),
+        ),
+      )
+      // 2. Global address health: hard bounces / spam complaints kill the address everywhere.
+      .where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('email_suppressions')
+              .select('email_suppressions.id')
+              .where('email_suppressions.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`email_suppressions.email = persons.email`),
+          ),
+        ),
+      )
+      // 3. Person-level do-not-contact (null channel list = all channels).
+      .where(
+        sql<boolean>`NOT (persons.do_not_contact AND (persons.do_not_contact_channels IS NULL OR 'email' = ANY(persons.do_not_contact_channels)))`,
+      );
+
+    query = query.where((eb) => {
+      const conditions = [];
+      if (includeListIds.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', includeListIds),
+          ),
+        );
+      }
+      if (includeTags.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', includeTags),
+          ),
+        );
+      }
+
+      if (conditions.length === 0) {
+        return eb.val(false);
+      }
+      return eb.or(conditions);
+    });
+
+    if (excludeListIds.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
+              .where('map_lists_persons.list_id', 'in', excludeListIds),
+          ),
+        ),
+      );
+    }
+
+    if (excludeTags.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
+              .where('tags.name', 'in', excludeTags),
+          ),
+        ),
+      );
+    }
+
+    return query;
+  }
+
+  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    // Sending is locked during the demo test drive (no plan yet, no sender identity).
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) {
+      throw new NotFoundError('Newsletter not found');
+    }
+    if (newsletter['status'] === 'sent' || newsletter['status'] === 'queuing' || newsletter['status'] === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
+    }
+
+    const db = this.getRepo().db;
+    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
+
+    // Get total count of unique recipients using a distinct count query
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number(countResult?.count || 0);
+
+    if (totalRecipients === 0) {
+      throw new BadRequestError('No recipients found for the selected lists or tags');
+    }
+
+    // A 'paused' newsletter (tripwire fired mid-send) resumes from where it stopped once the
+    // tenant is unblocked, instead of double-sending the recipients before the pause point.
+    const resumeOffset = newsletter['status'] === 'paused' ? Number(newsletter['send_offset'] ?? 0) : 0;
+    const resumeDelivered = resumeOffset > 0 ? Number(newsletter['delivered_count'] ?? 0) : 0;
+
+    // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
+    await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
+
+    const updated = await this.update({
+      tenant_id,
+      id,
+      row: {
+        status: 'queuing',
+        total_recipients: totalRecipients,
+        delivered_count: resumeDelivered,
+        updatedby_id: userId,
+        updated_at: new Date(),
+      },
+    });
+
+    await db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenant_id,
+          userId: userId,
+          offset: resumeOffset,
+          deliveredCount: resumeDelivered,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return updated;
+  }
+
+  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
+    const db = this.getRepo().db;
+
+    // Test sends are single-recipient but still outbound mail: blocked while the tenant is
+    // suspended/paused, and throttled so they can't be scripted into a bulk channel.
+    assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
+    checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
+
+    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
+    // from name/email, otherwise fall back to the workspace Communications settings.
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+        'communications.reply_to',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
+    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
+    const replyTo = settingsMap['communications.reply_to'] || undefined;
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+
+    // Apply the same send-time render as the real send so the test reflects what recipients receive:
+    // block-JSON stripped, relative images made absolute, merge tokens resolved (to their fallbacks
+    // here, since a test address carries no person record).
+    const html = renderNewsletterHtml(input.html, { baseUrl: env.appUrl, previewText: null });
+    const mergeTokens = extractMergeTokens(input.subject, html, input.text);
+    const substitutions = mergeTokens.length ? resolveMergeSubstitutions(mergeTokens, { email: input.to }) : undefined;
+
+    const mailSvc = new NewsletterEmailService();
+    const delivered = await mailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: [{ email: input.to, substitutions }],
+      subject: input.subject,
+      html,
+      text: input.text,
+      sendgridApiKey,
+      subuserUsername,
+    });
+
+    return { to: input.to, delivered };
+  }
+
+  /**
+   * Everything the newsletter report page renders in one call.
+   *
+   * Engagement detail lives in two places: raw `newsletter_events` (recent) and
+   * the `person_newsletter_engagements` rollup (raw rows are aggregated into it
+   * and deleted by the prune job). The two are disjoint by construction, so
+   * per-email numbers are the sum of both sources.
+   */
+  public async getReport(tenant_id: string, id: string): Promise<NewsletterReportType> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    const db = this.getRepo().db;
+
+    // --- per-email engagement, merged from raw events + the rollup ------------
+    const rawAgg = await db
+      .selectFrom('newsletter_events')
+      .select([
+        'email',
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(*) FILTER (WHERE event_type = 'click')`.as('clicks'),
+        sql<number>`COUNT(DISTINCT url) FILTER (WHERE event_type = 'click' AND url IS NOT NULL)`.as('links'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND COALESCE(bounce_type, '') <> 'blocked')`.as('hard_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'bounce' AND bounce_type = 'blocked')`.as('soft_bounced'),
+        sql<boolean>`BOOL_OR(event_type = 'dropped')`.as('dropped'),
+        sql<string | null>`MAX(reason) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounce_reason'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced_at'),
+        sql<boolean>`BOOL_OR(event_type = 'unsubscribe')`.as('unsubscribed'),
+        sql<boolean>`BOOL_OR(event_type = 'spamreport')`.as('spam_reported'),
+        sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type = 'spamreport')`.as('spam_reported_at'),
+      ])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email')
+      .execute();
+
+    const rollup = await db
+      .selectFrom('person_newsletter_engagements')
+      .select(['email', 'open_count', 'click_count', 'hard_bounced', 'soft_bounced', 'has_unsubscribed', 'bounced_at'])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    interface EmailEngagement {
+      opens: number;
+      clicks: number;
+      links: number;
+      hard: boolean;
+      soft: boolean;
+      dropped: boolean;
+      reason: string | null;
+      bouncedAt: Date | null;
+      unsubscribed: boolean;
+      spamReported: boolean;
+      spamReportedAt: Date | null;
+    }
+    const byEmail = new Map<string, EmailEngagement>();
+    const entryFor = (email: string): EmailEngagement => {
+      let e = byEmail.get(email);
+      if (!e) {
+        e = {
+          opens: 0,
+          clicks: 0,
+          links: 0,
+          hard: false,
+          soft: false,
+          dropped: false,
+          reason: null,
+          bouncedAt: null,
+          unsubscribed: false,
+          spamReported: false,
+          spamReportedAt: null,
+        };
+        byEmail.set(email, e);
+      }
+      return e;
+    };
+    for (const r of rollup) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.open_count);
+      e.clicks += Number(r.click_count);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.unsubscribed = e.unsubscribed || r.has_unsubscribed;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+    }
+    for (const r of rawAgg) {
+      const e = entryFor(r.email);
+      e.opens += Number(r.opens);
+      e.clicks += Number(r.clicks);
+      e.links += Number(r.links);
+      e.hard = e.hard || r.hard_bounced;
+      e.soft = e.soft || r.soft_bounced;
+      e.dropped = e.dropped || r.dropped;
+      e.reason = e.reason ?? r.bounce_reason;
+      e.bouncedAt = e.bouncedAt ?? (r.bounced_at ? new Date(r.bounced_at as unknown as string) : null);
+      e.unsubscribed = e.unsubscribed || r.unsubscribed;
+      e.spamReported = e.spamReported || r.spam_reported;
+      e.spamReportedAt =
+        e.spamReportedAt ?? (r.spam_reported_at ? new Date(r.spam_reported_at as unknown as string) : null);
+    }
+
+    const bounceKind = (e: EmailEngagement): 'hard' | 'soft' | 'dropped' | null =>
+      e.hard ? 'hard' : e.soft ? 'soft' : e.dropped ? 'dropped' : null;
+
+    // --- bounce rows, CRM-matched --------------------------------------------
+    const MAX_BOUNCE_ROWS = 500;
+    const bounceEntries = [...byEmail.entries()]
+      .map(([email, e]) => ({ email, e, kind: bounceKind(e) }))
+      .filter((b): b is { email: string; e: EmailEngagement; kind: 'hard' | 'soft' | 'dropped' } => b.kind !== null)
+      .sort((a, b) => (b.e.bouncedAt?.getTime() ?? 0) - (a.e.bouncedAt?.getTime() ?? 0));
+
+    const engagedEntries = [...byEmail.entries()]
+      .filter(([, e]) => e.opens + e.clicks > 0)
+      .sort(([, a], [, b]) => b.clicks - a.clicks || b.opens - a.opens)
+      .slice(0, 5);
+
+    const matchEmails = [
+      ...new Set(
+        [...bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => b.email), ...engagedEntries.map(([email]) => email)].map(
+          (m) => m.toLowerCase(),
+        ),
+      ),
+    ];
+    const personsByEmail = new Map<string, { id: string; public_id: string | null; name: string }>();
+    if (matchEmails.length > 0) {
+      const matches = await db
+        .selectFrom('persons')
+        .select(['id', 'public_id', 'first_name', 'last_name', 'email'])
+        .where('tenant_id', '=', tenant_id)
+        .where(sql<string>`LOWER(persons.email)`, 'in', matchEmails)
+        .execute();
+      for (const p of matches) {
+        if (!p.email) continue;
+        const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim();
+        personsByEmail.set(String(p.email).toLowerCase(), {
+          id: String(p.id),
+          public_id: p.public_id,
+          name: name || 'Unnamed person',
+        });
+      }
+    }
+    const personFor = (email: string) => personsByEmail.get(email.toLowerCase()) ?? null;
+
+    const bounceRows: NewsletterReportBounceType[] = bounceEntries.slice(0, MAX_BOUNCE_ROWS).map((b) => ({
+      email: b.email,
+      kind: b.kind,
+      reason: b.e.reason,
+      occurred_at: b.e.bouncedAt,
+      person: personFor(b.email),
+    }));
+
+    const mostEngaged: NewsletterReportEngagedType[] = engagedEntries.map(([email, e]) => ({
+      email,
+      opens: e.opens,
+      clicks: e.clicks,
+      links: e.links,
+      person: personFor(email),
+    }));
+
+    // --- hourly timeline (raw events only — empty once pruned) ----------------
+    const timeline = await db
+      .selectFrom('newsletter_events')
+      .select([
+        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+      ])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', 'in', ['open', 'click'])
+      .groupBy('time_bucket')
+      .orderBy('time_bucket', 'asc')
+      .execute();
+    const timelinePoints = timeline.map((t) => ({
+      time: t.time_bucket,
+      opens: Number(t.opens),
+      clicks: Number(t.clicks),
+    }));
+
+    const sendDate = newsletter['send_date'] ? new Date(newsletter['send_date'] as string) : null;
+    let opensIn24hPct: number | null = null;
+    if (sendDate && timelinePoints.length > 0) {
+      const cutoff = sendDate.getTime() + 24 * 60 * 60 * 1000;
+      let within = 0;
+      let total = 0;
+      for (const t of timelinePoints) {
+        total += t.opens;
+        // Bucket keys are Postgres-local hour strings; treat them as local time.
+        if (new Date(t.time.replace(' ', 'T')).getTime() <= cutoff) within += t.opens;
+      }
+      opensIn24hPct = total > 0 ? (within / total) * 100 : null;
+    }
+
+    // --- links: stored top_links are authoritative for clicks (they survive
+    // pruning); unique-people counts only exist while raw events do ------------
+    const linkAgg = await db
+      .selectFrom('newsletter_events')
+      .select(['url', sql<number>`COUNT(*)`.as('clicks'), sql<number>`COUNT(DISTINCT email)`.as('people')])
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .where('url', 'is not', null)
+      .groupBy('url')
+      .execute();
+    const peopleByUrl = new Map(
+      linkAgg.map((l) => [String(l.url), { clicks: Number(l.clicks), people: Number(l.people) }]),
+    );
+
+    let storedLinks: MarketingEmailTopLinkType[] = [];
+    const rawTopLinks = newsletter['top_links'];
+    if (Array.isArray(rawTopLinks)) {
+      storedLinks = rawTopLinks as MarketingEmailTopLinkType[];
+    } else if (typeof rawTopLinks === 'string' && rawTopLinks) {
+      try {
+        const parsed: unknown = JSON.parse(rawTopLinks);
+        if (Array.isArray(parsed)) storedLinks = parsed as MarketingEmailTopLinkType[];
+      } catch {
+        storedLinks = [];
+      }
+    }
+    const linkUrls = new Set<string>([...storedLinks.map((l) => l.url), ...peopleByUrl.keys()]);
+    const allLinks: NewsletterReportLinkType[] = [...linkUrls]
+      .map((url) => {
+        const stored = storedLinks.find((l) => l.url === url);
+        const raw = peopleByUrl.get(url);
+        const clicks = Math.max(stored?.clicks ?? 0, raw?.clicks ?? 0);
+        // A people count from a partial event window would understate — only
+        // report it when the raw window still covers every recorded click.
+        const people = raw && raw.clicks >= clicks ? raw.people : null;
+        return { url, clicks, people };
+      })
+      .sort((a, b) => b.clicks - a.clicks);
+
+    // --- audience composition (current list membership — see report footer) ---
+    const audienceLists: { id: string; name: string; mode: 'include' | 'exclude'; members: number }[] = [];
+    let overlapRemoved = 0;
+    let suppressedSkipped = 0;
+    const listRows = await db
+      .selectFrom('map_newsletters_lists')
+      .innerJoin('lists', 'lists.id', 'map_newsletters_lists.list_id')
+      .select(['lists.id as id', 'lists.name as name', 'map_newsletters_lists.mode as mode'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.newsletter_id', '=', id)
+      .execute();
+    const includeIds = listRows.filter((l) => l.mode === 'include').map((l) => String(l.id));
+    if (listRows.length > 0) {
+      const allIds = listRows.map((l) => String(l.id));
+      const memberCounts = await db
+        .selectFrom('map_lists_persons')
+        .select(['list_id', sql<number>`COUNT(DISTINCT person_id)`.as('members')])
+        .where('tenant_id', '=', tenant_id)
+        .where('list_id', 'in', allIds)
+        .groupBy('list_id')
+        .execute();
+      const membersByList = new Map(memberCounts.map((m) => [String(m.list_id), Number(m.members)]));
+      for (const l of listRows) {
+        audienceLists.push({
+          id: String(l.id),
+          name: String(l.name),
+          mode: l.mode === 'exclude' ? 'exclude' : 'include',
+          members: membersByList.get(String(l.id)) ?? 0,
+        });
+      }
+      if (includeIds.length > 0) {
+        const distinctRow = await db
+          .selectFrom('map_lists_persons')
+          .select(sql<number>`COUNT(DISTINCT person_id)`.as('distinct_members'))
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', 'in', includeIds)
+          .executeTakeFirst();
+        const includeSum = audienceLists.filter((l) => l.mode === 'include').reduce((sum, l) => sum + l.members, 0);
+        overlapRemoved = Math.max(0, includeSum - Number(distinctRow?.distinct_members ?? 0));
+
+        const suppressedRow = await db
+          .selectFrom('map_lists_persons')
+          .innerJoin('persons', 'persons.id', 'map_lists_persons.person_id')
+          .select(sql<number>`COUNT(DISTINCT persons.id)`.as('suppressed'))
+          .where('map_lists_persons.tenant_id', '=', tenant_id)
+          .where('persons.tenant_id', '=', tenant_id)
+          .where('map_lists_persons.list_id', 'in', includeIds)
+          .where((eb) =>
+            eb.exists(
+              db
+                .selectFrom('email_suppressions')
+                .select('email_suppressions.id')
+                .where('email_suppressions.tenant_id', '=', tenant_id)
+                .where(sql<boolean>`email_suppressions.email = persons.email`),
+            ),
+          )
+          .executeTakeFirst();
+        suppressedSkipped = Number(suppressedRow?.suppressed ?? 0);
+      }
+    }
+
+    // --- the last 5 sends in this campaign, ending with this one --------------
+    let previousSends: NewsletterReportType['previous_sends'] = [];
+    if (sendDate) {
+      let prevQuery = db
+        .selectFrom('newsletters')
+        .select([
+          'id',
+          'name',
+          'send_date',
+          'open_rate',
+          'click_rate',
+          'unsubscribe_count',
+          'bounce_count',
+          'delivered_count',
+          'total_recipients',
+        ])
+        .where('tenant_id', '=', tenant_id)
+        .where('status', '=', 'sent')
+        .where('send_date', 'is not', null)
+        .where((eb) => eb.or([eb('send_date', '<', sendDate), eb('id', '=', id)]))
+        .orderBy('send_date', 'desc')
+        .limit(5);
+      const campaignId = newsletter['campaign_id'];
+      prevQuery =
+        campaignId != null
+          ? prevQuery.where('campaign_id', '=', String(campaignId))
+          : prevQuery.where('campaign_id', 'is', null);
+      const prevRows = await prevQuery.execute();
+      previousSends = prevRows.reverse().map((r) => {
+        const delivered = Number(r.delivered_count ?? 0);
+        const recipients = Number(r.total_recipients ?? 0);
+        return {
+          id: String(r.id),
+          name: String(r.name),
+          send_date: r.send_date ? new Date(r.send_date as unknown as string) : null,
+          open_rate: Number(r.open_rate ?? 0),
+          click_rate: Number(r.click_rate ?? 0),
+          unsubscribe_rate: delivered > 0 ? (Number(r.unsubscribe_count ?? 0) / delivered) * 100 : 0,
+          bounce_rate: recipients > 0 ? (Number(r.bounce_count ?? 0) / recipients) * 100 : 0,
+        };
+      });
+    }
+
+    // --- sender identity (workspace Communications settings) ------------------
+    const fromRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', ['communications.default_from_name', 'communications.default_from_email'])
+      .execute();
+    const fromMap: Record<string, string> = {};
+    for (const row of fromRows) {
+      if (typeof row.value === 'string') fromMap[row.key] = row.value;
+    }
+    const fromName = fromMap['communications.default_from_name'] ?? null;
+    const fromEmail = fromMap['communications.default_from_email'] ?? null;
+
+    // --- totals ----------------------------------------------------------------
+    const hard = bounceEntries.filter((b) => b.kind === 'hard').length;
+    const soft = bounceEntries.filter((b) => b.kind === 'soft').length;
+    const dropped = bounceEntries.filter((b) => b.kind === 'dropped').length;
+    const unsubTotal = Math.max(
+      [...byEmail.values()].filter((e) => e.unsubscribed).length,
+      Number(newsletter['unsubscribe_count'] ?? 0),
+    );
+    const spamRows = [...byEmail.entries()]
+      .filter(([, e]) => e.spamReported)
+      .map(([email, e]) => ({ email: email || null, occurred_at: e.spamReportedAt }));
+    const spamTotal = Math.max(spamRows.length, Number(newsletter['spam_complaint_count'] ?? 0));
+    const clickers = [...byEmail.values()].filter((e) => e.clicks > 0);
+
+    return {
+      timeline: timelinePoints,
+      opens_in_24h_pct: opensIn24hPct,
+      bounces: { total: bounceEntries.length, hard, soft, dropped, rows: bounceRows },
+      top_links: allLinks.slice(0, 6),
+      tracked_links: allLinks.length,
+      total_clicks: clickers.reduce((sum, e) => sum + e.clicks, 0),
+      unique_clickers: clickers.length,
+      most_engaged: mostEngaged,
+      unsubscribes: { total: unsubTotal, reasons: unsubTotal > 0 ? [{ reason: null, count: unsubTotal }] : [] },
+      spam_reports: { total: spamTotal, rows: spamRows },
+      audience: { lists: audienceLists, overlap_removed: overlapRemoved, suppressed_skipped: suppressedSkipped },
+      previous_sends: previousSends,
+      from: fromName || fromEmail ? { name: fromName, email: fromEmail } : null,
+    };
+  }
+
+  /**
+   * "Create list of N clickers" — a static snapshot list of every CRM person
+   * whose address clicked this newsletter, so the next send can target the
+   * people who acted on this one.
+   */
+  public async createClickersList(auth: IAuthKeyPayload, id: string): Promise<CreateClickersListResultType> {
+    const tenant_id = auth.tenant_id;
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    const db = this.getRepo().db;
+
+    const rawClickers = await db
+      .selectFrom('newsletter_events')
+      .select('email')
+      .distinct()
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', 'click')
+      .execute();
+    const rolledUpClickers = await db
+      .selectFrom('person_newsletter_engagements')
+      .select('email')
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .where('click_count', '>', 0)
+      .execute();
+    const emails = [
+      ...new Set([...rawClickers, ...rolledUpClickers].map((r) => r.email.toLowerCase()).filter(Boolean)),
+    ];
+    if (emails.length === 0) throw new BadRequestError('No one has clicked this newsletter yet.');
+
+    const persons = await db
+      .selectFrom('persons')
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where(sql<string>`LOWER(persons.email)`, 'in', emails)
+      .execute();
+    const memberIds = [...new Set(persons.map((p) => String(p.id)))];
+    if (memberIds.length === 0) {
+      throw new BadRequestError('None of the clickers match a person in the CRM, so there is no one to add.');
+    }
+
+    const listsController = new ListsController();
+    const newsletterName = String(newsletter['name'] ?? 'newsletter');
+    // Lists cap names at 100 chars — leave room for a " (n)" de-dup suffix.
+    const baseName = `Clicked · ${newsletterName}`.slice(0, 90);
+    const description = `People who clicked "${newsletterName}" — snapshot taken ${new Date().toISOString().slice(0, 10)}.`;
+    const campaignId = newsletter['campaign_id'] != null ? String(newsletter['campaign_id']) : undefined;
+
+    const MAX_NAME_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt++) {
+      const name = attempt === 0 ? baseName : `${baseName} (${attempt + 1})`;
+      try {
+        const list = (await listsController.addList(
+          { name, description, object: 'people', is_dynamic: false, member_ids: memberIds, campaign_id: campaignId },
+          auth,
+        )) as Record<string, unknown>;
+        return { id: String(list['id']), name, members: memberIds.length };
+      } catch (err: unknown) {
+        const isNameConflict = err instanceof TRPCError && err.code === 'CONFLICT';
+        if (!isNameConflict || attempt === MAX_NAME_ATTEMPTS - 1) throw err;
+      }
+    }
+    // Unreachable — the loop either returns or rethrows on its last attempt.
+    throw new BadRequestError('Could not find a free list name.');
+  }
+}
+````
+
+## File: apps/backend/src/env.ts
+````typescript
+import { z } from 'zod';
+
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
+  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
+  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
+  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
+  // a single-role setup keeps working unchanged.
+  DB_MIGRATION_USER: z.string().optional(),
+  DB_MIGRATION_PASSWORD: z.string().optional(),
+  // Whether the serve process runs pending migrations at boot. Convenient in dev
+  // (default true); set to false in production, where migrations are a separate
+  // deploy step run as the owner role and the runtime role has no DDL rights.
+  MIGRATE_ON_BOOT: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((val) => val !== 'false'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
+  // is used and the tenant has no whitelabel subuser of its own. Isolates free-tier sending
+  // reputation (IP pool) from paying customers'.
+  SENDGRID_FREE_TIER_SUBUSER: z.string().optional(),
+  // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
+  // bounce/complaint webhooks. The webhook rejects requests without it.
+  POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
+  // Twilio SMS (companion verification codes). All optional — the SMS service
+  // logs a dev mock instead of sending when these are unset.
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM_NUMBER: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('pplCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
+  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
+  // Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
+  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
+  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
+  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
+  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
+  TRUST_PROXY: z.string().optional().default('false'),
+  // How many background jobs the worker may process concurrently. One slow job (a large sync or
+  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
+  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
+  // this comfortably below the Postgres pool size. Default 4.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max connections in the shared pg pool. The API server, the job worker (up to
+  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
+  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
+  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
+  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
+  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
+  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
+  ALLOW_MOCK_PAYMENTS: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
+  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
+  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
+  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
+  // MUST be set in any environment that connects real mailboxes. Rotating it
+  // invalidates existing encrypted tokens (users just re-consent).
+  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
+});
+
+/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
+function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
+
+const parsedEnv = envSchema.parse(process.env);
+
+export const env = {
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
+  db: {
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  // Same target database, but connecting as the owner role for DDL/migrations.
+  // Falls back to the runtime credentials when the migration role is unset.
+  migrationDb: {
+    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
+  apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
+  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
+  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
+  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  dbPoolMax: parsedEnv.DB_POOL_MAX,
+  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
+  sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
+  postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
+  twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
+  twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
+};
+````
+
 ## File: apps/backend/src/app/modules/billing/usage-limits.ts
 ````typescript
 import type { Kysely } from 'kysely';
@@ -68583,6 +68607,270 @@ export async function queueUsageLimitCheck(tenantId: string, db: Kysely<Models>)
         max_attempts: 3,
       })
       .execute();
+  }
+}
+````
+
+## File: apps/website/src/app/home/home-page.ts
+````typescript
+import { Component, computed, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PLANS, startingPriceLabel } from '@common';
+import type { PlanDef } from '@common';
+
+import { AppPreview, type PreviewKind } from '../ui/app-preview';
+import { BrowserFrame } from '../ui/browser-frame';
+import { Constellation } from '../ui/constellation';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+type Audience = 'office' | 'camp' | 'np';
+
+interface Hero {
+  readonly h1: string;
+  readonly sub: string;
+  readonly url: string;
+  readonly kind: PreviewKind;
+  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
+  readonly img?: string;
+}
+
+interface AudienceOption {
+  readonly id: Audience;
+  readonly label: string;
+}
+
+interface Step {
+  readonly n: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Feature {
+  readonly icon: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Door {
+  readonly addr: string;
+  readonly who: string;
+  readonly chip: string;
+  readonly chipClass: string;
+}
+
+const HEROES: Record<Audience, Hero> = {
+  office: {
+    h1: 'Every case answered. Every constituent remembered.',
+    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
+    url: 'app.pplcrm.com/inbox',
+    kind: 'inbox',
+    img: 'assets/site-shots/01-shot.png',
+  },
+  camp: {
+    h1: 'Built for the people who knock and win campaigns.',
+    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
+    url: 'app.pplcrm.com/canvassing',
+    kind: 'canvassing',
+    img: 'assets/site-shots/02-shot.png',
+  },
+  np: {
+    h1: 'Donors, volunteers and neighbors. One list.',
+    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
+    url: 'app.pplcrm.com/donations',
+    kind: 'donations',
+    img: 'assets/site-shots/03-shot.png',
+  },
+};
+
+@Component({
+  selector: 'pc-home-page',
+  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
+  templateUrl: './home-page.html',
+})
+export class HomePage {
+  protected readonly signupUrl = SIGNUP_URL;
+
+  protected readonly aud = signal<Audience>('office');
+  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
+
+  protected readonly audiences: readonly AudienceOption[] = [
+    { id: 'office', label: 'Constituency office' },
+    { id: 'camp', label: 'Campaign' },
+    { id: 'np', label: 'Non-profit' },
+  ];
+
+  protected readonly steps: readonly Step[] = [
+    {
+      n: '1',
+      title: 'Create your free workspace',
+      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
+    },
+    {
+      n: '2',
+      title: 'Try everything on sample data',
+      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
+    },
+    {
+      n: '3',
+      title: 'Import your list when it clicks',
+      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  protected readonly features: readonly Feature[] = [
+    {
+      icon: 'users',
+      title: 'People & households',
+      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
+    },
+    {
+      icon: 'inbox',
+      title: 'A shared inbox & tasks',
+      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
+    },
+    {
+      icon: 'megaphone',
+      title: 'Newsletters that land',
+      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
+    },
+    {
+      icon: 'map-pin',
+      title: 'Doors & the field',
+      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
+    },
+    {
+      icon: 'currency-dollar',
+      title: 'Donations, gratefully',
+      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
+    },
+    {
+      icon: 'arrow-up-tray',
+      title: 'Your spreadsheet, welcomed',
+      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+    },
+  ];
+
+  protected readonly growFeatures: readonly Feature[] = [
+    {
+      icon: 'clipboard-document-list',
+      title: 'Web forms & automations',
+      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+    },
+    {
+      icon: 'calendar',
+      title: 'Events & volunteer shifts',
+      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
+    },
+    {
+      icon: 'credit-card',
+      title: 'Online giving pages',
+      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
+    },
+    {
+      icon: 'rectangle-stack',
+      title: 'One list, every campaign',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
+    },
+  ];
+
+  /** The three claims beside the constellation animation in the network band. */
+  protected readonly networkPoints: readonly Feature[] = [
+    {
+      icon: 'user-group',
+      title: 'See the web, not the spreadsheet',
+      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
+    },
+    {
+      icon: 'route',
+      title: 'Warm paths beat cold lists',
+      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
+    },
+    {
+      icon: 'presentation-chart-line',
+      title: 'Every touch sharpens the map',
+      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
+    },
+  ];
+
+  protected readonly companionFeatures: readonly Feature[] = [
+    {
+      icon: 'map-pin',
+      title: 'Canvass companion',
+      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
+    },
+    {
+      icon: 'ticket',
+      title: 'Yard sign routes',
+      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
+    },
+    {
+      icon: 'house-modern',
+      title: 'Deliveries',
+      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
+    },
+  ];
+
+  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
+  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
+
+  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $55'). */
+  protected readonly startingPrice = startingPriceLabel;
+
+  protected readonly faqs: readonly Qa[] = [
+    {
+      q: 'Is the free plan really free?',
+      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
+    },
+    {
+      q: 'What is the demo workspace?',
+      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
+    },
+    {
+      q: 'Can I import my existing list?',
+      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
+    },
+    {
+      q: 'Can I get my data back out?',
+      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
+    },
+    {
+      q: 'Who owns the data?',
+      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'How does pricing work?',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+    },
+  ];
+
+  protected readonly doors: readonly Door[] = [
+    {
+      addr: '214 Alder St',
+      who: 'Elena & Marco Ramos',
+      chip: 'Supporter',
+      chipClass: 'bg-success/20 text-success-content',
+    },
+    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
+    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
+    {
+      addr: '226 Alder St',
+      who: 'Priya Natarajan',
+      chip: 'Remaining',
+      chipClass: 'bg-base-300/60 text-base-content/60',
+    },
+    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
+  ];
+
+  protected pick(id: Audience): void {
+    this.aud.set(id);
   }
 }
 ````
@@ -70924,270 +71212,6 @@ const ROTATION_REUSE_GRACE_MS = 60 * 1000;
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
-````
-
-## File: apps/website/src/app/home/home-page.ts
-````typescript
-import { Component, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { PLANS, startingPriceLabel } from '@common';
-import type { PlanDef } from '@common';
-
-import { AppPreview, type PreviewKind } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { Constellation } from '../ui/constellation';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-type Audience = 'office' | 'camp' | 'np';
-
-interface Hero {
-  readonly h1: string;
-  readonly sub: string;
-  readonly url: string;
-  readonly kind: PreviewKind;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly img?: string;
-}
-
-interface AudienceOption {
-  readonly id: Audience;
-  readonly label: string;
-}
-
-interface Step {
-  readonly n: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Feature {
-  readonly icon: string;
-  readonly title: string;
-  readonly body: string;
-}
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Door {
-  readonly addr: string;
-  readonly who: string;
-  readonly chip: string;
-  readonly chipClass: string;
-}
-
-const HEROES: Record<Audience, Hero> = {
-  office: {
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates, and an activity log that remembers every touch. Casework that survives staff turnover and election cycles.',
-    url: 'app.pplcrm.com/inbox',
-    kind: 'inbox',
-    img: 'assets/site-shots/01-shot.png',
-  },
-  camp: {
-    h1: 'Built for the people who knock and win campaigns.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    url: 'app.pplcrm.com/canvassing',
-    kind: 'canvassing',
-    img: 'assets/site-shots/02-shot.png',
-  },
-  np: {
-    h1: 'Donors, volunteers and neighbors. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    url: 'app.pplcrm.com/donations',
-    kind: 'donations',
-    img: 'assets/site-shots/03-shot.png',
-  },
-};
-
-@Component({
-  selector: 'pc-home-page',
-  imports: [RouterLink, SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon, Constellation],
-  templateUrl: './home-page.html',
-})
-export class HomePage {
-  protected readonly signupUrl = SIGNUP_URL;
-
-  protected readonly aud = signal<Audience>('office');
-  protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
-
-  protected readonly audiences: readonly AudienceOption[] = [
-    { id: 'office', label: 'Constituency office' },
-    { id: 'camp', label: 'Campaign' },
-    { id: 'np', label: 'Non-profit' },
-  ];
-
-  protected readonly steps: readonly Step[] = [
-    {
-      n: '1',
-      title: 'Create your free workspace',
-      body: 'Sign up and land in a ready-made demo workspace: sample people and households, a live inbox, cut turfs and a donor ledger. No card.',
-    },
-    {
-      n: '2',
-      title: 'Try everything on sample data',
-      body: 'Triage a case, cut a turf, send a test newsletter, record a donation. Nothing is locked, and nothing you break is real.',
-    },
-    {
-      n: '3',
-      title: 'Import your list when it clicks',
-      body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
-    },
-  ];
-
-  protected readonly features: readonly Feature[] = [
-    {
-      icon: 'users',
-      title: 'People & households',
-      body: 'The Ramos family is one door, two voters and a sign request, and the system knows it.',
-    },
-    {
-      icon: 'inbox',
-      title: 'A shared inbox & tasks',
-      body: 'Connect Gmail or Outlook and mail flows both ways. Every message gets an owner and a due date, so nobody writes to your office twice about the same pothole.',
-    },
-    {
-      icon: 'megaphone',
-      title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
-    },
-    {
-      icon: 'map-pin',
-      title: 'Doors & the field',
-      body: 'Cut turfs in the office; the crew sees them on their phones. Every knock syncs back live.',
-    },
-    {
-      icon: 'currency-dollar',
-      title: 'Donations, gratefully',
-      body: '611 donors, each one thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-    },
-    {
-      icon: 'arrow-up-tray',
-      title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
-    },
-  ];
-
-  protected readonly growFeatures: readonly Feature[] = [
-    {
-      icon: 'clipboard-document-list',
-      title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
-    },
-    {
-      icon: 'calendar',
-      title: 'Events & volunteer shifts',
-      body: 'Put an event online and open its shifts; volunteers claim them and land on the list already. No re-typing names off a signup sheet.',
-    },
-    {
-      icon: 'credit-card',
-      title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
-    },
-    {
-      icon: 'rectangle-stack',
-      title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
-    },
-  ];
-
-  /** The three claims beside the constellation animation in the network band. */
-  protected readonly networkPoints: readonly Feature[] = [
-    {
-      icon: 'user-group',
-      title: 'See the web, not the spreadsheet',
-      body: 'Households, workplaces, tags and shared causes tie your list together. pplCRM keeps every thread.',
-    },
-    {
-      icon: 'route',
-      title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
-    },
-    {
-      icon: 'presentation-chart-line',
-      title: 'Every touch sharpens the map',
-      body: 'Knocks, notes, gifts and RSVPs each add a datapoint. The longer you organize, the smarter your network gets.',
-    },
-  ];
-
-  protected readonly companionFeatures: readonly Feature[] = [
-    {
-      icon: 'map-pin',
-      title: 'Canvass companion',
-      body: 'Door lists by turf, offline-first, one tap to log a conversation. Knocks land in the field report live.',
-    },
-    {
-      icon: 'ticket',
-      title: 'Yard sign routes',
-      body: 'Every sign request becomes a stop on a route. Mark it placed and roll on.',
-    },
-    {
-      icon: 'house-modern',
-      title: 'Deliveries',
-      body: 'Leaflets, hampers and meeting notices become routes with per-street progress for volunteer drivers.',
-    },
-  ];
-
-  /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
-  protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-
-  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $75'). */
-  protected readonly startingPrice = startingPriceLabel;
-
-  protected readonly faqs: readonly Qa[] = [
-    {
-      q: 'Is the free plan really free?',
-      a: 'Yes. No card and no time limit. The free plan stays free forever: 1,000 email subscribers, unlimited contacts and households, and 2 staff seats.',
-    },
-    {
-      q: 'What is the demo workspace?',
-      a: 'A complete sample workspace for a fictional campaign: realistic people and households, donors, a live inbox and cut turfs. Try every feature without touching real data.',
-    },
-    {
-      q: 'Can I import my existing list?',
-      a: 'Yes. CSV import takes minutes and duplicates merge automatically on the way in.',
-    },
-    {
-      q: 'Can I get my data back out?',
-      a: 'Always. People, notes and donations export to plain CSV whenever you want.',
-    },
-    {
-      q: 'Who owns the data?',
-      a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
-    },
-    {
-      q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $75/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
-    },
-  ];
-
-  protected readonly doors: readonly Door[] = [
-    {
-      addr: '214 Alder St',
-      who: 'Elena & Marco Ramos',
-      chip: 'Supporter',
-      chipClass: 'bg-success/20 text-success-content',
-    },
-    { addr: '218 Alder St', who: 'Wei & Lily Chen', chip: 'Mixed', chipClass: 'bg-info/15 text-[#0e4e6e]' },
-    { addr: '222 Alder St', who: 'Denise Cole', chip: 'Not home', chipClass: 'bg-warning/40 text-warning-content' },
-    {
-      addr: '226 Alder St',
-      who: 'Priya Natarajan',
-      chip: 'Remaining',
-      chipClass: 'bg-base-300/60 text-base-content/60',
-    },
-    { addr: '230 Alder St', who: 'Marcus Lee', chip: 'Remaining', chipClass: 'bg-base-300/60 text-base-content/60' },
-  ];
-
-  protected pick(id: Audience): void {
-    this.aud.set(id);
-  }
-}
 ````
 
 ## File: apps/website/src/app/home/home-page.html

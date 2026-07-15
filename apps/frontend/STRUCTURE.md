@@ -9495,126 +9495,6 @@ export class PasskeySettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
-```typescript
-import { signal, Service } from '@angular/core';
-
-import { SettingsEntryType } from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-
-export type TenantSettingsSnapshot = Record<string, unknown>;
-
-@Service()
-export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
-  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
-  private readonly isPendingSignal = signal<boolean>(false);
-
-  public async load(force = false) {
-    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = (await this.api.settings.getSnapshot.query()) ?? {};
-      this.snapshotSignal.set(data);
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public getValue<T = unknown>(key: string, fallback: T): T;
-  public getValue<T = unknown>(key: string): T | undefined;
-  public getValue<T = unknown>(key: string, fallback?: T) {
-    const value = this.snapshotSignal()[key];
-    return (value === undefined ? fallback : (value as T)) ?? fallback;
-  }
-
-  public async upsert(entries: SettingsEntryType[]) {
-    if (!entries.length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.upsert.mutate({ entries });
-      this.snapshotSignal.set(data ?? {});
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async requestEmailVerification(email: string) {
-    return this.api.settings.requestEmailVerification.mutate({ email });
-  }
-
-  public async getPhoneVerificationStatus() {
-    return this.api.settings.getPhoneVerificationStatus.query();
-  }
-
-  public async requestPhoneVerification(phone: string) {
-    return this.api.settings.requestPhoneVerification.mutate({ phone });
-  }
-
-  public async confirmPhoneVerification(code: string) {
-    return this.api.settings.confirmPhoneVerification.mutate({ code });
-  }
-
-  public async verifySenderEmail(token: string) {
-    return this.api.settings.verifySenderEmail.mutate({ token });
-  }
-
-  public async addVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async verifyVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async deleteVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public snapshot(): TenantSettingsSnapshot {
-    return this.snapshotSignal();
-  }
-
-  public pending(): boolean {
-    return this.isPendingSignal();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
 ```typescript
 import { Service } from '@angular/core';
@@ -13258,6 +13138,71 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 
   public getVolunteerStats(personId: string) {
     return this.api.volunteer.getVolunteerStats.query(personId);
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/breadcrumb-defaults.service.ts
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { ActivatedRouteSnapshot, NavigationEnd, Router } from '@angular/router';
+import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+
+/**
+ * A route's `data.breadcrumb`: a single label (linked to that route's own URL),
+ * or a pre-built trail for flat routes that conceptually nest (e.g. /imports/new).
+ */
+export type RouteBreadcrumbData = string | PcBreadcrumb[];
+
+/**
+ * Publishes a default breadcrumb trail for every navigation, built from
+ * `data.breadcrumb` on the matched route configs — so the navbar strip is never
+ * empty and never shows the previous page's stale trail (route-reuse pages are
+ * detached, not destroyed, so a clear-on-destroy never fires for them).
+ *
+ * Pages that own a richer trail (detail views via `pc-detail-header`, tab pages
+ * like Import/export) still win: their effects flush after NavigationEnd and
+ * overwrite the default.
+ *
+ * Started once by the Dashboard shell (the only layout that renders the navbar).
+ */
+@Injectable({ providedIn: 'root' })
+export class BreadcrumbDefaultsService {
+  private readonly router = inject(Router);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+  private started = false;
+
+  public start(): void {
+    if (this.started) return;
+    this.started = true;
+    // The shell is constructed during route activation, before the first
+    // NavigationEnd of the session fires — but publish once up front anyway so a
+    // late start (e.g. in tests) still seeds the strip.
+    this.publishFromSnapshot();
+    this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) this.publishFromSnapshot();
+    });
+  }
+
+  private publishFromSnapshot(): void {
+    const crumbs: PcBreadcrumb[] = [];
+    let url = '';
+    let node: ActivatedRouteSnapshot | null = this.router.routerState.snapshot.root;
+    while (node) {
+      const segment = node.url.map((s) => s.path).join('/');
+      if (segment) url += `/${segment}`;
+      // Read the route's own config — snapshot.data inherits from component-less
+      // parent routes, which would duplicate ancestor labels down the chain.
+      const raw: unknown = node.routeConfig?.data?.['breadcrumb'];
+      if (typeof raw === 'string') {
+        crumbs.push({ label: raw, route: url });
+      } else if (Array.isArray(raw)) {
+        crumbs.push(...(raw as PcBreadcrumb[]));
+      }
+      node = node.firstChild;
+    }
+    this.breadcrumbs.setCrumbs(crumbs);
   }
 }
 ```
@@ -25304,6 +25249,126 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
+```typescript
+import { signal, Service } from '@angular/core';
+
+import { SettingsEntryType } from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+
+export type TenantSettingsSnapshot = Record<string, unknown>;
+
+@Service()
+export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
+  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
+  private readonly isPendingSignal = signal<boolean>(false);
+
+  public async load(force = false) {
+    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = (await this.api.settings.getSnapshot.query()) ?? {};
+      this.snapshotSignal.set(data);
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public getValue<T = unknown>(key: string, fallback: T): T;
+  public getValue<T = unknown>(key: string): T | undefined;
+  public getValue<T = unknown>(key: string, fallback?: T) {
+    const value = this.snapshotSignal()[key];
+    return (value === undefined ? fallback : (value as T)) ?? fallback;
+  }
+
+  public async upsert(entries: SettingsEntryType[]) {
+    if (!entries.length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.upsert.mutate({ entries });
+      this.snapshotSignal.set(data ?? {});
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async requestEmailVerification(email: string) {
+    return this.api.settings.requestEmailVerification.mutate({ email });
+  }
+
+  public async getPhoneVerificationStatus() {
+    return this.api.settings.getPhoneVerificationStatus.query();
+  }
+
+  public async requestPhoneVerification(phone: string) {
+    return this.api.settings.requestPhoneVerification.mutate({ phone });
+  }
+
+  public async confirmPhoneVerification(code: string) {
+    return this.api.settings.confirmPhoneVerification.mutate({ code });
+  }
+
+  public async verifySenderEmail(token: string) {
+    return this.api.settings.verifySenderEmail.mutate({ token });
+  }
+
+  public async addVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async verifyVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async deleteVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public snapshot(): TenantSettingsSnapshot {
+    return this.snapshotSignal();
+  }
+
+  public pending(): boolean {
+    return this.isPendingSignal();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/storage/storage-settings.ts
 ```typescript
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -27065,6 +27130,126 @@ export class TaskAddComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Task board</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openList()">
+      <pc-icon name="queue-list" [size]="4"></pc-icon>
+      Open list
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    @for (col of columns; track col) {
+    <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
+        <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
+      </div>
+
+      <div class="flex flex-1 flex-col gap-2 overflow-auto">
+        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div
+          class="card bg-base-100 border-line cursor-pointer border shadow-sm"
+          [class.animate-saved-flash]="isFlashed(t.id)"
+          (click)="openTask(t)"
+        >
+          <div class="card-body gap-1.5 p-3">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-sm font-medium break-words">{{ t.name }}</span>
+              @if (t.priority) {
+              <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+              }
+            </div>
+
+            @if (t.team_name || t.due_at) {
+            <div class="text-base-content/60 text-xs">
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @if (t.team_name && t.due_at) {
+              <span> · </span>
+              } @if (t.due_at) {
+              <span>Due {{ dateLabel(t.due_at) }}</span>
+              }
+            </div>
+            } @if (reason) {
+            <div class="text-warning flex items-center gap-1 text-xs">
+              <pc-icon name="clock" [size]="3"></pc-icon>
+              <span class="break-words">{{ reason }}</span>
+            </div>
+            } @if (pill) {
+            <span
+              class="badge badge-xs w-fit"
+              [class.badge-error]="pill.tone === 'error'"
+              [class.badge-warning]="pill.tone === 'warning'"
+              [class.badge-ghost]="pill.tone === 'neutral'"
+            >
+              {{ pill.text }}
+            </span>
+            }
+
+            <div class="mt-1 flex items-center justify-between gap-2">
+              @if (t.assigned_to) {
+              <span
+                class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
+                [attr.title]="assignee"
+                >{{ assigneeInitial(t.assigned_to) }}</span
+              >
+              } @else {
+              <button
+                type="button"
+                class="badge badge-outline border-dashed text-xs"
+                title="Take this task. One click assigns it to you"
+                (click)="takeTask(t); $event.stopPropagation()"
+              >
+                Unassigned
+              </button>
+              }
+
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, -1)"
+                  [disabled]="!canMove(t.status, -1)"
+                  [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
+                  (click)="moveCard(t, -1); $event.stopPropagation()"
+                >
+                  <pc-icon name="chevron-left" [size]="4"></pc-icon>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle"
+                  [class.opacity-30]="!canMove(t.status, 1)"
+                  [disabled]="!canMove(t.status, 1)"
+                  [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
+                  (click)="moveCard(t, 1); $event.stopPropagation()"
+                >
+                  <pc-icon name="chevron-right" [size]="4"></pc-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @empty {
+        <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
 ```typescript
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -28282,6 +28467,54 @@ function relativeTime(date: Date): string {
 }
 ```
 
+## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
+import { Icon } from '@icons/icon';
+import { AuthService } from '../../auth/auth-service';
+
+import { Navbar } from '../navbar/navbar';
+import { Sidebar } from '../sidebar/sidebar';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { CommandPalette } from '../command-palette/command-palette';
+import { KeyboardShortcutsHelp } from '../keyboard-shortcuts/keyboard-shortcuts-help';
+import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
+import { BreadcrumbDefaultsService } from '../../services/breadcrumb-defaults.service';
+
+@Component({
+  selector: 'pc-dashboard',
+  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon, KeyboardShortcutsHelp, CommandPalette],
+  templateUrl: './dashboard.html',
+  host: {
+    '(window:keydown)': 'onKeydown($event)',
+  },
+})
+export class Dashboard {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly shortcuts = inject(KeyboardShortcutsService);
+
+  protected readonly userSignal = this.auth.getUserSignal();
+  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
+  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+
+  constructor() {
+    // Route-driven default breadcrumbs for every page the shell hosts.
+    inject(BreadcrumbDefaultsService).start();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected onKeydown(event: KeyboardEvent): void {
+    this.shortcuts.handleKeydown(event);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
 ```typescript
 import { Component, computed, effect, inject, signal } from '@angular/core';
@@ -29002,71 +29235,6 @@ export class Sidebar {
 
   protected toggleDrawer() {
     return this.sidebarSvc.toggleDrawer();
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/breadcrumb-defaults.service.ts
-```typescript
-import { Injectable, inject } from '@angular/core';
-import { ActivatedRouteSnapshot, NavigationEnd, Router } from '@angular/router';
-import { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-
-/**
- * A route's `data.breadcrumb`: a single label (linked to that route's own URL),
- * or a pre-built trail for flat routes that conceptually nest (e.g. /imports/new).
- */
-export type RouteBreadcrumbData = string | PcBreadcrumb[];
-
-/**
- * Publishes a default breadcrumb trail for every navigation, built from
- * `data.breadcrumb` on the matched route configs — so the navbar strip is never
- * empty and never shows the previous page's stale trail (route-reuse pages are
- * detached, not destroyed, so a clear-on-destroy never fires for them).
- *
- * Pages that own a richer trail (detail views via `pc-detail-header`, tab pages
- * like Import/export) still win: their effects flush after NavigationEnd and
- * overwrite the default.
- *
- * Started once by the Dashboard shell (the only layout that renders the navbar).
- */
-@Injectable({ providedIn: 'root' })
-export class BreadcrumbDefaultsService {
-  private readonly router = inject(Router);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-  private started = false;
-
-  public start(): void {
-    if (this.started) return;
-    this.started = true;
-    // The shell is constructed during route activation, before the first
-    // NavigationEnd of the session fires — but publish once up front anyway so a
-    // late start (e.g. in tests) still seeds the strip.
-    this.publishFromSnapshot();
-    this.router.events.subscribe((event) => {
-      if (event instanceof NavigationEnd) this.publishFromSnapshot();
-    });
-  }
-
-  private publishFromSnapshot(): void {
-    const crumbs: PcBreadcrumb[] = [];
-    let url = '';
-    let node: ActivatedRouteSnapshot | null = this.router.routerState.snapshot.root;
-    while (node) {
-      const segment = node.url.map((s) => s.path).join('/');
-      if (segment) url += `/${segment}`;
-      // Read the route's own config — snapshot.data inherits from component-less
-      // parent routes, which would duplicate ancestor labels down the chain.
-      const raw: unknown = node.routeConfig?.data?.['breadcrumb'];
-      if (typeof raw === 'string') {
-        crumbs.push({ label: raw, route: url });
-      } else if (Array.isArray(raw)) {
-        crumbs.push(...(raw as PcBreadcrumb[]));
-      }
-      node = node.firstChild;
-    }
-    this.breadcrumbs.setCrumbs(crumbs);
   }
 }
 ```
@@ -44901,126 +45069,6 @@ export class IssuesAdmin implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h2 class="sr-only">Task board</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
-      }
-    </div>
-    <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openList()">
-      <pc-icon name="queue-list" [size]="4"></pc-icon>
-      Open list
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-    @for (col of columns; track col) {
-    <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
-        <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
-      </div>
-
-      <div class="flex flex-1 flex-col gap-2 overflow-auto">
-        @for (t of cardsFor(col); track t.id) { @let pill = slaPill(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div
-          class="card bg-base-100 border-line cursor-pointer border shadow-sm"
-          [class.animate-saved-flash]="isFlashed(t.id)"
-          (click)="openTask(t)"
-        >
-          <div class="card-body gap-1.5 p-3">
-            <div class="flex items-start justify-between gap-2">
-              <span class="text-sm font-medium break-words">{{ t.name }}</span>
-              @if (t.priority) {
-              <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-              }
-            </div>
-
-            @if (t.team_name || t.due_at) {
-            <div class="text-base-content/60 text-xs">
-              @if (t.team_name) {
-              <span>{{ t.team_name }}</span>
-              } @if (t.team_name && t.due_at) {
-              <span> · </span>
-              } @if (t.due_at) {
-              <span>Due {{ dateLabel(t.due_at) }}</span>
-              }
-            </div>
-            } @if (reason) {
-            <div class="text-warning flex items-center gap-1 text-xs">
-              <pc-icon name="clock" [size]="3"></pc-icon>
-              <span class="break-words">{{ reason }}</span>
-            </div>
-            } @if (pill) {
-            <span
-              class="badge badge-xs w-fit"
-              [class.badge-error]="pill.tone === 'error'"
-              [class.badge-warning]="pill.tone === 'warning'"
-              [class.badge-ghost]="pill.tone === 'neutral'"
-            >
-              {{ pill.text }}
-            </span>
-            }
-
-            <div class="mt-1 flex items-center justify-between gap-2">
-              @if (t.assigned_to) {
-              <span
-                class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
-                [attr.title]="assignee"
-                >{{ assigneeInitial(t.assigned_to) }}</span
-              >
-              } @else {
-              <button
-                type="button"
-                class="badge badge-outline border-dashed text-xs"
-                title="Take this task. One click assigns it to you"
-                (click)="takeTask(t); $event.stopPropagation()"
-              >
-                Unassigned
-              </button>
-              }
-
-              <div class="flex items-center gap-1">
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle"
-                  [class.opacity-30]="!canMove(t.status, -1)"
-                  [disabled]="!canMove(t.status, -1)"
-                  [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
-                  (click)="moveCard(t, -1); $event.stopPropagation()"
-                >
-                  <pc-icon name="chevron-left" [size]="4"></pc-icon>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs btn-circle"
-                  [class.opacity-30]="!canMove(t.status, 1)"
-                  [disabled]="!canMove(t.status, 1)"
-                  [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
-                  (click)="moveCard(t, 1); $event.stopPropagation()"
-                >
-                  <pc-icon name="chevron-right" [size]="4"></pc-icon>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
 ```typescript
 import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
@@ -47390,54 +47438,6 @@ function emptyConditions(): QueryBuilderGroupNode {
 <pc-command-palette></pc-command-palette>
 ```
 
-## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { Icon } from '@icons/icon';
-import { AuthService } from '../../auth/auth-service';
-
-import { Navbar } from '../navbar/navbar';
-import { Sidebar } from '../sidebar/sidebar';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { CommandPalette } from '../command-palette/command-palette';
-import { KeyboardShortcutsHelp } from '../keyboard-shortcuts/keyboard-shortcuts-help';
-import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
-import { BreadcrumbDefaultsService } from '../../services/breadcrumb-defaults.service';
-
-@Component({
-  selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon, KeyboardShortcutsHelp, CommandPalette],
-  templateUrl: './dashboard.html',
-  host: {
-    '(window:keydown)': 'onKeydown($event)',
-  },
-})
-export class Dashboard {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly shortcuts = inject(KeyboardShortcutsService);
-
-  protected readonly userSignal = this.auth.getUserSignal();
-  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
-  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
-
-  constructor() {
-    // Route-driven default breadcrumbs for every page the shell hosts.
-    inject(BreadcrumbDefaultsService).start();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onKeydown(event: KeyboardEvent): void {
-    this.shortcuts.handleKeydown(event);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
@@ -48764,6 +48764,237 @@ export class CompaniesGrid {
       </div>
     </div>
   </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-end gap-3">
+    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+    <h1 class="sr-only">Delivery requests</h1>
+    <pc-deliveries-nav class="mr-auto" />
+    <div class="flex items-center gap-2">
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- Tabs with live counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
+
+  <!-- Bulk selection bar -->
+  @if (selectedCount() > 0) {
+  <div
+    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
+  >
+    <span class="text-sm text-base-content/70">
+      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
+      of {{ rows().length }} rows on this page selected
+    </span>
+    @if (newInView() > selectedCount()) {
+    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
+      Select all {{ newInView() }} new
+    </button>
+    }
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
+        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
+        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th class="w-8"></th>
+      <th>Requested by</th>
+      <th>Address</th>
+      <th>Status</th>
+      <th>Readiness</th>
+      <th>Source</th>
+      <th>Route</th>
+      <th>Requested</th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6">
+        @if (readyCount() > 0) {
+        <pc-empty-state icon="map-pin" [bordered]="false" title="No delivery requests in this view yet">
+          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+          </button>
+        </pc-empty-state>
+        } @else {
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No delivery requests in this view yet"
+          hint="Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes."
+        />
+        }
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+          [checked]="isSelected(row.id)"
+          (change)="toggle(row.id)"
+          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+        />
+      </td>
+      <td>
+        @if (row.person_id) {
+        <a
+          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/people', row.person_id]"
+        >
+          {{ row.person_name || 'Unnamed person' }}
+        </a>
+        } @else {
+        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        }
+      </td>
+      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+          @if (row.geocoding_status === 'failed') {
+          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
+            Edit household
+          </a>
+          }
+        </div>
+      </td>
+      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td>
+        @if (row.route_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+          {{ row.route_name || 'Route' }}
+        </a>
+        } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
+  <div class="flex flex-wrap items-center justify-end gap-3">
+    <h1 class="sr-only">Routes</h1>
+    <pc-deliveries-nav class="mr-auto" />
+    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
+      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
+    </a>
+  </div>
+
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Stops</th>
+      <th>Est. time</th>
+      <th>Volunteer</th>
+      <th>Scheduled</th>
+      <th>Created</th>
+      <th></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6">
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No routes yet"
+          hint="Approve requests, then plan routes."
+        >
+          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
+        </pc-empty-state>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <a
+          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/deliveries/routes', row.id]"
+        >
+          {{ row.name }}
+        </a>
+      </td>
+      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
+      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td>
+        @if (row.volunteer_person_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
+          >{{ row.volunteer_name || 'Volunteer' }}</a
+        >
+        } @else {
+        <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="openAssign(row)">Assign</button>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+      <td class="text-right">
+        <div class="dropdown dropdown-end">
+          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
+            <pc-icon name="ellipsis-vertical" [size]="4" />
+          </button>
+          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
+            @if (row.volunteer_person_id) {
+            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
+            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
+            } @else {
+            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
+            } @if (canCancel(row.status)) {
+            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
+            } @if (canDelete(row.status)) {
+            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
+            }
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+  </pc-table>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
 </div>
 ```
 
@@ -53433,7 +53664,7 @@ export interface BillingUsageSnapshot {
 /** Discrete slider stops for "how many subscribers do you have" — mirrors the website pricing
  * slider so the two surfaces feel identical. */
 const SUBSCRIBER_SLIDER_STOPS = [
-  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000,
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
 ] as const;
 
 function isPurchasablePlan(value: string | undefined): value is PurchasablePlanKey {
@@ -56487,6 +56718,137 @@ export class TaskView {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h2 class="sr-only">Tasks</h2>
+      @if (countSentence()) {
+      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs with counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
+
+  @if (loaded() && !filtered().length) {
+  <div class="flex flex-col items-center gap-3 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+    @switch (tab()) { @case ('all') {
+    <span class="text-base font-medium">No tasks yet</span>
+    } @case ('mine') {
+    <span class="text-base font-medium">Nothing assigned to you yet</span>
+    } @case ('unassigned') {
+    <span class="text-base font-medium">Every open task has an owner</span>
+    } @case ('done') {
+    <span class="text-base font-medium">Nothing completed yet</span>
+    } }
+    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      New task
+    </button>
+  </div>
+  } @else {
+  <div class="flex flex-col gap-5">
+    @for (group of groups(); track group.key) {
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2 px-1">
+        <span
+          class="pc-eyebrow"
+          [class.text-error]="group.meta.tone === 'error'"
+          [class.text-warning]="group.meta.tone === 'warning'"
+          [class.text-info]="group.meta.tone === 'info'"
+          [class.text-base-content/50]="group.meta.tone === 'neutral'"
+        >
+          {{ group.meta.label }}
+        </span>
+        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+      </div>
+
+      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
+        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
+        assigneeName(t.assigned_to);
+        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle shrink-0"
+            [class.text-success]="t.status === 'done'"
+            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+            (click)="toggleDone(t)"
+          >
+            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
+          </button>
+
+          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+            <div
+              class="truncate text-xs font-medium"
+              [class.line-through]="t.status === 'done'"
+              [class.opacity-50]="t.status === 'done'"
+            >
+              {{ t.name }}
+            </div>
+            @if (reason) {
+            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
+            }
+          </div>
+
+          @if (t.priority) {
+          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+          } @if (badge) {
+          <span
+            class="badge badge-xs w-fit shrink-0"
+            [class.badge-error]="badge.tone === 'error'"
+            [class.badge-warning]="badge.tone === 'warning'"
+          >
+            {{ badge.text }}
+          </span>
+          } @if (t.due_at) {
+          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
+            >{{ dateLabel(t.due_at) }}</span
+          >
+          } @if (t.assigned_to) {
+          <span
+            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            [attr.title]="assignee"
+            >{{ assigneeInitial(t.assigned_to) }}</span
+          >
+          } @else {
+          <button
+            type="button"
+            class="badge badge-outline shrink-0 border-dashed text-xs"
+            title="Take this task. One click assigns it to you"
+            (click)="takeTask(t); $event.stopPropagation()"
+          >
+            Unassigned
+          </button>
+          }
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
 ```html
 @if (error() && !detail() && !isNew()) {
@@ -57260,6 +57622,3456 @@ export class TaskView {
 </div>
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
+```typescript
+//tsco: ignore
+
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Tags } from '@experiences/tags/ui/tags';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { SearchService } from '@frontend/services/api/search-service';
+import { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  type Cell,
+  type Header,
+  type HeaderGroup,
+  type Row,
+  type SortingState,
+  type Table,
+  ColumnDef as TSColumnDef,
+  type Updater,
+} from '@tanstack/table-core';
+import {
+  QueryBuilderGroupNode,
+  QueueExportInputType,
+  cloneQueryBuilderNode,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+// Virtualizer handled via controller
+// Context available for future slices/controllers (not yet used here)
+// import { GridContextService } from './state/grid-context.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { DateFormatService } from '../../services/date-format.service';
+
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { QueryBuilderComponent, QueryBuilderField } from '../query-builder/query-builder';
+import { PinningController } from './controllers/pinning.controller';
+import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
+import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
+import type { GridRow, HeaderRef } from './types';
+import { DataGridActionsService } from './services/actions.service';
+import { DataGridColumnsService } from './services/columns.service';
+import { DataGridDataService } from './services/data.service';
+import { DataGridFiltersService, type SelectEditorOptions } from './services/filters.service';
+import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
+import { GridTagFilterService } from './services/grid-tag-filter.service';
+import { DataGridNavService } from './services/nav.service';
+import { DataGridSelectionService } from './services/selection.service';
+import { DataGridTableService } from './services/table.service';
+import { TagOptionsService } from './services/tag-options.service';
+import { DataGridUtilsService } from './services/utils.service';
+import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
+import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
+import { DataGridFilterDropdownComponent } from './ui/datagrid-filter-dropdown';
+import { MultiselectFilterComponent } from './ui/multiselect-filter';
+import { SingleselectFilterComponent, type SingleSelectOption } from './ui/singleselect-filter';
+
+interface MergeableService {
+  merge?(target: string, source: string): Promise<unknown>;
+  mergePersons?(target: string, source: string): Promise<unknown>;
+  mergeCompanies?(target: string, source: string): Promise<unknown>;
+  mergeHouseholds?(target: string, source: string): Promise<unknown>;
+}
+
+/** One removable chip in the active-filters row above the grid. */
+export interface GridFilterChip {
+  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced' | 'search';
+  key: string;
+  label: string;
+}
+// Header and inline filters rendered inline in template now
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import DOMPurify from 'dompurify';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { EditingController } from './controllers/editing.controller';
+import { FetchController } from './controllers/fetch.controller';
+import { KeyboardController } from './controllers/keyboard.controller';
+import { ReorderController } from './controllers/reorder.controller';
+import { ResizingController } from './controllers/resizing.controller';
+import { EditableCellDirective } from './directives/editable-cell.directive';
+import { HeaderResizeDirective } from './directives/header-resize.directive';
+import { GridStoreService } from './services/grid-store.service';
+import { UndoManager } from './undo-redo-mgr';
+import { RecordNavigationService } from '@frontend/services/record-navigation.service';
+
+@Component({
+  selector: 'pc-datagrid',
+  imports: [
+    Icon,
+    DataGridToolbarComponent,
+    DataGridFilterPanelComponent,
+    Tags,
+    EditableCellDirective,
+    HeaderResizeDirective,
+    QueryBuilderComponent,
+    GridHeaderComponent,
+    DataGridFilterDropdownComponent,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    ModalShell,
+  ],
+  templateUrl: './datagrid.html',
+  styleUrl: './datagrid.css',
+  providers: [
+    GridStoreService,
+    PinningController,
+    ResizingController,
+    ReorderController,
+    KeyboardController,
+    EditingController,
+    FetchController,
+  ],
+})
+export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
+  public readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  protected readonly dialogs = inject(ConfirmDialogService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly searchSvc = inject(SearchService);
+
+  // Header resize handled by ResizingController
+
+  //private readonly themeSvc = inject(ThemeService);
+  public readonly _loading = createLoadingGate();
+
+  // Persistence
+  private _persistKey = 'pcdg';
+  // selection width tracked in store
+  // Selection resize handled by ResizingController
+  // dragColId handled in ReorderController
+  // Infinite append state handled by controller
+  private readonly gridTable = viewChild<ElementRef<HTMLTableElement>>('gridTable');
+
+  // Sticky pin offsets
+  // header widths tracked by PinningController
+
+  // Other State
+  private lastRowHovered: string | undefined;
+  private oldFilterText = '';
+  // pin offsets tracked by PinningController
+
+  // Optional cache placeholder removed (unused in current implementation)
+  private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
+  private tsColumns: TSColumnDef<GridRow, unknown>[] = [];
+  private tsTable: Table<GridRow> | undefined;
+  private readonly pctrl = inject(PinningController);
+  private updateHeaderWidths = () => {
+    const table = this.gridTable()?.nativeElement;
+    if (!table) return;
+    requestAnimationFrame(() => {
+      if (!this.pctrl) return;
+      this.pctrl.measureHeaderWidths(table);
+      const minMap = this.computeHeaderMinWidths(table);
+      if (Object.keys(minMap).length > 0) {
+        this.headerMinWidths.set(minMap);
+        this.enforceWidthMinimums(minMap);
+      }
+    });
+  };
+  // Virtualizer disabled for paginated grid
+
+  // Injected Services
+  public readonly alertSvc = inject(AlertService);
+  private readonly dateFormatSvc = inject(DateFormatService);
+  private readonly columnsSvc = inject(DataGridColumnsService);
+  private readonly dataSvc = inject(DataGridDataService);
+  private readonly filtersSvc = inject(DataGridFiltersService);
+  private readonly selSvc = inject(DataGridSelectionService);
+  private readonly tableSvc = inject(DataGridTableService);
+  private readonly actionsSvc = inject(DataGridActionsService);
+  private readonly navSvc = inject(DataGridNavService);
+  private readonly utilsSvc = inject(DataGridUtilsService);
+  public readonly store = inject(GridStoreService);
+  private readonly rctrl = inject(ResizingController);
+  private readonly kctrl = inject(KeyboardController);
+  private readonly editingCtrl = inject(EditingController);
+  private readonly fetchCtrl = inject(FetchController);
+  private readonly reorder = inject(ReorderController);
+  private readonly recordNav = inject(RecordNavigationService);
+  public readonly searchTerm = this.searchSvc.searchSignal;
+  private readonly hasEditableColumns = signal(false);
+  // A "door" column (e.g. the People Name cell) opens the record on click and
+  // replaces the hover open-icon; when present the selection column narrows to 36px.
+  protected readonly hasDoorColumn = signal(false);
+  private readonly headerMinWidths = signal<Record<string, number>>({});
+  private readonly dgListsSvc = inject(ListsService, { optional: true });
+  public readonly flashedCells = signal<Set<string>>(new Set());
+  protected readonly countRowSelected = computed(() =>
+    this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
+  );
+
+  private readonly selectionColumnWidthPx = 72;
+  private readonly headerAutoSizeBufferPx = 8;
+
+  /** Fields that should elastically absorb leftover width when visible, highest priority first. */
+  private static readonly GROW_TEXT_FIELDS = ['description', 'notes'] as const;
+
+  /**
+   * Under {@link fitColumns}, exactly one visible column stretches to fill the leftover width so
+   * short columns stay content-sized and the row still spans full width. Preference: a visible
+   * description/notes column, else a column the grid flagged with `flex: true`, else the last
+   * visible column. Returns `null` when content-fit sizing is off (legacy proportional stretch).
+   */
+  protected growColumnId(): string | null {
+    if (!this.fitColumns()) return null;
+    const headers = this.leafHeaders();
+    if (!headers.length) return null;
+    const textCol = headers.find((h) => DataGrid.GROW_TEXT_FIELDS.includes(h.column.id as never));
+    if (textCol) return textCol.column.id;
+    const flagged = headers.find((h) => this.getColDefById(h.column.id)?.flex === true);
+    if (flagged) return flagged.column.id;
+    return headers[headers.length - 1]?.column.id ?? null;
+  }
+
+  /**
+   * The fixed width to pin a header/cell to, or `null` to leave it elastic (`width:auto`). The
+   * single {@link growColumnId} returns `null` so it soaks up the table's leftover width.
+   */
+  protected fixedWidthPx(colId: string | null | undefined): number | null {
+    if (colId && this.growColumnId() === colId) return null;
+    return this.columnWidthPx(colId);
+  }
+
+  protected columnWidthPx(colId: string | null | undefined): number {
+    if (!colId) return this.columnMinWidthPx(colId);
+    return this.getColWidth(colId) ?? this.columnMinWidthPx(colId);
+  }
+
+  protected columnMinWidthPx(colId: string | null | undefined): number {
+    if (!colId) return 40;
+    const colDef = this.getColDefById(colId);
+    const typeFloor = this.typeMinWidthPx(colDef);
+    const configuredMin = colDef?.minWidth;
+    if (typeof configuredMin === 'number' && configuredMin > 0) {
+      return Math.max(configuredMin, typeFloor);
+    }
+    const minMap = this.headerMinWidths();
+    const measured = minMap[colId];
+    if (typeof measured === 'number' && measured > 0) {
+      return Math.max(40, Math.ceil(measured), typeFloor);
+    }
+    return Math.max(40, typeFloor);
+  }
+
+  /**
+   * A presentation floor for column kinds whose content reads badly when squeezed: tag/issue
+   * chips wrap a letter per line, and free text collapses to "[…". Keeps them legible even when
+   * a column has no explicit width and its header is short.
+   */
+  private typeMinWidthPx(colDef: ColDef | undefined): number {
+    if (!colDef) return 0;
+    if (colDef.tagColumn) return 120;
+    if (colDef.field === 'notes' || colDef.field === 'description') return 200;
+    return 0;
+  }
+
+  private clampColumnWidth(id: string, px: number): number {
+    const base = Math.max(40, Math.floor(px));
+    return Math.max(this.columnMinWidthPx(id), base);
+  }
+
+  // Computed derivations
+  // Page size selection (persisted via GridStoreService)
+  protected readonly pageSize = this.store?.pageSize ?? signal(25);
+  protected readonly pageSizeChoices = computed(() => {
+    const base = [25, 50, 100];
+    const current = this.pageSize();
+    return base.includes(current) ? base : [current, ...base];
+  });
+  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll(), this.pageSize()));
+  protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
+  protected readonly canPrev = computed(() => this.pageIndex() > 0);
+  protected readonly displayedCount = computed(() => this.rows().length);
+  protected readonly isEmptyState = computed(
+    () => this.hasLoaded() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
+  );
+
+  public readonly hasActiveFilters = computed(
+    () =>
+      this.selectedTags().length > 0 ||
+      this.selectedIssues().length > 0 ||
+      Object.keys(this.filterValues())?.length > 0 ||
+      this.hasActiveAdvancedFilters(),
+  );
+
+  /** True when anything — including the list filter — is narrowing the results. */
+  public readonly anyFilterActive = computed(
+    () =>
+      this.hasActiveFilters() ||
+      this.selectedListId() !== null ||
+      this.selectedNarrowType() !== null ||
+      this.searchTerm().trim() !== '',
+  );
+
+  /** Every active filter as a named, individually removable chip. */
+  protected readonly filterChips = computed<GridFilterChip[]>(() => {
+    const chips: GridFilterChip[] = [];
+
+    // An active search is filter truth too — surface it as a removable chip (§2), so it lives
+    // in one place whether it arrived from the navbar search or the command palette hand-off.
+    const search = this.searchTerm().trim();
+    if (search) {
+      chips.push({ kind: 'search', key: 'search', label: `Search: "${search}"` });
+    }
+
+    const narrow = this.selectedNarrowType();
+    if (narrow !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === narrow);
+      chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
+    } else {
+      // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
+      // Selected tags combine with OR and land as a single removable chip (§2).
+      const tags = this.selectedTags();
+      if (tags.length) {
+        chips.push({ kind: 'tag', key: 'tags', label: `Tags: any of ${tags.join(', ')}` });
+      }
+    }
+
+    // Selected issues combine with OR and land as a single removable chip (§2).
+    const issues = this.selectedIssues();
+    if (issues.length) {
+      chips.push({ kind: 'issue', key: 'issues', label: `Issues: any of ${issues.join(', ')}` });
+    }
+
+    const listId = this.selectedListId();
+    if (listId !== null) {
+      const list = this.availableLists().find((l) => String(l['id'] ?? '') === String(listId));
+      chips.push({ kind: 'list', key: String(listId), label: `List: ${String(list?.['name'] ?? 'selected')}` });
+    }
+
+    for (const [field, value] of Object.entries(this.filterValues())) {
+      const text = this.describeFilterValue(value);
+      if (!text) continue;
+      chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
+    }
+
+    if (this.hasActiveAdvancedFilters()) {
+      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
+    }
+
+    return chips;
+  });
+
+  protected removeFilterChip(chip: GridFilterChip): void {
+    switch (chip.kind) {
+      case 'narrow':
+        this.selectNarrowType(null);
+        break;
+      case 'tag':
+        // One chip represents all OR-ed tags — clear them together.
+        this.clearTagsFilter();
+        break;
+      case 'issue':
+        this.clearIssuesFilter();
+        break;
+      case 'list':
+        this.clearListFilter();
+        break;
+      case 'column':
+        this.clearHeaderFilter(chip.key);
+        break;
+      case 'advanced':
+        this.clearAdvancedFilter();
+        break;
+      case 'search':
+        this.searchSvc.clearSearch();
+        break;
+      default: {
+        const _exhaustive: never = chip.kind;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Reset every filter domain at once, then reload from the first page. */
+  protected clearAllFilters(): void {
+    this.selectedNarrowType.set(null);
+    this.selectedTags.set([]);
+    this.selectedIssues.set([]);
+    this.selectedListId.set(null);
+    this.filterValues.set({});
+    this.panelFilters.set({});
+    this.searchSvc.clearSearch();
+    this.store?.requestPersist();
+    if (this.hasActiveAdvancedFilters()) {
+      // clearAdvancedFilter triggers its own refresh.
+      this.clearAdvancedFilter();
+    } else {
+      void this.loadPage(0);
+    }
+  }
+
+  /** Human-readable value text for a column-filter chip, from the stored `{op,value}` /
+   * array / plain-string shapes. Returns '' when the filter carries nothing to show. */
+  private describeFilterValue(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (Array.isArray(value)) return value.length ? value.join(', ') : '';
+    if (typeof value === 'object' && 'value' in value) {
+      const rec = value as { op?: unknown; value?: unknown };
+      const op = String(rec.op ?? 'contains');
+      if (op === 'isEmpty') return 'is empty';
+      if (op === 'isNotEmpty') return 'is not empty';
+      const v = rec.value;
+      if (Array.isArray(v)) return v.length ? v.join(', ') : '';
+      const s = v == null ? '' : String(v);
+      return s;
+    }
+    return String(value);
+  }
+
+  // ── "+ Add filter" quick pill — a single field → operator → value entry that lands as one
+  //    removable column chip. Reuses the same `filterValues` model the column/panel filters use
+  //    (so removal, persistence, and the server filterModel all flow through the existing path);
+  //    it does NOT fork a parallel filter representation.
+  public readonly addFilterField = signal<string>('');
+  public readonly addFilterOp = signal<string>('contains');
+  public readonly addFilterValue = signal<string>('');
+  public readonly addFilterOperators: ReadonlyArray<{ value: string; label: string }> = [
+    { value: 'contains', label: 'contains' },
+    { value: 'notContains', label: 'does not contain' },
+    { value: 'equals', label: 'equals' },
+    { value: 'notEquals', label: 'does not equal' },
+    { value: 'startsWith', label: 'starts with' },
+    { value: 'endsWith', label: 'ends with' },
+    { value: 'isEmpty', label: 'is empty' },
+    { value: 'isNotEmpty', label: 'is not empty' },
+  ];
+
+  /** Fields offered in the Add-filter pill — every real column except the tag/issue columns
+   * (those have their own dashed pills) and non-data columns. */
+  public readonly addFilterFields = computed<Array<{ field: string; label: string }>>(() =>
+    this.colDefs().flatMap((c) =>
+      c.field && c.field !== 'actions' && c.field !== 'tags' && c.field !== 'issues' && c.tagColumn !== true
+        ? [{ field: c.field, label: c.headerName || c.field }]
+        : [],
+    ),
+  );
+
+  /** Whether the currently-selected operator needs a value (isEmpty/isNotEmpty do not). */
+  public readonly addFilterNeedsValue = computed(() => {
+    const op = this.addFilterOp();
+    return op !== 'isEmpty' && op !== 'isNotEmpty';
+  });
+
+  /** Commit the Add-filter pill selection as a column chip, then reload from page 1. */
+  public applyAddFilter(): void {
+    const field = this.addFilterField();
+    if (!field) return;
+    const op = this.addFilterOp();
+    const needsValue = op !== 'isEmpty' && op !== 'isNotEmpty';
+    const value = this.addFilterValue().trim();
+    if (needsValue && !value) return;
+    const next = { ...this.filterValues() };
+    next[field] = { op, value: needsValue ? value : '' };
+    this.filterValues.set(next);
+    this.addFilterField.set('');
+    this.addFilterOp.set('contains');
+    this.addFilterValue.set('');
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  /** Saved-list options for the dashed "Lists" pill (mirrors the toolbar's mapping). */
+  public readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  public isColFiltered(field: string): boolean {
+    const fv = this.filterValues();
+    const val = fv[field];
+    if (Array.isArray(val)) {
+      return val.length > 0;
+    }
+    return val !== undefined && val !== null && val !== '';
+  }
+  // "The first load has finished" comes straight from the loading gate's ungated
+  // `loaded` signal — set when a fetch completes (so totalCountAll is already in
+  // place), even for a sub-300ms fetch that never trips the delayed spinner.
+  public readonly hasLoaded = this._loading.loaded;
+  public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  protected readonly hasSelection = computed(() =>
+    this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
+  );
+  public readonly hasSingleSelection = computed(() =>
+    this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
+  );
+
+  // Entity noun for selection/bulk-bar copy (e.g. "person"/"people"); defaults to row/rows.
+  public readonly entityNoun = this.config.messages.entityNoun ?? 'row';
+  public readonly entityNounPlural = this.config.messages.entityNounPlural ?? 'rows';
+  public nounFor(n: number): string {
+    return n === 1 ? this.entityNoun : this.entityNounPlural;
+  }
+
+  // Bulk "Add tag" — an inline field in the bulk action bar (§2).
+  public readonly bulkTagOpen = signal(false);
+  public readonly bulkTagValue = signal('');
+  public openBulkTag(): void {
+    this.bulkTagValue.set('');
+    this.bulkTagOpen.set(true);
+  }
+  public cancelBulkTag(): void {
+    this.bulkTagOpen.set(false);
+    this.bulkTagValue.set('');
+  }
+  public async applyBulkTag(): Promise<void> {
+    const tag = this.bulkTagValue().trim();
+    if (!tag) return;
+    const ids = this.getSelectedRows()
+      .map((r) => String((r as { id?: unknown }).id ?? ''))
+      .filter(Boolean);
+    if (!ids.length) return;
+    try {
+      for (const id of ids) {
+        await this.gridSvc.attachTag(id, tag, 'tag');
+      }
+      // Toast repeats the scale (§2 / §7.5).
+      this.alertSvc.showSuccess(`Added ${tag} to ${ids.length} ${this.nounFor(ids.length)}.`);
+      this.cancelBulkTag();
+      void this.dgTagOptionsSvc.invalidate('tag');
+      await this.loadPage(this.pageIndex());
+    } catch (err) {
+      console.error('Bulk tag failed', err);
+      this.alertSvc.showError(`Could not add "${tag}" to all selected ${this.entityNounPlural}.`);
+    }
+  }
+
+  // Display range helpers (1-based)
+  protected readonly displayStartIndex = computed(() => {
+    const total = this.totalCountAll();
+    if (!total) return 0;
+    return this.pageIndex() * this.pageSize() + 1;
+  });
+  protected readonly displayEndIndex = computed(() => {
+    const total = this.totalCountAll();
+    if (!total) return 0;
+    const end = (this.pageIndex() + 1) * this.pageSize();
+    return Math.min(end, total);
+  });
+
+  // Pager tooltips: enabled states name the action, disabled states name the
+  // unmet condition (§2 pagination honesty / §7.2 acceptance checklist).
+  protected readonly firstPageTitle = 'First page';
+  protected readonly prevPageTitle = 'Previous page';
+  protected readonly nextPageTitle = 'Next page';
+  protected readonly lastPageTitle = 'Last page';
+  protected readonly onFirstPageTitle = "You're on the first page";
+  protected readonly onLastPageTitle = "You're on the last page";
+
+  // Hidden columns list for header menu as a computed
+  protected readonly hiddenColumns = computed(() => {
+    const v = this.colVisibility();
+    return this.colDefsWithEdit.map((c) => c.field as string).filter((f) => !!f && v[f] === false) as string[];
+  });
+  protected readonly selectedOnPageCount = computed(() => {
+    if (this.allSelected()) return 0;
+    const set = this.selectedIdSet();
+    let cnt = 0;
+    for (const r of this.rows()) {
+      const id = this.toId(r);
+      if (id && set.has(id)) cnt++;
+    }
+    return cnt;
+  });
+  public readonly rowNavigatesToDetail = computed(() => !this.disableView() && !this.hasEditableColumns());
+  protected readonly isPageFullySelected = computed(() =>
+    this.selSvc.isPageFullySelected(this.allSelected(), this.displayedCount(), this.selectedOnPageCount()),
+  );
+
+  // State & UI Signals
+  // Removed isRowSelected in favor of hasSelection computed
+  protected readonly router = inject(Router);
+  public readonly undoMgr = new UndoManager();
+
+  // Select-all-across-results state
+  protected readonly allSelected = this.store?.allSelected ?? signal(false);
+  protected readonly allSelectedCount = this.store?.allSelectedCount ?? signal(0);
+  protected readonly allSelectedIdSet = this.store?.allSelectedIdSet ?? signal(new Set());
+  protected readonly allSelectedIds = this.store?.allSelectedIds ?? signal([]);
+  public archiveMode = signal(false);
+  protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
+  protected colVisibility = this.store?.colVisibility ?? signal({});
+  public readonly colWidths = this.store?.colWidths ?? signal({});
+
+  // Inline edit state
+  protected editingCell = signal<{ id: string; field: string } | null>(null);
+  protected editingValue = signal<unknown>('');
+  protected tagSearch = signal('');
+  protected filterValues = this.store?.filterValues ?? signal({});
+  protected isLoading = this._loading.visible;
+  public readonly isRefreshing = signal(false);
+  protected pageIndex = this.store?.pageIndex ?? signal(0);
+  protected panelFilters = this.store?.panelFilters ?? signal({});
+  protected rowHeight = 36;
+
+  // Table state (TanStack-like minimal state)
+  public readonly rows = this.store?.rows ?? signal<GridRow[]>([]);
+  protected selectedIdSet = this.store?.selectedIdSet ?? signal(new Set());
+  protected selectionStickyWidth = this.store?.selectionStickyWidth ?? signal(48);
+  protected showFilterPanel = signal(false);
+  protected showFilters = signal(false);
+  public sortCol = signal<string | null>(null);
+  public sortDir = signal<'asc' | 'desc' | null>(null);
+  protected sorting = signal<SortingState>([]);
+  protected suppressHeaderDrag = false;
+  public totalCountAll = signal(0);
+  // viewport handled by controller
+
+  public readonly importCSV = output<string>();
+  /** Fires after a delete flow completes and the grid has refreshed, so pages can re-query header counts. */
+  public readonly rowsDeleted = output<void>();
+  public readonly showArchiveIcon = input<boolean>(false);
+  public readonly archiveIcon = input<PcIconNameType>('archive-box');
+  public readonly archiveTip = input<string>('See archived tasks');
+  public readonly labelForFn = (f: string) => this.panelLabelFor(f);
+  public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
+  // Header handlers now called directly by pc-dg-header via injection
+  // header resize handled by pcHeaderResize directive
+
+  // Inline filters row injects DataGrid directly; no adapters needed
+
+  // Row/cell adapters used by directives/templates
+  public readonly toIdFn = (row: unknown) => this.toId(row);
+  public readonly inputTypeForFn = (col: ColDef) => this.inputTypeFor(col);
+  public readonly createPayloadFn = (row: GridRow, key: string) => this.utilsSvc.createPayload(row, key);
+  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: unknown, prev?: unknown) =>
+    this.updateEditedRowInCaches(id, f, v, prev);
+  public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
+  // Expose a simple persist method for header/directives
+  public requestPersist() {
+    this.store?.requestPersist();
+  }
+  public readonly coerceFn = (c: ColDef, raw: unknown) => this.coerceEditingValue(c, raw);
+
+  public readonly editableCfg = (row: GridRow, col: ColDef) => ({
+    row,
+    col,
+    toId: this.toIdFn,
+    coerce: this.coerceFn,
+    value: () => {
+      const current = this.editingValue();
+      return Array.isArray(current) ? [...current] : current;
+    },
+    setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
+    setEditingValue: (v: unknown) => this.editingValue.set(v),
+    getCellValue: (r: GridRow, c: ColDef) => this.getCellValue(r, c),
+    getEditingDisplayValue: (r: GridRow, c: ColDef) => this.getEditingDisplayValue(r, c),
+    createPayload: this.createPayloadFn,
+    applyEdit: (id: string, data: Partial<GridRow>) =>
+      this.gridSvc
+        .update(id, data as unknown as U)
+        .then(() => true)
+        .catch(() => false),
+    updateEditedRow: this.updateEditedRowInCachesFn,
+    updateWindow: this.updateTableWindowFn,
+    startIndex: () => this.startIndex(),
+    endIndex: () => this.endIndex(),
+    showSuccess: (m: string) => this.alertSvc.showSuccess(m),
+    showError: (m: string) => this.alertSvc.showError(m),
+    undo: () => this.undoMgr.undo(),
+    customCommit: this.isTagColumn(col)
+      ? async () => {
+          await this.commitTagColumn(row, col);
+        }
+      : undefined,
+    isEditable: () => this.isCellEditable(row, col),
+    isEditingCell: () => {
+      const ec = this.editingCell();
+      return ec !== null && ec.id === this.toIdFn(row) && ec.field === col.field;
+    },
+  });
+
+  // Inputs & Outputs
+  public addRoute = input<string | null>(null);
+  public viewRoute = input<string | null>(null);
+  public allowFilter = input<boolean>(true);
+  public colDefs = input<ColDef[]>([]);
+  public disableDelete = input<boolean>(true);
+  public disableMerge = input<boolean>(true);
+  public disableExport = input<boolean>(false);
+  public confirmDeleteOverride = input<
+    ((selected: (Partial<RowOf<T>> & { id: string })[]) => Promise<boolean | void>) | null
+  >(null);
+  public disableImport = input<boolean>(false);
+  public disableRefresh = input<boolean>(false);
+  public disableView = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public rowCanSelect = input<(row: GridRow) => boolean>(() => true);
+  public limitToTags = input<string[]>([]);
+  public limitToIssues = input<string[]>([]);
+  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[]; count?: number }>>([]);
+  public plusIcon = input<PcIconNameType>('plus');
+
+  public showToolbar = input<boolean>(true);
+  /** Per-column sort/filter/hide dropdown in the header. Off for read-only "reference table" grids. */
+  public showColumnMenus = input<boolean>(true);
+  public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
+
+  public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
+  public listId = input<string | null>(null);
+  public title = input<string | null>(null);
+  public description = input<string | null>(null);
+  public showDescription = input<boolean>(false);
+
+  /**
+   * Grain-specific total sentence rendered under the title (spec §5), e.g.
+   * "5,012 people total" / "1,890 households across 8 wards" / "611 people in 214 companies".
+   * When filters are active the header prefixes it: "43 match your filters · {sentence}".
+   */
+  public totalSentence = input<string | null>(null);
+
+  /**
+   * Grain-tab layout (People/Households/Companies grids, spec §5 + owner screenshot):
+   * no in-grid title/ⓘ (redundant with the sidebar + breadcrumb) — the grain tabs and
+   * toolbar share one band, and the count sentence renders below the filter row.
+   */
+  public grainLayout = input<boolean>(false);
+
+  /**
+   * Content-fit column sizing. When true, columns render at their content/configured width
+   * instead of the browser stretching every column to fill the table, and a blank trailing
+   * cell absorbs the leftover width so short columns stay tight and the row still spans full
+   * width. Off by default so existing grids keep their proportional-stretch layout.
+   */
+  public fitColumns = input<boolean>(false);
+
+  private readonly countFormatter = new Intl.NumberFormat();
+
+  /** The "43 match your filters · 5,012 people total" sentence, rendered below the filter row in grain layout. */
+  public readonly countSentence = computed<string | null>(() => {
+    const count = this.hasLoaded() ? this.totalCountAll() : null;
+    const sentence = this.totalSentence();
+    if (count !== null && this.anyFilterActive()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
+    }
+    if (sentence) return sentence;
+    if (count === null) return null;
+    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
+  });
+
+  protected readonly dgTagOptionsSvc = inject(TagOptionsService);
+
+  // ── Tag / Issue filter — delegated to GridTagFilterService ───────────────
+  private readonly tagFilter = new GridTagFilterService();
+
+  // Proxy aliases — same public names the toolbar template accesses via grid.*
+  public readonly allAvailableTags = this.tagFilter.allAvailableTags;
+  public readonly selectedTags = this.tagFilter.selectedTags;
+  public readonly tagSearchQuery = this.tagFilter.tagSearchQuery;
+  public readonly allAvailableIssues = this.tagFilter.allAvailableIssues;
+  public readonly selectedIssues = this.tagFilter.selectedIssues;
+  public readonly issueSearchQuery = this.tagFilter.issueSearchQuery;
+  public readonly filteredAvailableTags = this.tagFilter.filteredAvailableTags;
+  public readonly filteredAvailableIssues = this.tagFilter.filteredAvailableIssues;
+
+  // showTagFilter / showIssueFilter must stay here — they depend on the colDefs input signal
+  public readonly showTagFilter = computed(() => {
+    const defs = this.colDefs();
+    return defs.some((col) => col.field === 'tags' || col.tagColumn === true);
+  });
+
+  public readonly showIssueFilter = computed(() => {
+    const defs = this.colDefs();
+    return defs.some((col) => col.field === 'issues' || col.field === 'issue');
+  });
+
+  public readonly showNarrowTypeFilter = computed(() => this.narrowTypeOptions().length > 0);
+  public readonly selectedNarrowType = signal<string | null>(null);
+  public readonly displayTitle = computed(() => {
+    const selected = this.selectedNarrowType();
+    if (selected !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === selected);
+      if (option) return option.label;
+    }
+    return this.title() ?? null;
+  });
+
+  public selectNarrowType(value: string | null): void {
+    // Already on this view — nothing to fetch.
+    if (this.selectedNarrowType() === value) return;
+    this.selectedNarrowType.set(value);
+    const option = this.narrowTypeOptions().find((o) => o.value === value);
+    const tags = option?.tags ?? [];
+    this.tagFilter.selectedTags.set([...tags]);
+    // A view is a server-side tag filter, so fetch page 1 of the new set — but via
+    // the normal loading gate, not doRefresh()'s forced 1s spinner (that's for the
+    // manual Refresh button). Feels like filtering, not a hard reload.
+    void this.loadPage(0);
+  }
+
+  public toggleTagFilter(tag: string, checked: boolean) {
+    this.selectedNarrowType.set(null);
+    this.tagFilter.toggleTagFilter(tag, checked);
+  }
+  public clearTagsFilter() {
+    this.selectedNarrowType.set(null);
+    this.tagFilter.clearTagsFilter();
+  }
+  public selectAllTags() {
+    this.tagFilter.selectAllTags();
+  }
+  public clearAllTagsVisible() {
+    this.tagFilter.clearAllTagsVisible();
+  }
+  public toggleIssueFilter(issue: string, checked: boolean) {
+    this.tagFilter.toggleIssueFilter(issue, checked);
+  }
+  public clearIssuesFilter() {
+    this.tagFilter.clearIssuesFilter();
+  }
+  public selectAllIssues() {
+    this.tagFilter.selectAllIssues();
+  }
+  public clearAllIssuesVisible() {
+    this.tagFilter.clearAllIssuesVisible();
+  }
+
+  public selectedListId = signal<string | null>(null);
+  public availableLists = signal<GridRow[]>([]);
+  public activeListId = computed(() => this.listId() || this.selectedListId());
+  public readonly showListFilter = computed(() => {
+    const entity = this.config.messages.exportEntity;
+    return (entity === 'persons' || entity === 'households') && !!this.dgListsSvc;
+  });
+
+  public selectListFilter(id: string) {
+    this.selectedListId.set(id);
+    void this.loadPage(0);
+  }
+
+  public clearListFilter() {
+    this.selectedListId.set(null);
+    void this.loadPage(0);
+  }
+
+  // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
+  public readonly advFilter = new GridAdvancedFilterService();
+  protected readonly tagsSvc = inject(TagsService, { optional: true });
+
+  // Proxy aliases — same public names used by the toolbar and datagrid.html
+  public readonly showAdvancedFilterBuilder = this.advFilter.showAdvancedFilterBuilder;
+  public readonly advFilterRoot = this.advFilter.advFilterRoot;
+  public readonly hasActiveAdvancedFilters = this.advFilter.hasActiveAdvancedFilters;
+
+  protected readonly advancedFilterFields = computed<QueryBuilderField[]>(() => {
+    return this.colDefsWithEdit
+      .filter((c) => c.field && c.field !== 'actions' && c.field !== SELECTION_COLUMN.field)
+      .map((c) => {
+        const fieldName = c.field ?? '';
+        const isTagCol = fieldName === 'tags' || fieldName === 'issues' || c.tagColumn === true;
+        const operators = [
+          { value: 'contains', label: 'contains' },
+          { value: 'notContains', label: 'does not contain' },
+          { value: 'equals', label: 'equals' },
+          { value: 'notEquals', label: 'does not equal' },
+          { value: 'startsWith', label: 'starts with' },
+          { value: 'endsWith', label: 'ends with' },
+          { value: 'isEmpty', label: 'is empty' },
+          { value: 'isNotEmpty', label: 'is not empty' },
+        ];
+        return {
+          name: fieldName,
+          label: c.headerName || fieldName,
+          operators,
+          inputType: isTagCol ? ('autocomplete' as const) : ('text' as const),
+        };
+      });
+  });
+
+  public openAdvancedFilterBuilder() {
+    this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit);
+  }
+  public switchToAdvancedFilter() {
+    this.advFilter.switchToAdvancedFilter(
+      () => this.showFilterPanel.set(false),
+      () => this.colDefsWithEdit,
+    );
+  }
+  public applyAdvancedFilter() {
+    this.advFilter.apply(() => void this.doRefresh());
+  }
+  public clearAdvancedFilter() {
+    this.advFilter.clear(() => void this.doRefresh());
+  }
+  public onAdvancedFilterChanged() {
+    this.advFilterRoot.update((root) => cloneQueryBuilderNode(root) as QueryBuilderGroupNode);
+  }
+
+  private _squelch = false;
+  private _initialized = false;
+  private _lastPageSize: number | null = null;
+
+  constructor() {
+    if (this.store) {
+      this.store.grid = this;
+    }
+
+    // Navbar crumbs for grid pages come from the route's `data.breadcrumb` via
+    // BreadcrumbDefaultsService — the grid no longer publishes its own. (Publishing
+    // here broke on route-reuse: detached grids never ran their clear-on-destroy.)
+
+    effect(() => {
+      const count = this.gridSvc.refreshCount();
+      if (count > 0) {
+        untracked(() => {
+          void this.refresh();
+        });
+      }
+    });
+
+    // Clear the tag search box whenever a different cell enters edit mode
+    effect(() => {
+      this.editingCell();
+      this.tagSearch.set('');
+    });
+
+    // Prevents being stuck on an out-of-range page after filters change.
+    effect(() => {
+      if (this._squelch) return;
+      const total = this.totalPages();
+      const page = this.pageIndex();
+      if (total > 0 && page >= total) {
+        this._squelch = true;
+        queueMicrotask(() => {
+          // 2. Wrap the async call in an IIFE
+          void (async () => {
+            void (await this.loadPage(Math.max(0, total - 1)));
+            this._squelch = false;
+          })();
+        });
+      }
+    });
+
+    // React to global search (SSRM: trigger server-side filter)
+    effect(() => {
+      const quickFilterText = this.searchTerm();
+
+      // Keep track of the old filter text to avoid unnecessary roundtrip
+      if (quickFilterText !== this.oldFilterText) {
+        this.oldFilterText = quickFilterText;
+        void this.loadPage(0);
+      }
+    });
+    // When page size changes, go back to first page (after init)
+    effect(() => {
+      const size = this.pageSize();
+      if (!this._initialized) {
+        this._lastPageSize = size;
+        return;
+      }
+      if (this._lastPageSize === size) return;
+      this._lastPageSize = size;
+      void this.loadPage(0);
+    });
+    // Keep table data + selection + sorting synced when rows or sort change
+    effect(() => {
+      const rows = this.rows();
+      // touch sort signals so effect re-runs when they change
+      this.sortCol();
+      this.sortDir();
+      this.tableSvc.setTableData(
+        this.tsTable,
+        rows,
+        this.buildRowSelectionForCurrentData(),
+        this.sortCol(),
+        this.sortDir(),
+      );
+    });
+
+    // React to limitToTags input signal changes
+    effect(() => {
+      // Fallback to an empty array if the input is undefined or null
+      const tags = this.limitToTags() || [];
+
+      untracked(() => {
+        this.tagFilter.selectedTags.set([...tags]);
+        if (this._initialized) {
+          void this.doRefresh();
+        }
+      });
+    });
+
+    // React to limitToIssues input signal changes
+    effect(() => {
+      // Fallback to an empty array if the input is undefined or null
+      const issues = this.limitToIssues() || [];
+
+      untracked(() => {
+        this.tagFilter.selectedIssues.set([...issues]);
+        if (this._initialized) {
+          void this.doRefresh();
+        }
+      });
+    });
+
+    effect(() => {
+      this.externalAdvancedFilterModel();
+      untracked(() => {
+        if (this._initialized) {
+          void this.doRefresh();
+        }
+      });
+    });
+
+    effect(() => {
+      this.listId();
+      untracked(() => {
+        if (this._initialized) {
+          void this.doRefresh();
+        }
+      });
+    });
+    // Virtualizer count sync handled by controller
+    // Pin offsets recompute centralized in PinningController
+  }
+
+  public getCountRowSelected() {
+    return this.countRowSelected();
+  }
+
+  public getDefinition(): getAllOptionsType {
+    return {
+      searchStr: this.searchSvc.getFilterText(),
+      sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
+      filterModel: this.buildFilterModel(),
+      tags: this.tagFilter.selectedTags(),
+      issues: this.tagFilter.selectedIssues(),
+    } as getAllOptionsType;
+  }
+
+  public ngAfterViewInit() {
+    if (!this.store) {
+      return;
+    }
+    // Virtualizer disabled for paged grid; no attach
+    const el = this.scrollerRef()?.nativeElement;
+    void el; // reserved for future use
+    // Attach controllers to the table once
+    this.pctrl.attachTable(this.tsTable);
+    this.pctrl.init({
+      getColWidth: (id) => this.getColWidth(id),
+      getSelectionWidth: () => this.selectionStickyWidth(),
+      getPinState: () => {
+        const pin = this.tsTable?.getState().columnPinning;
+        return { left: pin?.left ?? [], right: pin?.right ?? [] };
+      },
+    });
+    // Measure header widths initially and on resize
+    this.updateHeaderWidths();
+    window.addEventListener('resize', this.updateHeaderWidths);
+  }
+
+  public ngOnDestroy(): void {
+    if (!this.store) {
+      return;
+    }
+    // Abort any inflight requests and release refs
+    this.gridSvc.abort();
+    this.tsTable = undefined;
+    window.removeEventListener('resize', this.updateHeaderWidths);
+  }
+
+  public ngOnInit() {
+    if (!this.store) {
+      return;
+    }
+
+    void (async () => {
+      this.undoMgr.initialize(this);
+
+      await this.tagFilter.init({
+        limitToTags: this.limitToTags(),
+        limitToIssues: this.limitToIssues(),
+        tagOptionsSvc: this.dgTagOptionsSvc,
+        doRefresh: () => {
+          void this.doRefresh();
+        },
+      });
+
+      if (this.showListFilter() && this.dgListsSvc) {
+        try {
+          const listsResult: unknown = await this.dgListsSvc.getAll();
+          const entity = this.config.messages.exportEntity;
+          const expectedObject = entity === 'persons' ? 'people' : 'households';
+          const listRows: unknown[] = Array.isArray(listsResult)
+            ? listsResult
+            : isRecord(listsResult) && Array.isArray(listsResult['rows'])
+              ? listsResult['rows']
+              : [];
+          const filtered = listRows.filter((l): l is GridRow => isRecord(l) && l['object'] === expectedObject);
+          this.availableLists.set(filtered);
+        } catch (err) {
+          console.error('Failed to load lists for filter:', err);
+        }
+      }
+
+      this.selectionStickyWidth.set(this.selectionColumnWidthPx);
+
+      // Initialize persistence key
+      const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
+      this._persistKey = `pcdg:${urlKey}`;
+
+      // Attempt to read saved column order before table creation
+      let savedColumnOrder: string[] | undefined;
+      try {
+        const raw = localStorage.getItem(this._persistKey);
+        if (raw) {
+          const data = JSON.parse(raw || '{}') as { order?: string[] };
+          if (Array.isArray(data?.order)) savedColumnOrder = data.order;
+        }
+      } catch {}
+
+      // Note: allowFilter input retained for API compatibility (filter UI uses signals)
+      const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
+      this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
+      this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
+      this.hasDoorColumn.set(this.colDefsWithEdit.some((col) => !!col?.doorColumn));
+
+      // Initialize column visibility defaults
+      const vis: Record<string, boolean> = {};
+      for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = c.hide !== true;
+      this.colVisibility.set(vis);
+
+      // Build TanStack columns
+      this.tsColumns = this.tableSvc.buildTsColumns(this.colDefsWithEdit);
+      this.tsTable = this.tableSvc.createGridTable({
+        rows: this.rows(),
+        columns: this.tsColumns,
+        getRowId: (row: GridRow) => this.toId(row),
+        state: {
+          sorting: this.sorting(),
+          columnVisibility: this.colVisibility(),
+          rowSelection: this.buildRowSelectionForCurrentData(),
+          columnPinning: { left: [], right: [] },
+          columnSizing: {},
+          columnOrder: savedColumnOrder || [],
+        },
+        onStateChange: () => this.syncSignalsFromTable(),
+        onSortingChange: (updater: Updater<SortingState>) => {
+          const next = typeof updater === 'function' ? updater(this.tsTable?.getState().sorting ?? []) : updater;
+          this.sorting.set(next);
+          const first = next?.[0];
+          this.sortCol.set(first?.id ?? null);
+          this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
+          void this.loadPage(0);
+          this.store.requestPersist();
+        },
+        onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => {
+          const current = this.tsTable?.getState().rowSelection ?? {};
+          const next = typeof updater === 'function' ? updater(current) : updater;
+          const set = new Set(this.selectedIdSet());
+          const canSelectFn = this.rowCanSelect();
+          for (const row of this.rows()) {
+            const id = this.toId(row);
+            if (!id) continue;
+            if (canSelectFn && !canSelectFn(row)) {
+              set.delete(id);
+              continue;
+            }
+            if (next[id]) set.add(id);
+            else set.delete(id);
+          }
+          this.selectedIdSet.set(set);
+        },
+        onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
+          const current = this.tsTable?.getState().columnSizing ?? {};
+          const next = typeof updater === 'function' ? updater(current) : updater;
+          this.colWidths.set({ ...next });
+          this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: next } }));
+          this.store.requestPersist();
+        },
+      });
+
+      // Attach to store for syncing & persistence
+      try {
+        this.store.attachTable(this.tsTable);
+        this.store.setPersistKey(this._persistKey);
+        this.store.setGetRowId((row: GridRow) => this.toId(row));
+      } catch {}
+
+      // Load persisted state and apply to table before first load
+      if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
+      this.store.loadState();
+      // A door column replaces the open-icon, so the selection column only needs
+      // to fit the checkbox (36px); without one it also holds the open-icon (72px).
+      this.selectionStickyWidth.set(this.hasDoorColumn() ? 36 : this.selectionColumnWidthPx);
+
+      await this.loadPage(0);
+      this._initialized = true;
+    })();
+  }
+
+  public triggerFilterChanged() {
+    void this.loadPage(0);
+  }
+
+  protected add() {
+    this.navSvc.navigateIfValid(this.router, this.route, this.addRoute());
+  }
+  public doAdd() {
+    this.add();
+  }
+
+  protected cloneSelected() {
+    if (!this.hasSingleSelection()) return;
+    const selectedId = Array.from(this.selectedIdSet())[0];
+    const selectedRow = this.rows().find((r) => this.toId(r) === selectedId);
+    if (!selectedRow) return;
+
+    void this.router.navigate([this.addRoute()], { relativeTo: this.route, state: { cloneData: selectedRow } });
+  }
+
+  public doClone() {
+    this.cloneSelected();
+  }
+
+  protected applyPanelFilters() {
+    const raw = this.panelFilters();
+    const cleaned: Record<string, { op: string; value: string }> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      const op = v?.op ?? 'contains';
+      const sv = String(v?.value ?? '').trim();
+      if (op === 'isEmpty' || op === 'isNotEmpty') {
+        cleaned[k] = { op, value: '' };
+      } else if (sv) {
+        cleaned[k] = { op, value: sv };
+      }
+    }
+    this.filterValues.set(cleaned);
+    this.showFilterPanel.set(false);
+    void this.loadPage(0);
+  }
+
+  public ariaSortHeader(h: Header<GridRow, unknown>): 'ascending' | 'descending' | 'none' {
+    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (s === 'asc') return 'ascending';
+    if (s === 'desc') return 'descending';
+    return 'none';
+  }
+
+  // Auto-size column based on header and currently visible cells
+  public autoSizeColumn(h: Header<GridRow, unknown>) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const table = this.gridTable()?.nativeElement;
+    if (!table) return;
+    const px = this.columnsSvc.computeAutoSizeWidth(table, id);
+    if (px > 0) this.setColWidth(id, px);
+    this.store?.requestPersist();
+  }
+
+  // Virtualizer padding not used in paginated mode
+
+  // Build a compact filter model from current UI filter values
+  public buildFilterModel(): Record<string, unknown> {
+    return this.filtersSvc.buildFilterModel(this.filterValues());
+  }
+
+  protected readonly sanitizer = inject(DomSanitizer);
+
+  // Memoized sanitized cell HTML. callCellRenderer runs inside a template binding, so
+  // it re-fires on every change-detection pass for every visible cell; without this it
+  // would re-run the renderer AND DOMPurify O(rows × cols) times per CD cycle. Keyed by
+  // the (stable) ColDef then the row data object — both WeakMap keys, so entries are
+  // evicted automatically when a column or row is garbage-collected — and invalidated
+  // when the cell's value changes.
+  private readonly cellHtmlCache = new WeakMap<object, WeakMap<object, { value: unknown; html: SafeHtml }>>();
+  private readonly emptyCellHtml: SafeHtml = this.sanitizer.bypassSecurityTrustHtml('');
+
+  protected callCellRenderer(row: GridRow, col: ColDef): SafeHtml {
+    const fn = col.cellRenderer;
+    if (typeof fn !== 'function') {
+      // Empty string is still valid SafeHtml
+      return this.emptyCellHtml;
+    }
+
+    const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+
+    let byRow = this.cellHtmlCache.get(col);
+    if (!byRow) {
+      byRow = new WeakMap<object, { value: unknown; html: SafeHtml }>();
+      this.cellHtmlCache.set(col, byRow);
+    }
+    const cached = byRow.get(row);
+    if (cached && Object.is(cached.value, value)) {
+      return cached.html;
+    }
+
+    const raw = fn({ data: row, value, colDef: col });
+
+    // Renderer strings may interpolate row data, so they are never trusted as-is:
+    // DOMPurify strips script/event-handler payloads while keeping the markup
+    // (class/style/img) renderers legitimately produce. SafeHtml is returned as-is.
+    const html: SafeHtml =
+      typeof raw === 'string' ? this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw)) : (raw as SafeHtml);
+
+    byRow.set(row, { value, html });
+    return html;
+  }
+
+  protected callValueFormatter(row: GridRow, col: ColDef): unknown {
+    const fn = col.valueFormatter;
+    if (typeof fn === 'function') {
+      return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
+    }
+    return this.getCellValue(row, col);
+  }
+
+  /** Muted second line under a door cell (e.g. "3 people" under a household address). */
+  protected callDoorSubtitle(row: GridRow, col: ColDef): string | null {
+    const fn = col.doorSubtitle;
+    if (typeof fn !== 'function') return null;
+    return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
+  }
+
+  // canNext/canPrev are computed
+  protected cancelEdit() {
+    this.editingCell.set(null);
+  }
+
+  public clearAllSelection() {
+    this.allSelected.set(false);
+    this.allSelectedIds.set([]);
+    this.allSelectedIdSet.set(new Set());
+    this.allSelectedCount.set(0);
+  }
+
+  public clearHeaderFilter(field: string) {
+    const next = { ...this.filterValues() };
+    delete next[field];
+    this.filterValues.set(next);
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  protected clearPanelFilters() {
+    this.panelFilters.set({});
+  }
+
+  public clearSort(h: Header<GridRow, unknown>) {
+    if (typeof h?.column?.clearSorting === 'function') {
+      h.column.clearSorting();
+      return;
+    }
+    // Fallback: remove from sorting state
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const next = this.sorting().filter((s) => s.id !== id);
+    this.sorting.set(next);
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, sorting: next } }));
+    void this.loadPage(0);
+  }
+
+  protected closePanel() {
+    this.showFilterPanel.set(false);
+  }
+
+  public columnLabelFor(id: string): string {
+    const c = this.colDefsWithEdit.find((x) => x.field === id);
+    return c?.headerName || id;
+  }
+
+  protected async commitEdit(row: GridRow, col: ColDef) {
+    if (!col.field) return;
+
+    if (this.isTagColumn(col)) {
+      await this.commitTagColumn(row, col);
+      return;
+    }
+
+    const value = this.editingValue();
+    if (this.editingCtrl) {
+      await this.editingCtrl.commitSingleCell(row, col, this.coerceEditingValue(col, value));
+    }
+    this.editingCell.set(null);
+  }
+
+  private getRowDisplayName(row: unknown): string {
+    if (!isRecord(row)) return 'Unnamed Record';
+    if (row['first_name'] !== undefined || row['last_name'] !== undefined) {
+      const parts = [row['first_name'], row['last_name']].filter(Boolean);
+      return parts.length ? parts.join(' ') : 'Unnamed Person';
+    }
+    if (row['street1'] !== undefined || row['street_num'] !== undefined) {
+      const parts = [row['street_num'], row['street1'], row['apt'], row['city']].filter(Boolean);
+      return parts.length ? parts.join(' ') : 'Unnamed Household';
+    }
+    if (row['name']) return String(row['name']);
+    if (row['display_name']) return String(row['display_name']);
+    if (row['id']) return `Record #${String(row['id'])}`;
+    return 'Unnamed Record';
+  }
+
+  protected async confirmMerge() {
+    const svc = this.gridSvc as unknown as MergeableService;
+    const mergeFn = svc.merge || svc.mergePersons || svc.mergeCompanies || svc.mergeHouseholds;
+
+    if (!mergeFn) {
+      this.alertSvc.showError('Merging is not supported for this data grid.');
+      return;
+    }
+
+    const selectedRows = this.getSelectedRows();
+    if (selectedRows.length !== 2) {
+      this.alertSvc.showError('Please select exactly 2 rows to merge.');
+      return;
+    }
+
+    const [row1, row2] = selectedRows;
+    if (!row1 || !row2) return;
+    const name1 = this.getRowDisplayName(row1);
+    const name2 = this.getRowDisplayName(row2);
+
+    const primaryChoice = await this.dialogs.choose({
+      title: 'Select Primary Record',
+      message:
+        'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
+      variant: 'info',
+      choices: [
+        {
+          label: `${name1} (Keep this, merge the other into this)`,
+          value: { target: row1, source: row2 },
+        },
+        {
+          label: `${name2} (Keep this, merge the other into this)`,
+          value: { target: row2, source: row1 },
+        },
+      ],
+    });
+
+    if (!primaryChoice) return;
+
+    const targetName = this.getRowDisplayName(primaryChoice.target);
+    const sourceName = this.getRowDisplayName(primaryChoice.source);
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Merge',
+      message: `Are you sure you want to merge "${sourceName}" into "${targetName}"? This action will permanently delete "${sourceName}" and cannot be undone.`,
+      variant: 'warning',
+      confirmText: 'Merge',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      if (typeof svc.merge === 'function') {
+        await svc.merge(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergePersons === 'function') {
+        await svc.mergePersons(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergeCompanies === 'function') {
+        await svc.mergeCompanies(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof svc.mergeHouseholds === 'function') {
+        await svc.mergeHouseholds(primaryChoice.target.id, primaryChoice.source.id);
+      } else {
+        throw new Error('No merge service method available');
+      }
+
+      this.alertSvc.showSuccess(`Successfully merged into "${targetName}"`);
+      this.clearAllSelection();
+      await this.refresh();
+    } catch (err) {
+      console.error(err);
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
+    } finally {
+      end();
+    }
+  }
+
+  protected async confirmDelete(selectedRows?: (Partial<RowOf<T>> & { id: string })[]): Promise<boolean | void> {
+    if (this.disableDelete()) {
+      this.alertSvc.showError(this.config.messages.noDeletePermission);
+      return true;
+    }
+
+    const overrideFn = this.confirmDeleteOverride();
+    if (overrideFn) {
+      const selected = selectedRows || this.getSelectedRows();
+      const handled = await overrideFn(selected);
+      if (handled !== false) {
+        this.clearAllSelection();
+        await this.refresh();
+        this.rowsDeleted.emit();
+        return true;
+      }
+    }
+
+    await this.actionsSvc.confirmDeleteAndRun({
+      _loading: this._loading,
+      dialogs: this.dialogs,
+      alertSvc: this.alertSvc,
+      getSelectedRows: () => selectedRows || this.getSelectedRows(),
+      gridSvc: this.gridSvc,
+      config: this.config,
+    });
+
+    // Always clear our select-all cache after a delete attempt
+    this.clearAllSelection();
+    await this.refresh();
+    this.rowsDeleted.emit();
+    return true;
+  }
+  public doConfirmDelete() {
+    void this.confirmDelete();
+  }
+
+  public doConfirmMerge() {
+    void this.confirmMerge();
+  }
+  protected async confirmExport(): Promise<void> {
+    await this.actionsSvc.doExportCsv({
+      dialogs: this.dialogs,
+      alertSvc: this.alertSvc,
+      config: this.config,
+      displayedCount: this.displayedCount(),
+      totalCount: this.totalCountAll(),
+      getRowsForExport: () => this.rows().map((r) => ({ ...r })),
+      queueFullExport: () => this.queueFullExport(),
+      logInstantExport: (rowCount) => this.logInstantExport(rowCount),
+    });
+  }
+  public doConfirmExport() {
+    void this.confirmExport();
+  }
+
+  protected cyclePin(h: Header<GridRow, unknown>) {
+    const current = this.pinState(h);
+    const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, next);
+    this.store?.requestPersist();
+  }
+
+  public doImportCSV() {
+    // Emit a simple signal so consumers can open their import UI
+    this.importCSV.emit('open');
+  }
+
+  public endIndex(): number {
+    return this.rows().length;
+  }
+
+  // exportToCSV removed (legacy path)
+  public filter() {
+    // Open right-side filter panel and seed with current filters
+    const current = this.filterValues();
+    this.panelFilters.set(this.filtersSvc.preparePanelFilters(current));
+    this.showFilterPanel.set(true);
+  }
+
+  // Helpers for template-safe access to dynamic fields/formatters/renderers
+  protected getCellValue(row: GridRow, col: ColDef): unknown {
+    const field = col.field ?? '';
+    // Prefer valueGetter when provided
+    const vget = col.valueGetter;
+    if (typeof vget === 'function') {
+      try {
+        return vget({ data: row, colDef: col, value: field ? row[field] : undefined });
+      } catch {
+        // fall through to field lookup
+      }
+    }
+    return field ? row[field] : undefined;
+  }
+
+  protected getEditingDisplayValue(row: GridRow, col: ColDef): unknown {
+    return this.getCellValue(row, col);
+  }
+
+  public getColDefById(id: string): ColDef | undefined {
+    return this.colDefsWithEdit.find((c) => c.field === id);
+  }
+
+  public getColWidth(id: string): number | null {
+    const min = this.columnMinWidthPx(id);
+    // A user-resized width always wins (persisted in colWidths, mirrored into columnSizing).
+    const stored = this.colWidths()[id];
+    if (typeof stored === 'number' && stored > 0) return Math.max(stored, min);
+    // An explicit per-column preferred width comes next.
+    const colDef = this.getColDefById(id);
+    if (typeof colDef?.width === 'number' && colDef.width > 0) return Math.max(colDef.width, min);
+    // On content-fit grids, unsized columns fall to their content/min width and the grow column
+    // soaks up the slack — so short columns stay tight instead of stretching to fill.
+    if (this.fitColumns()) return min;
+    // Legacy grids keep TanStack's default column size so existing layouts don't shift.
+    const size = this.tsTable?.getColumn?.(id)?.getSize?.();
+    if (typeof size === 'number' && size > 0) return Math.max(size, min);
+    return min;
+  }
+
+  // displayedCount is computed
+  protected getFieldFromHeader(h: Header<GridRow, unknown>): string | null {
+    const id = h?.column?.id;
+    return typeof id === 'string' ? id : null;
+  }
+
+  protected getFilterArray(field: string): string[] {
+    return this.filtersSvc.getFilterArray(this.filterValues(), field);
+  }
+
+  // Helper to derive filter select options from a column definition
+  public getFilterOptionsForCol(col: ColDef): string[] | null {
+    return this.filtersSvc.getFilterOptionsForCol(col);
+  }
+
+  protected selectEditorOptions(col: ColDef): SelectEditorOptions | null {
+    return this.filtersSvc.getSelectEditorOptions(col);
+  }
+
+  protected async onSelectChange(row: GridRow, col: ColDef, newValue: unknown) {
+    const resolvedValue = Array.isArray(newValue) ? newValue[0] : newValue;
+    // Update the editing value first so commitEdit reads the correct value
+    this.editingValue.set(resolvedValue);
+    await this.commitEdit(row, col);
+  }
+
+  /** Current editing value normalized for a text `[value]` binding (`null`/`undefined` → empty string). */
+  protected editingValueText(): string {
+    const v = this.editingValue();
+    return v == null ? '' : String(v);
+  }
+
+  /**
+   * Whether a single-select editor option matches the current editing value.
+   * String comparison mirrors how the native `<option [value]>` stringifies values in the DOM.
+   */
+  protected isEditorOptionSelected(value: unknown): boolean {
+    const raw = this.editingValue();
+    const current = Array.isArray(raw) ? raw[0] : raw;
+    return String(current ?? '') === String(value ?? '');
+  }
+
+  /** Whether a multi-select editor option is part of the current editing value array. */
+  protected isEditorOptionMultiSelected(value: unknown): boolean {
+    const raw = this.editingValue();
+    if (!Array.isArray(raw)) return false;
+    return raw.some((entry) => String(entry ?? '') === String(value ?? ''));
+  }
+
+  /** Multi-select editor change: editing value = the string values of all selected options. */
+  protected onMultiSelectEditorChange(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    this.editingValue.set(Array.from(target.selectedOptions).map((opt) => opt.value));
+  }
+
+  protected tagsAsStrings(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    const tags: string[] = [];
+    for (const entry of value) {
+      const normalized = entry == null ? '' : String(entry).trim();
+      if (normalized) tags.push(normalized);
+    }
+    return tags;
+  }
+
+  protected async handleTagRemoved(row: GridRow, col: ColDef, tagName: string) {
+    if (!col?.field || !this.isTagColumn(col)) return;
+    const trimmed = typeof tagName === 'string' ? tagName.trim() : '';
+    if (!trimmed) return;
+
+    const current = this.getCellValue(row, col);
+    const previous = this.utilsSvc.normalizeTagSelection(current);
+    if (!previous.includes(trimmed)) return;
+
+    const next = previous.filter((tag) => tag !== trimmed);
+    await this.persistTagSelection(row, col, next, {
+      successMessage: `Removed tag "${trimmed}"`,
+    });
+  }
+
+  protected isTagColumn(col: ColDef): boolean {
+    if (!col) return false;
+    if (col.tagColumn) return true;
+    const field = (col.field ?? '').toLowerCase();
+    return field === 'tags' || field === 'issues';
+  }
+
+  protected async commitTagColumn(row: GridRow, col: ColDef) {
+    try {
+      const next = this.utilsSvc.normalizeTagSelection(this.editingValue());
+      await this.persistTagSelection(row, col, next);
+    } finally {
+      this.editingCell.set(null);
+    }
+  }
+
+  protected tagEditorChoices(col: ColDef): string[] {
+    const opts = this.selectEditorOptions(col);
+    return (opts?.choices.map((c) => c.value).filter(Boolean) ?? []).sort();
+  }
+
+  protected filteredTagChoices(col: ColDef): string[] {
+    const q = this.tagSearch().trim().toLowerCase();
+    const all = this.tagEditorChoices(col);
+    return q ? all.filter((t) => t.toLowerCase().includes(q)) : all;
+  }
+
+  protected isTagChecked(tag: string): boolean {
+    const v = this.editingValue();
+    return Array.isArray(v) && v.includes(tag);
+  }
+
+  protected toggleTagInEditor(tag: string, checked: boolean) {
+    const raw = this.editingValue();
+    const current: string[] = Array.isArray(raw) ? raw.map((t) => String(t)) : [];
+    if (checked && !current.includes(tag)) {
+      this.editingValue.set([...current, tag]);
+    } else if (!checked) {
+      this.editingValue.set(current.filter((t) => t !== tag));
+    }
+  }
+
+  protected async persistTagSelection(
+    row: GridRow,
+    col: ColDef,
+    desired: string[],
+    opts?: { successMessage?: string },
+  ) {
+    const field = col.field;
+    if (!field) return;
+
+    const id = this.toId(row);
+    if (!id) return;
+
+    const previous = this.utilsSvc.normalizeTagSelection(this.getCellValue(row, col));
+    const next = this.utilsSvc.normalizeTagSelection(desired);
+
+    const diff = this.diffTagSelection(previous, next);
+    if (!diff.hasChanges) return;
+    const applyTags = (tags: string[], prevTags?: string[]) => {
+      const safe = Array.isArray(tags) ? [...tags] : [];
+      row[field] = safe;
+      this.updateEditedRowInCachesFn(id, field, safe, prevTags);
+      this.updateTableWindowFn(this.startIndex(), this.endIndex());
+    };
+
+    applyTags(next, previous);
+
+    try {
+      const removedTeamNames = await this.applyTagDiff(id, diff, col);
+      const finalTags = await this.refreshTagsFromServer(id, next, col);
+      applyTags(finalTags, previous);
+      this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
+    } catch {
+      applyTags(previous, previous);
+      const errorMsg = this.tagTypeFor(col) === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
+      this.alertSvc.showError(errorMsg);
+    }
+  }
+
+  /** Resolve whether a column edits tags or issues from its renderer params. */
+  protected tagTypeFor(col?: ColDef): 'tag' | 'issue' {
+    const params: unknown = col?.cellRendererParams;
+    return isRecord(params) && params['tagType'] === 'issue' ? 'issue' : 'tag';
+  }
+
+  private diffTagSelection(previous: string[], next: string[]): TagDiff {
+    const toAdd = next.filter((tag) => !previous.includes(tag));
+    const toRemove = previous.filter((tag) => !next.includes(tag));
+    return {
+      toAdd,
+      toRemove,
+      hasChanges: toAdd.length > 0 || toRemove.length > 0,
+    };
+  }
+
+  private async applyTagDiff(id: string, diff: TagDiff, col?: ColDef): Promise<string[]> {
+    const removedTeamNames: string[] = [];
+    const type = this.tagTypeFor(col);
+
+    for (const tag of diff.toRemove) {
+      const detachResult = await this.gridSvc.detachTag(id, tag, type);
+      if (detachResult === false) {
+        throw new Error('Tag removal was rejected');
+      }
+      const teams = isRecord(detachResult) ? detachResult['removed_teams'] : undefined;
+      if (Array.isArray(teams)) {
+        for (const team of teams) {
+          const name = isRecord(team) && typeof team['name'] === 'string' ? team['name'] : '';
+          removedTeamNames.push(name || 'Unnamed team');
+        }
+      }
+    }
+
+    for (const tag of diff.toAdd) {
+      await this.gridSvc.attachTag(id, tag, type);
+    }
+
+    // Bust the cache so the next tag/issue dropdown open re-fetches fresh names
+    if (diff.toAdd.length > 0 || diff.toRemove.length > 0) {
+      void this.dgTagOptionsSvc.invalidate(type);
+    }
+
+    return removedTeamNames;
+  }
+
+  private async refreshTagsFromServer(id: string, fallback: string[], col?: ColDef): Promise<string[]> {
+    try {
+      const type = this.tagTypeFor(col);
+      const refreshed = await this.gridSvc.getTags(id, type);
+      if (Array.isArray(refreshed)) {
+        return [...refreshed];
+      }
+    } catch {
+      // ignore refresh errors; fall back to optimistic state
+    }
+    return fallback;
+  }
+
+  private notifyTagSuccess(successMessage: string | undefined, removedTeamNames: string[], diff: TagDiff) {
+    const hasRemovedTeams = removedTeamNames.length > 0;
+    const message = successMessage ?? this.buildTagSuccessMessage(diff);
+    if (!message && !hasRemovedTeams) return;
+
+    if (message) {
+      if (hasRemovedTeams) {
+        this.alertSvc.showSuccess(`${message}; removed from teams: ${removedTeamNames.join(', ')}`);
+      } else {
+        this.alertSvc.showSuccess(message);
+      }
+      return;
+    }
+
+    this.alertSvc.showSuccess(`Removed from teams: ${removedTeamNames.join(', ')}`);
+  }
+
+  private buildTagSuccessMessage(diff: TagDiff): string | undefined {
+    const additions = diff.toAdd;
+    const removals = diff.toRemove;
+    if (!additions.length && !removals.length) return undefined;
+
+    if (additions.length && !removals.length) {
+      return additions.length === 1 ? `Added tag "${additions[0]}"` : `Added ${additions.length} tags`;
+    }
+
+    if (removals.length && !additions.length) {
+      return removals.length === 1 ? `Removed tag "${removals[0]}"` : `Removed ${removals.length} tags`;
+    }
+
+    const parts: string[] = [];
+    if (additions.length) {
+      parts.push(additions.length === 1 ? `added "${additions[0]}"` : `added ${additions.length} tags`);
+    }
+    if (removals.length) {
+      parts.push(removals.length === 1 ? `removed "${removals[0]}"` : `removed ${removals.length} tags`);
+    }
+    return `Tags updated (${parts.join('; ')})`;
+  }
+
+  protected multiSelectHeight(options: SelectEditorOptions | null): string | null {
+    if (!options?.multiple) return null;
+    const rows = options.size && options.size > 0 ? Math.floor(options.size) : 5;
+    const rowHeightRem = 1.6;
+    const paddingRem = 0.75;
+    return `${rows * rowHeightRem + paddingRem}rem`;
+  }
+
+  protected getTextEditorConfig(col: ColDef): { textarea: boolean; rows: number } {
+    const params = this.resolveEditorParams(col);
+    const multilineFlag = Boolean(params?.['textarea'] ?? params?.['multiline']);
+    const rowsRaw = params?.['rows'] ?? params?.['textareaRows'] ?? params?.['lines'];
+    const rowsNum = Number(rowsRaw);
+    const rows = Number.isFinite(rowsNum) && rowsNum > 0 ? Math.floor(rowsNum) : 5;
+    return { textarea: multilineFlag, rows: multilineFlag ? rows : 1 };
+  }
+
+  public getFilterValue(field: string): string {
+    return this.filtersSvc.getFilterValue(this.filterValues(), field);
+  }
+
+  public getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
+    const currentRows = this.rows();
+    const rowById = new Map<string, GridRow>();
+    for (const row of currentRows) {
+      const id = this.toId(row);
+      if (id) rowById.set(id, row);
+    }
+
+    const toRow = (id: string): GridRow & { id: string } => {
+      const fromPage = rowById.get(id);
+      if (fromPage) {
+        return { ...fromPage, id };
+      }
+      return { id };
+    };
+
+    if (this.allSelected()) {
+      const ids = this.allSelectedIds();
+      return ids.map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
+    }
+    const ids = this.selectedIdSet();
+    return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
+  }
+
+  protected handleCellClick(row: GridRow, col: ColDef, event?: Event) {
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
+    // The door cell (e.g. Name) opens the record, routing through view() so the
+    // filtered record-navigation context (prev/next, "N of M") is captured.
+    if (col.doorColumn) {
+      const id = this.toId(row);
+      if (id) this.openEdit(id);
+      return;
+    }
+    if (typeof col.onCellClicked === 'function') {
+      col.onCellClicked({ data: row, colDef: col, event });
+    }
+  }
+
+  protected handleCellDblClick(row: GridRow, col: ColDef) {
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
+    if (this.isCellEditable(row, col)) {
+      this.startEdit(row, col);
+      return;
+    }
+    if (typeof col.onCellDoubleClicked === 'function') {
+      col.onCellDoubleClicked({ data: row, colDef: col });
+    } else {
+      this.openEditOnDoubleClick(row);
+    }
+  }
+
+  protected hasCellRenderer(col: ColDef): boolean {
+    return !!col.cellRenderer;
+  }
+
+  /** Resolves a column's optional `cellClass` (static string or per-row function) for the cell `<td>`. */
+  protected cellClassFor(col: ColDef, row: GridRow): string {
+    const cc = col.cellClass;
+    if (!cc) return '';
+    return (typeof cc === 'function' ? cc({ data: row, colDef: col }) : cc) ?? '';
+  }
+
+  protected hasValueFormatter(col: ColDef): boolean {
+    return typeof col.valueFormatter === 'function';
+  }
+
+  // headerClick removed; using explicit header API bindings instead
+
+  protected headerGroups(): HeaderGroup<GridRow>[] {
+    return this.tsTable?.getHeaderGroups() ?? [];
+  }
+
+  protected hideAllCols() {
+    const v = { ...this.colVisibility() };
+    for (const c of this.colDefsWithEdit) if (c.field && !c.noHide) v[c.field] = false;
+    this.colVisibility.set(v);
+    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+  }
+  public hideAllColsPublic() {
+    this.hideAllCols();
+  }
+
+  public hideColumn(h: Header<GridRow, unknown>) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    this.toggleCol(id, false);
+    if (typeof h?.column?.toggleVisibility === 'function') h.column.toggleVisibility(false);
+  }
+
+  // Inline filter row helpers for multi-select label
+  public inlineFilterLabel(field: string): string {
+    return this.filtersSvc.inlineFilterLabel(this.filterValues(), field);
+  }
+
+  protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' | 'color' {
+    const t = String(col?.cellDataType || '').toLowerCase();
+    if (t === 'number' || t === 'numeric') return 'number';
+    if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
+    if (t === 'color' || t === 'colour') return 'color';
+    return 'text';
+  }
+
+  /**
+   * Renders a raw cell value, applying the tenant's configured date format to date-typed columns that
+   * don't define their own valueFormatter. Non-date columns are returned unchanged.
+   */
+  protected formatGridCell(col: ColDef, value: unknown): unknown {
+    if (this.inputTypeFor(col) === 'date') {
+      const formatted =
+        typeof value === 'string' || typeof value === 'number' || value instanceof Date || value == null
+          ? this.dateFormatSvc.format(value)
+          : '';
+      return formatted || value;
+    }
+    return value;
+  }
+
+  // Toolbar helpers
+  public canUndo() {
+    return !!this.undoMgr.canUndo();
+  }
+  public canRedo() {
+    return !!this.undoMgr.canRedo();
+  }
+  public undo() {
+    void this.undoMgr.undo();
+  }
+  public redo() {
+    void this.undoMgr.redo();
+  }
+  public showFiltersState() {
+    return this.showFilterPanel() || this.showFilters();
+  }
+  public archiveModeState() {
+    return this.archiveMode();
+  }
+  public hasSelectionState() {
+    return this.hasSelection();
+  }
+  public getColDefsForToolbar() {
+    // Identity columns (noHide) are omitted from the visibility toggle list.
+    return this.colDefsWithEdit.filter((c) => !c.noHide);
+  }
+  public getColVisibilityMap() {
+    return this.colVisibility();
+  }
+
+  protected isColVisible(c: ColDef): boolean {
+    const v = this.colVisibility();
+    if (!c.field) return true;
+    return v[c.field] !== false;
+  }
+
+  // Inline edit helpers
+  protected isEditable(col: ColDef): boolean {
+    return !!col?.editable;
+  }
+
+  public isCellEditable(row: GridRow, col: ColDef): boolean {
+    const override = this.isCellEditableOverride();
+    if (override) {
+      return override(row, col);
+    }
+    if (!this.isEditable(col)) return false;
+    const canSelectFn = this.rowCanSelect();
+    if (canSelectFn && !canSelectFn(row)) return false;
+    return true;
+  }
+
+  protected isCellPointerInteractive(row: GridRow, col: ColDef | undefined): boolean {
+    if (!col) return false;
+    if (col.isCellInteractive && !col.isCellInteractive(row)) return false;
+    if (this.isCellEditable(row, col)) return false;
+    if (typeof col.onCellDoubleClicked === 'function') return true;
+    if (typeof col.onCellClicked === 'function') return true;
+    return !this.disableView();
+  }
+
+  protected isPointerInteractive(col: ColDef | undefined): boolean {
+    if (!col) return false;
+    if (this.isEditable(col)) return false;
+    if (typeof col.onCellDoubleClicked === 'function') return true;
+    if (typeof col.onCellClicked === 'function') return true;
+    return !this.disableView();
+  }
+
+  public isOptionChecked(field: string, option: string): boolean {
+    return this.getFilterArray(field).includes(option);
+  }
+
+  // isPageFullySelected is computed
+  protected isRowChecked(id: string): boolean {
+    return this.allSelected() ? this.allSelectedIdSet().has(id) : this.selectedIdSet().has(id);
+  }
+
+  // Theme no-op (unused)
+
+  // Sorting
+  protected isSortable(col: ColDef): boolean {
+    return !!col.field; // simple toggle; extend as needed
+  }
+
+  // TanStack helpers
+  protected leafHeaders(): Header<GridRow, unknown>[] {
+    // Flat headers correspond to leaf columns
+    return this.tsTable?.getFlatHeaders().filter((h) => h.column.getIsVisible()) ?? [];
+  }
+
+  public leftOffsetPx(colId: string): number {
+    return this.pctrl?.leftOffsetPx(colId) ?? 0;
+  }
+
+  // merge action removed
+
+  // Button-driven next page: replace current data
+  protected async nextPage() {
+    if (!this.canNext()) return;
+    await this.loadPage(this.pageIndex() + 1, false);
+  }
+
+  // First/Last page navigation
+  protected async firstPage() {
+    if (!this.canPrev()) return;
+    await this.loadPage(0, false);
+  }
+  protected async lastPage() {
+    const last = Math.max(0, this.totalPages() - 1);
+    if (this.pageIndex() >= last) return;
+    await this.loadPage(last, false);
+  }
+
+  // Keyboard navigation between cells
+  protected onCellKeydown(ev: KeyboardEvent) {
+    // Ignore key handling when an input/select inside the cell is focused
+    const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase?.() || '';
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    this.kctrl?.handleCellKeydown(ev, {
+      getColDefById: (id) => this.getColDefById(id),
+      isEditable: (col) => this.isEditable(col),
+      startEdit: (row, col) => this.startEdit(row, col),
+      rows: () => this.rows(),
+    });
+  }
+
+  protected onCellMouseOver(row: GridRow) {
+    this.lastRowHovered = this.toId(row) || undefined;
+  }
+
+  // Handle filter input changes
+  protected onFilterInput(field: string, value: unknown) {
+    const next = { ...this.filterValues() };
+    if (value === undefined || value === null || String(value).trim() === '') delete next[field];
+    else next[field] = value;
+    this.filterValues.set(next);
+    void this.loadPage(0);
+  }
+
+  public onHeaderCheckbox(checked: boolean) {
+    if (this.allSelected()) this.allSelected.set(false);
+    this.tsTable?.toggleAllRowsSelected(checked);
+  }
+
+  public onHeaderDragOver(_h: Header<GridRow, unknown>, ev: DragEvent) {
+    this.reorder?.onDragOver(ev);
+  }
+
+  // Column reordering (drag-and-drop)
+  public onHeaderDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
+    this.reorder?.configure({
+      suppressHeaderDrag: () => this.suppressHeaderDrag,
+      requestPersist: () => this.store?.requestPersist(),
+    });
+    this.reorder?.onDragStart(h, ev);
+  }
+
+  public onHeaderDrop(h: Header<GridRow, unknown>, ev: DragEvent) {
+    this.reorder?.onDrop(h, ev, this.tsTable);
+  }
+
+  public onHeaderFilterInput(field: string, value: unknown) {
+    const v = String(value ?? '').trim();
+    const next = { ...this.filterValues() };
+    if (!v) delete next[field];
+    else next[field] = { op: 'contains', value: v };
+    this.filterValues.set(next);
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  // header resize is handled via HeaderResizeDirective
+
+  protected onPanelOpChange(field: string, op: string) {
+    const next = { ...this.panelFilters() };
+    const prev = next[field] || { op: 'contains', value: '' };
+    next[field] = { ...prev, op };
+    this.panelFilters.set(next);
+  }
+
+  protected onPanelValueChange(field: string, value: unknown) {
+    const next = { ...this.panelFilters() };
+    const prev = next[field] || { op: 'contains', value: '' };
+    next[field] = { ...prev, value };
+    this.panelFilters.set(next);
+  }
+
+  protected onRowCheckboxChange(row: Row<GridRow>, checked: boolean) {
+    if (this.allSelected()) {
+      const id = this.toId(row.original);
+      if (!id) return;
+      const canSelectFn = this.rowCanSelect();
+      if (canSelectFn && !canSelectFn(row.original)) {
+        return;
+      }
+      const current = this.allSelectedIdSet();
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      this.allSelectedIdSet.set(next);
+      return;
+    }
+    if (typeof row?.toggleSelected === 'function') {
+      const canSelectFn = this.rowCanSelect();
+      if (canSelectFn && !canSelectFn(row.original)) {
+        return;
+      }
+      row.toggleSelected(checked);
+    }
+  }
+
+  // Virtualization helpers
+  protected onScroll(event: Event) {
+    // No infinite scroll or virtualization-driven paging; ignore scroll.
+    // Keep handler to allow future enhancements.
+    void event;
+  }
+
+  // Prevent drag-reorder when grabbing selection resizer
+  public onSelectionResizeDragStart(ev: DragEvent) {
+    try {
+      ev.preventDefault();
+    } catch {}
+    ev.stopPropagation();
+  }
+
+  // Selection column resize
+  public onSelectionResizeMouseDown(ev: MouseEvent) {
+    ev.stopPropagation();
+    const startW = this.selectionStickyWidth();
+    this.rctrl?.beginSelectionResize(
+      ev.clientX,
+      startW,
+      (w) => {
+        this.selectionStickyWidth.set(w);
+      },
+      () => this.store?.requestPersist(),
+    );
+  }
+
+  public onSelectionResizeTouchStart(ev: TouchEvent) {
+    ev.stopPropagation();
+    const x = ev.touches?.[0]?.clientX ?? 0;
+    const startW = this.selectionStickyWidth();
+    this.rctrl?.beginSelectionResizeTouch(
+      x,
+      startW,
+      (w) => {
+        this.selectionStickyWidth.set(w);
+      },
+      () => this.store?.requestPersist(),
+    );
+  }
+
+  public onToggleFilterOption(field: string, option: string, checked: boolean) {
+    const current = this.getFilterArray(field);
+    let nextArr: string[] = current.slice();
+    if (checked && !nextArr.includes(option)) nextArr.push(option);
+    if (!checked) nextArr = nextArr.filter((o) => o !== option);
+    const next = { ...this.filterValues() };
+    if (nextArr.length === 0) delete next[field];
+    else next[field] = { op: 'in', value: nextArr };
+    this.filterValues.set(next);
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  protected openEdit(id: string) {
+    return this.view(id);
+  }
+
+  public openEditOnDoubleClick(row: GridRow) {
+    this.openEdit(this.toId(row));
+  }
+
+  // Filter panel actions
+  protected panelFields(): string[] {
+    return this.colDefsWithEdit.flatMap((c) => (c.field ? [c.field] : []));
+  }
+
+  protected panelLabelFor(field: string): string {
+    const col = this.colDefsWithEdit.find((c) => c.field === field);
+    return col?.headerName || field;
+  }
+
+  protected panelOptionsFor(field: string): string[] | null {
+    const col = this.colDefsWithEdit.find((c) => c.field === field);
+    if (!col) return null;
+    return this.getFilterOptionsForCol(col);
+  }
+
+  public pinLeft(h: Header<GridRow, unknown>) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, 'left');
+    this.store?.requestPersist();
+  }
+
+  public pinRight(h: Header<GridRow, unknown>) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, 'right');
+    this.store?.requestPersist();
+  }
+
+  // Column pinning helpers
+  public pinState(h: Header<GridRow, unknown> | Cell<GridRow, unknown>): 'left' | 'right' | false {
+    const fn = h?.column?.getIsPinned;
+    return typeof fn === 'function' ? fn.call(h.column) : false;
+  }
+
+  protected async prevPage() {
+    if (!this.canPrev()) return;
+    await this.loadPage(this.pageIndex() - 1);
+  }
+
+  public async refresh(): Promise<void> {
+    await this.loadPage(this.pageIndex());
+  }
+  public async doRefresh() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    try {
+      await this.refresh();
+    } finally {
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  protected resetAllWidths() {
+    this.colWidths.set({});
+    const sizing: Record<string, number> = {};
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+    this.store?.requestPersist();
+  }
+
+  // Resolve row background using DaisyUI tokens for zebra striping
+  protected rowBgForIndex(i: number): string {
+    return i % 2 === 1 ? 'var(--fallback-b2, oklch(var(--b2)))' : 'var(--fallback-b1, oklch(var(--b1)))';
+  }
+  public resetAllWidthsPublic() {
+    this.resetAllWidths();
+  }
+
+  // Build header resize config for directive
+  protected headerResizeConfig(h: Header<GridRow, unknown>) {
+    return {
+      header: h,
+      getColWidth: (id: string) => this.getColWidth(id),
+      setWidth: (col: HeaderRef['column'], id: string, w: number) => {
+        const width = this.clampColumnWidth(id, w);
+        try {
+          if (typeof col?.setSize === 'function') col.setSize(width);
+        } catch {}
+        this.setColWidth(id, width);
+      },
+      requestPersist: () => this.store?.requestPersist(),
+      selectionWidth: () => this.selectionStickyWidth(),
+      setSuppressHeaderDrag: (v: boolean) => {
+        this.suppressHeaderDrag = !!v;
+      },
+    } as const;
+  }
+
+  protected onPageSizeChange(val: string | number) {
+    const n = typeof val === 'number' ? val : parseInt(String(val), 10);
+    const size = isNaN(n) || n <= 0 ? 25 : n;
+    if (size === this.pageSize()) return;
+    this.pageSize.set(size);
+    // loadPage(0) is triggered by effect on pageSize
+  }
+
+  public resetColWidth(h: Header<GridRow, unknown>) {
+    const id = this.getFieldFromHeader(h);
+    if (!id) return;
+    const sizing = { ...(this.tsTable?.getState().columnSizing ?? {}) };
+    if (id in sizing) delete sizing[id];
+    this.colWidths.update((m) => {
+      const next = { ...(m || {}) };
+      delete next[id];
+      return next;
+    });
+    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+  }
+
+  public rightOffsetPx(colId: string): number {
+    return this.pctrl?.rightOffsetPx(colId) ?? 0;
+  }
+
+  protected async selectAllMatching() {
+    try {
+      if (!this.fetchCtrl) return;
+      const { ids, count } = await this.fetchCtrl.selectAllMatching();
+      this.allSelectedIds.set(ids);
+      this.allSelectedIdSet.set(new Set(ids));
+      this.allSelectedCount.set(count);
+      this.allSelected.set(ids.length > 0);
+      this.alertSvc.showInfo(`Selected ${this.allSelectedCount()} row(s)`);
+    } catch {
+      this.alertSvc.showError('Failed to select all rows');
+    }
+  }
+
+  // reapplySelectionToVisible removed (selection handled via signals)
+
+  protected sendAbort() {
+    this.gridSvc.abort();
+  }
+
+  protected setColWidth(id: string, px: number) {
+    const next = { ...this.colWidths() };
+    const width = this.clampColumnWidth(id, px);
+    next[id] = width;
+    this.colWidths.set(next);
+    if (this.tsTable) {
+      try {
+        this.tsTable.setOptions((prev) => {
+          const prevState = prev?.state ?? {};
+          const sizing = { ...(prevState.columnSizing || {}) };
+          sizing[id] = width;
+          return { ...prev, state: { ...prevState, columnSizing: sizing } };
+        });
+      } catch {}
+    }
+    try {
+      this.store?.requestPersist();
+    } catch {}
+    // After width change, recompute sticky offsets
+    this.updateHeaderWidths();
+  }
+
+  private computeHeaderMinWidths(table: HTMLTableElement): Record<string, number> {
+    const map: Record<string, number> = {};
+    const headers = table.querySelectorAll('thead th[data-col-id]');
+    headers.forEach((node) => {
+      const el = node as HTMLElement;
+      const id = (el.dataset?.['colId'] ?? el.getAttribute('data-col-id')) || '';
+      if (!id) return;
+      const width = this.measureHeaderPreferredWidth(el);
+      if (width > 0) map[id] = width;
+    });
+    return map;
+  }
+
+  private measureHeaderPreferredWidth(headerEl: HTMLElement): number {
+    const doc = headerEl.ownerDocument;
+    if (!doc) return 0;
+    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
+    if (!content) {
+      const rect = headerEl.getBoundingClientRect();
+      return Math.max(0, Math.ceil(rect.width));
+    }
+    const clone = content.cloneNode(true) as HTMLElement;
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.flex = '0 0 auto';
+    clone.style.whiteSpace = 'nowrap';
+    clone.style.width = 'auto';
+    clone.style.height = 'auto';
+    clone.style.maxWidth = 'unset';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
+    if (labelClone) {
+      labelClone.style.flex = '0 0 auto';
+      labelClone.style.whiteSpace = 'nowrap';
+    }
+    doc.body.appendChild(clone);
+    const contentWidth = clone.getBoundingClientRect().width;
+    clone.remove();
+    if (contentWidth <= 0) return 0;
+    const view = doc.defaultView;
+    const style = view ? view.getComputedStyle(headerEl) : null;
+    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
+    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
+    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
+    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
+    const total = contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + this.headerAutoSizeBufferPx;
+    return Math.max(0, Math.ceil(total));
+  }
+
+  private enforceWidthMinimums(mins: Record<string, number>) {
+    for (const [id, min] of Object.entries(mins)) {
+      const current = this.colWidths()[id];
+      if (typeof current === 'number' && current > 0 && current < min) {
+        this.setColWidth(id, min);
+      }
+    }
+  }
+
+  // Column visibility bulk actions
+  protected showAllCols() {
+    const v = { ...this.colVisibility() };
+    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = true;
+    this.colVisibility.set(v);
+    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+  }
+  public showAllColsPublic() {
+    this.showAllCols();
+  }
+
+  public showColumnById(id: string) {
+    this.toggleCol(id, true);
+    const col = this.tsTable?.getColumn?.(id);
+    if (col?.toggleVisibility) col.toggleVisibility(true);
+  }
+
+  // Header menu actions
+  public sortAsc(h: Header<GridRow, unknown>) {
+    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (isSorted !== 'asc') {
+      const fn = h?.column?.toggleSorting;
+      if (typeof fn === 'function') fn.call(h.column, false, false);
+    }
+  }
+
+  public sortDesc(h: Header<GridRow, unknown>) {
+    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (isSorted !== 'desc') {
+      const fn = h?.column?.toggleSorting;
+      if (typeof fn === 'function') fn.call(h.column, true, false);
+    }
+  }
+
+  public sortIndicatorForHeader(h: Header<GridRow, unknown>): PcIconNameType {
+    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
+    if (s === 'asc') return 'chevron-up';
+    if (s === 'desc') return 'chevron-down';
+    return 'none';
+  }
+
+  protected startEdit(row: GridRow, col: ColDef) {
+    if (!this.isCellEditable(row, col) || !col.field) return;
+    const id = this.toId(row);
+    if (!id) return;
+    this.editingCell.set({ id, field: col.field });
+    const value = this.getEditingDisplayValue(row, col);
+    this.editingValue.set(Array.isArray(value) ? [...value] : value);
+  }
+
+  public startIndex(): number {
+    return 0;
+  }
+
+  // Row selection helpers (TanStack-driven)
+  public tableAllPageSelected(): boolean {
+    const rows = this.rows();
+    if (!rows.length) return false;
+    const canSelectFn = this.rowCanSelect();
+    const ids = this.selectedIdSet();
+    let selectableCount = 0;
+    let selectedSelectableCount = 0;
+    for (const r of rows) {
+      const id = this.toId(r);
+      if (!id) continue;
+      if (canSelectFn && !canSelectFn(r)) {
+        continue;
+      }
+      selectableCount++;
+      if (ids.has(id)) {
+        selectedSelectableCount++;
+      }
+    }
+    return selectableCount > 0 && selectedSelectableCount === selectableCount;
+  }
+
+  public tableSomePageSelected(): boolean {
+    if (this.tableAllPageSelected()) return false;
+    const rows = this.rows();
+    const canSelectFn = this.rowCanSelect();
+    const ids = this.selectedIdSet();
+    for (const r of rows) {
+      const id = this.toId(r);
+      if (!id) continue;
+      if (canSelectFn && !canSelectFn(r)) {
+        continue;
+      }
+      if (ids.has(id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public toId(row: unknown): string {
+    const id = isRecord(row) ? row['id'] : undefined;
+    return id == null ? '' : String(id);
+  }
+
+  protected toggleArchiveMode() {
+    this.archiveMode.set(!this.archiveMode());
+    // Clear any prior selection context when switching datasets
+    this.clearAllSelection();
+    // Reload first page
+    void this.loadPage(0);
+  }
+  public toggleArchiveModePublic() {
+    this.toggleArchiveMode();
+  }
+
+  protected toggleCol(field: string, checked: boolean) {
+    // Identity columns (noHide) can never be hidden.
+    if (!checked && this.colDefsWithEdit.some((c) => c.field === field && c.noHide)) return;
+    const v = { ...this.colVisibility() };
+    v[field] = checked;
+    this.colVisibility.set(v);
+    if (this.tsTable) {
+      this.tsTable.setOptions((prev) => ({
+        ...prev,
+        state: { ...prev.state, columnVisibility: v },
+      }));
+    }
+    this.store?.requestPersist();
+  }
+  public toggleColPublic(field: string, checked: boolean) {
+    this.toggleCol(field, checked);
+  }
+
+  public toggleHeaderSort(h: Header<GridRow, unknown>, ev?: MouseEvent) {
+    const fn = h?.column?.toggleSorting;
+    if (typeof fn === 'function') fn.call(h.column, undefined, !!ev?.shiftKey);
+  }
+
+  protected togglePageChecked(checked: boolean) {
+    if (this.allSelected()) this.allSelected.set(false);
+    const nextSet = this.selSvc.togglePageSelectionSet(this.selectedIdSet(), this.rows(), checked);
+    this.selectedIdSet.set(nextSet);
+  }
+
+  protected toggleRowChecked(id: string, checked: boolean) {
+    if (this.allSelected()) {
+      const current = this.allSelectedIdSet();
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      this.allSelectedIdSet.set(next);
+    } else {
+      const set = new Set(this.selectedIdSet());
+      if (checked) set.add(id);
+      else set.delete(id);
+      this.selectedIdSet.set(set);
+    }
+  }
+
+  // topPadHeight not used without virtualizer
+
+  // Pagination
+  // totalPages is computed
+  public unpin(h: Header<GridRow, unknown>) {
+    const pin = h?.column?.pin;
+    if (typeof pin === 'function') pin.call(h.column, false);
+    this.store?.requestPersist();
+  }
+
+  // visibleCount not used without virtualizer
+
+  protected visibleTableRows(): Row<GridRow>[] {
+    return this.tsTable?.getRowModel().rows ?? [];
+  }
+
+  // Build TanStack rowSelection snapshot for current data from our global selected set
+  private buildRowSelectionForCurrentData(): Record<string, boolean> {
+    const ids = this.selectedIdSet();
+    const map: Record<string, boolean> = {};
+    for (const r of this.rows()) {
+      const id = this.toId(r);
+      if (id && ids.has(id)) map[id] = true;
+    }
+    return map;
+  }
+
+  private coerceEditingValue(col: ColDef, raw: unknown): unknown {
+    const editorCfg = this.selectEditorOptions(col);
+    let val = raw;
+    if (editorCfg && !editorCfg.multiple && Array.isArray(raw)) {
+      val = raw[0];
+    }
+    const t = this.inputTypeFor(col);
+    if (t === 'number') {
+      const n = typeof val === 'number' ? val : parseFloat(String(val ?? '').trim());
+      return isNaN(n) ? null : n;
+    }
+    if (t === 'date') {
+      const v = String(val ?? '').trim();
+      // normalize to YYYY-MM-DD if possible
+      return v.length > 10 ? v.slice(0, 10) : v;
+    }
+    if (t === 'color') {
+      const v = String(val ?? '').trim();
+      const pattern = /^#([0-9a-fA-F]{6})$/;
+      return pattern.test(v) ? v.toLowerCase() : null;
+    }
+    return val;
+  }
+
+  private resolveEditorParams(col: ColDef): Record<string, unknown> | null {
+    const cep: unknown = col?.cellEditorParams;
+    if (!cep) return null;
+    try {
+      const resolved: unknown = typeof cep === 'function' ? cep() : cep;
+      return isRecord(resolved) ? resolved : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // selection resize handled by ResizingController
+
+  private async loadPage(index: number, append = false) {
+    if (!this.fetchCtrl) return;
+    await this.fetchCtrl.loadPage(index, append);
+  }
+
+  private async queueFullExport(): Promise<void> {
+    // Pass a very high endRow so the backend fetches all rows without a limit
+    const options = this.dataSvc.buildGetAllOptions({
+      searchStr: this.searchSvc.getFilterText(),
+      startRow: 0,
+      endRow: 10_000_000,
+      tags: this.selectedTags(),
+      issues: this.selectedIssues(),
+      filterModel: this.buildFilterModel(),
+      sortState: this.sorting(),
+      sortCol: this.sortCol(),
+      sortDir: this.sortDir(),
+      includeArchived: this.archiveMode(),
+      advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
+      listId: this.activeListId(),
+    });
+    await this.gridSvc.queueExport({
+      entity: (this.config.messages.exportEntity ||
+        this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
+      options,
+      columns: this.visibleColumnFields(),
+      fileName: this.config.messages.exportFileName,
+    });
+  }
+
+  /** Records a direct browser-download export in Exports history so it's consistently listed
+   * alongside queued exports — see pplcrm-datagrid. Fire-and-forget: never blocks or fails the
+   * download the user already has. */
+  private logInstantExport(rowCount: number): void {
+    void this.gridSvc
+      .logInstantExport({
+        entity: (this.config.messages.exportEntity ||
+          this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
+        fileName: this.config.messages.exportFileName,
+        rowCount,
+      })
+      .catch(() => {
+        // Best-effort logging only — the user already has their file.
+      });
+  }
+
+  private visibleColumnFields(): string[] {
+    const visibility = this.colVisibility();
+    return this.colDefsWithEdit
+      .map((col) => (typeof col.field === 'string' ? col.field : null))
+      .filter((field): field is string => !!field && visibility[field] !== false);
+  }
+
+  // Persistence handled by GridStoreService
+
+  // header resize handled by ResizingController
+
+  // onCellValueChanged handled by EditingController
+
+  // saveState removed (consolidated into GridStoreService)
+
+  // shouldBlockEdit handled by EditingController
+
+  private syncSignalsFromTable() {
+    const st = this.tsTable?.getState();
+    if (st?.sorting) this.sorting.set(st.sorting);
+    if (st?.columnVisibility) this.colVisibility.set(st.columnVisibility);
+    // Notify pin-state change so controller effect recomputes offsets
+    this.pctrl?.notifyPinStateChanged();
+    this.store?.requestPersist();
+  }
+
+  public triggerCellFlash(rowId: string, field: string): void {
+    const key = `${rowId}:${field}`;
+    this.flashedCells.update((s) => {
+      const n = new Set(s);
+      n.add(key);
+      return n;
+    });
+    setTimeout(() => {
+      this.flashedCells.update((s) => {
+        const n = new Set(s);
+        n.delete(key);
+        return n;
+      });
+    }, 1300);
+  }
+
+  public updateEditedRowInCaches(id: string, field: string | undefined, value: unknown, prevValue?: unknown) {
+    if (!field) return;
+    if (this.store) {
+      const targetRow = this.rows().find((r) => String(this.toId(r)) === id);
+      const prev = prevValue !== undefined ? prevValue : targetRow ? targetRow[field] : undefined;
+      this.store.recordSnapshotBeforeCommit(id, field, prev, value);
+    }
+    // Update visible rows array
+    this.rows.update((curr) => curr.map((r) => (this.toId(r) === id ? { ...r, [field]: value } : r)));
+    // Trigger green flash on the updated cell
+    this.triggerCellFlash(id, field);
+  }
+
+  // pin offsets handled by PinningController
+
+  // Update table data with current visible window
+  public updateTableWindow(start: number, end: number) {
+    this.tableSvc.updateTableWindow(
+      this.tsTable,
+      this.rows(),
+      start,
+      end,
+      this.buildRowSelectionForCurrentData(),
+      this.sortCol(),
+      this.sortDir(),
+    );
+  }
+
+  private view(id?: string) {
+    const targetId = id || this.lastRowHovered;
+    if (!targetId || this.disableView()) return;
+
+    const vr = this.viewRoute();
+    if (vr) {
+      this.captureRecordNavContext(vr);
+      if (vr.startsWith('/')) {
+        void this.router.navigate([vr, targetId]);
+      } else {
+        void this.router.navigate([vr, targetId], { relativeTo: this.route });
+      }
+    } else {
+      this.captureRecordNavContext(this.currentListPath());
+      void this.navSvc.viewIfAllowed({
+        id: targetId,
+        lastRowHovered: this.lastRowHovered,
+        disableView: this.disableView(),
+        navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
+      });
+    }
+  }
+
+  /** The grid's own list route, stripped of query/fragment (e.g. "/teams") - used as the record-nav entity key when no explicit viewRoute is set. */
+  private currentListPath(): string {
+    const [pathAndQuery] = this.router.url.split('#');
+    const [path] = (pathAndQuery ?? this.router.url).split('?');
+    return path ?? this.router.url;
+  }
+
+  /** Hands the currently filtered id set to the detail page so it can walk "N of M filtered" with J/K. */
+  private captureRecordNavContext(entityKey: string): void {
+    this.fetchCtrl
+      .selectAllMatching()
+      .then(({ ids, count }) => this.recordNav.setContext(entityKey, ids, count))
+      .catch(() => void 0);
+  }
+}
+
+type RowOf<K extends keyof Models> = Models[K];
+type TagDiff = {
+  toAdd: string[];
+  toRemove: string[];
+  hasChanges: boolean;
+};
+
+/** Narrow an unknown value to a property-indexable record. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/dashboard.routes.ts
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+    // `breadcrumb` feeds BreadcrumbDefaultsService: every route publishes a navbar
+    // trail on NavigationEnd, so no page ever shows an empty or stale strip.
+    data: { breadcrumb: 'Dashboard' },
+  },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'people',
+    data: { breadcrumb: 'People' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New person' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    data: { breadcrumb: 'Households' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New household' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    data: { breadcrumb: 'Duplicates' },
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+        data: { breadcrumb: 'People' },
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+        data: { breadcrumb: 'Households' },
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+        data: { breadcrumb: 'Companies' },
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+    data: { shouldReuse: true, key: 'tagsadminroot', breadcrumb: 'Tags' },
+  },
+
+  {
+    path: 'issues',
+    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+    data: { shouldReuse: true, key: 'issuesadminroot', breadcrumb: 'Issues' },
+  },
+
+  {
+    path: 'lists',
+    data: { breadcrumb: 'Lists' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new', breadcrumb: 'New list' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit', breadcrumb: 'Edit list' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    data: { breadcrumb: 'Newsletters' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New newsletter' },
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'automations',
+    data: { breadcrumb: 'Automations' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+        data: { breadcrumb: 'New automation' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    data: { breadcrumb: 'Donations' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot', breadcrumb: 'Monthly pledges' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+    data: { breadcrumb: 'Inbox' },
+  },
+  {
+    path: 'tasks',
+    data: { breadcrumb: 'Tasks' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
+        data: { shouldReuse: true, key: 'taskslistroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+        data: { breadcrumb: 'New task' },
+      },
+      // Must precede ':id' — otherwise the wildcard param route would swallow it.
+      {
+        path: 'board',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+        data: { shouldReuse: true, key: 'tasksboardroot', breadcrumb: 'Board' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
+  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+
+  {
+    path: 'canvassing',
+    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
+    data: { breadcrumb: 'Canvassing' },
+  },
+
+  {
+    path: 'campaigns',
+    data: { breadcrumb: 'Campaigns' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'new', breadcrumb: 'New campaign' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'teams',
+    data: { breadcrumb: 'Teams' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new', breadcrumb: 'New team' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'deliveries',
+    data: { breadcrumb: 'Deliveries' },
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
+        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
+      },
+      {
+        path: 'plan',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
+        data: { breadcrumb: 'Plan routes' },
+      },
+      {
+        path: 'routes',
+        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
+        data: { breadcrumb: 'Routes' },
+      },
+      {
+        path: 'routes/:id',
+        loadComponent: () =>
+          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
+        // Default until the page loads and publishes the route's name itself.
+        data: { breadcrumb: [{ label: 'Routes', route: '/deliveries/routes' }] },
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    data: { breadcrumb: 'Users' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        // View and edit merged into one page (approved 2026-07-10 design) — the
+        // unsaved-changes guard now protects the view, and old edit links redirect.
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      { path: ':id/edit', redirectTo: ':id' },
+    ],
+  },
+  {
+    // Companion access approvals: volunteers who verified their contact and
+    // are waiting for an admin to unlock their turf/route link.
+    path: 'volunteer-access',
+    canActivate: [roleGuard],
+    loadComponent: () =>
+      import('./experiences/volunteer-access/ui/volunteer-access-page').then((m) => m.VolunteerAccessPage),
+    data: { breadcrumb: 'Volunteer access' },
+  },
+  {
+    path: 'forms',
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        // Flat route that conceptually nests under Donations — pre-built trail.
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'New donation page' }] },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donations' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'Edit donation page' }] },
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    data: { breadcrumb: 'Settings' },
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'workspace',
+    canActivate: [roleGuard],
+    data: { breadcrumb: 'Workspace' },
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'workspace' },
+      },
+    ],
+  },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
+  {
+    path: 'billing',
+    redirectTo: '/workspace/billing',
+    pathMatch: 'full',
+  },
+  // Back-compat: Files moved into Workspace settings → Storage.
+  {
+    path: 'files',
+    redirectTo: '/workspace/storage',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+    data: { breadcrumb: 'Profile' },
+  },
+  {
+    path: 'imports/new',
+    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+    // Flat route that conceptually nests under the Imports tab of the history page.
+    data: { breadcrumb: [{ label: 'Imports', route: '/imports' }, { label: 'New import' }] },
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+    // Default matches the page's initial tab — the page publishes the tab-aware
+    // crumb ("Imports"/"Exports") itself on every tab switch.
+    data: { breadcrumb: 'Imports' },
+  },
+  {
+    // Wave 1E (spec §17): Exports folded into the Import/export History page's
+    // Exports tab — redirect the old standalone route rather than 404 stale links.
+    path: 'exports',
+    redirectTo: '/imports',
+    pathMatch: 'full',
+  },
+  {
+    path: 'companies',
+    data: { breadcrumb: 'Companies' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        data: { breadcrumb: 'New company' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+    data: { breadcrumb: 'Activity' },
+  },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
+  {
+    path: 'help',
+    data: { breadcrumb: 'Help' },
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/website/src/app/pricing/pricing-page.ts
 ```typescript
 import { Component, computed, signal } from '@angular/core';
@@ -57272,9 +61084,11 @@ import { SiteHeader } from '../ui/site-header';
 import { SIGNUP_URL } from '../ui/site-nav';
 
 /** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
-const SLIDER_STOPS: readonly number[] = [1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 100_000, 200_000];
+const SLIDER_STOPS: readonly number[] = [
+  1_000, 2_500, 5_000, 10_000, 15_000, 20_000, 25_000, 50_000, 75_000, 100_000, 200_000,
+];
 
-/** Default slider position: 2,500 subscribers (Grassroots' first bracket). */
+/** Default slider position: 2,500 subscribers (the first count past the Free tier's 1,000 cap). */
 const DEFAULT_STOP_INDEX = 1;
 const DEFAULT_STOP = 2_500;
 
@@ -57310,19 +61124,19 @@ export class PricingPage {
     }
   }
 
-  /** Live price at the slider's subscriber count, with a thousands separator ($1,275). */
+  /** Live price at the slider's subscriber count, with a thousands separator ($1,275 style). */
   protected priceLabel(plan: PlanDef): string {
     const label = priceLabelAt(plan, this.subscribers());
     const amount = /^\$(\d+)$/.exec(label)?.[1];
     return amount == null ? label : `$${Number(amount).toLocaleString('en-US')}`;
   }
 
-  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 50,000). */
+  /** The slider sits past this tier's largest bracket (Free above 1,000; Grassroots above 100,000). */
   protected overMax(plan: PlanDef): boolean {
     return priceLabelAt(plan, this.subscribers()) === 'Contact us';
   }
 
-  /** The tier's hard subscriber max, formatted (e.g. "50,000"). */
+  /** The tier's hard subscriber max, formatted (e.g. "100,000"). */
   protected maxSubscribersLabel(plan: PlanDef): string {
     const brackets = plan.pricing?.brackets;
     const last = brackets?.[brackets.length - 1];
@@ -58599,235 +62413,189 @@ export class CanvassingPage implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-plan.html
 ```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
-  <div class="flex flex-wrap items-center justify-end gap-3">
-    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-    <h1 class="sr-only">Delivery requests</h1>
-    <pc-deliveries-nav class="mr-auto" />
-    <div class="flex items-center gap-2">
-      <span
-        class="tooltip-left"
-        [class.tooltip]="readyCount() === 0"
-        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+<div class="mx-auto flex w-full max-w-[820px] flex-col gap-5 p-4 pb-24">
+  <!-- Trail (Deliveries / Plan routes) renders in the navbar; keep an accessible heading only. -->
+  <div>
+    <h1 class="sr-only">Plan delivery routes</h1>
+    <p class="text-xs text-base-content/60">
+      Preview groups approved, located requests into about-an-hour routes.
+      <span class="font-medium">Preview doesn't save anything.</span>
+    </p>
+  </div>
+
+  <!-- Setup card -->
+  <div class="flex flex-col gap-4 pc-panel p-5">
+    <label class="flex flex-col gap-1.5">
+      <span class="text-sm font-medium text-base-content">Start address</span>
+      <pc-address-autocomplete
+        placeholder="Where drivers set off from"
+        [value]="startAddress()"
+        (textChange)="startAddress.set($event)"
+      ></pc-address-autocomplete>
+      @if (preview()?.start?.address) {
+      <span class="mt-1 w-fit"
+        ><pc-status-badge type="success">Located · {{ preview()!.start.address }}</pc-status-badge></span
       >
-        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
-          <pc-icon name="map-pin" [size]="4"></pc-icon>
-          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-        </button>
-      </span>
+      }
+    </label>
+
+    <label class="flex flex-col gap-1.5">
+      <span class="text-sm font-medium text-base-content">Volunteers available</span>
+      <input
+        class="input input-bordered w-40 text-sm"
+        type="number"
+        min="1"
+        placeholder="As many as needed"
+        [value]="drivers() ?? ''"
+        (input)="onDriversInput($event)"
+      />
+    </label>
+
+    <div class="collapse-arrow collapse rounded-lg border border-base-300 bg-base-200/40">
+      <input type="checkbox" [checked]="advancedOpen()" (change)="advancedOpen.set(!advancedOpen())" />
+      <div class="collapse-title text-sm font-medium">
+        Advanced
+        <span class="ml-1 text-xs text-base-content/50">
+          {{ serviceMinutes() }} min per stop · {{ avgSpeed() }} km/h · {{ includeReturn() ? 'return trip on' : 'no
+          return trip' }}
+        </span>
+      </div>
+      <div class="collapse-content flex flex-col gap-3">
+        <label class="flex items-center justify-between text-sm">
+          Minutes per stop
+          <input
+            class="input input-bordered input-sm w-24"
+            type="number"
+            min="0"
+            [value]="serviceMinutes()"
+            (input)="onServiceMinutesInput($event)"
+          />
+        </label>
+        <label class="flex items-center justify-between text-sm">
+          Average speed (km/h)
+          <input
+            class="input input-bordered input-sm w-24"
+            type="number"
+            min="1"
+            [value]="avgSpeed()"
+            (input)="onAvgSpeedInput($event)"
+          />
+        </label>
+        <label class="flex items-center justify-between text-sm">
+          Return to start
+          <input
+            type="checkbox"
+            class="toggle toggle-sm"
+            [checked]="includeReturn()"
+            (change)="includeReturn.set(!includeReturn())"
+          />
+        </label>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="loading.visible()" (click)="runPreview()">
+        @if (loading.visible()) { <span class="loading loading-spinner loading-xs"></span> } Preview routes
+      </button>
+      <span class="text-xs text-base-content/50">Nothing is saved until you create routes.</span>
     </div>
   </div>
 
-  <!-- Tabs with live counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
-
-  <!-- Bulk selection bar -->
-  @if (selectedCount() > 0) {
-  <div
-    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
-  >
-    <span class="text-sm text-base-content/70">
-      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
-      of {{ rows().length }} rows on this page selected
-    </span>
-    @if (newInView() > selectedCount()) {
-    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
-      Select all {{ newInView() }} new
-    </button>
+  <!-- Results -->
+  @if (preview(); as p) {
+  <!-- Eligibility narration -->
+  <div class="rounded-xl border border-info/30 bg-info/[0.09] px-4 py-3 text-sm">
+    <p class="font-medium text-base-content">
+      Previewing <span class="tabular-nums">{{ p.eligible_count }}</span> approved, located request{{ p.eligible_count
+      === 1 ? '' : 's' }}.
+    </p>
+    @if (p.ineligible.awaiting_geocode + p.ineligible.geocode_failed + p.ineligible.not_approved > 0) {
+    <p class="mt-1 text-base-content/70">
+      Not routed yet: @if (p.ineligible.awaiting_geocode > 0) {
+      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
+        >{{ p.ineligible.awaiting_geocode }} waiting for location</a
+      >
+      · } @if (p.ineligible.geocode_failed > 0) {
+      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
+        >{{ p.ineligible.geocode_failed }} address problem</a
+      >
+      · } @if (p.ineligible.not_approved > 0) {
+      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
+        >{{ p.ineligible.not_approved }} not approved</a
+      >
+      }
+    </p>
+    } @if (p.cap_applied) {
+    <p class="mt-1 text-base-content/70">Only the first requests were planned; re-plan to continue with the rest.</p>
     }
-    <div class="ml-auto flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
-        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
-        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
+  </div>
+
+  @if (p.routes.length === 0) {
+  <div class="flex flex-col items-center gap-3 rounded-xl border border-base-300 px-6 py-12 text-center">
+    <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
+    <p class="text-sm text-base-content/60">Nothing to route yet. Approve some located requests, then preview again.</p>
+    <a class="btn btn-primary btn-sm" routerLink="/deliveries">Back to requests</a>
   </div>
   }
 
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="8">
-    <ng-container pcTableHead>
-      <th class="w-8"></th>
-      <th>Requested by</th>
-      <th>Address</th>
-      <th>Status</th>
-      <th>Readiness</th>
-      <th>Source</th>
-      <th>Route</th>
-      <th>Requested</th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="8" class="px-6">
-        @if (readyCount() > 0) {
-        <pc-empty-state icon="map-pin" [bordered]="false" title="No delivery requests in this view yet">
-          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-          </button>
-        </pc-empty-state>
-        } @else {
-        <pc-empty-state
-          icon="map-pin"
-          [bordered]="false"
-          title="No delivery requests in this view yet"
-          hint="Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes."
-        />
-        }
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
-          [checked]="isSelected(row.id)"
-          (change)="toggle(row.id)"
-          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
-        />
-      </td>
-      <td>
-        @if (row.person_id) {
-        <a
-          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/people', row.person_id]"
+  <!-- Proposal cards -->
+  @for (route of p.routes; track route.index) {
+  <div class="flex flex-col gap-2 pc-panel p-4">
+    <div class="flex items-baseline justify-between">
+      <p class="pc-eyebrow">Route {{ route.index }}</p>
+      <p class="text-sm font-medium tabular-nums text-base-content/70">
+        {{ route.stops.length }} stops · {{ route.total_minutes }} min · {{ route.total_km }} km
+      </p>
+    </div>
+    <ol class="flex flex-col divide-y divide-base-200">
+      @for (stop of route.stops; track stop.request_id) {
+      <li class="flex items-center gap-3 py-1.5">
+        <span
+          class="flex size-6 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
+          >{{ stop.seq }}</span
         >
-          {{ row.person_name || 'Unnamed person' }}
-        </a>
-        } @else {
-        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
-        }
-      </td>
-      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
-      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
-      <td>
-        <div class="flex items-center gap-2">
-          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
-          @if (row.geocoding_status === 'failed') {
-          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
-            Edit household
-          </a>
-          }
-        </div>
-      </td>
-      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
-      <td>
-        @if (row.route_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
-          {{ row.route_name || 'Route' }}
-        </a>
-        } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
-  <div class="flex flex-wrap items-center justify-end gap-3">
-    <h1 class="sr-only">Routes</h1>
-    <pc-deliveries-nav class="mr-auto" />
-    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
-      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
-    </a>
+        <span class="flex-1 truncate text-sm">
+          <span class="font-medium">{{ stop.name || 'Neighbour' }}</span>
+          <span class="text-base-content/50"> · {{ stop.address }}</span>
+        </span>
+        <span class="text-xs tabular-nums text-base-content/50">+{{ stop.leg_minutes }} min</span>
+      </li>
+      }
+    </ol>
   </div>
+  }
 
-  <pc-table [loading]="loading.visible()" [columns]="8">
-    <ng-container pcTableHead>
-      <th>Name</th>
-      <th>Status</th>
-      <th>Stops</th>
-      <th>Est. time</th>
-      <th>Volunteer</th>
-      <th>Scheduled</th>
-      <th>Created</th>
-      <th></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="8" class="px-6">
-        <pc-empty-state
-          icon="map-pin"
-          [bordered]="false"
-          title="No routes yet"
-          hint="Approve requests, then plan routes."
-        >
-          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-        </pc-empty-state>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <a
-          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/deliveries/routes', row.id]"
-        >
-          {{ row.name }}
-        </a>
-      </td>
-      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
-      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-      <td>
-        @if (row.volunteer_person_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
-          >{{ row.volunteer_name || 'Volunteer' }}</a
-        >
-        } @else {
-        <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="openAssign(row)">Assign</button>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-      <td class="text-right">
-        <div class="dropdown dropdown-end">
-          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
-            <pc-icon name="ellipsis-vertical" [size]="4" />
-          </button>
-          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
-            @if (row.volunteer_person_id) {
-            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
-            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
-            } @else {
-            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
-            } @if (canCancel(row.status)) {
-            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
-            } @if (canDelete(row.status)) {
-            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
-            }
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-  </pc-table>
-
-  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
+  <!-- Leftovers -->
+  @if (p.unroutable.length > 0) {
+  <div class="flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/[0.08] p-4">
+    <p class="text-sm font-semibold text-base-content">Couldn't fit ({{ p.unroutable.length }})</p>
+    @for (u of p.unroutable; track u.request_id) {
+    <div class="flex items-center justify-between gap-3 text-sm">
+      <span class="truncate text-base-content/70">{{ u.address }}</span>
+      <span class="shrink-0 text-xs text-base-content/60">{{ u.reason_text }}</span>
+    </div>
+    }
+    <p class="mt-1 text-xs text-base-content/60">
+      These stay approved. Deliver them manually, or re-plan another batch.
+    </p>
+  </div>
+  } }
 </div>
+
+<!-- Sticky commit footer -->
+@if (preview()?.routes?.length) {
+<div class="fixed inset-x-0 bottom-0 border-t border-base-300 bg-base-100/95 backdrop-blur">
+  <div class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 py-3">
+    <button type="button" class="btn btn-ghost btn-sm" (click)="startOver()">Start over</button>
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="committing()" (click)="commit()">
+      @if (committing()) { <span class="loading loading-spinner loading-xs"></span> } Create {{ routeCount() }} route{{
+      routeCount() === 1 ? '' : 's' }}
+    </button>
+  </div>
+</div>
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/event-view.html
@@ -62884,568 +66652,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
-    <div class="space-y-1">
-      <p class="pc-eyebrow">
-        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
-      </p>
-      <h1 class="text-xl font-bold tracking-tight">
-        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
-      </h1>
-      <p class="text-xs text-base-content/60">
-        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
-        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
-      </p>
-    </div>
-
-    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
-    @if (hasLoaded() && headerSection(); as section) {
-    <div class="flex shrink-0 items-center gap-2">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="resetSection(section)"
-        [disabled]="!isSectionDirty(section) || isSaving(section)"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        (click)="saveSection(section)"
-        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-      >
-        @if (isSaving(section)) {
-        <span class="loading loading-spinner loading-xs"></span>
-        } Save settings
-      </button>
-    </div>
-    }
-  </header>
-
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
-    <!-- Sidebar Navigation -->
-    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
-      <nav
-        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
-        aria-label="Settings sections"
-      >
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(section.config.id)"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            [class.text-primary]="isSelected(section.config.id)"
-            [class.opacity-70]="!isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        }
-        <!-- Custom self-saving sections (config array in settings-page.ts) -->
-        @for (custom of visibleCustomSections; track custom.id) {
-        <button
-          [id]="'settings-nav-' + custom.id"
-          type="button"
-          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
-          [class]="navClass(custom.id)"
-          (click)="selectSection(custom.id)"
-        >
-          <pc-icon
-            [name]="custom.icon"
-            [class.text-primary]="isSelected(custom.id)"
-            [class.opacity-70]="!isSelected(custom.id)"
-            [size]="5"
-          />
-          {{ custom.title }}
-        </button>
-        }
-      </nav>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
-          @if (section.config.id === 'sla') {
-          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
-          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
-            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
-            <p class="text-xs leading-relaxed text-base-content/80">
-              Saving new service levels re-evaluates every currently open email and task against the updated targets.
-              Some may immediately count as breached (or clear) on the dashboard.
-            </p>
-          </div>
-          } @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate credentials
-              </button>
-            </div>
-          </div>
-          }
-
-          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
-              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-xs font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('day-toggles') {
-              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
-                @for (day of dayChips; track day.value) {
-                <button
-                  type="button"
-                  class="btn btn-sm min-w-12 font-medium"
-                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
-                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
-                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
-                  (click)="toggleDay(section, field.controlName, day.value)"
-                >
-                  {{ day.label }}
-                </button>
-                }
-              </div>
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline btn-secondary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } } @if (field.config.helper) {
-              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput())"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="pc-eyebrow">Verified sender emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <pc-empty-state
-                icon="envelope"
-                [bordered]="false"
-                title="No verified sender emails yet"
-                hint="Add an email above to request verification."
-              />
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                  <pc-icon name="check-circle" [size]="4"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
-            <div class="space-y-3 border-t border-base-200 pt-6">
-              <div class="space-y-1">
-                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
-                <p class="text-xs text-base-content/50">
-                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
-                  off the shared sending pool your newsletters depend on.
-                </p>
-              </div>
-
-              @if (phoneStatus()?.verified) {
-              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
-                <pc-icon name="check-circle" [size]="4"></pc-icon>
-                {{ phoneStatus()?.phone }} verified
-              </span>
-              } @else {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="tel"
-                    placeholder="+1 555 123 4567"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneInput()"
-                    (input)="phoneInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="requestPhoneCode()"
-                  [disabled]="phoneBusy() || !phoneInput().trim()"
-                >
-                  @if (phoneBusy() && !phoneCodeSentTo()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Send code }
-                </button>
-              </div>
-
-              @if (phoneCodeSentTo()) {
-              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-                <div class="flex-1">
-                  <input
-                    type="text"
-                    inputmode="numeric"
-                    maxlength="6"
-                    placeholder="6-digit code"
-                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
-                    [value]="phoneCodeInput()"
-                    (input)="phoneCodeInput.set($any($event.target).value)"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-primary"
-                  (click)="confirmPhoneCode()"
-                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
-                >
-                  @if (phoneBusy()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else { Verify }
-                </button>
-              </div>
-              <p class="text-xs text-base-content/50">
-                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
-              </p>
-              } }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-5">
-            <div class="border-b border-base-200 pb-3 space-y-1">
-              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
-              <p class="text-xs text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="pc-table-shell">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th>Notification type</th>
-                    <th class="text-center w-36">Email</th>
-                    <th class="text-center w-36">In-app alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
-          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
-        </form>
-      </section>
-      } }
-
-      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
-      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
-      <section class="space-y-5 pc-panel p-5">
-        <header class="border-b border-base-200 pb-3">
-          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
-        </header>
-
-        @switch (custom.id) { @case ('email-sync') {
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-        } @case ('domains') {
-        <pc-domains-settings></pc-domains-settings>
-        } @case ('donations') {
-        <pc-donations-settings></pc-donations-settings>
-        } @case ('storage') {
-        <pc-storage-settings></pc-storage-settings>
-        } @case ('billing') {
-        <pc-billing-settings></pc-billing-settings>
-        } @case ('passkeys') {
-        <pc-passkey-settings></pc-passkey-settings>
-        } @case ('account') {
-        <pc-account-settings></pc-account-settings>
-        } }
-      </section>
-      } }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 ```typescript
 import { DatePipe } from '@angular/common';
@@ -64348,137 +67554,6 @@ export class DemoModeCard {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
-```html
-<div class="flex flex-col gap-4 p-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h2 class="sr-only">Tasks</h2>
-      @if (countSentence()) {
-      <p class="text-base-content/60 text-xs tabular-nums">{{ countSentence() }}</p>
-      }
-    </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportWizard()">
-        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-        Import
-      </button>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm gap-1.5" (click)="openBoard()">
-        <pc-icon name="view-kanban" [size]="4"></pc-icon>
-        Open board
-      </button>
-      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        New task
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs with counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabs()" [activeTab]="tab()" (activeTabChange)="setTab($event)" />
-
-  @if (loaded() && !filtered().length) {
-  <div class="flex flex-col items-center gap-3 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
-    @switch (tab()) { @case ('all') {
-    <span class="text-base font-medium">No tasks yet</span>
-    } @case ('mine') {
-    <span class="text-base font-medium">Nothing assigned to you yet</span>
-    } @case ('unassigned') {
-    <span class="text-base font-medium">Every open task has an owner</span>
-    } @case ('done') {
-    <span class="text-base font-medium">Nothing completed yet</span>
-    } }
-    <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      New task
-    </button>
-  </div>
-  } @else {
-  <div class="flex flex-col gap-5">
-    @for (group of groups(); track group.key) {
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2 px-1">
-        <span
-          class="pc-eyebrow"
-          [class.text-error]="group.meta.tone === 'error'"
-          [class.text-warning]="group.meta.tone === 'warning'"
-          [class.text-info]="group.meta.tone === 'info'"
-          [class.text-base-content/50]="group.meta.tone === 'neutral'"
-        >
-          {{ group.meta.label }}
-        </span>
-        <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
-      </div>
-
-      <div class="border-line divide-y divide-base-200 rounded-lg border bg-base-100">
-        @for (t of group.rows; track t.id) { @let badge = slaBadge(t); @let reason = waitingReason(t); @let assignee =
-        assigneeName(t.assigned_to);
-        <div class="flex items-center gap-3 py-3 px-4 text-xs" [class.animate-saved-flash]="isFlashed(t.id)">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle shrink-0"
-            [class.text-success]="t.status === 'done'"
-            [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
-            (click)="toggleDone(t)"
-          >
-            <pc-icon name="check-circle" [size]="4" class="text-neutral-content/50"></pc-icon>
-          </button>
-
-          <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
-            <div
-              class="truncate text-xs font-medium"
-              [class.line-through]="t.status === 'done'"
-              [class.opacity-50]="t.status === 'done'"
-            >
-              {{ t.name }}
-            </div>
-            @if (reason) {
-            <div class="text-base-content/50 mt-0.5 truncate text-xs">{{ reason }}</div>
-            }
-          </div>
-
-          @if (t.priority) {
-          <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
-          } @if (badge) {
-          <span
-            class="badge badge-xs w-fit shrink-0"
-            [class.badge-error]="badge.tone === 'error'"
-            [class.badge-warning]="badge.tone === 'warning'"
-          >
-            {{ badge.text }}
-          </span>
-          } @if (t.due_at) {
-          <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline"
-            >{{ dateLabel(t.due_at) }}</span
-          >
-          } @if (t.assigned_to) {
-          <span
-            class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-            [attr.title]="assignee"
-            >{{ assigneeInitial(t.assigned_to) }}</span
-          >
-          } @else {
-          <button
-            type="button"
-            class="badge badge-outline shrink-0 border-dashed text-xs"
-            title="Take this task. One click assigns it to you"
-            (click)="takeTask(t); $event.stopPropagation()"
-          >
-            Unassigned
-          </button>
-          }
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -64698,3456 +67773,6 @@ export class DemoModeCard {
 
   <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
 </div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
-```typescript
-//tsco: ignore
-
-import {
-  AfterViewInit,
-  Component,
-  ElementRef,
-  OnDestroy,
-  OnInit,
-  computed,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Tags } from '@experiences/tags/ui/tags';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
-import { SearchService } from '@frontend/services/api/search-service';
-import { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  type Cell,
-  type Header,
-  type HeaderGroup,
-  type Row,
-  type SortingState,
-  type Table,
-  ColumnDef as TSColumnDef,
-  type Updater,
-} from '@tanstack/table-core';
-import {
-  QueryBuilderGroupNode,
-  QueueExportInputType,
-  cloneQueryBuilderNode,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-// Virtualizer handled via controller
-// Context available for future slices/controllers (not yet used here)
-// import { GridContextService } from './state/grid-context.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { DateFormatService } from '../../services/date-format.service';
-
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { QueryBuilderComponent, QueryBuilderField } from '../query-builder/query-builder';
-import { PinningController } from './controllers/pinning.controller';
-import { DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG, type DataGridConfig } from './datagrid.tokens';
-import { type ColumnDef as ColDef, SELECTION_COLUMN } from './grid-defaults';
-import type { GridRow, HeaderRef } from './types';
-import { DataGridActionsService } from './services/actions.service';
-import { DataGridColumnsService } from './services/columns.service';
-import { DataGridDataService } from './services/data.service';
-import { DataGridFiltersService, type SelectEditorOptions } from './services/filters.service';
-import { GridAdvancedFilterService } from './services/grid-advanced-filter.service';
-import { GridTagFilterService } from './services/grid-tag-filter.service';
-import { DataGridNavService } from './services/nav.service';
-import { DataGridSelectionService } from './services/selection.service';
-import { DataGridTableService } from './services/table.service';
-import { TagOptionsService } from './services/tag-options.service';
-import { DataGridUtilsService } from './services/utils.service';
-import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
-import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
-import { DataGridFilterDropdownComponent } from './ui/datagrid-filter-dropdown';
-import { MultiselectFilterComponent } from './ui/multiselect-filter';
-import { SingleselectFilterComponent, type SingleSelectOption } from './ui/singleselect-filter';
-
-interface MergeableService {
-  merge?(target: string, source: string): Promise<unknown>;
-  mergePersons?(target: string, source: string): Promise<unknown>;
-  mergeCompanies?(target: string, source: string): Promise<unknown>;
-  mergeHouseholds?(target: string, source: string): Promise<unknown>;
-}
-
-/** One removable chip in the active-filters row above the grid. */
-export interface GridFilterChip {
-  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced' | 'search';
-  key: string;
-  label: string;
-}
-// Header and inline filters rendered inline in template now
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import DOMPurify from 'dompurify';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { EditingController } from './controllers/editing.controller';
-import { FetchController } from './controllers/fetch.controller';
-import { KeyboardController } from './controllers/keyboard.controller';
-import { ReorderController } from './controllers/reorder.controller';
-import { ResizingController } from './controllers/resizing.controller';
-import { EditableCellDirective } from './directives/editable-cell.directive';
-import { HeaderResizeDirective } from './directives/header-resize.directive';
-import { GridStoreService } from './services/grid-store.service';
-import { UndoManager } from './undo-redo-mgr';
-import { RecordNavigationService } from '@frontend/services/record-navigation.service';
-
-@Component({
-  selector: 'pc-datagrid',
-  imports: [
-    Icon,
-    DataGridToolbarComponent,
-    DataGridFilterPanelComponent,
-    Tags,
-    EditableCellDirective,
-    HeaderResizeDirective,
-    QueryBuilderComponent,
-    GridHeaderComponent,
-    DataGridFilterDropdownComponent,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    ModalShell,
-  ],
-  templateUrl: './datagrid.html',
-  styleUrl: './datagrid.css',
-  providers: [
-    GridStoreService,
-    PinningController,
-    ResizingController,
-    ReorderController,
-    KeyboardController,
-    EditingController,
-    FetchController,
-  ],
-})
-export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewInit, OnDestroy {
-  public readonly config = inject<DataGridConfig>(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  protected readonly dialogs = inject(ConfirmDialogService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly searchSvc = inject(SearchService);
-
-  // Header resize handled by ResizingController
-
-  //private readonly themeSvc = inject(ThemeService);
-  public readonly _loading = createLoadingGate();
-
-  // Persistence
-  private _persistKey = 'pcdg';
-  // selection width tracked in store
-  // Selection resize handled by ResizingController
-  // dragColId handled in ReorderController
-  // Infinite append state handled by controller
-  private readonly gridTable = viewChild<ElementRef<HTMLTableElement>>('gridTable');
-
-  // Sticky pin offsets
-  // header widths tracked by PinningController
-
-  // Other State
-  private lastRowHovered: string | undefined;
-  private oldFilterText = '';
-  // pin offsets tracked by PinningController
-
-  // Optional cache placeholder removed (unused in current implementation)
-  private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
-  private tsColumns: TSColumnDef<GridRow, unknown>[] = [];
-  private tsTable: Table<GridRow> | undefined;
-  private readonly pctrl = inject(PinningController);
-  private updateHeaderWidths = () => {
-    const table = this.gridTable()?.nativeElement;
-    if (!table) return;
-    requestAnimationFrame(() => {
-      if (!this.pctrl) return;
-      this.pctrl.measureHeaderWidths(table);
-      const minMap = this.computeHeaderMinWidths(table);
-      if (Object.keys(minMap).length > 0) {
-        this.headerMinWidths.set(minMap);
-        this.enforceWidthMinimums(minMap);
-      }
-    });
-  };
-  // Virtualizer disabled for paginated grid
-
-  // Injected Services
-  public readonly alertSvc = inject(AlertService);
-  private readonly dateFormatSvc = inject(DateFormatService);
-  private readonly columnsSvc = inject(DataGridColumnsService);
-  private readonly dataSvc = inject(DataGridDataService);
-  private readonly filtersSvc = inject(DataGridFiltersService);
-  private readonly selSvc = inject(DataGridSelectionService);
-  private readonly tableSvc = inject(DataGridTableService);
-  private readonly actionsSvc = inject(DataGridActionsService);
-  private readonly navSvc = inject(DataGridNavService);
-  private readonly utilsSvc = inject(DataGridUtilsService);
-  public readonly store = inject(GridStoreService);
-  private readonly rctrl = inject(ResizingController);
-  private readonly kctrl = inject(KeyboardController);
-  private readonly editingCtrl = inject(EditingController);
-  private readonly fetchCtrl = inject(FetchController);
-  private readonly reorder = inject(ReorderController);
-  private readonly recordNav = inject(RecordNavigationService);
-  public readonly searchTerm = this.searchSvc.searchSignal;
-  private readonly hasEditableColumns = signal(false);
-  // A "door" column (e.g. the People Name cell) opens the record on click and
-  // replaces the hover open-icon; when present the selection column narrows to 36px.
-  protected readonly hasDoorColumn = signal(false);
-  private readonly headerMinWidths = signal<Record<string, number>>({});
-  private readonly dgListsSvc = inject(ListsService, { optional: true });
-  public readonly flashedCells = signal<Set<string>>(new Set());
-  protected readonly countRowSelected = computed(() =>
-    this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
-  );
-
-  private readonly selectionColumnWidthPx = 72;
-  private readonly headerAutoSizeBufferPx = 8;
-
-  /** Fields that should elastically absorb leftover width when visible, highest priority first. */
-  private static readonly GROW_TEXT_FIELDS = ['description', 'notes'] as const;
-
-  /**
-   * Under {@link fitColumns}, exactly one visible column stretches to fill the leftover width so
-   * short columns stay content-sized and the row still spans full width. Preference: a visible
-   * description/notes column, else a column the grid flagged with `flex: true`, else the last
-   * visible column. Returns `null` when content-fit sizing is off (legacy proportional stretch).
-   */
-  protected growColumnId(): string | null {
-    if (!this.fitColumns()) return null;
-    const headers = this.leafHeaders();
-    if (!headers.length) return null;
-    const textCol = headers.find((h) => DataGrid.GROW_TEXT_FIELDS.includes(h.column.id as never));
-    if (textCol) return textCol.column.id;
-    const flagged = headers.find((h) => this.getColDefById(h.column.id)?.flex === true);
-    if (flagged) return flagged.column.id;
-    return headers[headers.length - 1]?.column.id ?? null;
-  }
-
-  /**
-   * The fixed width to pin a header/cell to, or `null` to leave it elastic (`width:auto`). The
-   * single {@link growColumnId} returns `null` so it soaks up the table's leftover width.
-   */
-  protected fixedWidthPx(colId: string | null | undefined): number | null {
-    if (colId && this.growColumnId() === colId) return null;
-    return this.columnWidthPx(colId);
-  }
-
-  protected columnWidthPx(colId: string | null | undefined): number {
-    if (!colId) return this.columnMinWidthPx(colId);
-    return this.getColWidth(colId) ?? this.columnMinWidthPx(colId);
-  }
-
-  protected columnMinWidthPx(colId: string | null | undefined): number {
-    if (!colId) return 40;
-    const colDef = this.getColDefById(colId);
-    const typeFloor = this.typeMinWidthPx(colDef);
-    const configuredMin = colDef?.minWidth;
-    if (typeof configuredMin === 'number' && configuredMin > 0) {
-      return Math.max(configuredMin, typeFloor);
-    }
-    const minMap = this.headerMinWidths();
-    const measured = minMap[colId];
-    if (typeof measured === 'number' && measured > 0) {
-      return Math.max(40, Math.ceil(measured), typeFloor);
-    }
-    return Math.max(40, typeFloor);
-  }
-
-  /**
-   * A presentation floor for column kinds whose content reads badly when squeezed: tag/issue
-   * chips wrap a letter per line, and free text collapses to "[…". Keeps them legible even when
-   * a column has no explicit width and its header is short.
-   */
-  private typeMinWidthPx(colDef: ColDef | undefined): number {
-    if (!colDef) return 0;
-    if (colDef.tagColumn) return 120;
-    if (colDef.field === 'notes' || colDef.field === 'description') return 200;
-    return 0;
-  }
-
-  private clampColumnWidth(id: string, px: number): number {
-    const base = Math.max(40, Math.floor(px));
-    return Math.max(this.columnMinWidthPx(id), base);
-  }
-
-  // Computed derivations
-  // Page size selection (persisted via GridStoreService)
-  protected readonly pageSize = this.store?.pageSize ?? signal(25);
-  protected readonly pageSizeChoices = computed(() => {
-    const base = [25, 50, 100];
-    const current = this.pageSize();
-    return base.includes(current) ? base : [current, ...base];
-  });
-  protected readonly totalPages = computed(() => this.dataSvc.computeTotalPages(this.totalCountAll(), this.pageSize()));
-  protected readonly canNext = computed(() => this.pageIndex() + 1 < this.totalPages());
-  protected readonly canPrev = computed(() => this.pageIndex() > 0);
-  protected readonly displayedCount = computed(() => this.rows().length);
-  protected readonly isEmptyState = computed(
-    () => this.hasLoaded() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
-  );
-
-  public readonly hasActiveFilters = computed(
-    () =>
-      this.selectedTags().length > 0 ||
-      this.selectedIssues().length > 0 ||
-      Object.keys(this.filterValues())?.length > 0 ||
-      this.hasActiveAdvancedFilters(),
-  );
-
-  /** True when anything — including the list filter — is narrowing the results. */
-  public readonly anyFilterActive = computed(
-    () =>
-      this.hasActiveFilters() ||
-      this.selectedListId() !== null ||
-      this.selectedNarrowType() !== null ||
-      this.searchTerm().trim() !== '',
-  );
-
-  /** Every active filter as a named, individually removable chip. */
-  protected readonly filterChips = computed<GridFilterChip[]>(() => {
-    const chips: GridFilterChip[] = [];
-
-    // An active search is filter truth too — surface it as a removable chip (§2), so it lives
-    // in one place whether it arrived from the navbar search or the command palette hand-off.
-    const search = this.searchTerm().trim();
-    if (search) {
-      chips.push({ kind: 'search', key: 'search', label: `Search: "${search}"` });
-    }
-
-    const narrow = this.selectedNarrowType();
-    if (narrow !== null) {
-      const option = this.narrowTypeOptions().find((o) => o.value === narrow);
-      chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
-    } else {
-      // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
-      // Selected tags combine with OR and land as a single removable chip (§2).
-      const tags = this.selectedTags();
-      if (tags.length) {
-        chips.push({ kind: 'tag', key: 'tags', label: `Tags: any of ${tags.join(', ')}` });
-      }
-    }
-
-    // Selected issues combine with OR and land as a single removable chip (§2).
-    const issues = this.selectedIssues();
-    if (issues.length) {
-      chips.push({ kind: 'issue', key: 'issues', label: `Issues: any of ${issues.join(', ')}` });
-    }
-
-    const listId = this.selectedListId();
-    if (listId !== null) {
-      const list = this.availableLists().find((l) => String(l['id'] ?? '') === String(listId));
-      chips.push({ kind: 'list', key: String(listId), label: `List: ${String(list?.['name'] ?? 'selected')}` });
-    }
-
-    for (const [field, value] of Object.entries(this.filterValues())) {
-      const text = this.describeFilterValue(value);
-      if (!text) continue;
-      chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
-    }
-
-    if (this.hasActiveAdvancedFilters()) {
-      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
-    }
-
-    return chips;
-  });
-
-  protected removeFilterChip(chip: GridFilterChip): void {
-    switch (chip.kind) {
-      case 'narrow':
-        this.selectNarrowType(null);
-        break;
-      case 'tag':
-        // One chip represents all OR-ed tags — clear them together.
-        this.clearTagsFilter();
-        break;
-      case 'issue':
-        this.clearIssuesFilter();
-        break;
-      case 'list':
-        this.clearListFilter();
-        break;
-      case 'column':
-        this.clearHeaderFilter(chip.key);
-        break;
-      case 'advanced':
-        this.clearAdvancedFilter();
-        break;
-      case 'search':
-        this.searchSvc.clearSearch();
-        break;
-      default: {
-        const _exhaustive: never = chip.kind;
-        void _exhaustive;
-      }
-    }
-  }
-
-  /** Reset every filter domain at once, then reload from the first page. */
-  protected clearAllFilters(): void {
-    this.selectedNarrowType.set(null);
-    this.selectedTags.set([]);
-    this.selectedIssues.set([]);
-    this.selectedListId.set(null);
-    this.filterValues.set({});
-    this.panelFilters.set({});
-    this.searchSvc.clearSearch();
-    this.store?.requestPersist();
-    if (this.hasActiveAdvancedFilters()) {
-      // clearAdvancedFilter triggers its own refresh.
-      this.clearAdvancedFilter();
-    } else {
-      void this.loadPage(0);
-    }
-  }
-
-  /** Human-readable value text for a column-filter chip, from the stored `{op,value}` /
-   * array / plain-string shapes. Returns '' when the filter carries nothing to show. */
-  private describeFilterValue(value: unknown): string {
-    if (value === undefined || value === null) return '';
-    if (Array.isArray(value)) return value.length ? value.join(', ') : '';
-    if (typeof value === 'object' && 'value' in value) {
-      const rec = value as { op?: unknown; value?: unknown };
-      const op = String(rec.op ?? 'contains');
-      if (op === 'isEmpty') return 'is empty';
-      if (op === 'isNotEmpty') return 'is not empty';
-      const v = rec.value;
-      if (Array.isArray(v)) return v.length ? v.join(', ') : '';
-      const s = v == null ? '' : String(v);
-      return s;
-    }
-    return String(value);
-  }
-
-  // ── "+ Add filter" quick pill — a single field → operator → value entry that lands as one
-  //    removable column chip. Reuses the same `filterValues` model the column/panel filters use
-  //    (so removal, persistence, and the server filterModel all flow through the existing path);
-  //    it does NOT fork a parallel filter representation.
-  public readonly addFilterField = signal<string>('');
-  public readonly addFilterOp = signal<string>('contains');
-  public readonly addFilterValue = signal<string>('');
-  public readonly addFilterOperators: ReadonlyArray<{ value: string; label: string }> = [
-    { value: 'contains', label: 'contains' },
-    { value: 'notContains', label: 'does not contain' },
-    { value: 'equals', label: 'equals' },
-    { value: 'notEquals', label: 'does not equal' },
-    { value: 'startsWith', label: 'starts with' },
-    { value: 'endsWith', label: 'ends with' },
-    { value: 'isEmpty', label: 'is empty' },
-    { value: 'isNotEmpty', label: 'is not empty' },
-  ];
-
-  /** Fields offered in the Add-filter pill — every real column except the tag/issue columns
-   * (those have their own dashed pills) and non-data columns. */
-  public readonly addFilterFields = computed<Array<{ field: string; label: string }>>(() =>
-    this.colDefs().flatMap((c) =>
-      c.field && c.field !== 'actions' && c.field !== 'tags' && c.field !== 'issues' && c.tagColumn !== true
-        ? [{ field: c.field, label: c.headerName || c.field }]
-        : [],
-    ),
-  );
-
-  /** Whether the currently-selected operator needs a value (isEmpty/isNotEmpty do not). */
-  public readonly addFilterNeedsValue = computed(() => {
-    const op = this.addFilterOp();
-    return op !== 'isEmpty' && op !== 'isNotEmpty';
-  });
-
-  /** Commit the Add-filter pill selection as a column chip, then reload from page 1. */
-  public applyAddFilter(): void {
-    const field = this.addFilterField();
-    if (!field) return;
-    const op = this.addFilterOp();
-    const needsValue = op !== 'isEmpty' && op !== 'isNotEmpty';
-    const value = this.addFilterValue().trim();
-    if (needsValue && !value) return;
-    const next = { ...this.filterValues() };
-    next[field] = { op, value: needsValue ? value : '' };
-    this.filterValues.set(next);
-    this.addFilterField.set('');
-    this.addFilterOp.set('contains');
-    this.addFilterValue.set('');
-    void this.loadPage(0);
-    this.store?.requestPersist();
-  }
-
-  /** Saved-list options for the dashed "Lists" pill (mirrors the toolbar's mapping). */
-  public readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  public isColFiltered(field: string): boolean {
-    const fv = this.filterValues();
-    const val = fv[field];
-    if (Array.isArray(val)) {
-      return val.length > 0;
-    }
-    return val !== undefined && val !== null && val !== '';
-  }
-  // "The first load has finished" comes straight from the loading gate's ungated
-  // `loaded` signal — set when a fetch completes (so totalCountAll is already in
-  // place), even for a sub-300ms fetch that never trips the delayed spinner.
-  public readonly hasLoaded = this._loading.loaded;
-  public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
-  protected readonly hasSelection = computed(() =>
-    this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
-  );
-  public readonly hasSingleSelection = computed(() =>
-    this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
-  );
-
-  // Entity noun for selection/bulk-bar copy (e.g. "person"/"people"); defaults to row/rows.
-  public readonly entityNoun = this.config.messages.entityNoun ?? 'row';
-  public readonly entityNounPlural = this.config.messages.entityNounPlural ?? 'rows';
-  public nounFor(n: number): string {
-    return n === 1 ? this.entityNoun : this.entityNounPlural;
-  }
-
-  // Bulk "Add tag" — an inline field in the bulk action bar (§2).
-  public readonly bulkTagOpen = signal(false);
-  public readonly bulkTagValue = signal('');
-  public openBulkTag(): void {
-    this.bulkTagValue.set('');
-    this.bulkTagOpen.set(true);
-  }
-  public cancelBulkTag(): void {
-    this.bulkTagOpen.set(false);
-    this.bulkTagValue.set('');
-  }
-  public async applyBulkTag(): Promise<void> {
-    const tag = this.bulkTagValue().trim();
-    if (!tag) return;
-    const ids = this.getSelectedRows()
-      .map((r) => String((r as { id?: unknown }).id ?? ''))
-      .filter(Boolean);
-    if (!ids.length) return;
-    try {
-      for (const id of ids) {
-        await this.gridSvc.attachTag(id, tag, 'tag');
-      }
-      // Toast repeats the scale (§2 / §7.5).
-      this.alertSvc.showSuccess(`Added ${tag} to ${ids.length} ${this.nounFor(ids.length)}.`);
-      this.cancelBulkTag();
-      void this.dgTagOptionsSvc.invalidate('tag');
-      await this.loadPage(this.pageIndex());
-    } catch (err) {
-      console.error('Bulk tag failed', err);
-      this.alertSvc.showError(`Could not add "${tag}" to all selected ${this.entityNounPlural}.`);
-    }
-  }
-
-  // Display range helpers (1-based)
-  protected readonly displayStartIndex = computed(() => {
-    const total = this.totalCountAll();
-    if (!total) return 0;
-    return this.pageIndex() * this.pageSize() + 1;
-  });
-  protected readonly displayEndIndex = computed(() => {
-    const total = this.totalCountAll();
-    if (!total) return 0;
-    const end = (this.pageIndex() + 1) * this.pageSize();
-    return Math.min(end, total);
-  });
-
-  // Pager tooltips: enabled states name the action, disabled states name the
-  // unmet condition (§2 pagination honesty / §7.2 acceptance checklist).
-  protected readonly firstPageTitle = 'First page';
-  protected readonly prevPageTitle = 'Previous page';
-  protected readonly nextPageTitle = 'Next page';
-  protected readonly lastPageTitle = 'Last page';
-  protected readonly onFirstPageTitle = "You're on the first page";
-  protected readonly onLastPageTitle = "You're on the last page";
-
-  // Hidden columns list for header menu as a computed
-  protected readonly hiddenColumns = computed(() => {
-    const v = this.colVisibility();
-    return this.colDefsWithEdit.map((c) => c.field as string).filter((f) => !!f && v[f] === false) as string[];
-  });
-  protected readonly selectedOnPageCount = computed(() => {
-    if (this.allSelected()) return 0;
-    const set = this.selectedIdSet();
-    let cnt = 0;
-    for (const r of this.rows()) {
-      const id = this.toId(r);
-      if (id && set.has(id)) cnt++;
-    }
-    return cnt;
-  });
-  public readonly rowNavigatesToDetail = computed(() => !this.disableView() && !this.hasEditableColumns());
-  protected readonly isPageFullySelected = computed(() =>
-    this.selSvc.isPageFullySelected(this.allSelected(), this.displayedCount(), this.selectedOnPageCount()),
-  );
-
-  // State & UI Signals
-  // Removed isRowSelected in favor of hasSelection computed
-  protected readonly router = inject(Router);
-  public readonly undoMgr = new UndoManager();
-
-  // Select-all-across-results state
-  protected readonly allSelected = this.store?.allSelected ?? signal(false);
-  protected readonly allSelectedCount = this.store?.allSelectedCount ?? signal(0);
-  protected readonly allSelectedIdSet = this.store?.allSelectedIdSet ?? signal(new Set());
-  protected readonly allSelectedIds = this.store?.allSelectedIds ?? signal([]);
-  public archiveMode = signal(false);
-  protected colDefsWithEdit: ColDef[] = [SELECTION_COLUMN];
-  protected colVisibility = this.store?.colVisibility ?? signal({});
-  public readonly colWidths = this.store?.colWidths ?? signal({});
-
-  // Inline edit state
-  protected editingCell = signal<{ id: string; field: string } | null>(null);
-  protected editingValue = signal<unknown>('');
-  protected tagSearch = signal('');
-  protected filterValues = this.store?.filterValues ?? signal({});
-  protected isLoading = this._loading.visible;
-  public readonly isRefreshing = signal(false);
-  protected pageIndex = this.store?.pageIndex ?? signal(0);
-  protected panelFilters = this.store?.panelFilters ?? signal({});
-  protected rowHeight = 36;
-
-  // Table state (TanStack-like minimal state)
-  public readonly rows = this.store?.rows ?? signal<GridRow[]>([]);
-  protected selectedIdSet = this.store?.selectedIdSet ?? signal(new Set());
-  protected selectionStickyWidth = this.store?.selectionStickyWidth ?? signal(48);
-  protected showFilterPanel = signal(false);
-  protected showFilters = signal(false);
-  public sortCol = signal<string | null>(null);
-  public sortDir = signal<'asc' | 'desc' | null>(null);
-  protected sorting = signal<SortingState>([]);
-  protected suppressHeaderDrag = false;
-  public totalCountAll = signal(0);
-  // viewport handled by controller
-
-  public readonly importCSV = output<string>();
-  /** Fires after a delete flow completes and the grid has refreshed, so pages can re-query header counts. */
-  public readonly rowsDeleted = output<void>();
-  public readonly showArchiveIcon = input<boolean>(false);
-  public readonly archiveIcon = input<PcIconNameType>('archive-box');
-  public readonly archiveTip = input<string>('See archived tasks');
-  public readonly labelForFn = (f: string) => this.panelLabelFor(f);
-  public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
-  // Header handlers now called directly by pc-dg-header via injection
-  // header resize handled by pcHeaderResize directive
-
-  // Inline filters row injects DataGrid directly; no adapters needed
-
-  // Row/cell adapters used by directives/templates
-  public readonly toIdFn = (row: unknown) => this.toId(row);
-  public readonly inputTypeForFn = (col: ColDef) => this.inputTypeFor(col);
-  public readonly createPayloadFn = (row: GridRow, key: string) => this.utilsSvc.createPayload(row, key);
-  public readonly updateEditedRowInCachesFn = (id: string, f: string | undefined, v: unknown, prev?: unknown) =>
-    this.updateEditedRowInCaches(id, f, v, prev);
-  public readonly updateTableWindowFn = (s: number, e: number) => this.updateTableWindow(s, e);
-  // Expose a simple persist method for header/directives
-  public requestPersist() {
-    this.store?.requestPersist();
-  }
-  public readonly coerceFn = (c: ColDef, raw: unknown) => this.coerceEditingValue(c, raw);
-
-  public readonly editableCfg = (row: GridRow, col: ColDef) => ({
-    row,
-    col,
-    toId: this.toIdFn,
-    coerce: this.coerceFn,
-    value: () => {
-      const current = this.editingValue();
-      return Array.isArray(current) ? [...current] : current;
-    },
-    setEditingCell: (v: { id: string; field: string } | null) => this.editingCell.set(v),
-    setEditingValue: (v: unknown) => this.editingValue.set(v),
-    getCellValue: (r: GridRow, c: ColDef) => this.getCellValue(r, c),
-    getEditingDisplayValue: (r: GridRow, c: ColDef) => this.getEditingDisplayValue(r, c),
-    createPayload: this.createPayloadFn,
-    applyEdit: (id: string, data: Partial<GridRow>) =>
-      this.gridSvc
-        .update(id, data as unknown as U)
-        .then(() => true)
-        .catch(() => false),
-    updateEditedRow: this.updateEditedRowInCachesFn,
-    updateWindow: this.updateTableWindowFn,
-    startIndex: () => this.startIndex(),
-    endIndex: () => this.endIndex(),
-    showSuccess: (m: string) => this.alertSvc.showSuccess(m),
-    showError: (m: string) => this.alertSvc.showError(m),
-    undo: () => this.undoMgr.undo(),
-    customCommit: this.isTagColumn(col)
-      ? async () => {
-          await this.commitTagColumn(row, col);
-        }
-      : undefined,
-    isEditable: () => this.isCellEditable(row, col),
-    isEditingCell: () => {
-      const ec = this.editingCell();
-      return ec !== null && ec.id === this.toIdFn(row) && ec.field === col.field;
-    },
-  });
-
-  // Inputs & Outputs
-  public addRoute = input<string | null>(null);
-  public viewRoute = input<string | null>(null);
-  public allowFilter = input<boolean>(true);
-  public colDefs = input<ColDef[]>([]);
-  public disableDelete = input<boolean>(true);
-  public disableMerge = input<boolean>(true);
-  public disableExport = input<boolean>(false);
-  public confirmDeleteOverride = input<
-    ((selected: (Partial<RowOf<T>> & { id: string })[]) => Promise<boolean | void>) | null
-  >(null);
-  public disableImport = input<boolean>(false);
-  public disableRefresh = input<boolean>(false);
-  public disableView = input<boolean>(true);
-  public enableSelection = input<boolean>(true);
-  public rowCanSelect = input<(row: GridRow) => boolean>(() => true);
-  public limitToTags = input<string[]>([]);
-  public limitToIssues = input<string[]>([]);
-  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[]; count?: number }>>([]);
-  public plusIcon = input<PcIconNameType>('plus');
-
-  public showToolbar = input<boolean>(true);
-  /** Per-column sort/filter/hide dropdown in the header. Off for read-only "reference table" grids. */
-  public showColumnMenus = input<boolean>(true);
-  public isCellEditableOverride = input<((row: GridRow, col: ColDef) => boolean) | null>(null);
-
-  public readonly externalAdvancedFilterModel = input<QueryBuilderGroupNode | null>(null);
-  public listId = input<string | null>(null);
-  public title = input<string | null>(null);
-  public description = input<string | null>(null);
-  public showDescription = input<boolean>(false);
-
-  /**
-   * Grain-specific total sentence rendered under the title (spec §5), e.g.
-   * "5,012 people total" / "1,890 households across 8 wards" / "611 people in 214 companies".
-   * When filters are active the header prefixes it: "43 match your filters · {sentence}".
-   */
-  public totalSentence = input<string | null>(null);
-
-  /**
-   * Grain-tab layout (People/Households/Companies grids, spec §5 + owner screenshot):
-   * no in-grid title/ⓘ (redundant with the sidebar + breadcrumb) — the grain tabs and
-   * toolbar share one band, and the count sentence renders below the filter row.
-   */
-  public grainLayout = input<boolean>(false);
-
-  /**
-   * Content-fit column sizing. When true, columns render at their content/configured width
-   * instead of the browser stretching every column to fill the table, and a blank trailing
-   * cell absorbs the leftover width so short columns stay tight and the row still spans full
-   * width. Off by default so existing grids keep their proportional-stretch layout.
-   */
-  public fitColumns = input<boolean>(false);
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  /** The "43 match your filters · 5,012 people total" sentence, rendered below the filter row in grain layout. */
-  public readonly countSentence = computed<string | null>(() => {
-    const count = this.hasLoaded() ? this.totalCountAll() : null;
-    const sentence = this.totalSentence();
-    if (count !== null && this.anyFilterActive()) {
-      const matched =
-        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
-      return sentence ? `${matched} · ${sentence}` : matched;
-    }
-    if (sentence) return sentence;
-    if (count === null) return null;
-    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
-  });
-
-  protected readonly dgTagOptionsSvc = inject(TagOptionsService);
-
-  // ── Tag / Issue filter — delegated to GridTagFilterService ───────────────
-  private readonly tagFilter = new GridTagFilterService();
-
-  // Proxy aliases — same public names the toolbar template accesses via grid.*
-  public readonly allAvailableTags = this.tagFilter.allAvailableTags;
-  public readonly selectedTags = this.tagFilter.selectedTags;
-  public readonly tagSearchQuery = this.tagFilter.tagSearchQuery;
-  public readonly allAvailableIssues = this.tagFilter.allAvailableIssues;
-  public readonly selectedIssues = this.tagFilter.selectedIssues;
-  public readonly issueSearchQuery = this.tagFilter.issueSearchQuery;
-  public readonly filteredAvailableTags = this.tagFilter.filteredAvailableTags;
-  public readonly filteredAvailableIssues = this.tagFilter.filteredAvailableIssues;
-
-  // showTagFilter / showIssueFilter must stay here — they depend on the colDefs input signal
-  public readonly showTagFilter = computed(() => {
-    const defs = this.colDefs();
-    return defs.some((col) => col.field === 'tags' || col.tagColumn === true);
-  });
-
-  public readonly showIssueFilter = computed(() => {
-    const defs = this.colDefs();
-    return defs.some((col) => col.field === 'issues' || col.field === 'issue');
-  });
-
-  public readonly showNarrowTypeFilter = computed(() => this.narrowTypeOptions().length > 0);
-  public readonly selectedNarrowType = signal<string | null>(null);
-  public readonly displayTitle = computed(() => {
-    const selected = this.selectedNarrowType();
-    if (selected !== null) {
-      const option = this.narrowTypeOptions().find((o) => o.value === selected);
-      if (option) return option.label;
-    }
-    return this.title() ?? null;
-  });
-
-  public selectNarrowType(value: string | null): void {
-    // Already on this view — nothing to fetch.
-    if (this.selectedNarrowType() === value) return;
-    this.selectedNarrowType.set(value);
-    const option = this.narrowTypeOptions().find((o) => o.value === value);
-    const tags = option?.tags ?? [];
-    this.tagFilter.selectedTags.set([...tags]);
-    // A view is a server-side tag filter, so fetch page 1 of the new set — but via
-    // the normal loading gate, not doRefresh()'s forced 1s spinner (that's for the
-    // manual Refresh button). Feels like filtering, not a hard reload.
-    void this.loadPage(0);
-  }
-
-  public toggleTagFilter(tag: string, checked: boolean) {
-    this.selectedNarrowType.set(null);
-    this.tagFilter.toggleTagFilter(tag, checked);
-  }
-  public clearTagsFilter() {
-    this.selectedNarrowType.set(null);
-    this.tagFilter.clearTagsFilter();
-  }
-  public selectAllTags() {
-    this.tagFilter.selectAllTags();
-  }
-  public clearAllTagsVisible() {
-    this.tagFilter.clearAllTagsVisible();
-  }
-  public toggleIssueFilter(issue: string, checked: boolean) {
-    this.tagFilter.toggleIssueFilter(issue, checked);
-  }
-  public clearIssuesFilter() {
-    this.tagFilter.clearIssuesFilter();
-  }
-  public selectAllIssues() {
-    this.tagFilter.selectAllIssues();
-  }
-  public clearAllIssuesVisible() {
-    this.tagFilter.clearAllIssuesVisible();
-  }
-
-  public selectedListId = signal<string | null>(null);
-  public availableLists = signal<GridRow[]>([]);
-  public activeListId = computed(() => this.listId() || this.selectedListId());
-  public readonly showListFilter = computed(() => {
-    const entity = this.config.messages.exportEntity;
-    return (entity === 'persons' || entity === 'households') && !!this.dgListsSvc;
-  });
-
-  public selectListFilter(id: string) {
-    this.selectedListId.set(id);
-    void this.loadPage(0);
-  }
-
-  public clearListFilter() {
-    this.selectedListId.set(null);
-    void this.loadPage(0);
-  }
-
-  // ── Advanced Filter Builder — delegated to GridAdvancedFilterService ──────
-  public readonly advFilter = new GridAdvancedFilterService();
-  protected readonly tagsSvc = inject(TagsService, { optional: true });
-
-  // Proxy aliases — same public names used by the toolbar and datagrid.html
-  public readonly showAdvancedFilterBuilder = this.advFilter.showAdvancedFilterBuilder;
-  public readonly advFilterRoot = this.advFilter.advFilterRoot;
-  public readonly hasActiveAdvancedFilters = this.advFilter.hasActiveAdvancedFilters;
-
-  protected readonly advancedFilterFields = computed<QueryBuilderField[]>(() => {
-    return this.colDefsWithEdit
-      .filter((c) => c.field && c.field !== 'actions' && c.field !== SELECTION_COLUMN.field)
-      .map((c) => {
-        const fieldName = c.field ?? '';
-        const isTagCol = fieldName === 'tags' || fieldName === 'issues' || c.tagColumn === true;
-        const operators = [
-          { value: 'contains', label: 'contains' },
-          { value: 'notContains', label: 'does not contain' },
-          { value: 'equals', label: 'equals' },
-          { value: 'notEquals', label: 'does not equal' },
-          { value: 'startsWith', label: 'starts with' },
-          { value: 'endsWith', label: 'ends with' },
-          { value: 'isEmpty', label: 'is empty' },
-          { value: 'isNotEmpty', label: 'is not empty' },
-        ];
-        return {
-          name: fieldName,
-          label: c.headerName || fieldName,
-          operators,
-          inputType: isTagCol ? ('autocomplete' as const) : ('text' as const),
-        };
-      });
-  });
-
-  public openAdvancedFilterBuilder() {
-    this.advFilter.openAdvancedFilterBuilder(() => this.colDefsWithEdit);
-  }
-  public switchToAdvancedFilter() {
-    this.advFilter.switchToAdvancedFilter(
-      () => this.showFilterPanel.set(false),
-      () => this.colDefsWithEdit,
-    );
-  }
-  public applyAdvancedFilter() {
-    this.advFilter.apply(() => void this.doRefresh());
-  }
-  public clearAdvancedFilter() {
-    this.advFilter.clear(() => void this.doRefresh());
-  }
-  public onAdvancedFilterChanged() {
-    this.advFilterRoot.update((root) => cloneQueryBuilderNode(root) as QueryBuilderGroupNode);
-  }
-
-  private _squelch = false;
-  private _initialized = false;
-  private _lastPageSize: number | null = null;
-
-  constructor() {
-    if (this.store) {
-      this.store.grid = this;
-    }
-
-    // Navbar crumbs for grid pages come from the route's `data.breadcrumb` via
-    // BreadcrumbDefaultsService — the grid no longer publishes its own. (Publishing
-    // here broke on route-reuse: detached grids never ran their clear-on-destroy.)
-
-    effect(() => {
-      const count = this.gridSvc.refreshCount();
-      if (count > 0) {
-        untracked(() => {
-          void this.refresh();
-        });
-      }
-    });
-
-    // Clear the tag search box whenever a different cell enters edit mode
-    effect(() => {
-      this.editingCell();
-      this.tagSearch.set('');
-    });
-
-    // Prevents being stuck on an out-of-range page after filters change.
-    effect(() => {
-      if (this._squelch) return;
-      const total = this.totalPages();
-      const page = this.pageIndex();
-      if (total > 0 && page >= total) {
-        this._squelch = true;
-        queueMicrotask(() => {
-          // 2. Wrap the async call in an IIFE
-          void (async () => {
-            void (await this.loadPage(Math.max(0, total - 1)));
-            this._squelch = false;
-          })();
-        });
-      }
-    });
-
-    // React to global search (SSRM: trigger server-side filter)
-    effect(() => {
-      const quickFilterText = this.searchTerm();
-
-      // Keep track of the old filter text to avoid unnecessary roundtrip
-      if (quickFilterText !== this.oldFilterText) {
-        this.oldFilterText = quickFilterText;
-        void this.loadPage(0);
-      }
-    });
-    // When page size changes, go back to first page (after init)
-    effect(() => {
-      const size = this.pageSize();
-      if (!this._initialized) {
-        this._lastPageSize = size;
-        return;
-      }
-      if (this._lastPageSize === size) return;
-      this._lastPageSize = size;
-      void this.loadPage(0);
-    });
-    // Keep table data + selection + sorting synced when rows or sort change
-    effect(() => {
-      const rows = this.rows();
-      // touch sort signals so effect re-runs when they change
-      this.sortCol();
-      this.sortDir();
-      this.tableSvc.setTableData(
-        this.tsTable,
-        rows,
-        this.buildRowSelectionForCurrentData(),
-        this.sortCol(),
-        this.sortDir(),
-      );
-    });
-
-    // React to limitToTags input signal changes
-    effect(() => {
-      // Fallback to an empty array if the input is undefined or null
-      const tags = this.limitToTags() || [];
-
-      untracked(() => {
-        this.tagFilter.selectedTags.set([...tags]);
-        if (this._initialized) {
-          void this.doRefresh();
-        }
-      });
-    });
-
-    // React to limitToIssues input signal changes
-    effect(() => {
-      // Fallback to an empty array if the input is undefined or null
-      const issues = this.limitToIssues() || [];
-
-      untracked(() => {
-        this.tagFilter.selectedIssues.set([...issues]);
-        if (this._initialized) {
-          void this.doRefresh();
-        }
-      });
-    });
-
-    effect(() => {
-      this.externalAdvancedFilterModel();
-      untracked(() => {
-        if (this._initialized) {
-          void this.doRefresh();
-        }
-      });
-    });
-
-    effect(() => {
-      this.listId();
-      untracked(() => {
-        if (this._initialized) {
-          void this.doRefresh();
-        }
-      });
-    });
-    // Virtualizer count sync handled by controller
-    // Pin offsets recompute centralized in PinningController
-  }
-
-  public getCountRowSelected() {
-    return this.countRowSelected();
-  }
-
-  public getDefinition(): getAllOptionsType {
-    return {
-      searchStr: this.searchSvc.getFilterText(),
-      sortModel: this.sorting().map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' })),
-      filterModel: this.buildFilterModel(),
-      tags: this.tagFilter.selectedTags(),
-      issues: this.tagFilter.selectedIssues(),
-    } as getAllOptionsType;
-  }
-
-  public ngAfterViewInit() {
-    if (!this.store) {
-      return;
-    }
-    // Virtualizer disabled for paged grid; no attach
-    const el = this.scrollerRef()?.nativeElement;
-    void el; // reserved for future use
-    // Attach controllers to the table once
-    this.pctrl.attachTable(this.tsTable);
-    this.pctrl.init({
-      getColWidth: (id) => this.getColWidth(id),
-      getSelectionWidth: () => this.selectionStickyWidth(),
-      getPinState: () => {
-        const pin = this.tsTable?.getState().columnPinning;
-        return { left: pin?.left ?? [], right: pin?.right ?? [] };
-      },
-    });
-    // Measure header widths initially and on resize
-    this.updateHeaderWidths();
-    window.addEventListener('resize', this.updateHeaderWidths);
-  }
-
-  public ngOnDestroy(): void {
-    if (!this.store) {
-      return;
-    }
-    // Abort any inflight requests and release refs
-    this.gridSvc.abort();
-    this.tsTable = undefined;
-    window.removeEventListener('resize', this.updateHeaderWidths);
-  }
-
-  public ngOnInit() {
-    if (!this.store) {
-      return;
-    }
-
-    void (async () => {
-      this.undoMgr.initialize(this);
-
-      await this.tagFilter.init({
-        limitToTags: this.limitToTags(),
-        limitToIssues: this.limitToIssues(),
-        tagOptionsSvc: this.dgTagOptionsSvc,
-        doRefresh: () => {
-          void this.doRefresh();
-        },
-      });
-
-      if (this.showListFilter() && this.dgListsSvc) {
-        try {
-          const listsResult: unknown = await this.dgListsSvc.getAll();
-          const entity = this.config.messages.exportEntity;
-          const expectedObject = entity === 'persons' ? 'people' : 'households';
-          const listRows: unknown[] = Array.isArray(listsResult)
-            ? listsResult
-            : isRecord(listsResult) && Array.isArray(listsResult['rows'])
-              ? listsResult['rows']
-              : [];
-          const filtered = listRows.filter((l): l is GridRow => isRecord(l) && l['object'] === expectedObject);
-          this.availableLists.set(filtered);
-        } catch (err) {
-          console.error('Failed to load lists for filter:', err);
-        }
-      }
-
-      this.selectionStickyWidth.set(this.selectionColumnWidthPx);
-
-      // Initialize persistence key
-      const urlKey = typeof window !== 'undefined' ? window.location?.pathname || '' : '';
-      this._persistKey = `pcdg:${urlKey}`;
-
-      // Attempt to read saved column order before table creation
-      let savedColumnOrder: string[] | undefined;
-      try {
-        const raw = localStorage.getItem(this._persistKey);
-        if (raw) {
-          const data = JSON.parse(raw || '{}') as { order?: string[] };
-          if (Array.isArray(data?.order)) savedColumnOrder = data.order;
-        }
-      } catch {}
-
-      // Note: allowFilter input retained for API compatibility (filter UI uses signals)
-      const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
-      this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
-      this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
-      this.hasDoorColumn.set(this.colDefsWithEdit.some((col) => !!col?.doorColumn));
-
-      // Initialize column visibility defaults
-      const vis: Record<string, boolean> = {};
-      for (const c of this.colDefsWithEdit) if (c.field) vis[c.field] = c.hide !== true;
-      this.colVisibility.set(vis);
-
-      // Build TanStack columns
-      this.tsColumns = this.tableSvc.buildTsColumns(this.colDefsWithEdit);
-      this.tsTable = this.tableSvc.createGridTable({
-        rows: this.rows(),
-        columns: this.tsColumns,
-        getRowId: (row: GridRow) => this.toId(row),
-        state: {
-          sorting: this.sorting(),
-          columnVisibility: this.colVisibility(),
-          rowSelection: this.buildRowSelectionForCurrentData(),
-          columnPinning: { left: [], right: [] },
-          columnSizing: {},
-          columnOrder: savedColumnOrder || [],
-        },
-        onStateChange: () => this.syncSignalsFromTable(),
-        onSortingChange: (updater: Updater<SortingState>) => {
-          const next = typeof updater === 'function' ? updater(this.tsTable?.getState().sorting ?? []) : updater;
-          this.sorting.set(next);
-          const first = next?.[0];
-          this.sortCol.set(first?.id ?? null);
-          this.sortDir.set(first?.desc ? 'desc' : first ? 'asc' : null);
-          void this.loadPage(0);
-          this.store.requestPersist();
-        },
-        onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => {
-          const current = this.tsTable?.getState().rowSelection ?? {};
-          const next = typeof updater === 'function' ? updater(current) : updater;
-          const set = new Set(this.selectedIdSet());
-          const canSelectFn = this.rowCanSelect();
-          for (const row of this.rows()) {
-            const id = this.toId(row);
-            if (!id) continue;
-            if (canSelectFn && !canSelectFn(row)) {
-              set.delete(id);
-              continue;
-            }
-            if (next[id]) set.add(id);
-            else set.delete(id);
-          }
-          this.selectedIdSet.set(set);
-        },
-        onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
-          const current = this.tsTable?.getState().columnSizing ?? {};
-          const next = typeof updater === 'function' ? updater(current) : updater;
-          this.colWidths.set({ ...next });
-          this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: next } }));
-          this.store.requestPersist();
-        },
-      });
-
-      // Attach to store for syncing & persistence
-      try {
-        this.store.attachTable(this.tsTable);
-        this.store.setPersistKey(this._persistKey);
-        this.store.setGetRowId((row: GridRow) => this.toId(row));
-      } catch {}
-
-      // Load persisted state and apply to table before first load
-      if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
-      this.store.loadState();
-      // A door column replaces the open-icon, so the selection column only needs
-      // to fit the checkbox (36px); without one it also holds the open-icon (72px).
-      this.selectionStickyWidth.set(this.hasDoorColumn() ? 36 : this.selectionColumnWidthPx);
-
-      await this.loadPage(0);
-      this._initialized = true;
-    })();
-  }
-
-  public triggerFilterChanged() {
-    void this.loadPage(0);
-  }
-
-  protected add() {
-    this.navSvc.navigateIfValid(this.router, this.route, this.addRoute());
-  }
-  public doAdd() {
-    this.add();
-  }
-
-  protected cloneSelected() {
-    if (!this.hasSingleSelection()) return;
-    const selectedId = Array.from(this.selectedIdSet())[0];
-    const selectedRow = this.rows().find((r) => this.toId(r) === selectedId);
-    if (!selectedRow) return;
-
-    void this.router.navigate([this.addRoute()], { relativeTo: this.route, state: { cloneData: selectedRow } });
-  }
-
-  public doClone() {
-    this.cloneSelected();
-  }
-
-  protected applyPanelFilters() {
-    const raw = this.panelFilters();
-    const cleaned: Record<string, { op: string; value: string }> = {};
-    for (const [k, v] of Object.entries(raw)) {
-      const op = v?.op ?? 'contains';
-      const sv = String(v?.value ?? '').trim();
-      if (op === 'isEmpty' || op === 'isNotEmpty') {
-        cleaned[k] = { op, value: '' };
-      } else if (sv) {
-        cleaned[k] = { op, value: sv };
-      }
-    }
-    this.filterValues.set(cleaned);
-    this.showFilterPanel.set(false);
-    void this.loadPage(0);
-  }
-
-  public ariaSortHeader(h: Header<GridRow, unknown>): 'ascending' | 'descending' | 'none' {
-    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
-    if (s === 'asc') return 'ascending';
-    if (s === 'desc') return 'descending';
-    return 'none';
-  }
-
-  // Auto-size column based on header and currently visible cells
-  public autoSizeColumn(h: Header<GridRow, unknown>) {
-    const id = this.getFieldFromHeader(h);
-    if (!id) return;
-    const table = this.gridTable()?.nativeElement;
-    if (!table) return;
-    const px = this.columnsSvc.computeAutoSizeWidth(table, id);
-    if (px > 0) this.setColWidth(id, px);
-    this.store?.requestPersist();
-  }
-
-  // Virtualizer padding not used in paginated mode
-
-  // Build a compact filter model from current UI filter values
-  public buildFilterModel(): Record<string, unknown> {
-    return this.filtersSvc.buildFilterModel(this.filterValues());
-  }
-
-  protected readonly sanitizer = inject(DomSanitizer);
-
-  // Memoized sanitized cell HTML. callCellRenderer runs inside a template binding, so
-  // it re-fires on every change-detection pass for every visible cell; without this it
-  // would re-run the renderer AND DOMPurify O(rows × cols) times per CD cycle. Keyed by
-  // the (stable) ColDef then the row data object — both WeakMap keys, so entries are
-  // evicted automatically when a column or row is garbage-collected — and invalidated
-  // when the cell's value changes.
-  private readonly cellHtmlCache = new WeakMap<object, WeakMap<object, { value: unknown; html: SafeHtml }>>();
-  private readonly emptyCellHtml: SafeHtml = this.sanitizer.bypassSecurityTrustHtml('');
-
-  protected callCellRenderer(row: GridRow, col: ColDef): SafeHtml {
-    const fn = col.cellRenderer;
-    if (typeof fn !== 'function') {
-      // Empty string is still valid SafeHtml
-      return this.emptyCellHtml;
-    }
-
-    const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
-
-    let byRow = this.cellHtmlCache.get(col);
-    if (!byRow) {
-      byRow = new WeakMap<object, { value: unknown; html: SafeHtml }>();
-      this.cellHtmlCache.set(col, byRow);
-    }
-    const cached = byRow.get(row);
-    if (cached && Object.is(cached.value, value)) {
-      return cached.html;
-    }
-
-    const raw = fn({ data: row, value, colDef: col });
-
-    // Renderer strings may interpolate row data, so they are never trusted as-is:
-    // DOMPurify strips script/event-handler payloads while keeping the markup
-    // (class/style/img) renderers legitimately produce. SafeHtml is returned as-is.
-    const html: SafeHtml =
-      typeof raw === 'string' ? this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw)) : (raw as SafeHtml);
-
-    byRow.set(row, { value, html });
-    return html;
-  }
-
-  protected callValueFormatter(row: GridRow, col: ColDef): unknown {
-    const fn = col.valueFormatter;
-    if (typeof fn === 'function') {
-      return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
-    }
-    return this.getCellValue(row, col);
-  }
-
-  /** Muted second line under a door cell (e.g. "3 people" under a household address). */
-  protected callDoorSubtitle(row: GridRow, col: ColDef): string | null {
-    const fn = col.doorSubtitle;
-    if (typeof fn !== 'function') return null;
-    return fn({ data: row, value: this.getCellValue(row, col), colDef: col });
-  }
-
-  // canNext/canPrev are computed
-  protected cancelEdit() {
-    this.editingCell.set(null);
-  }
-
-  public clearAllSelection() {
-    this.allSelected.set(false);
-    this.allSelectedIds.set([]);
-    this.allSelectedIdSet.set(new Set());
-    this.allSelectedCount.set(0);
-  }
-
-  public clearHeaderFilter(field: string) {
-    const next = { ...this.filterValues() };
-    delete next[field];
-    this.filterValues.set(next);
-    void this.loadPage(0);
-    this.store?.requestPersist();
-  }
-
-  protected clearPanelFilters() {
-    this.panelFilters.set({});
-  }
-
-  public clearSort(h: Header<GridRow, unknown>) {
-    if (typeof h?.column?.clearSorting === 'function') {
-      h.column.clearSorting();
-      return;
-    }
-    // Fallback: remove from sorting state
-    const id = this.getFieldFromHeader(h);
-    if (!id) return;
-    const next = this.sorting().filter((s) => s.id !== id);
-    this.sorting.set(next);
-    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, sorting: next } }));
-    void this.loadPage(0);
-  }
-
-  protected closePanel() {
-    this.showFilterPanel.set(false);
-  }
-
-  public columnLabelFor(id: string): string {
-    const c = this.colDefsWithEdit.find((x) => x.field === id);
-    return c?.headerName || id;
-  }
-
-  protected async commitEdit(row: GridRow, col: ColDef) {
-    if (!col.field) return;
-
-    if (this.isTagColumn(col)) {
-      await this.commitTagColumn(row, col);
-      return;
-    }
-
-    const value = this.editingValue();
-    if (this.editingCtrl) {
-      await this.editingCtrl.commitSingleCell(row, col, this.coerceEditingValue(col, value));
-    }
-    this.editingCell.set(null);
-  }
-
-  private getRowDisplayName(row: unknown): string {
-    if (!isRecord(row)) return 'Unnamed Record';
-    if (row['first_name'] !== undefined || row['last_name'] !== undefined) {
-      const parts = [row['first_name'], row['last_name']].filter(Boolean);
-      return parts.length ? parts.join(' ') : 'Unnamed Person';
-    }
-    if (row['street1'] !== undefined || row['street_num'] !== undefined) {
-      const parts = [row['street_num'], row['street1'], row['apt'], row['city']].filter(Boolean);
-      return parts.length ? parts.join(' ') : 'Unnamed Household';
-    }
-    if (row['name']) return String(row['name']);
-    if (row['display_name']) return String(row['display_name']);
-    if (row['id']) return `Record #${String(row['id'])}`;
-    return 'Unnamed Record';
-  }
-
-  protected async confirmMerge() {
-    const svc = this.gridSvc as unknown as MergeableService;
-    const mergeFn = svc.merge || svc.mergePersons || svc.mergeCompanies || svc.mergeHouseholds;
-
-    if (!mergeFn) {
-      this.alertSvc.showError('Merging is not supported for this data grid.');
-      return;
-    }
-
-    const selectedRows = this.getSelectedRows();
-    if (selectedRows.length !== 2) {
-      this.alertSvc.showError('Please select exactly 2 rows to merge.');
-      return;
-    }
-
-    const [row1, row2] = selectedRows;
-    if (!row1 || !row2) return;
-    const name1 = this.getRowDisplayName(row1);
-    const name2 = this.getRowDisplayName(row2);
-
-    const primaryChoice = await this.dialogs.choose({
-      title: 'Select Primary Record',
-      message:
-        'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
-      variant: 'info',
-      choices: [
-        {
-          label: `${name1} (Keep this, merge the other into this)`,
-          value: { target: row1, source: row2 },
-        },
-        {
-          label: `${name2} (Keep this, merge the other into this)`,
-          value: { target: row2, source: row1 },
-        },
-      ],
-    });
-
-    if (!primaryChoice) return;
-
-    const targetName = this.getRowDisplayName(primaryChoice.target);
-    const sourceName = this.getRowDisplayName(primaryChoice.source);
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Merge',
-      message: `Are you sure you want to merge "${sourceName}" into "${targetName}"? This action will permanently delete "${sourceName}" and cannot be undone.`,
-      variant: 'warning',
-      confirmText: 'Merge',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      if (typeof svc.merge === 'function') {
-        await svc.merge(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof svc.mergePersons === 'function') {
-        await svc.mergePersons(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof svc.mergeCompanies === 'function') {
-        await svc.mergeCompanies(primaryChoice.target.id, primaryChoice.source.id);
-      } else if (typeof svc.mergeHouseholds === 'function') {
-        await svc.mergeHouseholds(primaryChoice.target.id, primaryChoice.source.id);
-      } else {
-        throw new Error('No merge service method available');
-      }
-
-      this.alertSvc.showSuccess(`Successfully merged into "${targetName}"`);
-      this.clearAllSelection();
-      await this.refresh();
-    } catch (err) {
-      console.error(err);
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
-    } finally {
-      end();
-    }
-  }
-
-  protected async confirmDelete(selectedRows?: (Partial<RowOf<T>> & { id: string })[]): Promise<boolean | void> {
-    if (this.disableDelete()) {
-      this.alertSvc.showError(this.config.messages.noDeletePermission);
-      return true;
-    }
-
-    const overrideFn = this.confirmDeleteOverride();
-    if (overrideFn) {
-      const selected = selectedRows || this.getSelectedRows();
-      const handled = await overrideFn(selected);
-      if (handled !== false) {
-        this.clearAllSelection();
-        await this.refresh();
-        this.rowsDeleted.emit();
-        return true;
-      }
-    }
-
-    await this.actionsSvc.confirmDeleteAndRun({
-      _loading: this._loading,
-      dialogs: this.dialogs,
-      alertSvc: this.alertSvc,
-      getSelectedRows: () => selectedRows || this.getSelectedRows(),
-      gridSvc: this.gridSvc,
-      config: this.config,
-    });
-
-    // Always clear our select-all cache after a delete attempt
-    this.clearAllSelection();
-    await this.refresh();
-    this.rowsDeleted.emit();
-    return true;
-  }
-  public doConfirmDelete() {
-    void this.confirmDelete();
-  }
-
-  public doConfirmMerge() {
-    void this.confirmMerge();
-  }
-  protected async confirmExport(): Promise<void> {
-    await this.actionsSvc.doExportCsv({
-      dialogs: this.dialogs,
-      alertSvc: this.alertSvc,
-      config: this.config,
-      displayedCount: this.displayedCount(),
-      totalCount: this.totalCountAll(),
-      getRowsForExport: () => this.rows().map((r) => ({ ...r })),
-      queueFullExport: () => this.queueFullExport(),
-      logInstantExport: (rowCount) => this.logInstantExport(rowCount),
-    });
-  }
-  public doConfirmExport() {
-    void this.confirmExport();
-  }
-
-  protected cyclePin(h: Header<GridRow, unknown>) {
-    const current = this.pinState(h);
-    const next = current === 'left' ? 'right' : current === 'right' ? false : 'left';
-    const pin = h?.column?.pin;
-    if (typeof pin === 'function') pin.call(h.column, next);
-    this.store?.requestPersist();
-  }
-
-  public doImportCSV() {
-    // Emit a simple signal so consumers can open their import UI
-    this.importCSV.emit('open');
-  }
-
-  public endIndex(): number {
-    return this.rows().length;
-  }
-
-  // exportToCSV removed (legacy path)
-  public filter() {
-    // Open right-side filter panel and seed with current filters
-    const current = this.filterValues();
-    this.panelFilters.set(this.filtersSvc.preparePanelFilters(current));
-    this.showFilterPanel.set(true);
-  }
-
-  // Helpers for template-safe access to dynamic fields/formatters/renderers
-  protected getCellValue(row: GridRow, col: ColDef): unknown {
-    const field = col.field ?? '';
-    // Prefer valueGetter when provided
-    const vget = col.valueGetter;
-    if (typeof vget === 'function') {
-      try {
-        return vget({ data: row, colDef: col, value: field ? row[field] : undefined });
-      } catch {
-        // fall through to field lookup
-      }
-    }
-    return field ? row[field] : undefined;
-  }
-
-  protected getEditingDisplayValue(row: GridRow, col: ColDef): unknown {
-    return this.getCellValue(row, col);
-  }
-
-  public getColDefById(id: string): ColDef | undefined {
-    return this.colDefsWithEdit.find((c) => c.field === id);
-  }
-
-  public getColWidth(id: string): number | null {
-    const min = this.columnMinWidthPx(id);
-    // A user-resized width always wins (persisted in colWidths, mirrored into columnSizing).
-    const stored = this.colWidths()[id];
-    if (typeof stored === 'number' && stored > 0) return Math.max(stored, min);
-    // An explicit per-column preferred width comes next.
-    const colDef = this.getColDefById(id);
-    if (typeof colDef?.width === 'number' && colDef.width > 0) return Math.max(colDef.width, min);
-    // On content-fit grids, unsized columns fall to their content/min width and the grow column
-    // soaks up the slack — so short columns stay tight instead of stretching to fill.
-    if (this.fitColumns()) return min;
-    // Legacy grids keep TanStack's default column size so existing layouts don't shift.
-    const size = this.tsTable?.getColumn?.(id)?.getSize?.();
-    if (typeof size === 'number' && size > 0) return Math.max(size, min);
-    return min;
-  }
-
-  // displayedCount is computed
-  protected getFieldFromHeader(h: Header<GridRow, unknown>): string | null {
-    const id = h?.column?.id;
-    return typeof id === 'string' ? id : null;
-  }
-
-  protected getFilterArray(field: string): string[] {
-    return this.filtersSvc.getFilterArray(this.filterValues(), field);
-  }
-
-  // Helper to derive filter select options from a column definition
-  public getFilterOptionsForCol(col: ColDef): string[] | null {
-    return this.filtersSvc.getFilterOptionsForCol(col);
-  }
-
-  protected selectEditorOptions(col: ColDef): SelectEditorOptions | null {
-    return this.filtersSvc.getSelectEditorOptions(col);
-  }
-
-  protected async onSelectChange(row: GridRow, col: ColDef, newValue: unknown) {
-    const resolvedValue = Array.isArray(newValue) ? newValue[0] : newValue;
-    // Update the editing value first so commitEdit reads the correct value
-    this.editingValue.set(resolvedValue);
-    await this.commitEdit(row, col);
-  }
-
-  /** Current editing value normalized for a text `[value]` binding (`null`/`undefined` → empty string). */
-  protected editingValueText(): string {
-    const v = this.editingValue();
-    return v == null ? '' : String(v);
-  }
-
-  /**
-   * Whether a single-select editor option matches the current editing value.
-   * String comparison mirrors how the native `<option [value]>` stringifies values in the DOM.
-   */
-  protected isEditorOptionSelected(value: unknown): boolean {
-    const raw = this.editingValue();
-    const current = Array.isArray(raw) ? raw[0] : raw;
-    return String(current ?? '') === String(value ?? '');
-  }
-
-  /** Whether a multi-select editor option is part of the current editing value array. */
-  protected isEditorOptionMultiSelected(value: unknown): boolean {
-    const raw = this.editingValue();
-    if (!Array.isArray(raw)) return false;
-    return raw.some((entry) => String(entry ?? '') === String(value ?? ''));
-  }
-
-  /** Multi-select editor change: editing value = the string values of all selected options. */
-  protected onMultiSelectEditorChange(event: Event): void {
-    const target = event.target;
-    if (!(target instanceof HTMLSelectElement)) return;
-    this.editingValue.set(Array.from(target.selectedOptions).map((opt) => opt.value));
-  }
-
-  protected tagsAsStrings(value: unknown): string[] {
-    if (!Array.isArray(value)) return [];
-    const tags: string[] = [];
-    for (const entry of value) {
-      const normalized = entry == null ? '' : String(entry).trim();
-      if (normalized) tags.push(normalized);
-    }
-    return tags;
-  }
-
-  protected async handleTagRemoved(row: GridRow, col: ColDef, tagName: string) {
-    if (!col?.field || !this.isTagColumn(col)) return;
-    const trimmed = typeof tagName === 'string' ? tagName.trim() : '';
-    if (!trimmed) return;
-
-    const current = this.getCellValue(row, col);
-    const previous = this.utilsSvc.normalizeTagSelection(current);
-    if (!previous.includes(trimmed)) return;
-
-    const next = previous.filter((tag) => tag !== trimmed);
-    await this.persistTagSelection(row, col, next, {
-      successMessage: `Removed tag "${trimmed}"`,
-    });
-  }
-
-  protected isTagColumn(col: ColDef): boolean {
-    if (!col) return false;
-    if (col.tagColumn) return true;
-    const field = (col.field ?? '').toLowerCase();
-    return field === 'tags' || field === 'issues';
-  }
-
-  protected async commitTagColumn(row: GridRow, col: ColDef) {
-    try {
-      const next = this.utilsSvc.normalizeTagSelection(this.editingValue());
-      await this.persistTagSelection(row, col, next);
-    } finally {
-      this.editingCell.set(null);
-    }
-  }
-
-  protected tagEditorChoices(col: ColDef): string[] {
-    const opts = this.selectEditorOptions(col);
-    return (opts?.choices.map((c) => c.value).filter(Boolean) ?? []).sort();
-  }
-
-  protected filteredTagChoices(col: ColDef): string[] {
-    const q = this.tagSearch().trim().toLowerCase();
-    const all = this.tagEditorChoices(col);
-    return q ? all.filter((t) => t.toLowerCase().includes(q)) : all;
-  }
-
-  protected isTagChecked(tag: string): boolean {
-    const v = this.editingValue();
-    return Array.isArray(v) && v.includes(tag);
-  }
-
-  protected toggleTagInEditor(tag: string, checked: boolean) {
-    const raw = this.editingValue();
-    const current: string[] = Array.isArray(raw) ? raw.map((t) => String(t)) : [];
-    if (checked && !current.includes(tag)) {
-      this.editingValue.set([...current, tag]);
-    } else if (!checked) {
-      this.editingValue.set(current.filter((t) => t !== tag));
-    }
-  }
-
-  protected async persistTagSelection(
-    row: GridRow,
-    col: ColDef,
-    desired: string[],
-    opts?: { successMessage?: string },
-  ) {
-    const field = col.field;
-    if (!field) return;
-
-    const id = this.toId(row);
-    if (!id) return;
-
-    const previous = this.utilsSvc.normalizeTagSelection(this.getCellValue(row, col));
-    const next = this.utilsSvc.normalizeTagSelection(desired);
-
-    const diff = this.diffTagSelection(previous, next);
-    if (!diff.hasChanges) return;
-    const applyTags = (tags: string[], prevTags?: string[]) => {
-      const safe = Array.isArray(tags) ? [...tags] : [];
-      row[field] = safe;
-      this.updateEditedRowInCachesFn(id, field, safe, prevTags);
-      this.updateTableWindowFn(this.startIndex(), this.endIndex());
-    };
-
-    applyTags(next, previous);
-
-    try {
-      const removedTeamNames = await this.applyTagDiff(id, diff, col);
-      const finalTags = await this.refreshTagsFromServer(id, next, col);
-      applyTags(finalTags, previous);
-      this.notifyTagSuccess(opts?.successMessage, removedTeamNames, diff);
-    } catch {
-      applyTags(previous, previous);
-      const errorMsg = this.tagTypeFor(col) === 'issue' ? 'Failed to update issues' : 'Failed to update tags';
-      this.alertSvc.showError(errorMsg);
-    }
-  }
-
-  /** Resolve whether a column edits tags or issues from its renderer params. */
-  protected tagTypeFor(col?: ColDef): 'tag' | 'issue' {
-    const params: unknown = col?.cellRendererParams;
-    return isRecord(params) && params['tagType'] === 'issue' ? 'issue' : 'tag';
-  }
-
-  private diffTagSelection(previous: string[], next: string[]): TagDiff {
-    const toAdd = next.filter((tag) => !previous.includes(tag));
-    const toRemove = previous.filter((tag) => !next.includes(tag));
-    return {
-      toAdd,
-      toRemove,
-      hasChanges: toAdd.length > 0 || toRemove.length > 0,
-    };
-  }
-
-  private async applyTagDiff(id: string, diff: TagDiff, col?: ColDef): Promise<string[]> {
-    const removedTeamNames: string[] = [];
-    const type = this.tagTypeFor(col);
-
-    for (const tag of diff.toRemove) {
-      const detachResult = await this.gridSvc.detachTag(id, tag, type);
-      if (detachResult === false) {
-        throw new Error('Tag removal was rejected');
-      }
-      const teams = isRecord(detachResult) ? detachResult['removed_teams'] : undefined;
-      if (Array.isArray(teams)) {
-        for (const team of teams) {
-          const name = isRecord(team) && typeof team['name'] === 'string' ? team['name'] : '';
-          removedTeamNames.push(name || 'Unnamed team');
-        }
-      }
-    }
-
-    for (const tag of diff.toAdd) {
-      await this.gridSvc.attachTag(id, tag, type);
-    }
-
-    // Bust the cache so the next tag/issue dropdown open re-fetches fresh names
-    if (diff.toAdd.length > 0 || diff.toRemove.length > 0) {
-      void this.dgTagOptionsSvc.invalidate(type);
-    }
-
-    return removedTeamNames;
-  }
-
-  private async refreshTagsFromServer(id: string, fallback: string[], col?: ColDef): Promise<string[]> {
-    try {
-      const type = this.tagTypeFor(col);
-      const refreshed = await this.gridSvc.getTags(id, type);
-      if (Array.isArray(refreshed)) {
-        return [...refreshed];
-      }
-    } catch {
-      // ignore refresh errors; fall back to optimistic state
-    }
-    return fallback;
-  }
-
-  private notifyTagSuccess(successMessage: string | undefined, removedTeamNames: string[], diff: TagDiff) {
-    const hasRemovedTeams = removedTeamNames.length > 0;
-    const message = successMessage ?? this.buildTagSuccessMessage(diff);
-    if (!message && !hasRemovedTeams) return;
-
-    if (message) {
-      if (hasRemovedTeams) {
-        this.alertSvc.showSuccess(`${message}; removed from teams: ${removedTeamNames.join(', ')}`);
-      } else {
-        this.alertSvc.showSuccess(message);
-      }
-      return;
-    }
-
-    this.alertSvc.showSuccess(`Removed from teams: ${removedTeamNames.join(', ')}`);
-  }
-
-  private buildTagSuccessMessage(diff: TagDiff): string | undefined {
-    const additions = diff.toAdd;
-    const removals = diff.toRemove;
-    if (!additions.length && !removals.length) return undefined;
-
-    if (additions.length && !removals.length) {
-      return additions.length === 1 ? `Added tag "${additions[0]}"` : `Added ${additions.length} tags`;
-    }
-
-    if (removals.length && !additions.length) {
-      return removals.length === 1 ? `Removed tag "${removals[0]}"` : `Removed ${removals.length} tags`;
-    }
-
-    const parts: string[] = [];
-    if (additions.length) {
-      parts.push(additions.length === 1 ? `added "${additions[0]}"` : `added ${additions.length} tags`);
-    }
-    if (removals.length) {
-      parts.push(removals.length === 1 ? `removed "${removals[0]}"` : `removed ${removals.length} tags`);
-    }
-    return `Tags updated (${parts.join('; ')})`;
-  }
-
-  protected multiSelectHeight(options: SelectEditorOptions | null): string | null {
-    if (!options?.multiple) return null;
-    const rows = options.size && options.size > 0 ? Math.floor(options.size) : 5;
-    const rowHeightRem = 1.6;
-    const paddingRem = 0.75;
-    return `${rows * rowHeightRem + paddingRem}rem`;
-  }
-
-  protected getTextEditorConfig(col: ColDef): { textarea: boolean; rows: number } {
-    const params = this.resolveEditorParams(col);
-    const multilineFlag = Boolean(params?.['textarea'] ?? params?.['multiline']);
-    const rowsRaw = params?.['rows'] ?? params?.['textareaRows'] ?? params?.['lines'];
-    const rowsNum = Number(rowsRaw);
-    const rows = Number.isFinite(rowsNum) && rowsNum > 0 ? Math.floor(rowsNum) : 5;
-    return { textarea: multilineFlag, rows: multilineFlag ? rows : 1 };
-  }
-
-  public getFilterValue(field: string): string {
-    return this.filtersSvc.getFilterValue(this.filterValues(), field);
-  }
-
-  public getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
-    const currentRows = this.rows();
-    const rowById = new Map<string, GridRow>();
-    for (const row of currentRows) {
-      const id = this.toId(row);
-      if (id) rowById.set(id, row);
-    }
-
-    const toRow = (id: string): GridRow & { id: string } => {
-      const fromPage = rowById.get(id);
-      if (fromPage) {
-        return { ...fromPage, id };
-      }
-      return { id };
-    };
-
-    if (this.allSelected()) {
-      const ids = this.allSelectedIds();
-      return ids.map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
-    }
-    const ids = this.selectedIdSet();
-    return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
-  }
-
-  protected handleCellClick(row: GridRow, col: ColDef, event?: Event) {
-    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
-    // The door cell (e.g. Name) opens the record, routing through view() so the
-    // filtered record-navigation context (prev/next, "N of M") is captured.
-    if (col.doorColumn) {
-      const id = this.toId(row);
-      if (id) this.openEdit(id);
-      return;
-    }
-    if (typeof col.onCellClicked === 'function') {
-      col.onCellClicked({ data: row, colDef: col, event });
-    }
-  }
-
-  protected handleCellDblClick(row: GridRow, col: ColDef) {
-    if (col.isCellInteractive && !col.isCellInteractive(row)) return;
-    if (this.isCellEditable(row, col)) {
-      this.startEdit(row, col);
-      return;
-    }
-    if (typeof col.onCellDoubleClicked === 'function') {
-      col.onCellDoubleClicked({ data: row, colDef: col });
-    } else {
-      this.openEditOnDoubleClick(row);
-    }
-  }
-
-  protected hasCellRenderer(col: ColDef): boolean {
-    return !!col.cellRenderer;
-  }
-
-  /** Resolves a column's optional `cellClass` (static string or per-row function) for the cell `<td>`. */
-  protected cellClassFor(col: ColDef, row: GridRow): string {
-    const cc = col.cellClass;
-    if (!cc) return '';
-    return (typeof cc === 'function' ? cc({ data: row, colDef: col }) : cc) ?? '';
-  }
-
-  protected hasValueFormatter(col: ColDef): boolean {
-    return typeof col.valueFormatter === 'function';
-  }
-
-  // headerClick removed; using explicit header API bindings instead
-
-  protected headerGroups(): HeaderGroup<GridRow>[] {
-    return this.tsTable?.getHeaderGroups() ?? [];
-  }
-
-  protected hideAllCols() {
-    const v = { ...this.colVisibility() };
-    for (const c of this.colDefsWithEdit) if (c.field && !c.noHide) v[c.field] = false;
-    this.colVisibility.set(v);
-    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
-  }
-  public hideAllColsPublic() {
-    this.hideAllCols();
-  }
-
-  public hideColumn(h: Header<GridRow, unknown>) {
-    const id = this.getFieldFromHeader(h);
-    if (!id) return;
-    this.toggleCol(id, false);
-    if (typeof h?.column?.toggleVisibility === 'function') h.column.toggleVisibility(false);
-  }
-
-  // Inline filter row helpers for multi-select label
-  public inlineFilterLabel(field: string): string {
-    return this.filtersSvc.inlineFilterLabel(this.filterValues(), field);
-  }
-
-  protected inputTypeFor(col: ColDef): 'text' | 'number' | 'date' | 'color' {
-    const t = String(col?.cellDataType || '').toLowerCase();
-    if (t === 'number' || t === 'numeric') return 'number';
-    if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
-    if (t === 'color' || t === 'colour') return 'color';
-    return 'text';
-  }
-
-  /**
-   * Renders a raw cell value, applying the tenant's configured date format to date-typed columns that
-   * don't define their own valueFormatter. Non-date columns are returned unchanged.
-   */
-  protected formatGridCell(col: ColDef, value: unknown): unknown {
-    if (this.inputTypeFor(col) === 'date') {
-      const formatted =
-        typeof value === 'string' || typeof value === 'number' || value instanceof Date || value == null
-          ? this.dateFormatSvc.format(value)
-          : '';
-      return formatted || value;
-    }
-    return value;
-  }
-
-  // Toolbar helpers
-  public canUndo() {
-    return !!this.undoMgr.canUndo();
-  }
-  public canRedo() {
-    return !!this.undoMgr.canRedo();
-  }
-  public undo() {
-    void this.undoMgr.undo();
-  }
-  public redo() {
-    void this.undoMgr.redo();
-  }
-  public showFiltersState() {
-    return this.showFilterPanel() || this.showFilters();
-  }
-  public archiveModeState() {
-    return this.archiveMode();
-  }
-  public hasSelectionState() {
-    return this.hasSelection();
-  }
-  public getColDefsForToolbar() {
-    // Identity columns (noHide) are omitted from the visibility toggle list.
-    return this.colDefsWithEdit.filter((c) => !c.noHide);
-  }
-  public getColVisibilityMap() {
-    return this.colVisibility();
-  }
-
-  protected isColVisible(c: ColDef): boolean {
-    const v = this.colVisibility();
-    if (!c.field) return true;
-    return v[c.field] !== false;
-  }
-
-  // Inline edit helpers
-  protected isEditable(col: ColDef): boolean {
-    return !!col?.editable;
-  }
-
-  public isCellEditable(row: GridRow, col: ColDef): boolean {
-    const override = this.isCellEditableOverride();
-    if (override) {
-      return override(row, col);
-    }
-    if (!this.isEditable(col)) return false;
-    const canSelectFn = this.rowCanSelect();
-    if (canSelectFn && !canSelectFn(row)) return false;
-    return true;
-  }
-
-  protected isCellPointerInteractive(row: GridRow, col: ColDef | undefined): boolean {
-    if (!col) return false;
-    if (col.isCellInteractive && !col.isCellInteractive(row)) return false;
-    if (this.isCellEditable(row, col)) return false;
-    if (typeof col.onCellDoubleClicked === 'function') return true;
-    if (typeof col.onCellClicked === 'function') return true;
-    return !this.disableView();
-  }
-
-  protected isPointerInteractive(col: ColDef | undefined): boolean {
-    if (!col) return false;
-    if (this.isEditable(col)) return false;
-    if (typeof col.onCellDoubleClicked === 'function') return true;
-    if (typeof col.onCellClicked === 'function') return true;
-    return !this.disableView();
-  }
-
-  public isOptionChecked(field: string, option: string): boolean {
-    return this.getFilterArray(field).includes(option);
-  }
-
-  // isPageFullySelected is computed
-  protected isRowChecked(id: string): boolean {
-    return this.allSelected() ? this.allSelectedIdSet().has(id) : this.selectedIdSet().has(id);
-  }
-
-  // Theme no-op (unused)
-
-  // Sorting
-  protected isSortable(col: ColDef): boolean {
-    return !!col.field; // simple toggle; extend as needed
-  }
-
-  // TanStack helpers
-  protected leafHeaders(): Header<GridRow, unknown>[] {
-    // Flat headers correspond to leaf columns
-    return this.tsTable?.getFlatHeaders().filter((h) => h.column.getIsVisible()) ?? [];
-  }
-
-  public leftOffsetPx(colId: string): number {
-    return this.pctrl?.leftOffsetPx(colId) ?? 0;
-  }
-
-  // merge action removed
-
-  // Button-driven next page: replace current data
-  protected async nextPage() {
-    if (!this.canNext()) return;
-    await this.loadPage(this.pageIndex() + 1, false);
-  }
-
-  // First/Last page navigation
-  protected async firstPage() {
-    if (!this.canPrev()) return;
-    await this.loadPage(0, false);
-  }
-  protected async lastPage() {
-    const last = Math.max(0, this.totalPages() - 1);
-    if (this.pageIndex() >= last) return;
-    await this.loadPage(last, false);
-  }
-
-  // Keyboard navigation between cells
-  protected onCellKeydown(ev: KeyboardEvent) {
-    // Ignore key handling when an input/select inside the cell is focused
-    const tag = (ev.target as HTMLElement)?.tagName?.toLowerCase?.() || '';
-    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
-    this.kctrl?.handleCellKeydown(ev, {
-      getColDefById: (id) => this.getColDefById(id),
-      isEditable: (col) => this.isEditable(col),
-      startEdit: (row, col) => this.startEdit(row, col),
-      rows: () => this.rows(),
-    });
-  }
-
-  protected onCellMouseOver(row: GridRow) {
-    this.lastRowHovered = this.toId(row) || undefined;
-  }
-
-  // Handle filter input changes
-  protected onFilterInput(field: string, value: unknown) {
-    const next = { ...this.filterValues() };
-    if (value === undefined || value === null || String(value).trim() === '') delete next[field];
-    else next[field] = value;
-    this.filterValues.set(next);
-    void this.loadPage(0);
-  }
-
-  public onHeaderCheckbox(checked: boolean) {
-    if (this.allSelected()) this.allSelected.set(false);
-    this.tsTable?.toggleAllRowsSelected(checked);
-  }
-
-  public onHeaderDragOver(_h: Header<GridRow, unknown>, ev: DragEvent) {
-    this.reorder?.onDragOver(ev);
-  }
-
-  // Column reordering (drag-and-drop)
-  public onHeaderDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
-    this.reorder?.configure({
-      suppressHeaderDrag: () => this.suppressHeaderDrag,
-      requestPersist: () => this.store?.requestPersist(),
-    });
-    this.reorder?.onDragStart(h, ev);
-  }
-
-  public onHeaderDrop(h: Header<GridRow, unknown>, ev: DragEvent) {
-    this.reorder?.onDrop(h, ev, this.tsTable);
-  }
-
-  public onHeaderFilterInput(field: string, value: unknown) {
-    const v = String(value ?? '').trim();
-    const next = { ...this.filterValues() };
-    if (!v) delete next[field];
-    else next[field] = { op: 'contains', value: v };
-    this.filterValues.set(next);
-    void this.loadPage(0);
-    this.store?.requestPersist();
-  }
-
-  // header resize is handled via HeaderResizeDirective
-
-  protected onPanelOpChange(field: string, op: string) {
-    const next = { ...this.panelFilters() };
-    const prev = next[field] || { op: 'contains', value: '' };
-    next[field] = { ...prev, op };
-    this.panelFilters.set(next);
-  }
-
-  protected onPanelValueChange(field: string, value: unknown) {
-    const next = { ...this.panelFilters() };
-    const prev = next[field] || { op: 'contains', value: '' };
-    next[field] = { ...prev, value };
-    this.panelFilters.set(next);
-  }
-
-  protected onRowCheckboxChange(row: Row<GridRow>, checked: boolean) {
-    if (this.allSelected()) {
-      const id = this.toId(row.original);
-      if (!id) return;
-      const canSelectFn = this.rowCanSelect();
-      if (canSelectFn && !canSelectFn(row.original)) {
-        return;
-      }
-      const current = this.allSelectedIdSet();
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      this.allSelectedIdSet.set(next);
-      return;
-    }
-    if (typeof row?.toggleSelected === 'function') {
-      const canSelectFn = this.rowCanSelect();
-      if (canSelectFn && !canSelectFn(row.original)) {
-        return;
-      }
-      row.toggleSelected(checked);
-    }
-  }
-
-  // Virtualization helpers
-  protected onScroll(event: Event) {
-    // No infinite scroll or virtualization-driven paging; ignore scroll.
-    // Keep handler to allow future enhancements.
-    void event;
-  }
-
-  // Prevent drag-reorder when grabbing selection resizer
-  public onSelectionResizeDragStart(ev: DragEvent) {
-    try {
-      ev.preventDefault();
-    } catch {}
-    ev.stopPropagation();
-  }
-
-  // Selection column resize
-  public onSelectionResizeMouseDown(ev: MouseEvent) {
-    ev.stopPropagation();
-    const startW = this.selectionStickyWidth();
-    this.rctrl?.beginSelectionResize(
-      ev.clientX,
-      startW,
-      (w) => {
-        this.selectionStickyWidth.set(w);
-      },
-      () => this.store?.requestPersist(),
-    );
-  }
-
-  public onSelectionResizeTouchStart(ev: TouchEvent) {
-    ev.stopPropagation();
-    const x = ev.touches?.[0]?.clientX ?? 0;
-    const startW = this.selectionStickyWidth();
-    this.rctrl?.beginSelectionResizeTouch(
-      x,
-      startW,
-      (w) => {
-        this.selectionStickyWidth.set(w);
-      },
-      () => this.store?.requestPersist(),
-    );
-  }
-
-  public onToggleFilterOption(field: string, option: string, checked: boolean) {
-    const current = this.getFilterArray(field);
-    let nextArr: string[] = current.slice();
-    if (checked && !nextArr.includes(option)) nextArr.push(option);
-    if (!checked) nextArr = nextArr.filter((o) => o !== option);
-    const next = { ...this.filterValues() };
-    if (nextArr.length === 0) delete next[field];
-    else next[field] = { op: 'in', value: nextArr };
-    this.filterValues.set(next);
-    void this.loadPage(0);
-    this.store?.requestPersist();
-  }
-
-  protected openEdit(id: string) {
-    return this.view(id);
-  }
-
-  public openEditOnDoubleClick(row: GridRow) {
-    this.openEdit(this.toId(row));
-  }
-
-  // Filter panel actions
-  protected panelFields(): string[] {
-    return this.colDefsWithEdit.flatMap((c) => (c.field ? [c.field] : []));
-  }
-
-  protected panelLabelFor(field: string): string {
-    const col = this.colDefsWithEdit.find((c) => c.field === field);
-    return col?.headerName || field;
-  }
-
-  protected panelOptionsFor(field: string): string[] | null {
-    const col = this.colDefsWithEdit.find((c) => c.field === field);
-    if (!col) return null;
-    return this.getFilterOptionsForCol(col);
-  }
-
-  public pinLeft(h: Header<GridRow, unknown>) {
-    const pin = h?.column?.pin;
-    if (typeof pin === 'function') pin.call(h.column, 'left');
-    this.store?.requestPersist();
-  }
-
-  public pinRight(h: Header<GridRow, unknown>) {
-    const pin = h?.column?.pin;
-    if (typeof pin === 'function') pin.call(h.column, 'right');
-    this.store?.requestPersist();
-  }
-
-  // Column pinning helpers
-  public pinState(h: Header<GridRow, unknown> | Cell<GridRow, unknown>): 'left' | 'right' | false {
-    const fn = h?.column?.getIsPinned;
-    return typeof fn === 'function' ? fn.call(h.column) : false;
-  }
-
-  protected async prevPage() {
-    if (!this.canPrev()) return;
-    await this.loadPage(this.pageIndex() - 1);
-  }
-
-  public async refresh(): Promise<void> {
-    await this.loadPage(this.pageIndex());
-  }
-  public async doRefresh() {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    try {
-      await this.refresh();
-    } finally {
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  protected resetAllWidths() {
-    this.colWidths.set({});
-    const sizing: Record<string, number> = {};
-    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-    this.store?.requestPersist();
-  }
-
-  // Resolve row background using DaisyUI tokens for zebra striping
-  protected rowBgForIndex(i: number): string {
-    return i % 2 === 1 ? 'var(--fallback-b2, oklch(var(--b2)))' : 'var(--fallback-b1, oklch(var(--b1)))';
-  }
-  public resetAllWidthsPublic() {
-    this.resetAllWidths();
-  }
-
-  // Build header resize config for directive
-  protected headerResizeConfig(h: Header<GridRow, unknown>) {
-    return {
-      header: h,
-      getColWidth: (id: string) => this.getColWidth(id),
-      setWidth: (col: HeaderRef['column'], id: string, w: number) => {
-        const width = this.clampColumnWidth(id, w);
-        try {
-          if (typeof col?.setSize === 'function') col.setSize(width);
-        } catch {}
-        this.setColWidth(id, width);
-      },
-      requestPersist: () => this.store?.requestPersist(),
-      selectionWidth: () => this.selectionStickyWidth(),
-      setSuppressHeaderDrag: (v: boolean) => {
-        this.suppressHeaderDrag = !!v;
-      },
-    } as const;
-  }
-
-  protected onPageSizeChange(val: string | number) {
-    const n = typeof val === 'number' ? val : parseInt(String(val), 10);
-    const size = isNaN(n) || n <= 0 ? 25 : n;
-    if (size === this.pageSize()) return;
-    this.pageSize.set(size);
-    // loadPage(0) is triggered by effect on pageSize
-  }
-
-  public resetColWidth(h: Header<GridRow, unknown>) {
-    const id = this.getFieldFromHeader(h);
-    if (!id) return;
-    const sizing = { ...(this.tsTable?.getState().columnSizing ?? {}) };
-    if (id in sizing) delete sizing[id];
-    this.colWidths.update((m) => {
-      const next = { ...(m || {}) };
-      delete next[id];
-      return next;
-    });
-    this.tsTable?.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-  }
-
-  public rightOffsetPx(colId: string): number {
-    return this.pctrl?.rightOffsetPx(colId) ?? 0;
-  }
-
-  protected async selectAllMatching() {
-    try {
-      if (!this.fetchCtrl) return;
-      const { ids, count } = await this.fetchCtrl.selectAllMatching();
-      this.allSelectedIds.set(ids);
-      this.allSelectedIdSet.set(new Set(ids));
-      this.allSelectedCount.set(count);
-      this.allSelected.set(ids.length > 0);
-      this.alertSvc.showInfo(`Selected ${this.allSelectedCount()} row(s)`);
-    } catch {
-      this.alertSvc.showError('Failed to select all rows');
-    }
-  }
-
-  // reapplySelectionToVisible removed (selection handled via signals)
-
-  protected sendAbort() {
-    this.gridSvc.abort();
-  }
-
-  protected setColWidth(id: string, px: number) {
-    const next = { ...this.colWidths() };
-    const width = this.clampColumnWidth(id, px);
-    next[id] = width;
-    this.colWidths.set(next);
-    if (this.tsTable) {
-      try {
-        this.tsTable.setOptions((prev) => {
-          const prevState = prev?.state ?? {};
-          const sizing = { ...(prevState.columnSizing || {}) };
-          sizing[id] = width;
-          return { ...prev, state: { ...prevState, columnSizing: sizing } };
-        });
-      } catch {}
-    }
-    try {
-      this.store?.requestPersist();
-    } catch {}
-    // After width change, recompute sticky offsets
-    this.updateHeaderWidths();
-  }
-
-  private computeHeaderMinWidths(table: HTMLTableElement): Record<string, number> {
-    const map: Record<string, number> = {};
-    const headers = table.querySelectorAll('thead th[data-col-id]');
-    headers.forEach((node) => {
-      const el = node as HTMLElement;
-      const id = (el.dataset?.['colId'] ?? el.getAttribute('data-col-id')) || '';
-      if (!id) return;
-      const width = this.measureHeaderPreferredWidth(el);
-      if (width > 0) map[id] = width;
-    });
-    return map;
-  }
-
-  private measureHeaderPreferredWidth(headerEl: HTMLElement): number {
-    const doc = headerEl.ownerDocument;
-    if (!doc) return 0;
-    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
-    if (!content) {
-      const rect = headerEl.getBoundingClientRect();
-      return Math.max(0, Math.ceil(rect.width));
-    }
-    const clone = content.cloneNode(true) as HTMLElement;
-    clone.style.position = 'absolute';
-    clone.style.visibility = 'hidden';
-    clone.style.pointerEvents = 'none';
-    clone.style.flex = '0 0 auto';
-    clone.style.whiteSpace = 'nowrap';
-    clone.style.width = 'auto';
-    clone.style.height = 'auto';
-    clone.style.maxWidth = 'unset';
-    clone.style.left = '-9999px';
-    clone.style.top = '0';
-    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
-    if (labelClone) {
-      labelClone.style.flex = '0 0 auto';
-      labelClone.style.whiteSpace = 'nowrap';
-    }
-    doc.body.appendChild(clone);
-    const contentWidth = clone.getBoundingClientRect().width;
-    clone.remove();
-    if (contentWidth <= 0) return 0;
-    const view = doc.defaultView;
-    const style = view ? view.getComputedStyle(headerEl) : null;
-    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
-    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
-    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
-    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
-    const total = contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + this.headerAutoSizeBufferPx;
-    return Math.max(0, Math.ceil(total));
-  }
-
-  private enforceWidthMinimums(mins: Record<string, number>) {
-    for (const [id, min] of Object.entries(mins)) {
-      const current = this.colWidths()[id];
-      if (typeof current === 'number' && current > 0 && current < min) {
-        this.setColWidth(id, min);
-      }
-    }
-  }
-
-  // Column visibility bulk actions
-  protected showAllCols() {
-    const v = { ...this.colVisibility() };
-    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = true;
-    this.colVisibility.set(v);
-    if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
-  }
-  public showAllColsPublic() {
-    this.showAllCols();
-  }
-
-  public showColumnById(id: string) {
-    this.toggleCol(id, true);
-    const col = this.tsTable?.getColumn?.(id);
-    if (col?.toggleVisibility) col.toggleVisibility(true);
-  }
-
-  // Header menu actions
-  public sortAsc(h: Header<GridRow, unknown>) {
-    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
-    if (isSorted !== 'asc') {
-      const fn = h?.column?.toggleSorting;
-      if (typeof fn === 'function') fn.call(h.column, false, false);
-    }
-  }
-
-  public sortDesc(h: Header<GridRow, unknown>) {
-    const isSorted = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
-    if (isSorted !== 'desc') {
-      const fn = h?.column?.toggleSorting;
-      if (typeof fn === 'function') fn.call(h.column, true, false);
-    }
-  }
-
-  public sortIndicatorForHeader(h: Header<GridRow, unknown>): PcIconNameType {
-    const s = typeof h?.column?.getIsSorted === 'function' ? h.column.getIsSorted() : undefined;
-    if (s === 'asc') return 'chevron-up';
-    if (s === 'desc') return 'chevron-down';
-    return 'none';
-  }
-
-  protected startEdit(row: GridRow, col: ColDef) {
-    if (!this.isCellEditable(row, col) || !col.field) return;
-    const id = this.toId(row);
-    if (!id) return;
-    this.editingCell.set({ id, field: col.field });
-    const value = this.getEditingDisplayValue(row, col);
-    this.editingValue.set(Array.isArray(value) ? [...value] : value);
-  }
-
-  public startIndex(): number {
-    return 0;
-  }
-
-  // Row selection helpers (TanStack-driven)
-  public tableAllPageSelected(): boolean {
-    const rows = this.rows();
-    if (!rows.length) return false;
-    const canSelectFn = this.rowCanSelect();
-    const ids = this.selectedIdSet();
-    let selectableCount = 0;
-    let selectedSelectableCount = 0;
-    for (const r of rows) {
-      const id = this.toId(r);
-      if (!id) continue;
-      if (canSelectFn && !canSelectFn(r)) {
-        continue;
-      }
-      selectableCount++;
-      if (ids.has(id)) {
-        selectedSelectableCount++;
-      }
-    }
-    return selectableCount > 0 && selectedSelectableCount === selectableCount;
-  }
-
-  public tableSomePageSelected(): boolean {
-    if (this.tableAllPageSelected()) return false;
-    const rows = this.rows();
-    const canSelectFn = this.rowCanSelect();
-    const ids = this.selectedIdSet();
-    for (const r of rows) {
-      const id = this.toId(r);
-      if (!id) continue;
-      if (canSelectFn && !canSelectFn(r)) {
-        continue;
-      }
-      if (ids.has(id)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  public toId(row: unknown): string {
-    const id = isRecord(row) ? row['id'] : undefined;
-    return id == null ? '' : String(id);
-  }
-
-  protected toggleArchiveMode() {
-    this.archiveMode.set(!this.archiveMode());
-    // Clear any prior selection context when switching datasets
-    this.clearAllSelection();
-    // Reload first page
-    void this.loadPage(0);
-  }
-  public toggleArchiveModePublic() {
-    this.toggleArchiveMode();
-  }
-
-  protected toggleCol(field: string, checked: boolean) {
-    // Identity columns (noHide) can never be hidden.
-    if (!checked && this.colDefsWithEdit.some((c) => c.field === field && c.noHide)) return;
-    const v = { ...this.colVisibility() };
-    v[field] = checked;
-    this.colVisibility.set(v);
-    if (this.tsTable) {
-      this.tsTable.setOptions((prev) => ({
-        ...prev,
-        state: { ...prev.state, columnVisibility: v },
-      }));
-    }
-    this.store?.requestPersist();
-  }
-  public toggleColPublic(field: string, checked: boolean) {
-    this.toggleCol(field, checked);
-  }
-
-  public toggleHeaderSort(h: Header<GridRow, unknown>, ev?: MouseEvent) {
-    const fn = h?.column?.toggleSorting;
-    if (typeof fn === 'function') fn.call(h.column, undefined, !!ev?.shiftKey);
-  }
-
-  protected togglePageChecked(checked: boolean) {
-    if (this.allSelected()) this.allSelected.set(false);
-    const nextSet = this.selSvc.togglePageSelectionSet(this.selectedIdSet(), this.rows(), checked);
-    this.selectedIdSet.set(nextSet);
-  }
-
-  protected toggleRowChecked(id: string, checked: boolean) {
-    if (this.allSelected()) {
-      const current = this.allSelectedIdSet();
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      this.allSelectedIdSet.set(next);
-    } else {
-      const set = new Set(this.selectedIdSet());
-      if (checked) set.add(id);
-      else set.delete(id);
-      this.selectedIdSet.set(set);
-    }
-  }
-
-  // topPadHeight not used without virtualizer
-
-  // Pagination
-  // totalPages is computed
-  public unpin(h: Header<GridRow, unknown>) {
-    const pin = h?.column?.pin;
-    if (typeof pin === 'function') pin.call(h.column, false);
-    this.store?.requestPersist();
-  }
-
-  // visibleCount not used without virtualizer
-
-  protected visibleTableRows(): Row<GridRow>[] {
-    return this.tsTable?.getRowModel().rows ?? [];
-  }
-
-  // Build TanStack rowSelection snapshot for current data from our global selected set
-  private buildRowSelectionForCurrentData(): Record<string, boolean> {
-    const ids = this.selectedIdSet();
-    const map: Record<string, boolean> = {};
-    for (const r of this.rows()) {
-      const id = this.toId(r);
-      if (id && ids.has(id)) map[id] = true;
-    }
-    return map;
-  }
-
-  private coerceEditingValue(col: ColDef, raw: unknown): unknown {
-    const editorCfg = this.selectEditorOptions(col);
-    let val = raw;
-    if (editorCfg && !editorCfg.multiple && Array.isArray(raw)) {
-      val = raw[0];
-    }
-    const t = this.inputTypeFor(col);
-    if (t === 'number') {
-      const n = typeof val === 'number' ? val : parseFloat(String(val ?? '').trim());
-      return isNaN(n) ? null : n;
-    }
-    if (t === 'date') {
-      const v = String(val ?? '').trim();
-      // normalize to YYYY-MM-DD if possible
-      return v.length > 10 ? v.slice(0, 10) : v;
-    }
-    if (t === 'color') {
-      const v = String(val ?? '').trim();
-      const pattern = /^#([0-9a-fA-F]{6})$/;
-      return pattern.test(v) ? v.toLowerCase() : null;
-    }
-    return val;
-  }
-
-  private resolveEditorParams(col: ColDef): Record<string, unknown> | null {
-    const cep: unknown = col?.cellEditorParams;
-    if (!cep) return null;
-    try {
-      const resolved: unknown = typeof cep === 'function' ? cep() : cep;
-      return isRecord(resolved) ? resolved : null;
-    } catch {
-      return null;
-    }
-  }
-
-  // selection resize handled by ResizingController
-
-  private async loadPage(index: number, append = false) {
-    if (!this.fetchCtrl) return;
-    await this.fetchCtrl.loadPage(index, append);
-  }
-
-  private async queueFullExport(): Promise<void> {
-    // Pass a very high endRow so the backend fetches all rows without a limit
-    const options = this.dataSvc.buildGetAllOptions({
-      searchStr: this.searchSvc.getFilterText(),
-      startRow: 0,
-      endRow: 10_000_000,
-      tags: this.selectedTags(),
-      issues: this.selectedIssues(),
-      filterModel: this.buildFilterModel(),
-      sortState: this.sorting(),
-      sortCol: this.sortCol(),
-      sortDir: this.sortDir(),
-      includeArchived: this.archiveMode(),
-      advancedFilterModel: this.externalAdvancedFilterModel() || this.advFilter.buildModel(),
-      listId: this.activeListId(),
-    });
-    await this.gridSvc.queueExport({
-      entity: (this.config.messages.exportEntity ||
-        this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
-      options,
-      columns: this.visibleColumnFields(),
-      fileName: this.config.messages.exportFileName,
-    });
-  }
-
-  /** Records a direct browser-download export in Exports history so it's consistently listed
-   * alongside queued exports — see pplcrm-datagrid. Fire-and-forget: never blocks or fails the
-   * download the user already has. */
-  private logInstantExport(rowCount: number): void {
-    void this.gridSvc
-      .logInstantExport({
-        entity: (this.config.messages.exportEntity ||
-          this.config.messages.exportFileName.replace('.csv', '').replace(/-/g, '_')) as QueueExportInputType['entity'],
-        fileName: this.config.messages.exportFileName,
-        rowCount,
-      })
-      .catch(() => {
-        // Best-effort logging only — the user already has their file.
-      });
-  }
-
-  private visibleColumnFields(): string[] {
-    const visibility = this.colVisibility();
-    return this.colDefsWithEdit
-      .map((col) => (typeof col.field === 'string' ? col.field : null))
-      .filter((field): field is string => !!field && visibility[field] !== false);
-  }
-
-  // Persistence handled by GridStoreService
-
-  // header resize handled by ResizingController
-
-  // onCellValueChanged handled by EditingController
-
-  // saveState removed (consolidated into GridStoreService)
-
-  // shouldBlockEdit handled by EditingController
-
-  private syncSignalsFromTable() {
-    const st = this.tsTable?.getState();
-    if (st?.sorting) this.sorting.set(st.sorting);
-    if (st?.columnVisibility) this.colVisibility.set(st.columnVisibility);
-    // Notify pin-state change so controller effect recomputes offsets
-    this.pctrl?.notifyPinStateChanged();
-    this.store?.requestPersist();
-  }
-
-  public triggerCellFlash(rowId: string, field: string): void {
-    const key = `${rowId}:${field}`;
-    this.flashedCells.update((s) => {
-      const n = new Set(s);
-      n.add(key);
-      return n;
-    });
-    setTimeout(() => {
-      this.flashedCells.update((s) => {
-        const n = new Set(s);
-        n.delete(key);
-        return n;
-      });
-    }, 1300);
-  }
-
-  public updateEditedRowInCaches(id: string, field: string | undefined, value: unknown, prevValue?: unknown) {
-    if (!field) return;
-    if (this.store) {
-      const targetRow = this.rows().find((r) => String(this.toId(r)) === id);
-      const prev = prevValue !== undefined ? prevValue : targetRow ? targetRow[field] : undefined;
-      this.store.recordSnapshotBeforeCommit(id, field, prev, value);
-    }
-    // Update visible rows array
-    this.rows.update((curr) => curr.map((r) => (this.toId(r) === id ? { ...r, [field]: value } : r)));
-    // Trigger green flash on the updated cell
-    this.triggerCellFlash(id, field);
-  }
-
-  // pin offsets handled by PinningController
-
-  // Update table data with current visible window
-  public updateTableWindow(start: number, end: number) {
-    this.tableSvc.updateTableWindow(
-      this.tsTable,
-      this.rows(),
-      start,
-      end,
-      this.buildRowSelectionForCurrentData(),
-      this.sortCol(),
-      this.sortDir(),
-    );
-  }
-
-  private view(id?: string) {
-    const targetId = id || this.lastRowHovered;
-    if (!targetId || this.disableView()) return;
-
-    const vr = this.viewRoute();
-    if (vr) {
-      this.captureRecordNavContext(vr);
-      if (vr.startsWith('/')) {
-        void this.router.navigate([vr, targetId]);
-      } else {
-        void this.router.navigate([vr, targetId], { relativeTo: this.route });
-      }
-    } else {
-      this.captureRecordNavContext(this.currentListPath());
-      void this.navSvc.viewIfAllowed({
-        id: targetId,
-        lastRowHovered: this.lastRowHovered,
-        disableView: this.disableView(),
-        navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
-      });
-    }
-  }
-
-  /** The grid's own list route, stripped of query/fragment (e.g. "/teams") - used as the record-nav entity key when no explicit viewRoute is set. */
-  private currentListPath(): string {
-    const [pathAndQuery] = this.router.url.split('#');
-    const [path] = (pathAndQuery ?? this.router.url).split('?');
-    return path ?? this.router.url;
-  }
-
-  /** Hands the currently filtered id set to the detail page so it can walk "N of M filtered" with J/K. */
-  private captureRecordNavContext(entityKey: string): void {
-    this.fetchCtrl
-      .selectAllMatching()
-      .then(({ ids, count }) => this.recordNav.setContext(entityKey, ids, count))
-      .catch(() => void 0);
-  }
-}
-
-type RowOf<K extends keyof Models> = Models[K];
-type TagDiff = {
-  toAdd: string[];
-  toRemove: string[];
-  hasChanges: boolean;
-};
-
-/** Narrow an unknown value to a property-indexable record. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/dashboard.routes.ts
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import {
-  companyRecordIdResolver,
-  householdRecordIdResolver,
-  personRecordIdResolver,
-} from './services/record-slug.resolver';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'dashboard',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-    // `breadcrumb` feeds BreadcrumbDefaultsService: every route publishes a navbar
-    // trail on NavigationEnd, so no page ever shows an empty or stale strip.
-    data: { breadcrumb: 'Dashboard' },
-  },
-  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
-  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'people',
-    data: { breadcrumb: 'People' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New person' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-        // Slug-aware: the URL may carry /people/amira-hassan; the component's
-        // `id` input always receives the numeric id (route data wins over params).
-        resolve: { id: personRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: personRecordIdResolver },
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    data: { breadcrumb: 'Households' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New household' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-        resolve: { id: householdRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: householdRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    data: { breadcrumb: 'Duplicates' },
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-        data: { breadcrumb: 'People' },
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-        data: { breadcrumb: 'Households' },
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-        data: { breadcrumb: 'Companies' },
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
-    data: { shouldReuse: true, key: 'tagsadminroot', breadcrumb: 'Tags' },
-  },
-
-  {
-    path: 'issues',
-    loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
-    data: { shouldReuse: true, key: 'issuesadminroot', breadcrumb: 'Issues' },
-  },
-
-  {
-    path: 'lists',
-    data: { breadcrumb: 'Lists' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new', breadcrumb: 'New list' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit', breadcrumb: 'Edit list' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    data: { breadcrumb: 'Newsletters' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/newsletters/ui/newsletters-page').then((m) => m.NewslettersPage),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New newsletter' },
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'automations',
-    data: { breadcrumb: 'Automations' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-        data: { breadcrumb: 'New automation' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
-  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    data: { breadcrumb: 'Donations' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot', breadcrumb: 'Monthly pledges' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-    data: { breadcrumb: 'Inbox' },
-  },
-  {
-    path: 'tasks',
-    data: { breadcrumb: 'Tasks' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
-        data: { shouldReuse: true, key: 'taskslistroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-        data: { breadcrumb: 'New task' },
-      },
-      // Must precede ':id' — otherwise the wildcard param route would swallow it.
-      {
-        path: 'board',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-        data: { shouldReuse: true, key: 'tasksboardroot', breadcrumb: 'Board' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
-  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
-
-  {
-    path: 'canvassing',
-    loadComponent: () => import('./experiences/canvassing/ui/canvassing-page').then((m) => m.CanvassingPage),
-    data: { breadcrumb: 'Canvassing' },
-  },
-
-  {
-    path: 'campaigns',
-    data: { breadcrumb: 'Campaigns' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/campaigns/ui/campaigns-page').then((m) => m.CampaignsPageComponent),
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'new', breadcrumb: 'New campaign' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-view').then((m) => m.CampaignViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/campaigns/ui/campaign-form').then((m) => m.CampaignFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-
-  {
-    path: 'teams',
-    data: { breadcrumb: 'Teams' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new', breadcrumb: 'New team' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'deliveries',
-    data: { breadcrumb: 'Deliveries' },
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-requests').then((m) => m.DeliveriesRequests),
-        data: { shouldReuse: true, key: 'deliveriesrequestsroot' },
-      },
-      {
-        path: 'plan',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-plan').then((m) => m.DeliveriesPlan),
-        data: { breadcrumb: 'Plan routes' },
-      },
-      {
-        path: 'routes',
-        loadComponent: () => import('./experiences/deliveries/ui/deliveries-routes').then((m) => m.DeliveriesRoutes),
-        data: { breadcrumb: 'Routes' },
-      },
-      {
-        path: 'routes/:id',
-        loadComponent: () =>
-          import('./experiences/deliveries/ui/deliveries-route-detail').then((m) => m.DeliveriesRouteDetail),
-        // Default until the page loads and publishes the route's name itself.
-        data: { breadcrumb: [{ label: 'Routes', route: '/deliveries/routes' }] },
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    data: { breadcrumb: 'Users' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-page').then((m) => m.UsersPageComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        // View and edit merged into one page (approved 2026-07-10 design) — the
-        // unsaved-changes guard now protects the view, and old edit links redirect.
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      { path: ':id/edit', redirectTo: ':id' },
-    ],
-  },
-  {
-    // Companion access approvals: volunteers who verified their contact and
-    // are waiting for an admin to unlock their turf/route link.
-    path: 'volunteer-access',
-    canActivate: [roleGuard],
-    loadComponent: () =>
-      import('./experiences/volunteer-access/ui/volunteer-access-page').then((m) => m.VolunteerAccessPage),
-    data: { breadcrumb: 'Volunteer access' },
-  },
-  {
-    path: 'forms',
-    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot', breadcrumb: 'Forms' },
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-        // Flat route that conceptually nests under Donations — pre-built trail.
-        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'New donation page' }] },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donations' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-        data: { breadcrumb: [{ label: 'Donations', route: '/donations' }, { label: 'Edit donation page' }] },
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    data: { breadcrumb: 'Settings' },
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'workspace',
-    canActivate: [roleGuard],
-    data: { breadcrumb: 'Workspace' },
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'workspace' },
-      },
-    ],
-  },
-  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
-  {
-    path: 'configuration',
-    redirectTo: '/workspace',
-    pathMatch: 'prefix',
-  },
-  {
-    path: 'billing',
-    redirectTo: '/workspace/billing',
-    pathMatch: 'full',
-  },
-  // Back-compat: Files moved into Workspace settings → Storage.
-  {
-    path: 'files',
-    redirectTo: '/workspace/storage',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-    data: { breadcrumb: 'Profile' },
-  },
-  {
-    path: 'imports/new',
-    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
-    // Flat route that conceptually nests under the Imports tab of the history page.
-    data: { breadcrumb: [{ label: 'Imports', route: '/imports' }, { label: 'New import' }] },
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-    // Default matches the page's initial tab — the page publishes the tab-aware
-    // crumb ("Imports"/"Exports") itself on every tab switch.
-    data: { breadcrumb: 'Imports' },
-  },
-  {
-    // Wave 1E (spec §17): Exports folded into the Import/export History page's
-    // Exports tab — redirect the old standalone route rather than 404 stale links.
-    path: 'exports',
-    redirectTo: '/imports',
-    pathMatch: 'full',
-  },
-  {
-    path: 'companies',
-    data: { breadcrumb: 'Companies' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        data: { breadcrumb: 'New company' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-        resolve: { id: companyRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: companyRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'activity',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-    data: { breadcrumb: 'Activity' },
-  },
-  // Back-compat: old /activities links redirect to /activity.
-  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
-  {
-    path: 'help',
-    data: { breadcrumb: 'Help' },
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/website/src/app/faq/faq-page.ts
@@ -68457,188 +68082,742 @@ export class FaqPage {
 <pc-site-footer />
 ```
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-plan.html
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
 ```html
-<div class="mx-auto flex w-full max-w-[820px] flex-col gap-5 p-4 pb-24">
-  <!-- Trail (Deliveries / Plan routes) renders in the navbar; keep an accessible heading only. -->
-  <div>
-    <h1 class="sr-only">Plan delivery routes</h1>
-    <p class="text-xs text-base-content/60">
-      Preview groups approved, located requests into about-an-hour routes.
-      <span class="font-medium">Preview doesn't save anything.</span>
-    </p>
-  </div>
-
-  <!-- Setup card -->
-  <div class="flex flex-col gap-4 pc-panel p-5">
-    <label class="flex flex-col gap-1.5">
-      <span class="text-sm font-medium text-base-content">Start address</span>
-      <pc-address-autocomplete
-        placeholder="Where drivers set off from"
-        [value]="startAddress()"
-        (textChange)="startAddress.set($event)"
-      ></pc-address-autocomplete>
-      @if (preview()?.start?.address) {
-      <span class="mt-1 w-fit"
-        ><pc-status-badge type="success">Located · {{ preview()!.start.address }}</pc-status-badge></span
-      >
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h1 class="sr-only">Canvassing</h1>
+      @if (headline()) {
+      <p class="text-xs text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
       }
-    </label>
-
-    <label class="flex flex-col gap-1.5">
-      <span class="text-sm font-medium text-base-content">Volunteers available</span>
-      <input
-        class="input input-bordered w-40 text-sm"
-        type="number"
-        min="1"
-        placeholder="As many as needed"
-        [value]="drivers() ?? ''"
-        (input)="onDriversInput($event)"
-      />
-    </label>
-
-    <div class="collapse-arrow collapse rounded-lg border border-base-300 bg-base-200/40">
-      <input type="checkbox" [checked]="advancedOpen()" (change)="advancedOpen.set(!advancedOpen())" />
-      <div class="collapse-title text-sm font-medium">
-        Advanced
-        <span class="ml-1 text-xs text-base-content/50">
-          {{ serviceMinutes() }} min per stop · {{ avgSpeed() }} km/h · {{ includeReturn() ? 'return trip on' : 'no
-          return trip' }}
-        </span>
-      </div>
-      <div class="collapse-content flex flex-col gap-3">
-        <label class="flex items-center justify-between text-sm">
-          Minutes per stop
-          <input
-            class="input input-bordered input-sm w-24"
-            type="number"
-            min="0"
-            [value]="serviceMinutes()"
-            (input)="onServiceMinutesInput($event)"
-          />
-        </label>
-        <label class="flex items-center justify-between text-sm">
-          Average speed (km/h)
-          <input
-            class="input input-bordered input-sm w-24"
-            type="number"
-            min="1"
-            [value]="avgSpeed()"
-            (input)="onAvgSpeedInput($event)"
-          />
-        </label>
-        <label class="flex items-center justify-between text-sm">
-          Return to start
-          <input
-            type="checkbox"
-            class="toggle toggle-sm"
-            [checked]="includeReturn()"
-            (change)="includeReturn.set(!includeReturn())"
-          />
-        </label>
-      </div>
     </div>
-
     <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="loading.visible()" (click)="runPreview()">
-        @if (loading.visible()) { <span class="loading loading-spinner loading-xs"></span> } Preview routes
+      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
+        <pc-icon name="cog" [size]="4" />
+        Survey settings
       </button>
-      <span class="text-xs text-base-content/50">Nothing is saved until you create routes.</span>
+      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+        <pc-icon name="map-pin" [size]="4" />
+        Cut new turfs
+      </button>
     </div>
   </div>
 
-  <!-- Results -->
-  @if (preview(); as p) {
-  <!-- Eligibility narration -->
-  <div class="rounded-xl border border-info/30 bg-info/[0.09] px-4 py-3 text-sm">
-    <p class="font-medium text-base-content">
-      Previewing <span class="tabular-nums">{{ p.eligible_count }}</span> approved, located request{{ p.eligible_count
-      === 1 ? '' : 's' }}.
-    </p>
-    @if (p.ineligible.awaiting_geocode + p.ineligible.geocode_failed + p.ineligible.not_approved > 0) {
-    <p class="mt-1 text-base-content/70">
-      Not routed yet: @if (p.ineligible.awaiting_geocode > 0) {
-      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
-        >{{ p.ineligible.awaiting_geocode }} waiting for location</a
-      >
-      · } @if (p.ineligible.geocode_failed > 0) {
-      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
-        >{{ p.ineligible.geocode_failed }} address problem</a
-      >
-      · } @if (p.ineligible.not_approved > 0) {
-      <a class="text-primary underline underline-offset-2" routerLink="/deliveries"
-        >{{ p.ineligible.not_approved }} not approved</a
-      >
-      }
-    </p>
-    } @if (p.cap_applied) {
-    <p class="mt-1 text-base-content/70">Only the first requests were planned; re-plan to continue with the rest.</p>
-    }
-  </div>
+  <!-- Tabs (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
 
-  @if (p.routes.length === 0) {
-  <div class="flex flex-col items-center gap-3 rounded-xl border border-base-300 px-6 py-12 text-center">
-    <pc-icon name="map-pin" [size]="8" class="text-base-content/30"></pc-icon>
-    <p class="text-sm text-base-content/60">Nothing to route yet. Approve some located requests, then preview again.</p>
-    <a class="btn btn-primary btn-sm" routerLink="/deliveries">Back to requests</a>
-  </div>
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live: updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/50">No knocks logged yet today. Outcomes appear as companions sync.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table pc-table">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion. The Companion is a web app, so a copied
+      link does the same job for walk-up volunteers. Progress and conversations sync back live. Knocks land on the
+      person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table pc-table">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions. Nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
+        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
+        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Supporters {{ r.responseMix.supporter }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
+        <span>Not voting {{ r.responseMix.not_voting }}</span>
+        <span>Already voted {{ r.responseMix.already_voted }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table pc-table">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best. Schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions. Nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  } @if (assignTarget(); as target) {
+  <pc-assign-turf-dialog
+    [turfId]="target.id"
+    [turfName]="target.name"
+    (cancelled)="assignTarget.set(null)"
+    (assigned)="onAssigned($event)"
+  />
+  } @if (settingsOpen()) {
+  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { Router, RouterLink } from '@angular/router';
+
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { companionUrl } from '../../../shared/public-pages';
+import { DELIVERY_SKIP_REASONS } from '@common';
+import type { DeliverySkipReason } from '@common';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+
+import { AssignVolunteerDialog } from './assign-volunteer-dialog';
+import { DeliveriesRoutesService, type DeliveryRouteDetail } from '../services/deliveries-routes-service';
+
+type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
+
+const ROUTE_TONE: Record<string, PcStatusType> = {
+  draft: 'neutral',
+  assigned: 'info',
+  in_progress: 'warning',
+  completed: 'success',
+  canceled: 'ghost',
+};
+
+/** Route detail (spec §4.3): header, actions, stops with reorder/actions, mandatory activity feed. */
+@Component({
+  selector: 'pc-deliveries-route-detail',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities, AssignVolunteerDialog],
+  templateUrl: './deliveries-route-detail.html',
+})
+export class DeliveriesRouteDetail {
+  public readonly id = input.required<string>();
+
+  private readonly assignDlg = viewChild.required<AssignVolunteerDialog>('assignDlg');
+
+  private readonly svc = inject(DeliveriesRoutesService);
+  private readonly alerts = inject(AlertService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly confirm = inject(ConfirmDialogService);
+  private readonly router = inject(Router);
+  protected readonly loading = createLoadingGate();
+
+  protected readonly detail = signal<DeliveryRouteDetail | null>(null);
+  protected readonly renaming = signal(false);
+  protected readonly draftName = signal('');
+
+  protected readonly deliveredCount = computed(
+    () => this.detail()?.stops.filter((s) => s.status === 'delivered').length ?? 0,
+  );
+  protected readonly totalStops = computed(() => this.detail()?.stops.length ?? 0);
+  protected readonly canDelete = computed(() => {
+    const s = this.detail()?.status;
+    return s === 'draft' || s === 'assigned';
+  });
+
+  constructor() {
+    // Load only once the router has bound the required `id` input — reading it
+    // synchronously in the constructor throws NG0950. Re-runs if the id changes.
+    effect(() => {
+      this.id();
+      untracked(() => void this.load());
+    });
+
+    // Navbar trail with the route's real name once loaded (until then the route's
+    // `data.breadcrumb` default — Deliveries / Routes — is showing).
+    effect(() => {
+      const d = this.detail();
+      if (!d) return;
+      this.breadcrumbs.setCrumbs([
+        { label: 'Deliveries', route: '/deliveries' },
+        { label: 'Routes', route: '/deliveries/routes' },
+        { label: d.name },
+      ]);
+    });
   }
 
-  <!-- Proposal cards -->
-  @for (route of p.routes; track route.index) {
-  <div class="flex flex-col gap-2 pc-panel p-4">
-    <div class="flex items-baseline justify-between">
-      <p class="pc-eyebrow">Route {{ route.index }}</p>
-      <p class="text-sm font-medium tabular-nums text-base-content/70">
-        {{ route.stops.length }} stops · {{ route.total_minutes }} min · {{ route.total_km }} km
-      </p>
-    </div>
-    <ol class="flex flex-col divide-y divide-base-200">
-      @for (stop of route.stops; track stop.request_id) {
-      <li class="flex items-center gap-3 py-1.5">
-        <span
-          class="flex size-6 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
-          >{{ stop.seq }}</span
-        >
-        <span class="flex-1 truncate text-sm">
-          <span class="font-medium">{{ stop.name || 'Neighbour' }}</span>
-          <span class="text-base-content/50"> · {{ stop.address }}</span>
-        </span>
-        <span class="text-xs tabular-nums text-base-content/50">+{{ stop.leg_minutes }} min</span>
-      </li>
-      }
-    </ol>
-  </div>
+  protected tone(status: string): PcStatusType {
+    return ROUTE_TONE[status] ?? 'neutral';
   }
 
-  <!-- Leftovers -->
-  @if (p.unroutable.length > 0) {
-  <div class="flex flex-col gap-2 rounded-xl border border-warning/30 bg-warning/[0.08] p-4">
-    <p class="text-sm font-semibold text-base-content">Couldn't fit ({{ p.unroutable.length }})</p>
-    @for (u of p.unroutable; track u.request_id) {
-    <div class="flex items-center justify-between gap-3 text-sm">
-      <span class="truncate text-base-content/70">{{ u.address }}</span>
-      <span class="shrink-0 text-xs text-base-content/60">{{ u.reason_text }}</span>
-    </div>
-    }
-    <p class="mt-1 text-xs text-base-content/60">
-      These stay approved. Deliver them manually, or re-plan another batch.
-    </p>
-  </div>
-  } }
-</div>
+  protected label(status: string): string {
+    return status === 'in_progress' ? 'in progress' : status;
+  }
 
-<!-- Sticky commit footer -->
-@if (preview()?.routes?.length) {
-<div class="fixed inset-x-0 bottom-0 border-t border-base-300 bg-base-100/95 backdrop-blur">
-  <div class="mx-auto flex max-w-[820px] items-center justify-between gap-3 px-4 py-3">
-    <button type="button" class="btn btn-ghost btn-sm" (click)="startOver()">Start over</button>
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="committing()" (click)="commit()">
-      @if (committing()) { <span class="loading loading-spinner loading-xs"></span> } Create {{ routeCount() }} route{{
-      routeCount() === 1 ? '' : 's' }}
-    </button>
-  </div>
-</div>
+  private async load(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      const d = await this.svc.getById(this.id());
+      this.detail.set(d);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not load route');
+    } finally {
+      end();
+    }
+  }
+
+  protected onDraftNameInput(event: Event): void {
+    this.draftName.set((event.target as HTMLInputElement).value);
+  }
+
+  protected startRename(): void {
+    this.draftName.set(this.detail()?.name ?? '');
+    this.renaming.set(true);
+  }
+
+  protected async saveRename(): Promise<void> {
+    const name = this.draftName().trim();
+    if (!name) return;
+    try {
+      await this.svc.update(this.id(), { name });
+      this.renaming.set(false);
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not rename route');
+    }
+  }
+
+  protected openAssign(): void {
+    this.assignDlg().open(this.detail()?.volunteer_person_id != null);
+  }
+
+  protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
+    try {
+      await this.svc.assignVolunteer(this.id(), person?.id ?? null);
+      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
+    }
+  }
+
+  protected async copyLink(regenerate = false): Promise<void> {
+    try {
+      const res = await this.svc.mintShareLink(this.id(), regenerate);
+      if (res.status === 'exists') {
+        // The raw token is never stored, so the existing link can't be shown again — the only way
+        // to hand the user a copyable link is to mint a fresh one, which retires the old one.
+        const ok = await this.confirm.confirm({
+          title: 'Copy a fresh link?',
+          message:
+            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it. The old link stops working, so anyone you already sent it to will need the new one.',
+          variant: 'warning',
+          confirmText: 'Regenerate & copy',
+        });
+        if (ok) await this.copyLink(true);
+        return;
+      }
+      const url = companionUrl(`/r/${res.token}`);
+      await navigator.clipboard.writeText(url).catch(() => undefined);
+      // expires_at is null when the workspace disables link expiry (Workspace → App).
+      this.alerts.showSuccess(
+        regenerate
+          ? 'Fresh link copied. The old link no longer works'
+          : res.expires_at
+            ? 'Link copied (valid 30 days)'
+            : 'Link copied',
+      );
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
+    }
+  }
+
+  protected async revokeLink(): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Revoke volunteer link?',
+      message: 'The current link stops working immediately.',
+      variant: 'danger',
+      confirmText: 'Revoke link',
+    });
+    if (!ok) return;
+    try {
+      await this.svc.revokeShareLink(this.id());
+      this.alerts.showSuccess('Volunteer link revoked');
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not revoke the link');
+    }
+  }
+
+  protected openInGoogleMaps(): void {
+    const d = this.detail();
+    if (!d) return;
+    const located = d.stops.filter((s) => s.lat != null && s.lng != null);
+    if (located.length === 0) {
+      this.alerts.showError('No located stops to navigate to');
+      return;
+    }
+    const origin = `${d.start_lat},${d.start_lng}`;
+    const dest = located[located.length - 1];
+    const destination = `${dest?.lat},${dest?.lng}`;
+    const waypoints = located
+      .slice(0, -1)
+      .map((s) => `${s.lat},${s.lng}`)
+      .join('|');
+    const params = new URLSearchParams({ api: '1', origin, destination });
+    if (waypoints) params.set('waypoints', waypoints);
+    window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  protected async cancelRoute(): Promise<void> {
+    const undelivered = this.detail()?.stops.filter((s) => s.status === 'pending').length ?? 0;
+    const ok = await this.confirm.confirm({
+      title: 'Cancel this route?',
+      message: `Its ${undelivered} undelivered stop${undelivered === 1 ? '' : 's'} return to the planning pool. Delivered stops keep their record.`,
+      variant: 'danger',
+      confirmText: 'Cancel route',
+    });
+    if (!ok) return;
+    try {
+      await this.svc.setStatus(this.id(), 'canceled');
+      this.alerts.showSuccess('Route canceled');
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not cancel the route');
+    }
+  }
+
+  protected async deleteRoute(): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Delete this route?',
+      message: 'This removes the route. Its stops return to the planning pool.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.svc.delete(this.id());
+      this.alerts.showSuccess('Route deleted');
+      await this.router.navigate(['/deliveries/routes']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not delete the route');
+    }
+  }
+
+  protected async reorder(stopId: string, direction: 'up' | 'down'): Promise<void> {
+    try {
+      await this.svc.reorderStop(this.id(), stopId, direction);
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not reorder');
+    }
+  }
+
+  protected async markDelivered(stopId: string): Promise<void> {
+    await this.runStopAction(stopId, 'deliver');
+  }
+
+  protected async removeStop(stopId: string): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: 'Remove this stop?',
+      message: 'The request returns to the planning pool.',
+      variant: 'danger',
+      confirmText: 'Remove stop',
+    });
+    if (!ok) return;
+    await this.runStopAction(stopId, 'remove');
+  }
+
+  protected async couldntDeliver(stopId: string): Promise<void> {
+    const reason = await this.confirm.choose<DeliverySkipReason>({
+      title: "Couldn't deliver. Pick a reason",
+      choices: DELIVERY_SKIP_REASONS.map((r) => ({ label: r, value: r })),
+    });
+    if (!reason) return;
+    await this.runStopAction(stopId, 'skip', reason);
+  }
+
+  private async runStopAction(
+    stopId: string,
+    action: 'deliver' | 'skip' | 'remove',
+    reason?: DeliverySkipReason,
+  ): Promise<void> {
+    try {
+      await this.svc.stopAction(this.id(), stopId, action, reason ?? null);
+      await this.load();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the stop');
+    }
+  }
+
+  protected stopTone(status: string): PcStatusType {
+    if (status === 'delivered') return 'success';
+    if (status === 'skipped') return 'warning';
+    return 'neutral';
+  }
 }
 ```
 
@@ -69469,6 +69648,710 @@ export class FormsPageComponent implements OnInit {
   protected templateSubmitLabel(type: FormType): string {
     return FORM_TEMPLATES[type].submitLabel;
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
+    @if (tab() === 'imports') {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
+      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+      <span>Import CSV</span>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <span>New export</span>
+    </button>
+    }
+  </pc-grid-header>
+
+  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
+
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <pc-table [columns]="7">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>Type</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Outcome</th>
+        <th>Tags applied</th>
+        <th class="text-right">Actions</th>
+      </ng-container>
+
+      @for (item of items(); track item.id) {
+      <tr>
+        <td>
+          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
+          <div class="text-xs text-base-content/60">
+            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+        </td>
+        <td>
+          @if (item.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (item.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Pending</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <div class="text-xs text-base-content">
+            <div>{{ item.insertedCount }} imported</div>
+            @if (item.mergedCount > 0) {
+            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+            } @if (item.skippedCount > 0) {
+            <div class="text-xs text-base-content/60 flex items-center gap-1">
+              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                download reasons
+              </button>
+              }
+            </div>
+            } @if (item.errorCount > 0) {
+            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+            }
+          </div>
+          } @case ('failed') {
+          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
+            Failed
+          </pc-status-badge>
+          } }
+        </td>
+        <td>
+          @if (item.tagsApplied.length > 0) {
+          <div class="flex flex-wrap gap-1">
+            @for (tag of item.tagsApplied; track tag) {
+            <span class="badge badge-outline text-xs">{{ tag }}</span>
+            }
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (item.canDownloadSource) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download original file"
+              (click)="downloadSource(item)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              (click)="openDeleteDialog(item, deleteDialog)"
+              [disabled]="deleting()"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="7" class="text-center py-12 text-base-content/50">
+          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1 mb-3">
+            Bring in people, companies, households or tasks from a spreadsheet to get started.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import CSV
+          </button>
+        </td>
+      </tr>
+      }
+    </pc-table>
+
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
+  </div>
+  }
+
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
+        Go to People
+      </button>
+    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
+
+    <pc-table [columns]="5">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Contents</th>
+        <th class="text-right">Download</th>
+      </ng-container>
+
+      @for (job of exportJobs(); track job.id) {
+      <tr>
+        <td>
+          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+        </td>
+        <td>
+          @if (job.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (job.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Queued</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          } @default {
+          <pc-status-badge type="error">Failed</pc-status-badge>
+          } }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (job.status === 'completed') { @if (isExpired(job)) {
+            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
+            } @else if (job.downloadable) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download CSV"
+              (click)="downloadExportJob(job)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            } @else {
+            <span
+              class="text-xs text-base-content/40 mr-2"
+              title="Downloaded directly to your device, not stored on the server"
+            >
+              Downloaded
+            </span>
+            } }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              title="Delete export"
+              (click)="deleteExportJob(job)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="5" class="text-center py-12 text-base-content/50">
+          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
+          </p>
+        </td>
+      </tr>
+      }
+    </pc-table>
+  </div>
+  }
+</div>
+
+<pc-modal-shell
+  #deleteDialog
+  title="Delete import"
+  icon="trash"
+  [dismissible]="!deleting()"
+  (closed)="pendingDelete.set(null)"
+>
+  @if (pendingDelete(); as item) {
+  <p class="text-sm text-base-content/70 mt-2">
+    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+    records created by this import:
+  </p>
+
+  <div class="space-y-3 mt-4">
+    @if (item.contactCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deletePeople()"
+        (change)="deletePeople.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+    </label>
+    } @if (item.householdCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteHouseholds()"
+        (change)="deleteHouseholds.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+    </label>
+    } @if (item.companyCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteCompanies()"
+        (change)="deleteCompanies.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+    </label>
+    } @if (item.taskCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteTasks()"
+        (change)="deleteTasks.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+    </label>
+    }
+  </div>
+  }
+
+  <div pc-modal-footer class="flex gap-2">
+    <button
+      type="button"
+      class="btn btn-outline btn-accent"
+      (click)="closeDeleteDialog(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="btn btn-outline btn-error gap-2"
+      (click)="confirmDelete(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      Delete
+    </button>
+  </div>
+</pc-modal-shell>
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
+```typescript
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { Table } from '@uxcommon/components/table/table';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { environment } from '../../../../environments/environment';
+import { ExportsService } from '../../exports/services/exports-service';
+import { ImportsService } from '../services/imports-service';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+/**
+ * Import/export History page (spec §17). Folds the old standalone Exports
+ * Manager page into an "Imports N / Exports N" tabbed view — one history
+ * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
+ */
+type HistoryTab = 'imports' | 'exports';
+
+@Component({
+  selector: 'pc-imports-page',
+  imports: [Icon, TabBar, Table, GridHeaderComponent, ModalShell, StatusBadge],
+  templateUrl: './imports-page.html',
+})
+export class ImportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly imports = inject(ImportsService);
+  private readonly exports = inject(ExportsService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  protected readonly tab = signal<HistoryTab>('imports');
+
+  protected readonly historyTabs = computed<PcTabOption[]>(() => [
+    { id: 'imports', label: 'Imports', badge: this.itemCount() },
+    { id: 'exports', label: 'Exports', badge: this.exportCount() },
+  ]);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  private isLoadActive = false;
+  protected readonly deleting = signal(false);
+  protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
+  protected readonly pendingDelete = signal<ImportListItem | null>(null);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
+  protected readonly importsThisYear = computed(
+    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly recordsCreatedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.insertedCount, 0),
+  );
+  protected readonly duplicatesMergedThisYear = computed(() =>
+    this.items()
+      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
+      .reduce((sum, item) => sum + item.mergedCount, 0),
+  );
+  protected readonly historySentence = computed(
+    () =>
+      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
+      `${this.duplicatesMergedThisYear()} duplicates merged`,
+  );
+
+  /** data_imports.source → the label the Type column shows. */
+  protected sourceLabel(source: string): string {
+    switch (source) {
+      case 'persons':
+        return 'People';
+      case 'companies':
+        return 'Companies';
+      case 'households':
+        return 'Households';
+      case 'tasks':
+        return 'Tasks';
+      default:
+        return source || '—';
+    }
+  }
+
+  private pollInterval: ReturnType<typeof setInterval> | undefined;
+
+  // --- Exports tab ---
+  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
+  protected readonly exportCount = computed(() => this.exportJobs().length);
+  protected readonly exportsThisYear = computed(
+    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
+  );
+  protected readonly exportsSentence = computed(
+    () =>
+      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
+      `files stay downloadable for 30 days · every export lands in the Activity log`,
+  );
+  protected readonly exportsLoading = createLoadingGate();
+  protected readonly showNewExportInfo = signal(false);
+
+  constructor() {
+    void this.load();
+
+    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
+    // (overrides the route's static default; effects flush after NavigationEnd,
+    // so this wins).
+    effect(() => {
+      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
+    });
+
+    // Reset checkbox when dialog closes
+    effect(() => {
+      const item = this.pendingDelete();
+      if (!item) {
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
+      }
+    });
+
+    this.startPolling();
+
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
+  }
+
+  protected switchTab(tab: string): void {
+    if (tab !== 'imports' && tab !== 'exports') return;
+    this.tab.set(tab);
+    if (tab === 'exports') {
+      void this.loadExports();
+    }
+  }
+
+  private startPolling() {
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
+
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
+      }
+    }
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = undefined;
+    }
+  }
+
+  protected formatDate(value: Date | string) {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value instanceof Date ? value : new Date(value));
+    } catch {
+      return value ? String(value) : '—';
+    }
+  }
+
+  protected formatFileSize(bytes: number | null): string | null {
+    if (bytes == null) return null;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  protected startNewImport(): void {
+    void this.router.navigate(['/imports/new']);
+  }
+
+  protected openDeleteDialog(item: ImportListItem, dialog: ModalShell) {
+    if (this.deleting()) return;
+    this.pendingDelete.set(item);
+    dialog.show();
+  }
+
+  protected closeDeleteDialog(dialog: ModalShell) {
+    dialog.close();
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(dialog: ModalShell) {
+    const item = this.pendingDelete();
+    if (!item || this.deleting()) return;
+
+    this.deleting.set(true);
+    try {
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
+      this.alerts.showSuccess('Import deleted');
+      await this.load();
+      this.closeDeleteDialog(dialog);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
+      this.alerts.showError(message);
+    } finally {
+      this.deleting.set(false);
+    }
+  }
+
+  protected downloadSource(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
+  }
+
+  protected downloadSkipped(item: ImportListItem): void {
+    const token = this.tokenSvc.getAuthToken();
+    void downloadWithAuthHeader(
+      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
+      token,
+      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
+    );
+  }
+
+  private async load() {
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const list = await this.imports.list();
+      this.items.set(list ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.isLoadActive = false;
+      end();
+    }
+  }
+
+  // --- Exports tab ---
+
+  protected toggleNewExportInfo(): void {
+    this.showNewExportInfo.update((v) => !v);
+  }
+
+  protected goToPeopleGrid(): void {
+    void this.router.navigate(['/people']);
+  }
+
+  protected formatExportDate(dateStr: string) {
+    return this.formatDate(dateStr);
+  }
+
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
+  }
+
+  protected async downloadExportJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alerts.showError('This export has expired (30+ days old).');
+      return;
+    }
+    if (job.status !== 'completed') {
+      this.alerts.showError('Export is not ready yet.');
+      return;
+    }
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alerts.showError('Failed to download export');
+    }
+  }
+
+  protected async deleteExportJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete export',
+      message: `Delete "${job.file_name}"? This removes the file from the server. It cannot be undone.`,
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.exports.delete(job.id);
+      this.alerts.showSuccess('Export deleted successfully.');
+      await this.loadExports();
+    } catch {
+      this.alerts.showError('Failed to delete export. Please try again.');
+    }
+  }
+
+  private async loadExports() {
+    const end = this.exportsLoading.begin();
+    try {
+      const list = await this.exports.list();
+      this.exportJobs.set(list ?? []);
+    } catch {
+      this.alerts.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -70839,6 +71722,568 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="pc-eyebrow">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you. Nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
+
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
+  </header>
+
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
+    <!-- Sidebar Navigation -->
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto pc-panel p-1.5 md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        }
+        <!-- Custom self-saving sections (config array in settings-page.ts) -->
+        @for (custom of visibleCustomSections; track custom.id) {
+        <button
+          [id]="'settings-nav-' + custom.id"
+          type="button"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition-colors"
+          [class]="navClass(custom.id)"
+          (click)="selectSection(custom.id)"
+        >
+          <pc-icon
+            [name]="custom.icon"
+            [class.text-primary]="isSelected(custom.id)"
+            [class.opacity-70]="!isSelected(custom.id)"
+            [size]="5"
+          />
+          {{ custom.title }}
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
+          @if (section.config.id === 'sla') {
+          <!-- Consequence copy (§3 guide-don't-error): changing SLAs retroactively re-scores open work -->
+          <div class="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5">
+            <pc-icon name="exclamation-triangle" [size]="5" class="mt-0.5 shrink-0 text-warning"></pc-icon>
+            <p class="text-xs leading-relaxed text-base-content/80">
+              Saving new service levels re-evaluates every currently open email and task against the updated targets.
+              Some may immediately count as breached (or clear) on the dashboard.
+            </p>
+          </div>
+          } @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Webhook API credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate credentials
+              </button>
+            </div>
+          </div>
+          }
+
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-xs font-medium text-base-content/70">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-xs font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('day-toggles') {
+              <div class="flex flex-wrap gap-1.5 pt-0.5" role="group" [attr.aria-label]="field.config.label">
+                @for (day of dayChips; track day.value) {
+                <button
+                  type="button"
+                  class="btn btn-sm min-w-12 font-medium"
+                  [class.btn-primary]="isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-outline]="!isDaySelected(section, field.controlName, day.value)"
+                  [class.btn-accent]="!isDaySelected(section, field.controlName, day.value)"
+                  [attr.aria-pressed]="isDaySelected(section, field.controlName, day.value)"
+                  (click)="toggleDay(section, field.controlName, day.value)"
+                >
+                  {{ day.label }}
+                </button>
+                }
+              </div>
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-xs"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline btn-secondary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
+              <p class="text-xs text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-xs text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-xs font-semibold text-base-content/90">Verified sender email addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput())"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="pc-eyebrow">Verified sender emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <pc-empty-state
+                icon="envelope"
+                [bordered]="false"
+                title="No verified sender emails yet"
+                hint="Add an email above to request verification."
+              />
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                  <pc-icon name="check-circle" [size]="4"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+
+            <!-- Sending phone verification (anti-abuse gate for Free-plan sends) -->
+            <div class="space-y-3 border-t border-base-200 pt-6">
+              <div class="space-y-1">
+                <h3 class="text-xs font-semibold text-base-content/90">Sending phone verification</h3>
+                <p class="text-xs text-base-content/50">
+                  Free-plan workspaces verify a mobile number once before their first newsletter send. It keeps spammers
+                  off the shared sending pool your newsletters depend on.
+                </p>
+              </div>
+
+              @if (phoneStatus()?.verified) {
+              <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-xs">
+                <pc-icon name="check-circle" [size]="4"></pc-icon>
+                {{ phoneStatus()?.phone }} verified
+              </span>
+              } @else {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="tel"
+                    placeholder="+1 555 123 4567"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneInput()"
+                    (input)="phoneInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="requestPhoneCode()"
+                  [disabled]="phoneBusy() || !phoneInput().trim()"
+                >
+                  @if (phoneBusy() && !phoneCodeSentTo()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Send code }
+                </button>
+              </div>
+
+              @if (phoneCodeSentTo()) {
+              <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    inputmode="numeric"
+                    maxlength="6"
+                    placeholder="6-digit code"
+                    class="input input-bordered focus:input-primary w-full bg-base-200/30 text-xs"
+                    [value]="phoneCodeInput()"
+                    (input)="phoneCodeInput.set($any($event.target).value)"
+                  />
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  (click)="confirmPhoneCode()"
+                  [disabled]="phoneBusy() || phoneCodeInput().trim().length < 6"
+                >
+                  @if (phoneBusy()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else { Verify }
+                </button>
+              </div>
+              <p class="text-xs text-base-content/50">
+                We texted a code to <strong>{{ phoneCodeSentTo() }}</strong>. It expires in 10 minutes.
+              </p>
+              } }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold text-base-content/90">Address fingerprints maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-xs font-semibold tracking-tight">My notification preferences</h2>
+              <p class="text-xs text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="pc-table-shell">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th>Notification type</th>
+                    <th class="text-center w-36">Email</th>
+                    <th class="text-center w-36">In-app alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
+        </form>
+      </section>
+      } }
+
+      <!-- Custom self-saving sections: one shell driven by the same config array as the nav -->
+      @for (custom of visibleCustomSections; track custom.id) { @if (isSelected(custom.id)) {
+      <section class="space-y-5 pc-panel p-5">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-xs font-semibold tracking-tight">{{ custom.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ custom.description }}</p>
+        </header>
+
+        @switch (custom.id) { @case ('email-sync') {
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+        } @case ('domains') {
+        <pc-domains-settings></pc-domains-settings>
+        } @case ('donations') {
+        <pc-donations-settings></pc-donations-settings>
+        } @case ('storage') {
+        <pc-storage-settings></pc-storage-settings>
+        } @case ('billing') {
+        <pc-billing-settings></pc-billing-settings>
+        } @case ('passkeys') {
+        <pc-passkey-settings></pc-passkey-settings>
+        } @case ('account') {
+        <pc-account-settings></pc-account-settings>
+        } }
+      </section>
+      } }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/users/ui/users-page.ts
 ```typescript
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
@@ -71115,742 +72560,196 @@ export class UsersPageComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.html
 ```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h1 class="sr-only">Canvassing</h1>
-      @if (headline()) {
-      <p class="text-xs text-base-content/70">{{ headline() }}</p>
+@if (detail(); as d) {
+<div class="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4">
+  <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
+
+  <!-- Header card -->
+  <div class="flex flex-col gap-3 pc-panel p-5">
+    <p class="pc-eyebrow">Delivery route</p>
+    <div class="flex flex-wrap items-center gap-3">
+      @if (renaming()) {
+      <input
+        class="input input-bordered input-sm w-72 text-lg font-bold"
+        [value]="draftName()"
+        (input)="onDraftNameInput($event)"
+        (keyup.enter)="saveRename()"
+      />
+      <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
+      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
       } @else {
-      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
+      <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">
+        <pc-icon name="pencil-square" [size]="4"></pc-icon>
+      </button>
       }
+      <pc-status-badge [type]="tone(d.status)">{{ label(d.status) }}</pc-status-badge>
     </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
-        <pc-icon name="cog" [size]="4" />
-        Survey settings
+
+    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer</p>
+        <div class="flex items-center gap-1.5">
+          @if (d.volunteer_person_id) {
+          <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
+            >{{ d.volunteer_name || 'Volunteer' }}</a
+          >
+          <button type="button" class="link text-xs text-base-content/50" (click)="openAssign()">Change</button>
+          } @else {
+          <button type="button" class="btn btn-ghost btn-xs -ml-2 gap-1 text-primary" (click)="openAssign()">
+            <pc-icon name="user-plus" [size]="4"></pc-icon> Assign
+          </button>
+          }
+        </div>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Scheduled for</p>
+        <p class="text-base-content/80">{{ d.scheduled_for ? (d.scheduled_for | date: 'medium') : '—' }}</p>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Estimate</p>
+        <p class="tabular-nums text-base-content/80">{{ d.est_minutes }} min · {{ d.est_km }} km</p>
+      </div>
+      <div>
+        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer link</p>
+        @if (d.link_active) { @if (d.link_expires_at) {
+        <p class="text-success">Active. Expires {{ d.link_expires_at | date: 'mediumDate' }}</p>
+        } @else {
+        <p class="text-success">Active</p>
+        } } @else {
+        <p class="text-base-content/50">No active link</p>
+        }
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-wrap items-center gap-2 pt-1">
+      @if (d.volunteer_person_id) {
+      <button type="button" class="btn btn-primary btn-sm" (click)="copyLink()">
+        <pc-icon name="paper-airplane" [size]="4"></pc-icon> Copy volunteer link
       </button>
-      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-        <pc-icon name="map-pin" [size]="4" />
-        Cut new turfs
+      } @else {
+      <button type="button" class="btn btn-primary btn-sm" (click)="openAssign()">
+        <pc-icon name="user-plus" [size]="4"></pc-icon> Assign a volunteer to share
       </button>
+      }
+      <button type="button" class="btn btn-ghost btn-sm" (click)="openInGoogleMaps()">
+        <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
+      </button>
+      <div class="dropdown dropdown-end ml-auto">
+        <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-square" aria-label="More actions">
+          <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content z-10 w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow"
+        >
+          @if (d.link_active) {
+          <li>
+            <button type="button" (click)="copyLink(true)">
+              Regenerate link <span class="text-xs text-base-content/50">(old one stops working)</span>
+            </button>
+          </li>
+          <li><button type="button" (click)="revokeLink()">Revoke volunteer link</button></li>
+          }
+          <li><button type="button" class="text-error" (click)="cancelRoute()">Cancel route…</button></li>
+          @if (canDelete()) {
+          <li><button type="button" class="text-error" (click)="deleteRoute()">Delete route</button></li>
+          } @else {
+          <li>
+            <span class="cursor-not-allowed text-base-content/40"
+              >Delete route: draft or assigned only, cancel first</span
+            >
+          </li>
+          }
+        </ul>
+      </div>
     </div>
   </div>
 
-  <!-- Tabs (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
+  <!-- Stops card -->
+  <div class="flex flex-col gap-2 pc-panel p-5">
+    <div class="flex items-center justify-between">
+      <p class="text-sm font-semibold">
+        <span class="tabular-nums">{{ deliveredCount() }}</span> of
+        <span class="tabular-nums">{{ totalStops() }}</span> delivered
+      </p>
+    </div>
+    <progress class="progress progress-success w-full" [value]="deliveredCount()" [max]="totalStops() || 1"></progress>
 
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live: updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
+    <ol class="flex flex-col divide-y divide-base-200">
+      @for (stop of d.stops; track stop.id) {
+      <li class="flex items-center gap-3 py-2">
+        <span
+          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
+          >{{ stop.seq }}</span
+        >
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm">
+            @if (stop.person_id) {
+            <a class="font-medium text-primary" [routerLink]="['/people', stop.person_id]"
+              >{{ stop.first_name || 'Neighbour' }}</a
+            >
+            } @else {
+            <span class="font-medium">{{ stop.first_name || 'Neighbour' }}</span>
             }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/50">No knocks logged yet today. Outcomes appear as companions sync.</p>
-          }
+            <span class="text-base-content/50"> · {{ stop.address }}</span>
+          </p>
+          <p class="text-xs tabular-nums text-base-content/40">+{{ stop.leg_minutes }} min</p>
         </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
-      } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
-      }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
-
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table pc-table">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span>{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion. The Companion is a web app, so a copied
-      link does the same job for walk-up volunteers. Progress and conversations sync back live. Knocks land on the
-      person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
-        }
-      </div>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
-      </button>
-    </div>
-
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
-
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+        <pc-status-badge [type]="stopTone(stop.status)">{{ stop.status }}</pc-status-badge>
+        @if (stop.status === 'pending') {
+        <div class="flex items-center gap-1">
           <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
+            type="button"
+            class="btn btn-ghost btn-xs btn-square"
+            (click)="reorder(stop.id, 'up')"
+            aria-label="Move up"
           >
-            Street map
+            <pc-icon name="chevron-up" [size]="4"></pc-icon>
           </button>
           <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
+            type="button"
+            class="btn btn-ghost btn-xs btn-square"
+            (click)="reorder(stop.id, 'down')"
+            aria-label="Move down"
           >
-            By ward
+            <pc-icon name="chevron-down" [size]="4"></pc-icon>
           </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table pc-table">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions. Nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
-        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
-        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Supporters {{ r.responseMix.supporter }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
-        <span>Not voting {{ r.responseMix.not_voting }}</span>
-        <span>Already voted {{ r.responseMix.already_voted }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
-
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          <div class="dropdown dropdown-end">
+            <button type="button" tabindex="0" class="btn btn-ghost btn-xs btn-square" aria-label="Stop actions">
+              <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+            </button>
+            <ul
+              tabindex="0"
+              class="menu dropdown-content z-10 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow"
+            >
+              <li><button type="button" (click)="markDelivered(stop.id)">Mark delivered</button></li>
+              <li><button type="button" (click)="couldntDeliver(stop.id)">Couldn't deliver…</button></li>
+              <li><button type="button" class="text-error" (click)="removeStop(stop.id)">Remove from route</button></li>
+            </ul>
           </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
         </div>
         }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
-
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table pc-table">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best. Schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
-
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
-
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions. Nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+      </li>
+      }
+    </ol>
+    <p class="pt-1 text-xs tabular-nums text-base-content/50">
+      Estimated {{ d.est_minutes }} min · {{ d.est_km }} km from {{ d.start_address }}
     </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  } @if (assignTarget(); as target) {
-  <pc-assign-turf-dialog
-    [turfId]="target.id"
-    [turfName]="target.name"
-    (cancelled)="assignTarget.set(null)"
-    (assigned)="onAssigned($event)"
-  />
-  } @if (settingsOpen()) {
-  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
-  }
+  </div>
+
+  <!-- Mandatory activity feed -->
+  <pc-record-activities [entity]="'delivery_routes'" [entityId]="id()"></pc-record-activities>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  input,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { companionUrl } from '../../../shared/public-pages';
-import { DELIVERY_SKIP_REASONS } from '@common';
-import type { DeliverySkipReason } from '@common';
-import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-
-import { AssignVolunteerDialog } from './assign-volunteer-dialog';
-import { DeliveriesRoutesService, type DeliveryRouteDetail } from '../services/deliveries-routes-service';
-
-type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
-
-const ROUTE_TONE: Record<string, PcStatusType> = {
-  draft: 'neutral',
-  assigned: 'info',
-  in_progress: 'warning',
-  completed: 'success',
-  canceled: 'ghost',
-};
-
-/** Route detail (spec §4.3): header, actions, stops with reorder/actions, mandatory activity feed. */
-@Component({
-  selector: 'pc-deliveries-route-detail',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities, AssignVolunteerDialog],
-  templateUrl: './deliveries-route-detail.html',
-})
-export class DeliveriesRouteDetail {
-  public readonly id = input.required<string>();
-
-  private readonly assignDlg = viewChild.required<AssignVolunteerDialog>('assignDlg');
-
-  private readonly svc = inject(DeliveriesRoutesService);
-  private readonly alerts = inject(AlertService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly confirm = inject(ConfirmDialogService);
-  private readonly router = inject(Router);
-  protected readonly loading = createLoadingGate();
-
-  protected readonly detail = signal<DeliveryRouteDetail | null>(null);
-  protected readonly renaming = signal(false);
-  protected readonly draftName = signal('');
-
-  protected readonly deliveredCount = computed(
-    () => this.detail()?.stops.filter((s) => s.status === 'delivered').length ?? 0,
-  );
-  protected readonly totalStops = computed(() => this.detail()?.stops.length ?? 0);
-  protected readonly canDelete = computed(() => {
-    const s = this.detail()?.status;
-    return s === 'draft' || s === 'assigned';
-  });
-
-  constructor() {
-    // Load only once the router has bound the required `id` input — reading it
-    // synchronously in the constructor throws NG0950. Re-runs if the id changes.
-    effect(() => {
-      this.id();
-      untracked(() => void this.load());
-    });
-
-    // Navbar trail with the route's real name once loaded (until then the route's
-    // `data.breadcrumb` default — Deliveries / Routes — is showing).
-    effect(() => {
-      const d = this.detail();
-      if (!d) return;
-      this.breadcrumbs.setCrumbs([
-        { label: 'Deliveries', route: '/deliveries' },
-        { label: 'Routes', route: '/deliveries/routes' },
-        { label: d.name },
-      ]);
-    });
-  }
-
-  protected tone(status: string): PcStatusType {
-    return ROUTE_TONE[status] ?? 'neutral';
-  }
-
-  protected label(status: string): string {
-    return status === 'in_progress' ? 'in progress' : status;
-  }
-
-  private async load(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      const d = await this.svc.getById(this.id());
-      this.detail.set(d);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not load route');
-    } finally {
-      end();
-    }
-  }
-
-  protected onDraftNameInput(event: Event): void {
-    this.draftName.set((event.target as HTMLInputElement).value);
-  }
-
-  protected startRename(): void {
-    this.draftName.set(this.detail()?.name ?? '');
-    this.renaming.set(true);
-  }
-
-  protected async saveRename(): Promise<void> {
-    const name = this.draftName().trim();
-    if (!name) return;
-    try {
-      await this.svc.update(this.id(), { name });
-      this.renaming.set(false);
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not rename route');
-    }
-  }
-
-  protected openAssign(): void {
-    this.assignDlg().open(this.detail()?.volunteer_person_id != null);
-  }
-
-  protected async onVolunteerSelected(person: PersonSearchResult | null): Promise<void> {
-    try {
-      await this.svc.assignVolunteer(this.id(), person?.id ?? null);
-      this.alerts.showSuccess(person ? 'Volunteer assigned' : 'Volunteer removed');
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the volunteer');
-    }
-  }
-
-  protected async copyLink(regenerate = false): Promise<void> {
-    try {
-      const res = await this.svc.mintShareLink(this.id(), regenerate);
-      if (res.status === 'exists') {
-        // The raw token is never stored, so the existing link can't be shown again — the only way
-        // to hand the user a copyable link is to mint a fresh one, which retires the old one.
-        const ok = await this.confirm.confirm({
-          title: 'Copy a fresh link?',
-          message:
-            'This route already has an active volunteer link, and for security the existing one can’t be shown again. Copying a fresh link replaces it. The old link stops working, so anyone you already sent it to will need the new one.',
-          variant: 'warning',
-          confirmText: 'Regenerate & copy',
-        });
-        if (ok) await this.copyLink(true);
-        return;
-      }
-      const url = companionUrl(`/r/${res.token}`);
-      await navigator.clipboard.writeText(url).catch(() => undefined);
-      // expires_at is null when the workspace disables link expiry (Workspace → App).
-      this.alerts.showSuccess(
-        regenerate
-          ? 'Fresh link copied. The old link no longer works'
-          : res.expires_at
-            ? 'Link copied (valid 30 days)'
-            : 'Link copied',
-      );
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not create the link');
-    }
-  }
-
-  protected async revokeLink(): Promise<void> {
-    const ok = await this.confirm.confirm({
-      title: 'Revoke volunteer link?',
-      message: 'The current link stops working immediately.',
-      variant: 'danger',
-      confirmText: 'Revoke link',
-    });
-    if (!ok) return;
-    try {
-      await this.svc.revokeShareLink(this.id());
-      this.alerts.showSuccess('Volunteer link revoked');
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not revoke the link');
-    }
-  }
-
-  protected openInGoogleMaps(): void {
-    const d = this.detail();
-    if (!d) return;
-    const located = d.stops.filter((s) => s.lat != null && s.lng != null);
-    if (located.length === 0) {
-      this.alerts.showError('No located stops to navigate to');
-      return;
-    }
-    const origin = `${d.start_lat},${d.start_lng}`;
-    const dest = located[located.length - 1];
-    const destination = `${dest?.lat},${dest?.lng}`;
-    const waypoints = located
-      .slice(0, -1)
-      .map((s) => `${s.lat},${s.lng}`)
-      .join('|');
-    const params = new URLSearchParams({ api: '1', origin, destination });
-    if (waypoints) params.set('waypoints', waypoints);
-    window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
-  }
-
-  protected async cancelRoute(): Promise<void> {
-    const undelivered = this.detail()?.stops.filter((s) => s.status === 'pending').length ?? 0;
-    const ok = await this.confirm.confirm({
-      title: 'Cancel this route?',
-      message: `Its ${undelivered} undelivered stop${undelivered === 1 ? '' : 's'} return to the planning pool. Delivered stops keep their record.`,
-      variant: 'danger',
-      confirmText: 'Cancel route',
-    });
-    if (!ok) return;
-    try {
-      await this.svc.setStatus(this.id(), 'canceled');
-      this.alerts.showSuccess('Route canceled');
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not cancel the route');
-    }
-  }
-
-  protected async deleteRoute(): Promise<void> {
-    const ok = await this.confirm.confirm({
-      title: 'Delete this route?',
-      message: 'This removes the route. Its stops return to the planning pool.',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    try {
-      await this.svc.delete(this.id());
-      this.alerts.showSuccess('Route deleted');
-      await this.router.navigate(['/deliveries/routes']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not delete the route');
-    }
-  }
-
-  protected async reorder(stopId: string, direction: 'up' | 'down'): Promise<void> {
-    try {
-      await this.svc.reorderStop(this.id(), stopId, direction);
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not reorder');
-    }
-  }
-
-  protected async markDelivered(stopId: string): Promise<void> {
-    await this.runStopAction(stopId, 'deliver');
-  }
-
-  protected async removeStop(stopId: string): Promise<void> {
-    const ok = await this.confirm.confirm({
-      title: 'Remove this stop?',
-      message: 'The request returns to the planning pool.',
-      variant: 'danger',
-      confirmText: 'Remove stop',
-    });
-    if (!ok) return;
-    await this.runStopAction(stopId, 'remove');
-  }
-
-  protected async couldntDeliver(stopId: string): Promise<void> {
-    const reason = await this.confirm.choose<DeliverySkipReason>({
-      title: "Couldn't deliver. Pick a reason",
-      choices: DELIVERY_SKIP_REASONS.map((r) => ({ label: r, value: r })),
-    });
-    if (!reason) return;
-    await this.runStopAction(stopId, 'skip', reason);
-  }
-
-  private async runStopAction(
-    stopId: string,
-    action: 'deliver' | 'skip' | 'remove',
-    reason?: DeliverySkipReason,
-  ): Promise<void> {
-    try {
-      await this.svc.stopAction(this.id(), stopId, action, reason ?? null);
-      await this.load();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error ? err.message : 'Could not update the stop');
-    }
-  }
-
-  protected stopTone(status: string): PcStatusType {
-    if (status === 'delivered') return 'success';
-    if (status === 'skipped') return 'warning';
-    return 'neutral';
-  }
+} @else {
+<div class="flex min-h-[40vh] items-center justify-center">
+  <span class="loading loading-spinner loading-lg text-primary"></span>
+</div>
 }
 ```
 
@@ -72562,710 +73461,6 @@ export class DeliveriesRouteDetail {
     <button class="btn btn-primary" type="submit" form="confirm-email-form">Save</button>
   </div>
 </pc-modal-shell>
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
-    @if (tab() === 'imports') {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
-      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-      <span>Import CSV</span>
-    </button>
-    } @else {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <span>New export</span>
-    </button>
-    }
-  </pc-grid-header>
-
-  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
-
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <pc-table [columns]="7">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>Type</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Outcome</th>
-        <th>Tags applied</th>
-        <th class="text-right">Actions</th>
-      </ng-container>
-
-      @for (item of items(); track item.id) {
-      <tr>
-        <td>
-          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
-          <div class="text-xs text-base-content/60">
-            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-          </div>
-        </td>
-        <td>
-          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-        </td>
-        <td>
-          @if (item.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (item.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Pending</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <div class="text-xs text-base-content">
-            <div>{{ item.insertedCount }} imported</div>
-            @if (item.mergedCount > 0) {
-            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-            } @if (item.skippedCount > 0) {
-            <div class="text-xs text-base-content/60 flex items-center gap-1">
-              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                download reasons
-              </button>
-              }
-            </div>
-            } @if (item.errorCount > 0) {
-            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-            }
-          </div>
-          } @case ('failed') {
-          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
-            Failed
-          </pc-status-badge>
-          } }
-        </td>
-        <td>
-          @if (item.tagsApplied.length > 0) {
-          <div class="flex flex-wrap gap-1">
-            @for (tag of item.tagsApplied; track tag) {
-            <span class="badge badge-outline text-xs">{{ tag }}</span>
-            }
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (item.canDownloadSource) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download original file"
-              (click)="downloadSource(item)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              (click)="openDeleteDialog(item, deleteDialog)"
-              [disabled]="deleting()"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="7" class="text-center py-12 text-base-content/50">
-          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1 mb-3">
-            Bring in people, companies, households or tasks from a spreadsheet to get started.
-          </p>
-          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import CSV
-          </button>
-        </td>
-      </tr>
-      }
-    </pc-table>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
-    </p>
-  </div>
-  }
-
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
-        Go to People
-      </button>
-    </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    }
-
-    <pc-table [columns]="5">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Contents</th>
-        <th class="text-right">Download</th>
-      </ng-container>
-
-      @for (job of exportJobs(); track job.id) {
-      <tr>
-        <td>
-          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-        </td>
-        <td>
-          @if (job.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (job.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Queued</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-          } @default {
-          <pc-status-badge type="error">Failed</pc-status-badge>
-          } }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (job.status === 'completed') { @if (isExpired(job)) {
-            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
-            } @else if (job.downloadable) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download CSV"
-              (click)="downloadExportJob(job)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            } @else {
-            <span
-              class="text-xs text-base-content/40 mr-2"
-              title="Downloaded directly to your device, not stored on the server"
-            >
-              Downloaded
-            </span>
-            } }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              title="Delete export"
-              (click)="deleteExportJob(job)"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="5" class="text-center py-12 text-base-content/50">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1">
-            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
-          </p>
-        </td>
-      </tr>
-      }
-    </pc-table>
-  </div>
-  }
-</div>
-
-<pc-modal-shell
-  #deleteDialog
-  title="Delete import"
-  icon="trash"
-  [dismissible]="!deleting()"
-  (closed)="pendingDelete.set(null)"
->
-  @if (pendingDelete(); as item) {
-  <p class="text-sm text-base-content/70 mt-2">
-    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-    records created by this import:
-  </p>
-
-  <div class="space-y-3 mt-4">
-    @if (item.contactCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deletePeople()"
-        (change)="deletePeople.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-    </label>
-    } @if (item.householdCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteHouseholds()"
-        (change)="deleteHouseholds.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-    </label>
-    } @if (item.companyCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteCompanies()"
-        (change)="deleteCompanies.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-    </label>
-    } @if (item.taskCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteTasks()"
-        (change)="deleteTasks.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-    </label>
-    }
-  </div>
-  }
-
-  <div pc-modal-footer class="flex gap-2">
-    <button
-      type="button"
-      class="btn btn-outline btn-accent"
-      (click)="closeDeleteDialog(deleteDialog)"
-      [disabled]="deleting()"
-    >
-      Cancel
-    </button>
-    <button
-      type="button"
-      class="btn btn-outline btn-error gap-2"
-      (click)="confirmDelete(deleteDialog)"
-      [disabled]="deleting()"
-    >
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      Delete
-    </button>
-  </div>
-</pc-modal-shell>
-```
-
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
-```typescript
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-import type { DataExportRecordType, ImportListItem } from '../../../../../../../libs/common/src';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { Table } from '@uxcommon/components/table/table';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
-import { ExportsService } from '../../exports/services/exports-service';
-import { ImportsService } from '../services/imports-service';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-/**
- * Import/export History page (spec §17). Folds the old standalone Exports
- * Manager page into an "Imports N / Exports N" tabbed view — one history
- * surface for both, per the Wave 1E fold noted in sidebar-items.ts.
- */
-type HistoryTab = 'imports' | 'exports';
-
-@Component({
-  selector: 'pc-imports-page',
-  imports: [Icon, TabBar, Table, GridHeaderComponent, ModalShell, StatusBadge],
-  templateUrl: './imports-page.html',
-})
-export class ImportsPage {
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly imports = inject(ImportsService);
-  private readonly exports = inject(ExportsService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  protected readonly tab = signal<HistoryTab>('imports');
-
-  protected readonly historyTabs = computed<PcTabOption[]>(() => [
-    { id: 'imports', label: 'Imports', badge: this.itemCount() },
-    { id: 'exports', label: 'Exports', badge: this.exportCount() },
-  ]);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  private isLoadActive = false;
-  protected readonly deleting = signal(false);
-  protected readonly items = signal<ImportListItem[]>([]);
-  protected readonly itemCount = computed(() => this.items().length);
-  protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deletePeople = signal(false);
-  protected readonly deleteHouseholds = signal(false);
-  protected readonly deleteCompanies = signal(false);
-  protected readonly deleteTasks = signal(false);
-  protected readonly error = signal<string | null>(null);
-
-  // --- History sentence: "N imports this year · X records created · Y duplicates merged" ---
-  protected readonly importsThisYear = computed(
-    () => this.items().filter((item) => item.processedAt.getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly recordsCreatedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.insertedCount, 0),
-  );
-  protected readonly duplicatesMergedThisYear = computed(() =>
-    this.items()
-      .filter((item) => item.processedAt.getFullYear() === new Date().getFullYear())
-      .reduce((sum, item) => sum + item.mergedCount, 0),
-  );
-  protected readonly historySentence = computed(
-    () =>
-      `${this.importsThisYear()} imports this year · ${this.recordsCreatedThisYear()} records created · ` +
-      `${this.duplicatesMergedThisYear()} duplicates merged`,
-  );
-
-  /** data_imports.source → the label the Type column shows. */
-  protected sourceLabel(source: string): string {
-    switch (source) {
-      case 'persons':
-        return 'People';
-      case 'companies':
-        return 'Companies';
-      case 'households':
-        return 'Households';
-      case 'tasks':
-        return 'Tasks';
-      default:
-        return source || '—';
-    }
-  }
-
-  private pollInterval: ReturnType<typeof setInterval> | undefined;
-
-  // --- Exports tab ---
-  protected readonly exportJobs = signal<DataExportRecordType[]>([]);
-  protected readonly exportCount = computed(() => this.exportJobs().length);
-  protected readonly exportsThisYear = computed(
-    () => this.exportJobs().filter((job) => new Date(job.created_at).getFullYear() === new Date().getFullYear()).length,
-  );
-  protected readonly exportsSentence = computed(
-    () =>
-      `${this.exportsThisYear()} ${this.exportsThisYear() === 1 ? 'export' : 'exports'} this year · ` +
-      `files stay downloadable for 30 days · every export lands in the Activity log`,
-  );
-  protected readonly exportsLoading = createLoadingGate();
-  protected readonly showNewExportInfo = signal(false);
-
-  constructor() {
-    void this.load();
-
-    // The navbar crumb IS the active tab — a single "Imports"/"Exports" title
-    // (overrides the route's static default; effects flush after NavigationEnd,
-    // so this wins).
-    effect(() => {
-      this.breadcrumbs.setCrumbs([{ label: this.tab() === 'imports' ? 'Imports' : 'Exports' }]);
-    });
-
-    // Reset checkbox when dialog closes
-    effect(() => {
-      const item = this.pendingDelete();
-      if (!item) {
-        this.deletePeople.set(false);
-        this.deleteHouseholds.set(false);
-        this.deleteCompanies.set(false);
-        this.deleteTasks.set(false);
-      }
-    });
-
-    this.startPolling();
-
-    this.destroyRef.onDestroy(() => {
-      this.imports.abort();
-      this.stopPolling();
-    });
-  }
-
-  protected switchTab(tab: string): void {
-    if (tab !== 'imports' && tab !== 'exports') return;
-    this.tab.set(tab);
-    if (tab === 'exports') {
-      void this.loadExports();
-    }
-  }
-
-  private startPolling() {
-    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
-  }
-
-  private async pollStep(): Promise<void> {
-    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-    if (hasActiveJobs) {
-      try {
-        const list = await this.imports.list();
-        this.items.set(list ?? []);
-      } catch (err) {
-        console.error('Failed to poll imports status:', err);
-      }
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = undefined;
-    }
-  }
-
-  protected formatDate(value: Date | string) {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(value instanceof Date ? value : new Date(value));
-    } catch {
-      return value ? String(value) : '—';
-    }
-  }
-
-  protected formatFileSize(bytes: number | null): string | null {
-    if (bytes == null) return null;
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  protected startNewImport(): void {
-    void this.router.navigate(['/imports/new']);
-  }
-
-  protected openDeleteDialog(item: ImportListItem, dialog: ModalShell) {
-    if (this.deleting()) return;
-    this.pendingDelete.set(item);
-    dialog.show();
-  }
-
-  protected closeDeleteDialog(dialog: ModalShell) {
-    dialog.close();
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmDelete(dialog: ModalShell) {
-    const item = this.pendingDelete();
-    if (!item || this.deleting()) return;
-
-    this.deleting.set(true);
-    try {
-      await this.imports.delete(item.id, {
-        deletePeople: this.deletePeople(),
-        deleteHouseholds: this.deleteHouseholds(),
-        deleteCompanies: this.deleteCompanies(),
-        deleteTasks: this.deleteTasks(),
-      });
-      this.alerts.showSuccess('Import deleted');
-      await this.load();
-      this.closeDeleteDialog(dialog);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to delete import';
-      this.alerts.showError(message);
-    } finally {
-      this.deleting.set(false);
-    }
-  }
-
-  protected downloadSource(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(`${environment.apiUrl}/api/imports/download/${item.id}/source`, token, item.fileName);
-  }
-
-  protected downloadSkipped(item: ImportListItem): void {
-    const token = this.tokenSvc.getAuthToken();
-    void downloadWithAuthHeader(
-      `${environment.apiUrl}/api/imports/download/${item.id}/skipped`,
-      token,
-      `${item.fileName.replace(/\.csv$/i, '')}-skipped-rows.csv`,
-    );
-  }
-
-  private async load() {
-    if (this.isLoadActive) return;
-    this.isLoadActive = true;
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const list = await this.imports.list();
-      this.items.set(list ?? []);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load imports';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.isLoadActive = false;
-      end();
-    }
-  }
-
-  // --- Exports tab ---
-
-  protected toggleNewExportInfo(): void {
-    this.showNewExportInfo.update((v) => !v);
-  }
-
-  protected goToPeopleGrid(): void {
-    void this.router.navigate(['/people']);
-  }
-
-  protected formatExportDate(dateStr: string) {
-    return this.formatDate(dateStr);
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadExportJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alerts.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alerts.showError('Export is not ready yet.');
-      return;
-    }
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alerts.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteExportJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete export',
-      message: `Delete "${job.file_name}"? This removes the file from the server. It cannot be undone.`,
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.exports.delete(job.id);
-      this.alerts.showSuccess('Export deleted successfully.');
-      await this.loadExports();
-    } catch {
-      this.alerts.showError('Failed to delete export. Please try again.');
-    }
-  }
-
-  private async loadExports() {
-    const end = this.exportsLoading.begin();
-    try {
-      const list = await this.exports.list();
-      this.exportJobs.set(list ?? []);
-    } catch {
-      this.alerts.showError('Failed to load exports. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
@@ -74556,199 +74751,6 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.html
-```html
-@if (detail(); as d) {
-<div class="mx-auto flex w-full max-w-[900px] flex-col gap-5 p-4">
-  <!-- Trail (Deliveries / Routes / name) renders in the navbar breadcrumb strip. -->
-
-  <!-- Header card -->
-  <div class="flex flex-col gap-3 pc-panel p-5">
-    <p class="pc-eyebrow">Delivery route</p>
-    <div class="flex flex-wrap items-center gap-3">
-      @if (renaming()) {
-      <input
-        class="input input-bordered input-sm w-72 text-lg font-bold"
-        [value]="draftName()"
-        (input)="onDraftNameInput($event)"
-        (keyup.enter)="saveRename()"
-      />
-      <button type="button" class="btn btn-primary btn-xs" (click)="saveRename()">Save</button>
-      <button type="button" class="btn btn-outline btn-accent btn-xs" (click)="renaming.set(false)">Cancel</button>
-      } @else {
-      <h1 class="text-2xl font-bold tracking-tight text-base-content">{{ d.name }}</h1>
-      <button type="button" class="btn btn-ghost btn-xs" (click)="startRename()" aria-label="Rename route">
-        <pc-icon name="pencil-square" [size]="4"></pc-icon>
-      </button>
-      }
-      <pc-status-badge [type]="tone(d.status)">{{ label(d.status) }}</pc-status-badge>
-    </div>
-
-    <div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer</p>
-        <div class="flex items-center gap-1.5">
-          @if (d.volunteer_person_id) {
-          <a class="text-primary" [routerLink]="['/people', d.volunteer_person_id]"
-            >{{ d.volunteer_name || 'Volunteer' }}</a
-          >
-          <button type="button" class="link text-xs text-base-content/50" (click)="openAssign()">Change</button>
-          } @else {
-          <button type="button" class="btn btn-ghost btn-xs -ml-2 gap-1 text-primary" (click)="openAssign()">
-            <pc-icon name="user-plus" [size]="4"></pc-icon> Assign
-          </button>
-          }
-        </div>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Scheduled for</p>
-        <p class="text-base-content/80">{{ d.scheduled_for ? (d.scheduled_for | date: 'medium') : '—' }}</p>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Estimate</p>
-        <p class="tabular-nums text-base-content/80">{{ d.est_minutes }} min · {{ d.est_km }} km</p>
-      </div>
-      <div>
-        <p class="text-[10.5px] uppercase tracking-[0.06em] text-base-content/50">Volunteer link</p>
-        @if (d.link_active) { @if (d.link_expires_at) {
-        <p class="text-success">Active. Expires {{ d.link_expires_at | date: 'mediumDate' }}</p>
-        } @else {
-        <p class="text-success">Active</p>
-        } } @else {
-        <p class="text-base-content/50">No active link</p>
-        }
-      </div>
-    </div>
-
-    <!-- Actions -->
-    <div class="flex flex-wrap items-center gap-2 pt-1">
-      @if (d.volunteer_person_id) {
-      <button type="button" class="btn btn-primary btn-sm" (click)="copyLink()">
-        <pc-icon name="paper-airplane" [size]="4"></pc-icon> Copy volunteer link
-      </button>
-      } @else {
-      <button type="button" class="btn btn-primary btn-sm" (click)="openAssign()">
-        <pc-icon name="user-plus" [size]="4"></pc-icon> Assign a volunteer to share
-      </button>
-      }
-      <button type="button" class="btn btn-ghost btn-sm" (click)="openInGoogleMaps()">
-        <pc-icon name="map-pin" [size]="4"></pc-icon> Open in Google Maps
-      </button>
-      <div class="dropdown dropdown-end ml-auto">
-        <button type="button" tabindex="0" class="btn btn-ghost btn-sm btn-square" aria-label="More actions">
-          <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content z-10 w-64 rounded-box border border-base-300 bg-base-100 p-2 shadow"
-        >
-          @if (d.link_active) {
-          <li>
-            <button type="button" (click)="copyLink(true)">
-              Regenerate link <span class="text-xs text-base-content/50">(old one stops working)</span>
-            </button>
-          </li>
-          <li><button type="button" (click)="revokeLink()">Revoke volunteer link</button></li>
-          }
-          <li><button type="button" class="text-error" (click)="cancelRoute()">Cancel route…</button></li>
-          @if (canDelete()) {
-          <li><button type="button" class="text-error" (click)="deleteRoute()">Delete route</button></li>
-          } @else {
-          <li>
-            <span class="cursor-not-allowed text-base-content/40"
-              >Delete route: draft or assigned only, cancel first</span
-            >
-          </li>
-          }
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <!-- Stops card -->
-  <div class="flex flex-col gap-2 pc-panel p-5">
-    <div class="flex items-center justify-between">
-      <p class="text-sm font-semibold">
-        <span class="tabular-nums">{{ deliveredCount() }}</span> of
-        <span class="tabular-nums">{{ totalStops() }}</span> delivered
-      </p>
-    </div>
-    <progress class="progress progress-success w-full" [value]="deliveredCount()" [max]="totalStops() || 1"></progress>
-
-    <ol class="flex flex-col divide-y divide-base-200">
-      @for (stop of d.stops; track stop.id) {
-      <li class="flex items-center gap-3 py-2">
-        <span
-          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-base-200 text-xs font-semibold tabular-nums"
-          >{{ stop.seq }}</span
-        >
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm">
-            @if (stop.person_id) {
-            <a class="font-medium text-primary" [routerLink]="['/people', stop.person_id]"
-              >{{ stop.first_name || 'Neighbour' }}</a
-            >
-            } @else {
-            <span class="font-medium">{{ stop.first_name || 'Neighbour' }}</span>
-            }
-            <span class="text-base-content/50"> · {{ stop.address }}</span>
-          </p>
-          <p class="text-xs tabular-nums text-base-content/40">+{{ stop.leg_minutes }} min</p>
-        </div>
-        <pc-status-badge [type]="stopTone(stop.status)">{{ stop.status }}</pc-status-badge>
-        @if (stop.status === 'pending') {
-        <div class="flex items-center gap-1">
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-square"
-            (click)="reorder(stop.id, 'up')"
-            aria-label="Move up"
-          >
-            <pc-icon name="chevron-up" [size]="4"></pc-icon>
-          </button>
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-square"
-            (click)="reorder(stop.id, 'down')"
-            aria-label="Move down"
-          >
-            <pc-icon name="chevron-down" [size]="4"></pc-icon>
-          </button>
-          <div class="dropdown dropdown-end">
-            <button type="button" tabindex="0" class="btn btn-ghost btn-xs btn-square" aria-label="Stop actions">
-              <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-            </button>
-            <ul
-              tabindex="0"
-              class="menu dropdown-content z-10 w-52 rounded-box border border-base-300 bg-base-100 p-2 shadow"
-            >
-              <li><button type="button" (click)="markDelivered(stop.id)">Mark delivered</button></li>
-              <li><button type="button" (click)="couldntDeliver(stop.id)">Couldn't deliver…</button></li>
-              <li><button type="button" class="text-error" (click)="removeStop(stop.id)">Remove from route</button></li>
-            </ul>
-          </div>
-        </div>
-        }
-      </li>
-      }
-    </ol>
-    <p class="pt-1 text-xs tabular-nums text-base-content/50">
-      Estimated {{ d.est_minutes }} min · {{ d.est_km }} km from {{ d.start_address }}
-    </p>
-  </div>
-
-  <!-- Mandatory activity feed -->
-  <pc-record-activities [entity]="'delivery_routes'" [entityId]="id()"></pc-record-activities>
-
-  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
-</div>
-} @else {
-<div class="flex min-h-[40vh] items-center justify-center">
-  <span class="loading loading-spinner loading-lg text-primary"></span>
-</div>
 }
 ```
 
@@ -76781,7 +76783,7 @@ export class HomePage {
   /** The three priced teaser cards (Free / Grassroots / Movement); enterprise stays a footnote elsewhere. */
   protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
 
-  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $75'). */
+  /** "Starting at" price label for a teaser card ('$0', 'From $29', 'From $55'). */
   protected readonly startingPrice = startingPriceLabel;
 
   protected readonly faqs: readonly Qa[] = [
@@ -76807,7 +76809,7 @@ export class HomePage {
     },
     {
       q: 'How does pricing work?',
-      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $75/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
+      a: 'Three plans: Free forever, Grassroots from $29/month and Movement from $55/month. The price scales with your emailable subscribers, never your total contacts, so you can store your whole list for free and only pay for who you email.',
     },
   ];
 
