@@ -20,8 +20,8 @@ vite.config.*.timestamp*
 vitest.config.*.timestamp*
 test-results/*
 repomix-output.xml
-apps/.DS_Store
-libs/.DS_Store
+.DS_Store
+**/.DS_Store
 
 .claude/worktrees
 migrations.json
