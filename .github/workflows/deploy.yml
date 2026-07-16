@@ -148,7 +148,12 @@ jobs:
             az containerapp update \
               --name ${{ vars.AZURE_API_APP }} \
               --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-              --image ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+              --image ghcr.io/${{ github.repository }}/backend:${{ github.sha }} \
+              --set-env-vars PUBLIC_BASE_DOMAIN=pplforms.com
+              # PUBLIC_BASE_DOMAIN drives public-page tenant resolution (<org>.pplforms.com). It's a
+              # non-secret public domain, so it lives here (declarative, version-controlled) rather
+              # than as an out-of-band Azure env var. --set-env-vars MERGES: it won't clobber the
+              # DB/secret env vars configured on the Container App directly.
       - name: Update edge Container App (pplcrm-edge)
         uses: azure/cli@v2
         with:
