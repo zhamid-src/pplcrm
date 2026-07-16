@@ -460,12 +460,11 @@ apps/
         geo-rates.ts
     src/
       app/
-        audience/
-          audience-content.ts
-          audience-page.html
-          audience-page.ts
         coming-soon/
           coming-soon-page.ts
+        compare/
+          compare-page.html
+          compare-page.ts
         docs/
           docs-article.html
           docs-article.ts
@@ -10708,71 +10707,6 @@ run();
 interface BigInt {
   toJSON(): string;
 }
-````
-
-## File: apps/backend/Dockerfile
-````
-# syntax=docker/dockerfile:1
-#
-# Production image for the pplCRM backend (Fastify + tRPC + Kysely).
-#
-# The backend is a SINGLE process: it serves the API *and* runs the in-process background-job
-# worker, the webhook worker, and self-scheduled cron (via the background_jobs table + Postgres
-# LISTEN/NOTIFY). There is no separate worker/scheduler to deploy — but for that reason, run one
-# instance to start (the DB queue makes scaling out safe later via SELECT ... FOR UPDATE SKIP LOCKED).
-#
-# Migrations are NOT run here. They run as a separate deploy step as the `pplcrm_owner` role, via
-# `npx tsx apps/backend/src/app/kyselyinit.ts` over the source tree (the migrator imports the .ts
-# migration files). This image sets MIGRATE_ON_BOOT=false and carries no migration files.
-
-##############################
-# Stage 1 — build the backend
-##############################
-# Node 26 matches the repo's local runtime. esbuild bundles main.ts to an ESM file but keeps
-# node_modules EXTERNAL (project.json: packages "external", generatePackageJson false), so the
-# runtime image must ship the production node_modules alongside the bundle.
-FROM node:26-bookworm-slim AS builder
-WORKDIR /app
-
-# Install ALL deps (incl. dev) for the Nx/esbuild build. Lockfile first for layer caching.
-COPY package.json package-lock.json ./
-RUN npm ci
-
-# The backend build pulls cross-package types (@common, the tRPC router type) from elsewhere in the
-# monorepo, so the whole repo must be present. The build's `generate-context` step runs `npx repomix`
-# to refresh STRUCTURE.md and needs network access at build time (standard for image builds).
-COPY . .
-
-# Produce dist/apps/backend (ESM bundle; node_modules NOT bundled).
-RUN npx nx build backend --configuration=production
-
-# Re-resolve node_modules to production-only for the runtime image. Because esbuild left every
-# dependency external, all *runtime* deps must remain — only devDependencies are dropped.
-RUN npm ci --omit=dev
-
-######################################
-# Stage 2 — slim runtime (serve only)
-######################################
-FROM node:26-bookworm-slim AS runtime
-WORKDIR /app
-ENV NODE_ENV=production \
-    HOST=0.0.0.0 \
-    PORT=3000 \
-    MIGRATE_ON_BOOT=false
-
-# Ship the pruned prod deps + the bundle. Run as the image's built-in unprivileged `node` user.
-COPY --from=builder --chown=node:node /app/node_modules ./node_modules
-COPY --from=builder --chown=node:node /app/dist/apps/backend ./dist/apps/backend
-COPY --from=builder --chown=node:node /app/package.json ./package.json
-
-USER node
-EXPOSE 3000
-
-# Readiness probe hits the DB-aware /healthz (returns 503 when Postgres is unreachable).
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-
-CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
 ````
 
 ## File: apps/backend/jest.config.ts
@@ -37711,6 +37645,71 @@ export function onShutdown(
 }
 ````
 
+## File: apps/backend/Dockerfile
+````
+# syntax=docker/dockerfile:1
+#
+# Production image for the pplCRM backend (Fastify + tRPC + Kysely).
+#
+# The backend is a SINGLE process: it serves the API *and* runs the in-process background-job
+# worker, the webhook worker, and self-scheduled cron (via the background_jobs table + Postgres
+# LISTEN/NOTIFY). There is no separate worker/scheduler to deploy — but for that reason, run one
+# instance to start (the DB queue makes scaling out safe later via SELECT ... FOR UPDATE SKIP LOCKED).
+#
+# Migrations are NOT run here. They run as a separate deploy step as the `pplcrm_owner` role, via
+# `npx tsx apps/backend/src/app/kyselyinit.ts` over the source tree (the migrator imports the .ts
+# migration files). This image sets MIGRATE_ON_BOOT=false and carries no migration files.
+
+##############################
+# Stage 1 — build the backend
+##############################
+# Node 26 matches the repo's local runtime. esbuild bundles main.ts to an ESM file but keeps
+# node_modules EXTERNAL (project.json: packages "external", generatePackageJson false), so the
+# runtime image must ship the production node_modules alongside the bundle.
+FROM node:26-bookworm-slim AS builder
+WORKDIR /app
+
+# Install ALL deps (incl. dev) for the Nx/esbuild build. Lockfile first for layer caching.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# The backend build pulls cross-package types (@common, the tRPC router type) from elsewhere in the
+# monorepo, so the whole repo must be present. The build's `generate-context` step runs `npx repomix`
+# to refresh STRUCTURE.md and needs network access at build time (standard for image builds).
+COPY . .
+
+# Produce dist/apps/backend (ESM bundle; node_modules NOT bundled).
+RUN npx nx build backend --configuration=production
+
+# Re-resolve node_modules to production-only for the runtime image. Because esbuild left every
+# dependency external, all *runtime* deps must remain — only devDependencies are dropped.
+RUN npm ci --omit=dev
+
+######################################
+# Stage 2 — slim runtime (serve only)
+######################################
+FROM node:26-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000 \
+    MIGRATE_ON_BOOT=false
+
+# Ship the pruned prod deps + the bundle. Run as the image's built-in unprivileged `node` user.
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist/apps/backend ./dist/apps/backend
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+USER node
+EXPOSE 3000
+
+# Readiness probe hits the DB-aware /healthz (returns 503 when Postgres is unreachable).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "--enable-source-maps", "dist/apps/backend/main.js"]
+````
+
 ## File: apps/backend/eslint.config.cjs
 ````javascript
 /* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
@@ -38637,294 +38636,179 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 }
 ````
 
-## File: apps/website/src/app/audience/audience-content.ts
-````typescript
-import type { PreviewKind } from '../ui/app-preview';
+## File: apps/website/src/app/compare/compare-page.html
+````html
+<pc-site-header variant="solid" />
 
-export interface AudienceFeature {
-  readonly icon: string;
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">How we compare</div>
+    <h1 class="mt-3 text-balance text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      You’re probably not choosing between CRMs.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Most teams like yours run on a spreadsheet, an email tool and somebody’s inbox. That stack is free, familiar and
+      genuinely fine at first. Here is where it starts to cost you, job by job.
+    </p>
+  </div>
+</section>
+
+<!-- The same jobs, side by side -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto flex max-w-[880px] flex-col gap-3.5">
+    @for (row of rows; track row.job) {
+    <div class="rounded-xl border border-line bg-base-50 p-5 sm:p-6">
+      <div class="text-[15px] font-semibold">{{ row.job }}</div>
+      <div class="mt-3 grid gap-3.5 sm:grid-cols-2">
+        <div class="rounded-[10px] bg-base-200/70 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
+            The spreadsheet stack
+          </div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ row.stack }}</p>
+        </div>
+        <div class="rounded-[10px] bg-primary/8 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-primary">pplCRM</div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/70">{{ row.crm }}</p>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</section>
+
+<!-- The big platforms -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto max-w-[760px]">
+    <div class="mx-auto max-w-[620px] text-center">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Weighing one of the big organizing platforms?
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        They are capable tools, and feature checklists age badly, so we won’t pretend to score them. Three things are
+        structurally different here, whichever one you have in mind.
+      </p>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-3">
+      @for (point of platformPoints; track point.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[15px] font-semibold">{{ point.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ point.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    See the difference on sample data.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[540px] text-[15px] leading-relaxed text-white/75">
+    The free workspace opens with people, households, turfs and an inbox already in it. Compare with your own hands; no
+    card required.
+  </p>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+````
+
+## File: apps/website/src/app/compare/compare-page.ts
+````typescript
+import { Component } from '@angular/core';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** One job, told twice: how the spreadsheet stack does it, how pplCRM does it. */
+interface CompareRow {
+  readonly job: string;
+  readonly stack: string;
+  readonly crm: string;
+}
+
+interface PlatformPoint {
   readonly title: string;
   readonly body: string;
 }
 
-export interface AudienceOutcome {
-  readonly stat: string;
-  readonly label: string;
-  readonly body: string;
-}
-
-export interface AudiencePageConfig {
-  readonly eyebrow: string;
-  readonly h1: string;
-  readonly sub: string;
-  readonly previewKind: PreviewKind;
-  readonly previewUrl: string;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly previewImg?: string;
-  readonly featuresHeading: string;
-  readonly features: readonly AudienceFeature[];
-  readonly outcomes: readonly AudienceOutcome[];
-  readonly quote: string;
-  readonly quoteWho: string;
-}
-
-export const AUDIENCE_CONFIG: Record<string, AudiencePageConfig> = {
-  offices: {
-    eyebrow: 'For constituency offices',
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates and a long memory. Casework that survives staff turnover and election cycles.',
-    previewKind: 'inbox',
-    previewUrl: 'app.pplcrm.com/inbox',
-    previewImg: 'assets/site-shots/01-shot.png',
-    featuresHeading: 'Casework that doesn’t fall through the cracks.',
-    features: [
-      {
-        icon: 'inbox',
-        title: 'A shared inbox with owners',
-        body: 'Every message gets an owner and a due date. Nobody writes to your office twice about the same pothole.',
-      },
-      {
-        icon: 'clock',
-        title: 'Tasks that chase themselves',
-        body: 'Follow-ups surface on the day they’re due, not the week after a constituent gives up on you.',
-      },
-      {
-        icon: 'users',
-        title: 'A memory longer than one term',
-        body: 'The full history of a household stays put when staff change and when the mandate turns over.',
-      },
-      {
-        icon: 'megaphone',
-        title: 'Newsletters by ward and issue',
-        body: 'Write once, send to the people it’s actually for. Segments come straight from your real list.',
-      },
-      {
-        icon: 'identification',
-        title: 'People, not tickets',
-        body: 'A case is attached to a person and a household, so context travels with the human, not a number.',
-      },
-      {
-        icon: 'arrow-up-tray',
-        title: 'Your spreadsheet, welcomed',
-        body: 'Import what you have; duplicates merge on the way in. Export everything, any time you like.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: 'Day one',
-        label: 'Triaging real cases',
-        body: 'Most offices are working live casework their first morning — no training week.',
-      },
-      {
-        stat: '1 inbox',
-        label: 'For the whole team',
-        body: 'Correspondence, tasks and notes in one place instead of five personal mailboxes.',
-      },
-      {
-        stat: '0 lost',
-        label: 'Cases between terms',
-        body: 'History and open work carry over when staff and mandates change.',
-      },
-    ],
-    quote:
-      'The office used to lose casework every time someone left. Now the constituent’s whole story is right there, no matter who picks it up.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-  campaigns: {
-    eyebrow: 'For campaigns',
-    h1: 'Built for the people who knock.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    previewKind: 'canvassing',
-    previewUrl: 'app.pplcrm.com/canvassing',
-    previewImg: 'assets/site-shots/02-shot.png',
-    featuresHeading: 'From the office whiteboard to the doorstep.',
-    features: [
-      {
-        icon: 'map-pin',
-        title: 'Cut turf in minutes',
-        body: 'Slice the map into walkable turfs in the office; the crew sees them on their phones, offline-first.',
-      },
-      {
-        icon: 'presentation-chart-line',
-        title: 'A field report that’s live',
-        body: 'Every knock syncs back as it happens, so you know where you stand before the night’s over.',
-      },
-      {
-        icon: 'ticket',
-        title: 'Yard-sign routes',
-        body: 'Each sign request becomes a stop on an optimised route. Mark it placed and roll on.',
-      },
-      {
-        icon: 'house-modern',
-        title: 'Lit drops & deliveries',
-        body: 'Leaflets and notices become driver routes with per-street progress you can actually see.',
-      },
-      {
-        icon: 'currency-dollar',
-        title: 'Donations that reconcile',
-        body: 'Gifts, pledges and receipts sit on the same record as the door you knocked. One number, not three.',
-      },
-      {
-        icon: 'user-group',
-        title: 'Volunteers without seats',
-        body: 'The field crew joins by invite to the companion apps and never eats a staff seat.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: 'Offline',
-        label: 'First, always',
-        body: 'Door lists and routes work with no signal and sync when the crew is back in range.',
-      },
-      {
-        stat: 'Live',
-        label: 'Field reporting',
-        body: 'Knocks land on the HQ report the moment they happen — no end-of-day data entry.',
-      },
-      {
-        stat: '1 record',
-        label: 'Voter to donor',
-        body: 'The same person’s doors, gifts and sign request live in one place.',
-      },
-    ],
-    quote:
-      'We stopped running the campaign out of a stack of spreadsheets and a group chat. The turf, the knocks and the money finally live together.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-  nonprofits: {
-    eyebrow: 'For non-profits',
-    h1: 'Donors, volunteers and neighbors. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    previewKind: 'donations',
-    previewUrl: 'app.pplcrm.com/donations',
-    previewImg: 'assets/site-shots/03-shot.png',
-    featuresHeading: 'One relationship, not three databases.',
-    features: [
-      {
-        icon: 'currency-dollar',
-        title: 'Donations, gratefully',
-        body: 'Every donor thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-      },
-      {
-        icon: 'user-group',
-        title: 'Volunteers remembered',
-        body: 'Who showed up, what they did and when — attached to the same person who also gave last spring.',
-      },
-      {
-        icon: 'megaphone',
-        title: 'Newsletters that land',
-        body: 'Segment by giving, interest or neighborhood and write once to the people it’s for.',
-      },
-      {
-        icon: 'house-modern',
-        title: 'Drives & deliveries',
-        body: 'Hampers, mailers and meeting notices become routes with per-street progress for your drivers.',
-      },
-      {
-        icon: 'users',
-        title: 'Households, not rows',
-        body: 'A family is one door with a shared history, not five disconnected spreadsheet lines.',
-      },
-      {
-        icon: 'arrow-up-tray',
-        title: 'Bring your data, keep it',
-        body: 'Import your lists; duplicates merge automatically. Export everything, on every plan.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: '3 → 1',
-        label: 'Spreadsheets retired',
-        body: 'Donors, volunteers and contacts stop living in separate, drifting files.',
-      },
-      {
-        stat: 'On time',
-        label: 'Thank-yous',
-        body: 'Gifts are logged against a person, so gratitude never slips through.',
-      },
-      {
-        stat: 'Yours',
-        label: 'Data, always',
-        body: 'Export the whole thing to CSV whenever you want. Delete means deleted.',
-      },
-    ],
-    quote:
-      'Our donor list, our volunteer list and our newsletter list were three different truths. Now they’re one person’s record.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-};
-````
-
-## File: apps/website/src/app/audience/audience-page.ts
-````typescript
-import { Component, input } from '@angular/core';
-
-import { AppPreview } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-import type { AudiencePageConfig } from './audience-content';
-
-/**
- * One template for the three audience landing pages (offices / campaigns /
- * non-profits). The `config` input is bound from the route's `data` via
- * withComponentInputBinding — see app.routes.ts.
- */
 @Component({
-  selector: 'pc-audience-page',
-  imports: [SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon],
-  templateUrl: './audience-page.html',
+  selector: 'pc-compare-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './compare-page.html',
 })
-export class AudiencePage {
-  public readonly config = input.required<AudiencePageConfig>();
+export class ComparePage {
   protected readonly signupUrl = SIGNUP_URL;
-}
-````
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
 
-## File: apps/website/src/app/coming-soon/coming-soon-page.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
+  protected readonly rows: readonly CompareRow[] = [
+    {
+      job: 'Keeping one person’s story straight',
+      stack: 'Three files hold three versions of the same person, and nobody is sure which one is current.',
+      crm: 'One record holds the household, the emails, the gifts, the knocks and the notes. Update it once; it’s correct everywhere.',
+    },
+    {
+      job: 'Sending the newsletter',
+      stack:
+        'Export a CSV, upload it to the email tool, clean the bounces, repeat next month. Unsubscribes live only in the email tool.',
+      crm: 'Segments come straight from the live list, and every unsubscribe and do-not-contact is honored automatically.',
+    },
+    {
+      job: 'Staying out of spam',
+      stack:
+        'Your mail shares a sending reputation with thousands of strangers on the same platform, including the spammers.',
+      crm: 'You send from your own verified domain. The reputation you build is yours alone.',
+    },
+    {
+      job: 'Answering everyone who writes in',
+      stack: 'Requests live in whoever’s inbox they landed in. Follow-up depends on memory and flags.',
+      crm: 'A shared inbox gives every message an owner and a due date; nothing waits on one person remembering.',
+    },
+    {
+      job: 'The field: knocks, signs, deliveries',
+      stack: 'Paper lists in the car, re-typed into the sheet at night, if it happens at all.',
+      crm: 'Offline-first companion apps for volunteers; every knock and delivery syncs back to the live report.',
+    },
+    {
+      job: 'When a staffer or volunteer leaves',
+      stack: 'The master file lived on their laptop. So did the passwords.',
+      crm: 'History belongs to the workspace, not a laptop. Access ends with one click; the story stays.',
+    },
+    {
+      job: 'What it costs',
+      stack: 'Free, plus the hours spent reconciling files and the mistakes that slip out in between.',
+      crm: 'Free forever for unlimited contacts and 1,000 email subscribers. Paid plans price by the people you email, never the size of your list.',
+    },
+  ];
 
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/**
- * Shared placeholder for pages the design links to but we haven't built yet
- * (the audience pages, Pricing, and assorted footer links). `pageTitle` is
- * bound from the route's `data` or a `?pageTitle=` query param via
- * withComponentInputBinding — swap the route to a real component when it exists.
- */
-@Component({
-  selector: 'pc-coming-soon-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
-  template: `
-    <pc-site-header variant="solid" />
-
-    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
-      <div class="mx-auto max-w-[520px]">
-        <div class="eyebrow">{{ pageTitle() }}</div>
-        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
-        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
-          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
-          to lose.
-        </p>
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
-          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
-        </div>
-      </div>
-    </section>
-
-    <pc-site-footer />
-  `,
-})
-export class ComingSoonPage {
-  public readonly pageTitle = input<string>('Coming soon');
-  protected readonly signupUrl = SIGNUP_URL;
+  /** For visitors evaluating the big organizing platforms; principles, not a feature grid. */
+  protected readonly platformPoints: readonly PlatformPoint[] = [
+    {
+      title: 'Growth is never taxed',
+      body: 'Platforms that price by database size charge you for every name you collect. Here contacts and households are unlimited on every plan; you pay only for emailable subscribers.',
+    },
+    {
+      title: 'No contracts, no exit fee',
+      body: 'Month to month, and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
+    },
+    {
+      title: 'Try before you trust',
+      body: 'No sales call, no demo video. The free workspace opens with sample data already in it, so you evaluate with your own hands.',
+    },
+  ];
 }
 ````
 
@@ -40373,35 +40257,6 @@ export class SiteIcon {
   protected readonly px = computed<number>(() => this.size());
   protected readonly mask = computed<string>(() => `url('assets/icons/${this.name()}.svg') center / contain no-repeat`);
 }
-````
-
-## File: apps/website/src/app/ui/site-nav.ts
-````typescript
-import { environment } from '../../environments/environment';
-
-export interface NavLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path: string;
-}
-
-/** The primary audience + pricing nav, shared by the header and footers. */
-export const PRIMARY_NAV: readonly NavLink[] = [
-  { label: 'For constituency offices', path: '/for/offices' },
-  { label: 'For campaigns', path: '/for/campaigns' },
-  { label: 'For non-profits', path: '/for/nonprofits' },
-  { label: 'Pricing', path: '/pricing' },
-];
-
-/**
- * The CRM lives on a separate host (see environment.appUrl). "Log in" and
- * "Start free" leave the marketing site for the app, so they are absolute URLs,
- * not router links.
- */
-export const LOGIN_URL = `${environment.appUrl}/signin`;
-export const SIGNUP_URL = `${environment.appUrl}/signup`;
-// Signed-in visitors go straight to the app (its root redirects to the dashboard).
-export const DASHBOARD_URL = environment.appUrl;
 ````
 
 ## File: apps/website/src/app/app.config.server.ts
@@ -53330,102 +53185,49 @@ export const appConfig: ApplicationConfig = {
 }
 ````
 
-## File: apps/website/src/app/audience/audience-page.html
-````html
-<pc-site-header variant="over-hero" />
+## File: apps/website/src/app/coming-soon/coming-soon-page.ts
+````typescript
+import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
-<!-- Hero -->
-<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
-  <div class="mx-auto max-w-[780px]">
-    <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">{{ config().eyebrow }}</div>
-    <h1
-      class="mt-3 text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
-    >
-      {{ config().h1 }}
-    </h1>
-    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ config().sub }}</p>
-    <div class="mt-6">
-      <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[15px] font-semibold">
-        Start free with sample data
-      </a>
-    </div>
-    <div class="mt-3 text-[12.5px] text-white/50">No card. No commitment. Import your own list when you’re ready.</div>
-  </div>
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
 
-  <div class="mt-11">
-    @if (config().previewImg; as img) {
-    <pc-browser-frame [url]="config().previewUrl" [imageSrc]="img" [imageAlt]="config().h1" />
-    } @else {
-    <pc-browser-frame [url]="config().previewUrl">
-      <pc-app-preview [kind]="config().previewKind" />
-    </pc-browser-frame>
-    }
-  </div>
-</section>
+/**
+ * Shared placeholder for pages the design links to but we haven't built yet
+ * (assorted footer links). `pageTitle` is
+ * bound from the route's `data` or a `?pageTitle=` query param via
+ * withComponentInputBinding — swap the route to a real component when it exists.
+ */
+@Component({
+  selector: 'pc-coming-soon-page',
+  imports: [RouterLink, SiteHeader, SiteFooter],
+  template: `
+    <pc-site-header variant="solid" />
 
-<!-- Features -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <h2 class="mx-auto max-w-[640px] text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
-      {{ config().featuresHeading }}
-    </h2>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of config().features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
+    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
+      <div class="mx-auto max-w-[520px]">
+        <div class="eyebrow">{{ pageTitle() }}</div>
+        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
+        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
+          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
+          to lose.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
+          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
         </div>
       </div>
-      }
-    </div>
-  </div>
-</section>
+    </section>
 
-<!-- Outcomes -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap grid gap-4 sm:grid-cols-3">
-    @for (outcome of config().outcomes; track outcome.label) {
-    <div class="rounded-xl border border-line bg-base-100 p-6 text-center">
-      <div class="text-[28px] font-bold tracking-[-0.01em] text-primary">{{ outcome.stat }}</div>
-      <div class="mt-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-base-content/55">
-        {{ outcome.label }}
-      </div>
-      <p class="mt-2.5 text-[13.5px] leading-relaxed text-base-content/60">{{ outcome.body }}</p>
-    </div>
-    }
-  </div>
-</section>
-
-<!-- Quote -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <figure class="mx-auto max-w-[720px] text-center">
-    <blockquote class="text-balance text-[clamp(1.25rem,3vw,1.625rem)] font-semibold leading-snug tracking-[-0.01em]">
-      “{{ config().quote }}”
-    </blockquote>
-    <figcaption class="mt-4 text-[12.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
-      {{ config().quoteWho }}
-    </figcaption>
-  </figure>
-</section>
-
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
-  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">Try it on sample data first.</h2>
-  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Spin up the demo workspace and use every feature before you import a single contact. No card, nothing to lose.
-  </p>
-  <div class="mt-6">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
+    <pc-site-footer />
+  `,
+})
+export class ComingSoonPage {
+  public readonly pageTitle = input<string>('Coming soon');
+  protected readonly signupUrl = SIGNUP_URL;
+}
 ````
 
 ## File: apps/website/src/app/ui/site-header.ts
@@ -53564,6 +53366,36 @@ export class SiteLogo {
 }
 ````
 
+## File: apps/website/src/app/ui/site-nav.ts
+````typescript
+import { environment } from '../../environments/environment';
+
+export interface NavLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path: string;
+}
+
+/** The primary audience + pricing nav, shared by the header and footers. */
+export const PRIMARY_NAV: readonly NavLink[] = [
+  { label: 'For constituency offices', path: '/for/offices' },
+  { label: 'For campaigns', path: '/for/campaigns' },
+  { label: 'For non-profits', path: '/for/nonprofits' },
+  { label: 'Compare', path: '/compare' },
+  { label: 'Pricing', path: '/pricing' },
+];
+
+/**
+ * The CRM lives on a separate host (see environment.appUrl). "Log in" and
+ * "Start free" leave the marketing site for the app, so they are absolute URLs,
+ * not router links.
+ */
+export const LOGIN_URL = `${environment.appUrl}/signin`;
+export const SIGNUP_URL = `${environment.appUrl}/signup`;
+// Signed-in visitors go straight to the app (its root redirects to the dashboard).
+export const DASHBOARD_URL = environment.appUrl;
+````
+
 ## File: apps/website/src/app/app.routes.server.ts
 ````typescript
 import { RenderMode, type ServerRoute } from '@angular/ssr';
@@ -53588,80 +53420,6 @@ export const serverRoutes: ServerRoute[] = [
       Promise.resolve(HELP_ARTICLES.map((article) => ({ id: article.id }))),
   },
   { path: '**', renderMode: RenderMode.Prerender },
-];
-````
-
-## File: apps/website/src/app/app.routes.ts
-````typescript
-import type { Route } from '@angular/router';
-
-import { AUDIENCE_CONFIG } from './audience/audience-content';
-
-/**
- * Two real pages (Home, FAQ). The design links to several pages we haven't
- * built yet (the audience pages and Pricing) — those resolve to a shared
- * "coming soon" stub so the nav never 404s. Swap a stub for a real component
- * when the page exists.
- */
-export const appRoutes: Route[] = [
-  {
-    path: '',
-    pathMatch: 'full',
-    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
-  },
-  {
-    path: 'faq',
-    title: 'FAQ — pplCRM',
-    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
-  },
-  {
-    path: 'for/offices',
-    title: 'For constituency offices — pplCRM',
-    data: { config: AUDIENCE_CONFIG['offices'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'for/campaigns',
-    title: 'For campaigns — pplCRM',
-    data: { config: AUDIENCE_CONFIG['campaigns'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'for/nonprofits',
-    title: 'For non-profits — pplCRM',
-    data: { config: AUDIENCE_CONFIG['nonprofits'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'pricing',
-    title: 'Pricing — pplCRM',
-    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
-  },
-  {
-    path: 'docs',
-    pathMatch: 'full',
-    title: 'Docs — pplCRM',
-    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
-  },
-  {
-    // Per-article title/meta/canonical are set inside the component from the
-    // resolved article (see DocsArticle).
-    path: 'docs/:id',
-    title: 'Docs — pplCRM',
-    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
-  },
-  {
-    // Generic stub for footer links whose real page doesn't exist yet; the
-    // heading comes from a ?pageTitle= query param (bound via component input).
-    path: 'soon',
-    title: 'Coming soon — pplCRM',
-    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
-  },
-  {
-    path: '**',
-    redirectTo: '',
-  },
 ];
 ````
 
@@ -53865,7 +53623,14 @@ export async function handleSendNewsletter(
   const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
   const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
   const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
-  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+  // A newsletter is the tenant's mail to their own supporters, so it must send from the tenant's own
+  // verified-domain address — never a pplCRM address. assertTenantMaySendNewsletter (the verified-
+  // domain gate) runs before this job is enqueued, so a permitted broadcast always has this set; fail
+  // loudly rather than silently send from the platform domain if that gate is ever bypassed.
+  const fromEmail = settingsMap['communications.default_from_email'];
+  if (!fromEmail) {
+    throw new Error(`Newsletter ${newsletterId}: no verified From address (send-guard invariant violated)`);
+  }
 
   // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
   const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
@@ -59568,232 +59333,83 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 ````
 
-## File: apps/backend/src/app/routes.ts
+## File: apps/website/src/app/app.routes.ts
 ````typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { sql } from 'kysely';
-
-import { BaseRepository } from './lib/base.repo';
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import importsDownloadRoute from './modules/imports/routes/imports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import donationsHelcimWebhookRoute from './modules/donations/routes/donations-helcim-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
-import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
-import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
-  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register public volunteer delivery-route pages (token is the credential, §14)
-  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
-
-  // Companion access layer: verify + approve gate for both volunteer companions
-  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register Helcim donations webhook route (same tenant token; HMAC-signed body)
-  fastify.register(donationsHelcimWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // Register Postmark transactional bounce/spam-complaint webhook route
-  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
-  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
-  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
-  fastify.get('/healthz', async (_req, res) => {
-    try {
-      await sql`select 1`.execute(BaseRepository.dbInstance);
-      return res.send({ status: 'ok' });
-    } catch {
-      return res.code(503).send({ status: 'unavailable' });
-    }
-  });
-
-  done();
-};
-````
-
-## File: apps/website/src/app/ui/site-footer.ts
-````typescript
-import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { SiteLogo } from './site-logo';
-import { SIGNUP_URL } from './site-nav';
-
-interface FooterLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path?: string;
-  /** External / mailto URL. */
-  readonly href?: string;
-  /** Query params (used with the /soon stub). */
-  readonly qp?: Record<string, string>;
-}
-
-interface FooterColumn {
-  readonly heading: string;
-  readonly links: readonly FooterLink[];
-}
-
-const CONTACT_EMAIL = 'hello@pplcrm.com';
+import type { Route } from '@angular/router';
 
 /**
- * Site footer — the one multi-column footer used on every page. Links to pages
- * that don't exist yet point at the /soon stub (carrying their label as the
- * heading).
+ * The /for/… audience URLs render the home page with that audience's hero
+ * preselected (via route data) — the full story, tailored, instead of a thin
+ * duplicate page that would strand visitors who land on it first. Footer
+ * links to pages we haven't built yet resolve to the shared "coming soon"
+ * stub so the nav never 404s; swap a stub for a real component when the page
+ * exists.
  */
-@Component({
-  selector: 'pc-site-footer',
-  imports: [RouterLink, SiteLogo],
-  template: `
-    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
-      <div class="site-wrap">
-        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
-          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
-            <pc-site-logo />
-            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
-              One list for constituents, voters, donors and volunteers. Your people are not our product.
-            </p>
-            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
-              email
-            }}</a>
-          </div>
-
-          @for (col of columns; track col.heading) {
-            <div class="flex flex-col gap-2.5 text-[13px]">
-              <div class="eyebrow mb-1">{{ col.heading }}</div>
-              @for (link of col.links; track link.label) {
-                @if (link.href) {
-                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
-                } @else {
-                  <a
-                    class="text-base-content/65 hover:text-primary"
-                    [routerLink]="link.path"
-                    [queryParams]="link.qp ?? null"
-                    >{{ link.label }}</a
-                  >
-                }
-              }
-            </div>
-          }
-        </div>
-
-        <div
-          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
-        >
-          <span>© 2026 pplCRM · pplcrm.com</span>
-          <span
-            >Your data stays in your region — Canadian data in Canada, EU data in the EU. Export everything anytime.
-            Delete means deleted.</span
-          >
-        </div>
-      </div>
-    </footer>
-  `,
-})
-export class SiteFooter {
-  protected readonly email = CONTACT_EMAIL;
-  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
-
-  protected readonly columns: readonly FooterColumn[] = [
-    {
-      heading: 'Product',
-      links: [
-        { label: 'Pricing', path: '/pricing' },
-        { label: 'FAQ', path: '/faq' },
-        { label: 'Start free', href: SIGNUP_URL },
-      ],
-    },
-    {
-      heading: 'Industries',
-      links: [
-        { label: 'Constituency offices', path: '/for/offices' },
-        { label: 'Campaigns', path: '/for/campaigns' },
-        { label: 'Non-profits', path: '/for/nonprofits' },
-      ],
-    },
-    {
-      heading: 'Resources',
-      links: [
-        { label: 'Help center', path: '/docs' },
-        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
-      ],
-    },
-    {
-      heading: 'Company',
-      links: [
-        { label: 'About us', path: '/soon', qp: { pageTitle: 'About us' } },
-        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Careers', path: '/soon', qp: { pageTitle: 'Careers' } },
-      ],
-    },
-    {
-      heading: 'Legal',
-      links: [
-        { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
-        { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
-        { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
-      ],
-    },
-  ];
-}
+export const appRoutes: Route[] = [
+  {
+    path: '',
+    pathMatch: 'full',
+    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'faq',
+    title: 'FAQ — pplCRM',
+    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
+  },
+  {
+    path: 'for/offices',
+    title: 'For constituency offices — pplCRM',
+    data: { audience: 'office' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/campaigns',
+    title: 'For campaigns — pplCRM',
+    data: { audience: 'camp' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/nonprofits',
+    title: 'For non-profits — pplCRM',
+    data: { audience: 'np' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'compare',
+    title: 'pplCRM vs. the spreadsheet stack — pplCRM',
+    loadComponent: () => import('./compare/compare-page').then((m) => m.ComparePage),
+  },
+  {
+    path: 'pricing',
+    title: 'Pricing — pplCRM',
+    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
+  },
+  {
+    path: 'docs',
+    pathMatch: 'full',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
+  },
+  {
+    // Per-article title/meta/canonical are set inside the component from the
+    // resolved article (see DocsArticle).
+    path: 'docs/:id',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
+  },
+  {
+    // Generic stub for footer links whose real page doesn't exist yet; the
+    // heading comes from a ?pageTitle= query param (bound via component input).
+    path: 'soon',
+    title: 'Coming soon — pplCRM',
+    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
+  },
+  {
+    path: '**',
+    redirectTo: '',
+  },
+];
 ````
 
 ## File: apps/website/project.json
@@ -67425,7 +67041,10 @@ import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
 
 const DEFAULT_FROM_NAME = 'pplCRM Team';
-const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+// Fallback sender for TEST/preview sends only (sendTestEmail), which are allowed before a tenant has
+// verified a sending domain so they can preview to themselves. Real broadcasts never use this — they
+// require the tenant's own verified-domain From address (see send-guards assertTenantMaySendNewsletter).
+const DEFAULT_FROM_EMAIL = 'hello@pplcrm.com';
 
 export interface SendTestEmailInput {
   subject: string;
@@ -67816,8 +67435,10 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     assertTenantSendingNotBlocked(await loadSendingTenant(db, tenant_id));
     checkRateLimit(`sendTestEmail:${tenant_id}`, 20, 60 * 60 * 1000);
 
-    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
-    // from name/email, otherwise fall back to the workspace Communications settings.
+    // Resolve the sender: prefer the caller-supplied from name/email, then the workspace
+    // Communications settings, then the platform preview fallback. Unlike a real broadcast, a test
+    // send is allowed before domain verification (you're previewing to yourself), so the fallback is
+    // acceptable here only.
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
@@ -68319,6 +67940,106 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 ````
 
+## File: apps/backend/src/app/routes.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { sql } from 'kysely';
+
+import { BaseRepository } from './lib/base.repo';
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import postmarkWebhookRoute from './modules/mail/routes/postmark-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import donationsHelcimWebhookRoute from './modules/donations/routes/donations-helcim-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+import canvassPublicRoute from './modules/canvassing/routes/canvass-public.route';
+import deliveriesPublicRoute from './modules/deliveries/routes/deliveries-public.route';
+import companionPublicRoute from './modules/companion-access/routes/companion-public.route';
+
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
+
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public Canvass Companion REST routes (tokenised, no account — §13.4)
+  fastify.register(canvassPublicRoute, { prefix: '/api/canvass' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
+
+  // Register public volunteer delivery-route pages (token is the credential, §14)
+  fastify.register(deliveriesPublicRoute, { prefix: '/api/deliveries' });
+
+  // Companion access layer: verify + approve gate for both volunteer companions
+  fastify.register(companionPublicRoute, { prefix: '/api/companion' });
+
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register Helcim donations webhook route (same tenant token; HMAC-signed body)
+  fastify.register(donationsHelcimWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Postmark transactional bounce/spam-complaint webhook route
+  fastify.register(postmarkWebhookRoute, { prefix: '/api/postmark' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check — cheap liveness ping (process is up); does NOT touch Postgres.
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  // Readiness probe — verifies Postgres is reachable so an orchestrator can gate traffic/restarts.
+  // Returns 503 (not 200) when the DB is down; body is intentionally minimal (no error details).
+  fastify.get('/healthz', async (_req, res) => {
+    try {
+      await sql`select 1`.execute(BaseRepository.dbInstance);
+      return res.send({ status: 'ok' });
+    } catch {
+      return res.code(503).send({ status: 'unavailable' });
+    }
+  });
+
+  done();
+};
+````
+
 ## File: apps/companion/src/app/canvass/canvass-page.ts
 ````typescript
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
@@ -68713,6 +68434,135 @@ export class RoutePage {
       this.busy.set(false);
     }
   }
+}
+````
+
+## File: apps/website/src/app/ui/site-footer.ts
+````typescript
+import { Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { SiteLogo } from './site-logo';
+import { SIGNUP_URL } from './site-nav';
+
+interface FooterLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path?: string;
+  /** External / mailto URL. */
+  readonly href?: string;
+  /** Query params (used with the /soon stub). */
+  readonly qp?: Record<string, string>;
+}
+
+interface FooterColumn {
+  readonly heading: string;
+  readonly links: readonly FooterLink[];
+}
+
+const CONTACT_EMAIL = 'hello@pplcrm.com';
+
+/**
+ * Site footer — the one multi-column footer used on every page. Links to pages
+ * that don't exist yet point at the /soon stub (carrying their label as the
+ * heading).
+ */
+@Component({
+  selector: 'pc-site-footer',
+  imports: [RouterLink, SiteLogo],
+  template: `
+    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
+      <div class="site-wrap">
+        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
+            <pc-site-logo />
+            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
+              One list for constituents, voters, donors and volunteers. Your people are not our product.
+            </p>
+            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
+              email
+            }}</a>
+          </div>
+
+          @for (col of columns; track col.heading) {
+            <div class="flex flex-col gap-2.5 text-[13px]">
+              <div class="eyebrow mb-1">{{ col.heading }}</div>
+              @for (link of col.links; track link.label) {
+                @if (link.href) {
+                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
+                } @else {
+                  <a
+                    class="text-base-content/65 hover:text-primary"
+                    [routerLink]="link.path"
+                    [queryParams]="link.qp ?? null"
+                    >{{ link.label }}</a
+                  >
+                }
+              }
+            </div>
+          }
+        </div>
+
+        <div
+          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
+        >
+          <span>© 2026 pplCRM · pplcrm.com</span>
+          <span
+            >Your data is stored in Canada, or the region you choose on Movement. Export everything anytime. Delete
+            means deleted.</span
+          >
+        </div>
+      </div>
+    </footer>
+  `,
+})
+export class SiteFooter {
+  protected readonly email = CONTACT_EMAIL;
+  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
+
+  protected readonly columns: readonly FooterColumn[] = [
+    {
+      heading: 'Product',
+      links: [
+        { label: 'Pricing', path: '/pricing' },
+        { label: 'Compare', path: '/compare' },
+        { label: 'FAQ', path: '/faq' },
+        { label: 'Start free', href: SIGNUP_URL },
+      ],
+    },
+    {
+      heading: 'Industries',
+      links: [
+        { label: 'Constituency offices', path: '/for/offices' },
+        { label: 'Campaigns', path: '/for/campaigns' },
+        { label: 'Non-profits', path: '/for/nonprofits' },
+      ],
+    },
+    {
+      heading: 'Resources',
+      links: [
+        { label: 'Help center', path: '/docs' },
+        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
+      ],
+    },
+    {
+      heading: 'Company',
+      links: [
+        { label: 'About us', path: '/soon', qp: { pageTitle: 'About us' } },
+        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Careers', path: '/soon', qp: { pageTitle: 'Careers' } },
+      ],
+    },
+    {
+      heading: 'Legal',
+      links: [
+        { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
+        { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
+        { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
+      ],
+    },
+  ];
 }
 ````
 
@@ -69215,7 +69065,7 @@ const envSchema = z.object({
   STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
   STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
   POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
   SENDGRID_API_KEY: z.string().optional(),
   SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
   // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
@@ -69337,130 +69187,6 @@ export const env = {
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };
-````
-
-## File: apps/website/src/app/faq/faq-page.ts
-````typescript
-import { Component } from '@angular/core';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'By default your data is stored in the US. On the Movement plan you choose your region (US, EU, Canada or UK) when you create your workspace, and it stays there for processing and backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'Can I see prices in euros, pounds or Canadian dollars?',
-          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
 ````
 
 ## File: apps/website/src/app/pricing/pricing-page.html
@@ -69745,6 +69471,147 @@ export class PricingPage {
   protected matrixValue(row: FeatureMatrixRow, plan: PlanDef): boolean | string {
     return isMatrixPlanKey(plan.key) ? row.values[plan.key] : false;
   }
+}
+````
+
+## File: apps/website/src/app/faq/faq-page.ts
+````typescript
+import { Component } from '@angular/core';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+interface Qa {
+  readonly q: string;
+  readonly a: string;
+}
+
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
+}
+
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'In Canada, unless you decide otherwise. On the Movement plan you choose the region your data lives in (Canada, US, EU or UK) when you create your workspace, and it stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Newsletters',
+      items: [
+        {
+          q: 'Will my newsletter land in spam?',
+          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. That is the biggest difference from shared email platforms, where thousands of senders pool one reputation.',
+        },
+        {
+          q: 'Why do I verify a domain before sending?',
+          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
+        },
+        {
+          q: 'What about unsubscribes and do-not-contact?',
+          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
 }
 ````
 
@@ -72129,8 +71996,40 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
   </div>
 </section>
 
-<!-- ========================= HOW IT WORKS ========================= -->
+<!-- ========================== WHY PPLCRM ========================== -->
 <section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Why pplCRM</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Built for relationships, not pipelines.
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
+        year. That one difference shapes everything below.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
+      @for (pillar of whyPillars; track pillar.title) {
+      <div class="rounded-xl border border-line bg-base-50 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="pillar.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-6 text-center">
+      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
+        >How we compare to the tools you use now →</a
+      >
+    </div>
+  </div>
+</section>
+
+<!-- ========================= HOW IT WORKS ========================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <div class="mx-auto max-w-[620px] text-center">
       <div class="eyebrow">How it works</div>
@@ -72138,7 +72037,7 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
     </div>
     <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       @for (step of steps; track step.n) {
-      <div class="rounded-xl border border-line bg-base-50 p-6">
+      <div class="rounded-xl border border-line bg-base-100 p-6">
         <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
         <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
         <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
@@ -72149,7 +72048,7 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 </section>
 
 <!-- ========================= WHAT IT DOES ========================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <div class="mx-auto max-w-[620px] text-center">
       <div class="eyebrow">What it does</div>
@@ -72160,7 +72059,7 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
     </div>
     <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
       @for (feature of features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-100 p-5">
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
         <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
           <pc-site-icon [name]="feature.icon" [size]="20" />
         </span>
@@ -72333,15 +72232,14 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
   </div>
 </section>
 
-<!-- =========================== TRUST BAND =========================== -->
+<!-- =========================== CLOSING CTA =========================== -->
 <section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
   <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
-    Your people are not our product.
+    Try everything before you trust us with a single name.
   </h2>
   <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Export everything anytime. We never sell, share or rent your data. Delete means deleted. Every unsubscribe and
-    do-not-contact is honored automatically, so you stay compliant without thinking about it. And your data stays in
-    your region — Canadian data in Canada, EU data in the EU.
+    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
+    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
   </p>
   <div class="mt-6">
     <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
@@ -72356,7 +72254,7 @@ const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 ## File: apps/website/src/app/home/home-page.ts
 ````typescript
 import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { PLANS, startingPriceUsd } from '@common';
 import type { PlanDef } from '@common';
 
@@ -72369,7 +72267,12 @@ import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
 
-type Audience = 'office' | 'camp' | 'np';
+const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
+type Audience = (typeof AUDIENCE_IDS)[number];
+
+function isAudience(value: unknown): value is Audience {
+  return AUDIENCE_IDS.some((id) => id === value);
+}
 
 interface Hero {
   readonly h1: string;
@@ -72441,7 +72344,10 @@ const HEROES: Record<Audience, Hero> = {
 export class HomePage {
   protected readonly signupUrl = SIGNUP_URL;
 
-  protected readonly aud = signal<Audience>('office');
+  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
+  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
+
+  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
   protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
 
   protected readonly audiences: readonly AudienceOption[] = [
@@ -72465,6 +72371,25 @@ export class HomePage {
       n: '3',
       title: 'Import your list when it clicks',
       body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
+  protected readonly whyPillars: readonly Feature[] = [
+    {
+      icon: 'clock',
+      title: 'Built for the long game',
+      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
+    },
+    {
+      icon: 'lock-closed',
+      title: 'Your list is yours',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada (or the region you pick on Movement) in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+    },
+    {
+      icon: 'paper-airplane',
+      title: 'Email that lands',
+      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
     },
   ];
 
@@ -72497,7 +72422,7 @@ export class HomePage {
     {
       icon: 'arrow-up-tray',
       title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
     },
   ];
 
@@ -72594,6 +72519,14 @@ export class HomePage {
     {
       q: 'Who owns the data?',
       a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'Where does my data live?',
+      a: 'In Canada, isolated from every other organization’s workspace. On the Movement plan you choose the region yourself: Canada, US, EU or UK.',
+    },
+    {
+      q: 'Will my newsletter land in spam?',
+      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
     },
     {
       q: 'How does pricing work?',

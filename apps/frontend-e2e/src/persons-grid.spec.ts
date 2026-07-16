@@ -223,8 +223,8 @@ test.describe('Persons Grid', () => {
       // Reload page to catch loading state
       await page.reload();
 
-      // Should show loading indicator
-      await expect(page.locator('pc-icon[name="loading"]').first()).toBeVisible();
+      // Should show the grid's loading indicator (a thin DaisyUI progress bar)
+      await expect(page.locator('progress.progress').first()).toBeVisible();
     });
   });
 

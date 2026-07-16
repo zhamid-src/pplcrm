@@ -158,7 +158,6 @@ export const icons = {
   label: 'assets/icons/label.svg',
   linkedin: 'assets/icons/linkedin.svg',
   'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
   'magnifying-glass': 'assets/icons/magnifying-glass.svg',
   mailbox: 'assets/icons/mailbox.svg',
   map: 'assets/icons/map.svg',

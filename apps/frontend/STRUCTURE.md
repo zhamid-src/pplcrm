@@ -628,12 +628,11 @@ apps/
         geo-rates.ts
     src/
       app/
-        audience/
-          audience-content.ts
-          audience-page.html
-          audience-page.ts
         coming-soon/
           coming-soon-page.ts
+        compare/
+          compare-page.html
+          compare-page.ts
         docs/
           docs-article.html
           docs-article.ts
@@ -2442,6 +2441,142 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 
   public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
     return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
+```typescript
+import { Component, signal, inject, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { PersonsService } from '../../persons/services/persons-service';
+import { CompaniesService } from '../services/companies-service';
+
+@Component({
+  selector: 'pc-companies-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [grainLayout]="true"
+        [fitColumns]="true"
+        title="Companies"
+        i18n-title
+        description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        (rowsDeleted)="onRowsDeleted()"
+        plusIcon="add-company"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          <pc-grain-tabs />
+        </div>
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'company',
+        entityNounPlural: 'companies',
+        exportEntity: 'companies',
+        exportFileName: 'companies-export.csv',
+      },
+    }),
+  ],
+})
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly personsService = inject(PersonsService);
+  private readonly router = inject(Router);
+
+  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  constructor() {
+    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadGrainSentence();
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [people, companies] = await Promise.all([
+        this.personsService.countWithCompany(),
+        this.companiesService.count(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
+      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
+      this.totalSentence.set(`${peopleText} in ${companiesText}`);
+    } catch (err) {
+      console.error('Failed to load company grain counts', err);
+    }
+  }
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the company record. Non-editable and non-hidable identity column.
+      field: 'name',
+      headerName: 'Company Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 240,
+      minWidth: 180,
+    },
+    {
+      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
+      // the Company Name column is the door.
+      field: 'persons_count',
+      headerName: 'People',
+      editable: false,
+      width: 110,
+      minWidth: 90,
+      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
+    },
+    { field: 'website', headerName: 'Website', editable: true, width: 240 },
+    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
+  ];
+
+  /** Formats the employee count as "N people" (singular/plural). */
+  private formatPeopleCount(params: CellParams): string {
+    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
   }
 }
 ```
@@ -7978,7 +8113,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
         (click)="refreshList()"
       >
         @if (refreshing()) {
-        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
+        <span class="loading loading-spinner loading-xs"></span>
         Refreshing... } @else {
         <pc-icon name="arrow-path" [size]="4"></pc-icon>
         Refresh Now }
@@ -17096,6 +17231,173 @@ export class StickyPinDirective {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
+```typescript
+import { Injectable } from '@angular/core';
+import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
+
+import { DataGridConfig, deleteConfirmMessageFor, deleteSuccessMessageFor } from '../datagrid.tokens';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridActionsService {
+  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+    const { messages } = ctx.config;
+
+    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
+
+    const ok = await ctx.dialogs.confirm({
+      title: messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(messages, selectedCount),
+      variant: messages.deleteConfirmVariant,
+      icon: messages.deleteConfirmIcon,
+      confirmText: messages.deleteConfirmText,
+      cancelText: messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return;
+
+    const rows = ctx.getSelectedRows();
+    if (!rows.length) {
+      ctx.alertSvc.showError(messages.deleteNoneSelected);
+      return;
+    }
+
+    const isNonDeletable = (row: Record<string, unknown>) => {
+      if (!('deletable' in row)) return false;
+      const value = (row as { deletable?: unknown }).deletable;
+      if (typeof value === 'boolean') return value === false;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'false' || normalized === '0';
+      }
+      if (typeof value === 'number') return value === 0;
+      return false;
+    };
+
+    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
+    const containsNonDeletable = deletableRows.length !== rows.length;
+    if (containsNonDeletable) {
+      ctx.alertSvc.showError(messages.deleteSystemValues);
+      return;
+    }
+    if (!deletableRows.length) {
+      return;
+    }
+
+    const end = ctx._loading.begin();
+    try {
+      const ids = deletableRows.map((r) => r.id);
+      const ok2 = await ctx.gridSvc.deleteMany(ids);
+      if (!ok2) {
+        ctx.alertSvc.showError(messages.deleteFailed);
+        return;
+      }
+      ctx.alertSvc.showSuccess(deleteSuccessMessageFor(messages, ids.length));
+    } finally {
+      end();
+    }
+  }
+
+  public async doExportCsv(deps: {
+    dialogs: ConfirmDialogService;
+    alertSvc: AlertService;
+    config: DataGridConfig;
+    getRowsForExport?: () => GridRow[];
+    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
+    queueFullExport?: () => Promise<void>;
+    logInstantExport?: (rowCount: number) => void;
+    displayedCount?: number;
+    totalCount?: number;
+  }) {
+    const { messages } = deps.config;
+
+    const displayedCount = deps.displayedCount ?? 0;
+    const totalCount = deps.totalCount ?? displayedCount;
+    const hasAllRowsVisible = totalCount <= displayedCount;
+
+    let exportAllData = false;
+    if (!hasAllRowsVisible) {
+      const parts: string[] = [];
+      if (totalCount > 0 && displayedCount > 0) {
+        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
+      }
+      parts.push(messages.exportMessage);
+      parts.push(messages.exportNavigateWarning);
+      const wantsAll = await deps.dialogs.confirm({
+        title: messages.exportTitle,
+        message: parts.filter(Boolean).join('\n\n'),
+        variant: 'info',
+        icon: messages.exportIcon,
+        confirmText: messages.exportConfirmText,
+        cancelText: messages.exportCancelText,
+        allowBackdropClose: false,
+      });
+      exportAllData = wantsAll === true;
+    }
+
+    // --- "All rows" path: queue background job, return immediately ---
+    if (exportAllData) {
+      if (deps.queueFullExport) {
+        try {
+          await deps.queueFullExport();
+          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
+        } catch {
+          deps.alertSvc.showError(messages.exportFailed);
+        }
+        return;
+      }
+      // fallback: no queue callback, fall through to synchronous path
+    }
+
+    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
+    if (!deps.getRowsForExport) return;
+
+    try {
+      const rows = deps.getRowsForExport();
+      if (!rows.length) {
+        deps.alertSvc.showInfo('No rows to export.');
+        return;
+      }
+      const rowCount = rows.length;
+      const headers = Object.keys(rows[0]!);
+      const escape = (v: unknown) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
+
+      const fileName = messages.exportFileName || 'export.csv';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      deps.logInstantExport?.(rowCount);
+      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
+    } catch {
+      deps.alertSvc.showError(messages.exportFailed);
+    }
+  }
+}
+
+type DeleteCtx = {
+  _loading: loadingGate;
+  alertSvc: AlertService;
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
+  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+
+  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
+};
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/services/columns.service.ts
 ```typescript
 import { Injectable } from '@angular/core';
@@ -18893,6 +19195,123 @@ export class SingleselectFilterComponent {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
+```typescript
+import type { Provider } from '@angular/core';
+import { InjectionToken } from '@angular/core';
+import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
+import type { QueueExportInputType } from '../../../../../../../libs/common/src';
+
+export interface DataGridConfig {
+  filterToolPanelId: string;
+  messages: {
+    noDeletePermission: string;
+    editBlocked: string;
+    editFailed: string;
+    loadFailed: string;
+
+    deleteConfirmTitle: string;
+    deleteConfirmMessage: string;
+    deleteConfirmIcon: BaseDialogOptions['icon'];
+    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
+    deleteConfirmText: string;
+    deleteCancelText: string;
+    deleteNoneSelected: string;
+    deleteSystemValues: string;
+    deleteFailed: string;
+    deleteSuccess: string;
+
+    exportTitle: string;
+    exportMessage: string;
+    exportIcon: BaseDialogOptions['icon'];
+    exportConfirmText: string;
+    exportCancelText: string;
+    exportFailed: string;
+    exportInProgress: string;
+    exportReady: string;
+    exportNavigateWarning: string;
+    exportFileName: string;
+    exportEntity: QueueExportInputType['entity'] | '';
+
+    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
+    entityNoun?: string;
+    entityNounPlural?: string;
+  };
+  pageSize: number;
+}
+
+export function provideDataGridConfig(
+  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
+): Provider {
+  const merged: DataGridConfig = {
+    ...DEFAULT_DATA_GRID_CONFIG,
+    ...overrides,
+    messages: {
+      ...DEFAULT_DATA_GRID_CONFIG.messages,
+      ...(overrides?.messages ?? {}),
+    },
+  };
+  return { provide: DATA_GRID_CONFIG, useValue: merged };
+}
+
+export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
+
+/**
+ * Counted delete-confirm copy: "3 people will be deleted permanently. You cannot undo this."
+ * Falls back to the configured `deleteConfirmMessage` when the count is unknown.
+ */
+export function deleteConfirmMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (!count) return messages.deleteConfirmMessage;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `${count} ${noun} will be deleted permanently. You cannot undo this.`;
+}
+
+/**
+ * Counted delete-success toast: "Deleted 1 person." — result toasts count what changed
+ * (UX doctrine). A grid that overrides `deleteSuccess` keeps its custom text verbatim.
+ */
+export function deleteSuccessMessageFor(messages: DataGridConfig['messages'], count: number): string {
+  if (messages.deleteSuccess !== DEFAULT_DATA_GRID_CONFIG.messages.deleteSuccess) return messages.deleteSuccess;
+  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
+  return `Deleted ${count} ${noun}.`;
+}
+
+export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
+  pageSize: 25,
+  filterToolPanelId: 'filters-new',
+  messages: {
+    noDeletePermission: 'You do not have the permission to delete rows from this table.',
+    editBlocked: 'This cell cannot be edited or deleted.',
+    editFailed: 'Could not edit the row. Please try again later.',
+    loadFailed: 'Could not load the data. Please try again later.',
+
+    deleteConfirmTitle: 'Are you sure?',
+    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
+    deleteConfirmIcon: 'trash',
+    deleteConfirmVariant: 'danger',
+    deleteConfirmText: 'Delete',
+    deleteCancelText: 'Cancel',
+    deleteNoneSelected: 'Please select at least one row to delete.',
+    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
+    deleteFailed: 'Could not delete. Please try again later.',
+    deleteSuccess: 'Selected rows were successfully deleted.',
+
+    exportTitle: 'Choose export scope',
+    exportMessage:
+      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
+    exportIcon: 'arrow-down-tray',
+    exportConfirmText: 'All rows',
+    exportCancelText: 'Displayed rows',
+    exportFailed: 'Export failed. Please try again.',
+    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
+    exportReady: 'Export ready. Your download should begin momentarily.',
+    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
+    exportFileName: 'grid-export.csv',
+    exportEntity: '',
+  },
+};
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
 ```typescript
 import type { GridRow } from './types';
@@ -19213,6 +19632,89 @@ export class UndoManager {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
+```typescript
+import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { CompaniesService } from '@experiences/companies/services/companies-service';
+import { HouseholdsService } from '@experiences/households/services/households-service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+
+/**
+ * The People grain tabs (spec §5): one row under the grid header that switches the
+ * grid between the three grains of the same dataset — People · Households · Companies —
+ * with per-grain totals in the labels (tabular-nums). Rendered on all three grid pages
+ * via the datagrid's `[pcGridBelowHeader]` projection slot; deep links to each grain's
+ * detail/edit routes are untouched.
+ *
+ * Counts load once per instantiation; until a count arrives the label renders without
+ * a number (never a fake or stale one).
+ */
+@Component({
+  selector: 'pc-grain-tabs',
+  imports: [RouterLink, RouterLinkActive],
+  template: `
+    <nav class="border-line -mt-1 mb-2 flex items-center gap-1 border-b" aria-label="People, households and companies">
+      @for (tab of tabs(); track tab.route) {
+        <a
+          [routerLink]="tab.route"
+          routerLinkActive="!text-primary !font-semibold !border-primary"
+          [routerLinkActiveOptions]="{ exact: true }"
+          class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
+        >
+          {{ tab.label }}
+          @if (tab.count !== null) {
+            <span class="text-xs tabular-nums opacity-70">{{ tab.count }}</span>
+          }
+        </a>
+      }
+    </nav>
+  `,
+})
+export class GrainTabs {
+  private readonly personsSvc = inject(PersonsService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly companiesSvc = inject(CompaniesService);
+
+  private readonly formatter = new Intl.NumberFormat();
+
+  private readonly peopleCount = signal<number | null>(null);
+  private readonly householdsCount = signal<number | null>(null);
+  private readonly companiesCount = signal<number | null>(null);
+
+  protected readonly tabs = computed(() => [
+    { label: 'People', route: '/people', count: this.format(this.peopleCount()) },
+    { label: 'Households', route: '/households', count: this.format(this.householdsCount()) },
+    { label: 'Companies', route: '/companies', count: this.format(this.companiesCount()) },
+  ]);
+
+  constructor() {
+    void this.loadCounts();
+  }
+
+  /** Re-query the per-grain totals (e.g. after a delete on the hosting grid). */
+  public reloadCounts(): void {
+    void this.loadCounts();
+  }
+
+  private format(count: number | null): string | null {
+    return count === null ? null : this.formatter.format(count);
+  }
+
+  private async loadCounts(): Promise<void> {
+    // Each count fails independently; a failed count simply leaves that label bare.
+    const [people, households, companies] = await Promise.allSettled([
+      this.personsSvc.count(),
+      this.householdsSvc.count(),
+      this.companiesSvc.count(),
+    ]);
+    if (people.status === 'fulfilled') this.peopleCount.set(people.value);
+    if (households.status === 'fulfilled') this.householdsCount.set(households.value);
+    if (companies.status === 'fulfilled') this.companiesCount.set(companies.value);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
 ```typescript
 import { Component, input, output } from '@angular/core';
@@ -19506,6 +20008,30 @@ export const appConfig: ApplicationConfig = {
     { provide: ErrorHandler, useClass: GlobalErrorHandler },
   ],
 };
+```
+
+## File: apps/frontend/src/app/app.ts
+```typescript
+import { Component, inject } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
+
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+
+@Component({
+  selector: 'pc-root',
+  imports: [RouterModule, ConfirmDialogHost],
+  template: `
+    <!-- Dialog host lives inside the themed div so modals inherit data-theme (dark mode). -->
+    <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
+      <pc-dialog-host></pc-dialog-host>
+      <router-outlet></router-outlet>
+    </div>
+  `,
+})
+export class AppComponent {
+  protected themeSvc = inject(ThemeService);
+}
 ```
 
 ## File: apps/frontend/src/app/environment-token.ts
@@ -22289,142 +22815,6 @@ export class CutTurfsDialog implements OnInit {
 
   protected cancel(): void {
     this.done.emit(0);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-```typescript
-import { Component, signal, inject, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { PersonsService } from '../../persons/services/persons-service';
-import { CompaniesService } from '../services/companies-service';
-
-@Component({
-  selector: 'pc-companies-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [grainLayout]="true"
-        [fitColumns]="true"
-        title="Companies"
-        i18n-title
-        description="Manage corporate contacts, associate people with companies, and track organization profiles."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        (rowsDeleted)="onRowsDeleted()"
-        plusIcon="add-company"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          <pc-grain-tabs />
-        </div>
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'company',
-        entityNounPlural: 'companies',
-        exportEntity: 'companies',
-        exportFileName: 'companies-export.csv',
-      },
-    }),
-  ],
-})
-export class CompaniesGrid {
-  private readonly companiesService = inject(CompaniesService);
-  private readonly personsService = inject(PersonsService);
-  private readonly router = inject(Router);
-
-  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  /** Deletes change the header counts — re-query the grain sentence and tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadGrainSentence();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  constructor() {
-    // Mute every column except the bold "Company Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadGrainSentence();
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [people, companies] = await Promise.all([
-        this.personsService.countWithCompany(),
-        this.companiesService.count(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
-      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
-      this.totalSentence.set(`${peopleText} in ${companiesText}`);
-    } catch (err) {
-      console.error('Failed to load company grain counts', err);
-    }
-  }
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the company record. Non-editable and non-hidable identity column.
-      field: 'name',
-      headerName: 'Company Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 240,
-      minWidth: 180,
-    },
-    {
-      // Employee count from persons.company_id (§7). Plain, non-interactive text — only
-      // the Company Name column is the door.
-      field: 'persons_count',
-      headerName: 'People',
-      editable: false,
-      width: 110,
-      minWidth: 90,
-      valueFormatter: (params: CellParams) => this.formatPeopleCount(params),
-    },
-    { field: 'website', headerName: 'Website', editable: true, width: 240 },
-    { field: 'description', headerName: 'Description', editable: true, width: 360, minWidth: 200 },
-  ];
-
-  /** Formats the employee count as "N people" (singular/plural). */
-  private formatPeopleCount(params: CellParams): string {
-    const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-    return `${n} ${n === 1 ? 'person' : 'people'}`;
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'companies' } });
   }
 }
 ```
@@ -26143,6 +26533,432 @@ export class HelpRichText {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, GrainTabs],
+  host: { class: 'block h-full' },
+  template: `
+    <div class="flex h-full min-h-0 flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        [grainLayout]="!inline()"
+        [fitColumns]="true"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        (rowsDeleted)="onRowsDeleted()"
+        [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
+        (importCSV)="openImportWizard()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+        @if (!inline() && unhoused().count > 0) {
+          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
+            <button
+              type="button"
+              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
+              (click)="openUnhoused()"
+            >
+              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
+            </button>
+            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household: no address, or one that can't be
+            matched to a door.
+          </p>
+        }
+      </pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({
+      messages: {
+        entityNoun: 'household',
+        entityNounPlural: 'households',
+        exportEntity: 'households',
+        exportFileName: 'households-export.csv',
+      },
+    }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly router = inject(Router);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected col: ColDef[] = [
+    {
+      // The door that opens the household record: a generated address string, just like
+      // the People grid's combined Name column. People count rides along as a muted subtitle.
+      field: 'household',
+      headerName: 'Household',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 260,
+      minWidth: 180,
+      valueGetter: (params: CellParams) => this.addressString(params.data),
+      doorSubtitle: (params: CellParams) => {
+        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
+        return `${n} ${n === 1 ? 'person' : 'people'}`;
+      },
+    },
+    {
+      field: 'members',
+      headerName: 'Members',
+      editable: false,
+      // Grows to fill leftover width when no notes/description column is visible.
+      flex: true,
+      width: 320,
+      minWidth: 200,
+      // Each member name is a link to their person card. The renderer output is
+      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
+      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
+      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
+    },
+    { field: 'city', headerName: 'City', editable: true, width: 150 },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    {
+      field: 'updated_at',
+      headerName: 'Last touch',
+      editable: false,
+      minWidth: 120,
+      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      hide: true,
+      width: 280,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** People with no matchable address (the placeholder household) — footer note + link target. */
+  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
+    count: 0,
+    household_id: null,
+  });
+
+  public ngOnInit(): void {
+    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
+    // keep full contrast — they're a second focal point (the People-grain of the household).
+    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
+
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+  }
+
+  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadGrainSentence();
+    if (!this.inline()) void this.loadUnhoused();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  private async loadUnhoused(): Promise<void> {
+    try {
+      this.unhoused.set(await this.householdsService.getUnhoused());
+    } catch (err) {
+      console.error('Failed to load unhoused people count', err);
+    }
+  }
+
+  /** Opens the placeholder household, whose detail view lists everyone with no address. */
+  protected openUnhoused(): void {
+    const id = this.unhoused().household_id;
+    if (id) void this.router.navigate(['/households', id]);
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  /** Renders member names as person-card links; a comma separator keeps them on one line. */
+  private renderMembers(value: unknown): string {
+    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
+    const links = members
+      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
+      .map((m) => {
+        const id = this.escapeHtml(String(m.id));
+        const name = this.escapeHtml(String(m.name));
+        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
+      });
+    if (!links.length) return '';
+    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
+    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
+  }
+
+  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
+  private onMemberClicked(event: Event | undefined): void {
+    const target = event?.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('[data-person-id]');
+    const id = anchor?.getAttribute('data-person-id');
+    if (id) void this.router.navigate(['/people', id]);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** Street number + name for the Household door column (city has its own column). */
+  private addressString(data: unknown): string {
+    const d = data as Record<string, unknown> | undefined;
+    if (!d) return '';
+    if (d['is_placeholder']) return 'People with no addresses';
+    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
+  }
+
+  /** Compact relative "last touch" — matches the household view's low-chrome style. */
+  private formatLastTouch(value: unknown): string {
+    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job across every record type.
+  protected openImportWizard(): void {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/imports/import-entity-config.ts
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
@@ -26990,6 +27806,59 @@ export class AddConnectionDrawer {
     this.notes.set('');
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+```html
+<!-- Template for persons grid -->
+<div class="flex h-full min-h-0 flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [grainLayout]="!inline()"
+    [fitColumns]="true"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    (rowsDeleted)="onRowsDeleted()"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [totalSentence]="totalSentence()"
+    [limitToTags]="initialTagFilter()"
+    [limitToIssues]="initialIssueFilter()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
+</div>
+
+<pc-modal-shell #confirmAddressEdit title="Address edit" icon="home">
+  <p class="py-2 font-light">
+    Addresses can only be edited in the Households Component. Would you like me to take you there?
+  </p>
+
+  <div pc-modal-footer class="flex flex-row gap-2">
+    <button class="btn btn-primary" type="button" (click)="routeToHouseholds()">
+      <pc-icon name="arrow-right-start-on-rectangle" />
+      Yes
+    </button>
+    <button class="btn btn-outline btn-accent" type="button" (click)="confirmAddressEdit.close()">
+      <pc-icon name="x-circle" />
+      Cancel
+    </button>
+  </div>
+</pc-modal-shell>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
@@ -31891,173 +32760,6 @@ function joinWithAnd(items: string[]): string {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
-```typescript
-import { Injectable } from '@angular/core';
-import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { loadingGate } from '@uxcommon/loading-gate';
-
-import { DataGridConfig, deleteConfirmMessageFor, deleteSuccessMessageFor } from '../datagrid.tokens';
-import type { GridRow } from '../types';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridActionsService {
-  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
-    const { messages } = ctx.config;
-
-    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
-
-    const ok = await ctx.dialogs.confirm({
-      title: messages.deleteConfirmTitle,
-      message: deleteConfirmMessageFor(messages, selectedCount),
-      variant: messages.deleteConfirmVariant,
-      icon: messages.deleteConfirmIcon,
-      confirmText: messages.deleteConfirmText,
-      cancelText: messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return;
-
-    const rows = ctx.getSelectedRows();
-    if (!rows.length) {
-      ctx.alertSvc.showError(messages.deleteNoneSelected);
-      return;
-    }
-
-    const isNonDeletable = (row: Record<string, unknown>) => {
-      if (!('deletable' in row)) return false;
-      const value = (row as { deletable?: unknown }).deletable;
-      if (typeof value === 'boolean') return value === false;
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        return normalized === 'false' || normalized === '0';
-      }
-      if (typeof value === 'number') return value === 0;
-      return false;
-    };
-
-    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
-    const containsNonDeletable = deletableRows.length !== rows.length;
-    if (containsNonDeletable) {
-      ctx.alertSvc.showError(messages.deleteSystemValues);
-      return;
-    }
-    if (!deletableRows.length) {
-      return;
-    }
-
-    const end = ctx._loading.begin();
-    try {
-      const ids = deletableRows.map((r) => r.id);
-      const ok2 = await ctx.gridSvc.deleteMany(ids);
-      if (!ok2) {
-        ctx.alertSvc.showError(messages.deleteFailed);
-        return;
-      }
-      ctx.alertSvc.showSuccess(deleteSuccessMessageFor(messages, ids.length));
-    } finally {
-      end();
-    }
-  }
-
-  public async doExportCsv(deps: {
-    dialogs: ConfirmDialogService;
-    alertSvc: AlertService;
-    config: DataGridConfig;
-    getRowsForExport?: () => GridRow[];
-    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
-    queueFullExport?: () => Promise<void>;
-    logInstantExport?: (rowCount: number) => void;
-    displayedCount?: number;
-    totalCount?: number;
-  }) {
-    const { messages } = deps.config;
-
-    const displayedCount = deps.displayedCount ?? 0;
-    const totalCount = deps.totalCount ?? displayedCount;
-    const hasAllRowsVisible = totalCount <= displayedCount;
-
-    let exportAllData = false;
-    if (!hasAllRowsVisible) {
-      const parts: string[] = [];
-      if (totalCount > 0 && displayedCount > 0) {
-        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
-      }
-      parts.push(messages.exportMessage);
-      parts.push(messages.exportNavigateWarning);
-      const wantsAll = await deps.dialogs.confirm({
-        title: messages.exportTitle,
-        message: parts.filter(Boolean).join('\n\n'),
-        variant: 'info',
-        icon: messages.exportIcon,
-        confirmText: messages.exportConfirmText,
-        cancelText: messages.exportCancelText,
-        allowBackdropClose: false,
-      });
-      exportAllData = wantsAll === true;
-    }
-
-    // --- "All rows" path: queue background job, return immediately ---
-    if (exportAllData) {
-      if (deps.queueFullExport) {
-        try {
-          await deps.queueFullExport();
-          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
-        } catch {
-          deps.alertSvc.showError(messages.exportFailed);
-        }
-        return;
-      }
-      // fallback: no queue callback, fall through to synchronous path
-    }
-
-    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
-    if (!deps.getRowsForExport) return;
-
-    try {
-      const rows = deps.getRowsForExport();
-      if (!rows.length) {
-        deps.alertSvc.showInfo('No rows to export.');
-        return;
-      }
-      const rowCount = rows.length;
-      const headers = Object.keys(rows[0]!);
-      const escape = (v: unknown) => {
-        const s = v == null ? '' : String(v);
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-      };
-      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
-
-      const fileName = messages.exportFileName || 'export.csv';
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      deps.logInstantExport?.(rowCount);
-      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
-    } catch {
-      deps.alertSvc.showError(messages.exportFailed);
-    }
-  }
-}
-
-type DeleteCtx = {
-  _loading: loadingGate;
-  alertSvc: AlertService;
-  config: DataGridConfig;
-  dialogs: ConfirmDialogService;
-  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
-
-  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
-};
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/state/grid-context.service.ts
 ```typescript
 import { Injectable, computed, inject } from '@angular/core';
@@ -32081,123 +32783,6 @@ export class GridContextService {
   // Helpers
   readonly hasAnyFilter = computed(() => Object.keys(this.store.filterValues() || {}).length > 0);
 }
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
-```typescript
-import type { Provider } from '@angular/core';
-import { InjectionToken } from '@angular/core';
-import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
-import type { QueueExportInputType } from '../../../../../../../libs/common/src';
-
-export interface DataGridConfig {
-  filterToolPanelId: string;
-  messages: {
-    noDeletePermission: string;
-    editBlocked: string;
-    editFailed: string;
-    loadFailed: string;
-
-    deleteConfirmTitle: string;
-    deleteConfirmMessage: string;
-    deleteConfirmIcon: BaseDialogOptions['icon'];
-    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
-    deleteConfirmText: string;
-    deleteCancelText: string;
-    deleteNoneSelected: string;
-    deleteSystemValues: string;
-    deleteFailed: string;
-    deleteSuccess: string;
-
-    exportTitle: string;
-    exportMessage: string;
-    exportIcon: BaseDialogOptions['icon'];
-    exportConfirmText: string;
-    exportCancelText: string;
-    exportFailed: string;
-    exportInProgress: string;
-    exportReady: string;
-    exportNavigateWarning: string;
-    exportFileName: string;
-    exportEntity: QueueExportInputType['entity'] | '';
-
-    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
-    entityNoun?: string;
-    entityNounPlural?: string;
-  };
-  pageSize: number;
-}
-
-export function provideDataGridConfig(
-  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
-): Provider {
-  const merged: DataGridConfig = {
-    ...DEFAULT_DATA_GRID_CONFIG,
-    ...overrides,
-    messages: {
-      ...DEFAULT_DATA_GRID_CONFIG.messages,
-      ...(overrides?.messages ?? {}),
-    },
-  };
-  return { provide: DATA_GRID_CONFIG, useValue: merged };
-}
-
-export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
-
-/**
- * Counted delete-confirm copy: "3 people will be deleted permanently. You cannot undo this."
- * Falls back to the configured `deleteConfirmMessage` when the count is unknown.
- */
-export function deleteConfirmMessageFor(messages: DataGridConfig['messages'], count: number): string {
-  if (!count) return messages.deleteConfirmMessage;
-  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
-  return `${count} ${noun} will be deleted permanently. You cannot undo this.`;
-}
-
-/**
- * Counted delete-success toast: "Deleted 1 person." — result toasts count what changed
- * (UX doctrine). A grid that overrides `deleteSuccess` keeps its custom text verbatim.
- */
-export function deleteSuccessMessageFor(messages: DataGridConfig['messages'], count: number): string {
-  if (messages.deleteSuccess !== DEFAULT_DATA_GRID_CONFIG.messages.deleteSuccess) return messages.deleteSuccess;
-  const noun = count === 1 ? (messages.entityNoun ?? 'row') : (messages.entityNounPlural ?? 'rows');
-  return `Deleted ${count} ${noun}.`;
-}
-
-export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
-  pageSize: 25,
-  filterToolPanelId: 'filters-new',
-  messages: {
-    noDeletePermission: 'You do not have the permission to delete rows from this table.',
-    editBlocked: 'This cell cannot be edited or deleted.',
-    editFailed: 'Could not edit the row. Please try again later.',
-    loadFailed: 'Could not load the data. Please try again later.',
-
-    deleteConfirmTitle: 'Are you sure?',
-    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
-    deleteConfirmIcon: 'trash',
-    deleteConfirmVariant: 'danger',
-    deleteConfirmText: 'Delete',
-    deleteCancelText: 'Cancel',
-    deleteNoneSelected: 'Please select at least one row to delete.',
-    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
-    deleteFailed: 'Could not delete. Please try again later.',
-    deleteSuccess: 'Selected rows were successfully deleted.',
-
-    exportTitle: 'Choose export scope',
-    exportMessage:
-      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
-    exportIcon: 'arrow-down-tray',
-    exportConfirmText: 'All rows',
-    exportCancelText: 'Displayed rows',
-    exportFailed: 'Export failed. Please try again.',
-    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
-    exportReady: 'Export ready. Your download should begin momentarily.',
-    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
-    exportFileName: 'grid-export.csv',
-    exportEntity: '',
-  },
-};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
@@ -32322,89 +32907,6 @@ export class GridActionComponent {
     if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
       detailsEl.removeAttribute('open');
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
-```typescript
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { CompaniesService } from '@experiences/companies/services/companies-service';
-import { HouseholdsService } from '@experiences/households/services/households-service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-/**
- * The People grain tabs (spec §5): one row under the grid header that switches the
- * grid between the three grains of the same dataset — People · Households · Companies —
- * with per-grain totals in the labels (tabular-nums). Rendered on all three grid pages
- * via the datagrid's `[pcGridBelowHeader]` projection slot; deep links to each grain's
- * detail/edit routes are untouched.
- *
- * Counts load once per instantiation; until a count arrives the label renders without
- * a number (never a fake or stale one).
- */
-@Component({
-  selector: 'pc-grain-tabs',
-  imports: [RouterLink, RouterLinkActive],
-  template: `
-    <nav class="border-line -mt-1 mb-2 flex items-center gap-1 border-b" aria-label="People, households and companies">
-      @for (tab of tabs(); track tab.route) {
-        <a
-          [routerLink]="tab.route"
-          routerLinkActive="!text-primary !font-semibold !border-primary"
-          [routerLinkActiveOptions]="{ exact: true }"
-          class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
-        >
-          {{ tab.label }}
-          @if (tab.count !== null) {
-            <span class="text-xs tabular-nums opacity-70">{{ tab.count }}</span>
-          }
-        </a>
-      }
-    </nav>
-  `,
-})
-export class GrainTabs {
-  private readonly personsSvc = inject(PersonsService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly companiesSvc = inject(CompaniesService);
-
-  private readonly formatter = new Intl.NumberFormat();
-
-  private readonly peopleCount = signal<number | null>(null);
-  private readonly householdsCount = signal<number | null>(null);
-  private readonly companiesCount = signal<number | null>(null);
-
-  protected readonly tabs = computed(() => [
-    { label: 'People', route: '/people', count: this.format(this.peopleCount()) },
-    { label: 'Households', route: '/households', count: this.format(this.householdsCount()) },
-    { label: 'Companies', route: '/companies', count: this.format(this.companiesCount()) },
-  ]);
-
-  constructor() {
-    void this.loadCounts();
-  }
-
-  /** Re-query the per-grain totals (e.g. after a delete on the hosting grid). */
-  public reloadCounts(): void {
-    void this.loadCounts();
-  }
-
-  private format(count: number | null): string | null {
-    return count === null ? null : this.formatter.format(count);
-  }
-
-  private async loadCounts(): Promise<void> {
-    // Each count fails independently; a failed count simply leaves that label bare.
-    const [people, households, companies] = await Promise.allSettled([
-      this.personsSvc.count(),
-      this.householdsSvc.count(),
-      this.companiesSvc.count(),
-    ]);
-    if (people.status === 'fulfilled') this.peopleCount.set(people.value);
-    if (households.status === 'fulfilled') this.householdsCount.set(households.value);
-    if (companies.status === 'fulfilled') this.companiesCount.set(companies.value);
   }
 }
 ```
@@ -32574,100 +33076,6 @@ export class GrainTabs {
     } }
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/shared/public-pages.ts
-```typescript
-import { environment } from '../../environments/environment';
-
-/**
- * Helpers for the tenant-subdomain public page model. Every public surface (forms /f/:slug,
- * event RSVP /e/:slug, volunteer /volunteer + /v/:slug, donations) lives on
- * `https://<tenantSlug>.<publicBaseDomain>/<path>`; the SPA passes its own subdomain to the API as
- * `?t=` so tenant resolution works on any host (including dev, where the Host header is enough in
- * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
- */
-
-/**
- * Base for public-page API calls (unauthenticated `fetch` to REST `/api/*`).
- *
- * In production these pages are served on the dedicated public origin `<org>.pplforms.com`, whose
- * reverse proxy forwards `/api` and `/d` to the backend. So public calls must be **same-origin**
- * (origin-relative `''`) — hitting the absolute `api.pplcrm.com` origin would be cross-origin and
- * CORS-blocked (CORS is deliberately locked to the CRM origin only). In dev we keep the absolute
- * `apiUrl`, which the backend CORS already allows for `localhost:4200`.
- */
-export function apiBase(): string {
-  return environment.production ? '' : environment.apiUrl.replace(/\/$/, '');
-}
-
-/**
- * The tenant subdomain the current page is being served on
- * (`riverton.mydomain.com` → `riverton`), or null on the bare app host.
- */
-export function tenantFromHost(): string | null {
-  const host = window.location.hostname.toLowerCase();
-  const base = environment.publicBaseDomain.toLowerCase();
-  if (!host || host === base) return null;
-  const suffix = `.${base}`;
-  if (!host.endsWith(suffix)) return null;
-  const label = host.slice(0, -suffix.length);
-  if (!label || label.includes('.')) return null;
-  return label;
-}
-
-/** `?t=<tenant>` query suffix for public API calls made from a public page. */
-export function tenantQuery(): string {
-  const tenant = tenantFromHost();
-  return tenant ? `?t=${encodeURIComponent(tenant)}` : '';
-}
-
-/**
- * Shareable public URL for authenticated admin UI: `https://<tenantSlug>.<base>/<path>`, falling
- * back to the current origin when no tenant subdomain is configured (dev without wildcard DNS).
- * `path` must not start with a slash.
- */
-export function publicPageUrl(tenantSlug: string | null | undefined, path: string): string {
-  const base = environment.publicBaseDomain;
-  if (tenantSlug && base) {
-    return `https://${tenantSlug}.${base}/${path}`;
-  }
-  return `${window.location.origin}/${path}`;
-}
-
-/**
- * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
- * production the companion apps are path-routed on the CRM's own domain, so we use the current
- * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —
- * otherwise a copied link would point back at the CRM host and 404. `path` must start with a slash.
- */
-export function companionUrl(path: string): string {
-  return `${environment.companionOrigin || window.location.origin}${path}`;
-}
-```
-
-## File: apps/frontend/src/app/app.ts
-```typescript
-import { Component, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { ConfirmDialogHost } from '@uxcommon/components/confirm-dialog-host';
-
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-
-@Component({
-  selector: 'pc-root',
-  imports: [RouterModule, ConfirmDialogHost],
-  template: `
-    <!-- Dialog host lives inside the themed div so modals inherit data-theme (dark mode). -->
-    <div class="min-h-full" [attr.data-theme]="themeSvc.getTheme()">
-      <pc-dialog-host></pc-dialog-host>
-      <router-outlet></router-outlet>
-    </div>
-  `,
-})
-export class AppComponent {
-  protected themeSvc = inject(ThemeService);
-}
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
@@ -33230,25 +33638,6 @@ export const dashboardRoutes: Routes = [
 ];
 ```
 
-## File: apps/frontend/src/environments/environment.prod.ts
-```typescript
-export const environment = {
-  production: true,
-  // The backend has its own origin because tRPC is mounted at the root path '/' and can't share a
-  // host with the CRM's static SPA. The CRM SPA (app.pplcrm.com) reaches this cross-origin; CORS is
-  // locked to APP_URL and the refresh cookie is same-site (both under pplcrm.com).
-  apiUrl: 'https://api.pplcrm.com',
-  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  // The public submission surface (forms, events, volunteer signups, donations) lives on a dedicated
-  // domain at '<org>.pplforms.com'; this is the base the tenant subdomain hangs off of.
-  publicBaseDomain: 'pplforms.com',
-  // The volunteer companion apps (canvass /t/:token, deliveries /r/:token) are served on their own
-  // subdomain in production — they're a separate root-based SPA that can't share app.pplcrm.com's
-  // root with the CRM. companionUrl() builds shareable volunteer links against this origin.
-  companionOrigin: 'https://go.pplcrm.com',
-};
-```
-
 ## File: apps/frontend/src/environments/environment.ts
 ```typescript
 export const environment = {
@@ -33344,294 +33733,179 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 }
 ```
 
-## File: apps/website/src/app/audience/audience-content.ts
-```typescript
-import type { PreviewKind } from '../ui/app-preview';
+## File: apps/website/src/app/compare/compare-page.html
+```html
+<pc-site-header variant="solid" />
 
-export interface AudienceFeature {
-  readonly icon: string;
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">How we compare</div>
+    <h1 class="mt-3 text-balance text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      You’re probably not choosing between CRMs.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      Most teams like yours run on a spreadsheet, an email tool and somebody’s inbox. That stack is free, familiar and
+      genuinely fine at first. Here is where it starts to cost you, job by job.
+    </p>
+  </div>
+</section>
+
+<!-- The same jobs, side by side -->
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto flex max-w-[880px] flex-col gap-3.5">
+    @for (row of rows; track row.job) {
+    <div class="rounded-xl border border-line bg-base-50 p-5 sm:p-6">
+      <div class="text-[15px] font-semibold">{{ row.job }}</div>
+      <div class="mt-3 grid gap-3.5 sm:grid-cols-2">
+        <div class="rounded-[10px] bg-base-200/70 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
+            The spreadsheet stack
+          </div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ row.stack }}</p>
+        </div>
+        <div class="rounded-[10px] bg-primary/8 p-4">
+          <div class="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-primary">pplCRM</div>
+          <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/70">{{ row.crm }}</p>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+</section>
+
+<!-- The big platforms -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="mx-auto max-w-[760px]">
+    <div class="mx-auto max-w-[620px] text-center">
+      <h2 class="text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Weighing one of the big organizing platforms?
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        They are capable tools, and feature checklists age badly, so we won’t pretend to score them. Three things are
+        structurally different here, whichever one you have in mind.
+      </p>
+    </div>
+    <div class="mt-9 grid gap-4 sm:grid-cols-3">
+      @for (point of platformPoints; track point.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <div class="text-[15px] font-semibold">{{ point.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ point.body }}</p>
+      </div>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    See the difference on sample data.
+  </h2>
+  <p class="mx-auto mt-3.5 max-w-[540px] text-[15px] leading-relaxed text-white/75">
+    The free workspace opens with people, households, turfs and an inbox already in it. Compare with your own hands; no
+    card required.
+  </p>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />
+```
+
+## File: apps/website/src/app/compare/compare-page.ts
+```typescript
+import { Component } from '@angular/core';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/** One job, told twice: how the spreadsheet stack does it, how pplCRM does it. */
+interface CompareRow {
+  readonly job: string;
+  readonly stack: string;
+  readonly crm: string;
+}
+
+interface PlatformPoint {
   readonly title: string;
   readonly body: string;
 }
 
-export interface AudienceOutcome {
-  readonly stat: string;
-  readonly label: string;
-  readonly body: string;
-}
-
-export interface AudiencePageConfig {
-  readonly eyebrow: string;
-  readonly h1: string;
-  readonly sub: string;
-  readonly previewKind: PreviewKind;
-  readonly previewUrl: string;
-  /** Real product screenshot; when absent the <pc-app-preview> mock is shown. */
-  readonly previewImg?: string;
-  readonly featuresHeading: string;
-  readonly features: readonly AudienceFeature[];
-  readonly outcomes: readonly AudienceOutcome[];
-  readonly quote: string;
-  readonly quoteWho: string;
-}
-
-export const AUDIENCE_CONFIG: Record<string, AudiencePageConfig> = {
-  offices: {
-    eyebrow: 'For constituency offices',
-    h1: 'Every case answered. Every constituent remembered.',
-    sub: 'A shared inbox, tasks with due dates and a long memory. Casework that survives staff turnover and election cycles.',
-    previewKind: 'inbox',
-    previewUrl: 'app.pplcrm.com/inbox',
-    previewImg: 'assets/site-shots/01-shot.png',
-    featuresHeading: 'Casework that doesn’t fall through the cracks.',
-    features: [
-      {
-        icon: 'inbox',
-        title: 'A shared inbox with owners',
-        body: 'Every message gets an owner and a due date. Nobody writes to your office twice about the same pothole.',
-      },
-      {
-        icon: 'clock',
-        title: 'Tasks that chase themselves',
-        body: 'Follow-ups surface on the day they’re due, not the week after a constituent gives up on you.',
-      },
-      {
-        icon: 'users',
-        title: 'A memory longer than one term',
-        body: 'The full history of a household stays put when staff change and when the mandate turns over.',
-      },
-      {
-        icon: 'megaphone',
-        title: 'Newsletters by ward and issue',
-        body: 'Write once, send to the people it’s actually for. Segments come straight from your real list.',
-      },
-      {
-        icon: 'identification',
-        title: 'People, not tickets',
-        body: 'A case is attached to a person and a household, so context travels with the human, not a number.',
-      },
-      {
-        icon: 'arrow-up-tray',
-        title: 'Your spreadsheet, welcomed',
-        body: 'Import what you have; duplicates merge on the way in. Export everything, any time you like.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: 'Day one',
-        label: 'Triaging real cases',
-        body: 'Most offices are working live casework their first morning — no training week.',
-      },
-      {
-        stat: '1 inbox',
-        label: 'For the whole team',
-        body: 'Correspondence, tasks and notes in one place instead of five personal mailboxes.',
-      },
-      {
-        stat: '0 lost',
-        label: 'Cases between terms',
-        body: 'History and open work carry over when staff and mandates change.',
-      },
-    ],
-    quote:
-      'The office used to lose casework every time someone left. Now the constituent’s whole story is right there, no matter who picks it up.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-  campaigns: {
-    eyebrow: 'For campaigns',
-    h1: 'Built for the people who knock.',
-    sub: 'Turf cutting, live field reports, donations and yard-sign routes. A campaign HQ that keeps score.',
-    previewKind: 'canvassing',
-    previewUrl: 'app.pplcrm.com/canvassing',
-    previewImg: 'assets/site-shots/02-shot.png',
-    featuresHeading: 'From the office whiteboard to the doorstep.',
-    features: [
-      {
-        icon: 'map-pin',
-        title: 'Cut turf in minutes',
-        body: 'Slice the map into walkable turfs in the office; the crew sees them on their phones, offline-first.',
-      },
-      {
-        icon: 'presentation-chart-line',
-        title: 'A field report that’s live',
-        body: 'Every knock syncs back as it happens, so you know where you stand before the night’s over.',
-      },
-      {
-        icon: 'ticket',
-        title: 'Yard-sign routes',
-        body: 'Each sign request becomes a stop on an optimised route. Mark it placed and roll on.',
-      },
-      {
-        icon: 'house-modern',
-        title: 'Lit drops & deliveries',
-        body: 'Leaflets and notices become driver routes with per-street progress you can actually see.',
-      },
-      {
-        icon: 'currency-dollar',
-        title: 'Donations that reconcile',
-        body: 'Gifts, pledges and receipts sit on the same record as the door you knocked. One number, not three.',
-      },
-      {
-        icon: 'user-group',
-        title: 'Volunteers without seats',
-        body: 'The field crew joins by invite to the companion apps and never eats a staff seat.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: 'Offline',
-        label: 'First, always',
-        body: 'Door lists and routes work with no signal and sync when the crew is back in range.',
-      },
-      {
-        stat: 'Live',
-        label: 'Field reporting',
-        body: 'Knocks land on the HQ report the moment they happen — no end-of-day data entry.',
-      },
-      {
-        stat: '1 record',
-        label: 'Voter to donor',
-        body: 'The same person’s doors, gifts and sign request live in one place.',
-      },
-    ],
-    quote:
-      'We stopped running the campaign out of a stack of spreadsheets and a group chat. The turf, the knocks and the money finally live together.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-  nonprofits: {
-    eyebrow: 'For non-profits',
-    h1: 'Donors, volunteers and neighbors. One list.',
-    sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
-    previewKind: 'donations',
-    previewUrl: 'app.pplcrm.com/donations',
-    previewImg: 'assets/site-shots/03-shot.png',
-    featuresHeading: 'One relationship, not three databases.',
-    features: [
-      {
-        icon: 'currency-dollar',
-        title: 'Donations, gratefully',
-        body: 'Every donor thanked on time. Pledges, receipts and totals without a second spreadsheet.',
-      },
-      {
-        icon: 'user-group',
-        title: 'Volunteers remembered',
-        body: 'Who showed up, what they did and when — attached to the same person who also gave last spring.',
-      },
-      {
-        icon: 'megaphone',
-        title: 'Newsletters that land',
-        body: 'Segment by giving, interest or neighborhood and write once to the people it’s for.',
-      },
-      {
-        icon: 'house-modern',
-        title: 'Drives & deliveries',
-        body: 'Hampers, mailers and meeting notices become routes with per-street progress for your drivers.',
-      },
-      {
-        icon: 'users',
-        title: 'Households, not rows',
-        body: 'A family is one door with a shared history, not five disconnected spreadsheet lines.',
-      },
-      {
-        icon: 'arrow-up-tray',
-        title: 'Bring your data, keep it',
-        body: 'Import your lists; duplicates merge automatically. Export everything, on every plan.',
-      },
-    ],
-    outcomes: [
-      {
-        stat: '3 → 1',
-        label: 'Spreadsheets retired',
-        body: 'Donors, volunteers and contacts stop living in separate, drifting files.',
-      },
-      {
-        stat: 'On time',
-        label: 'Thank-yous',
-        body: 'Gifts are logged against a person, so gratitude never slips through.',
-      },
-      {
-        stat: 'Yours',
-        label: 'Data, always',
-        body: 'Export the whole thing to CSV whenever you want. Delete means deleted.',
-      },
-    ],
-    quote:
-      'Our donor list, our volunteer list and our newsletter list were three different truths. Now they’re one person’s record.',
-    quoteWho: 'The pitch we’re building toward',
-  },
-};
-```
-
-## File: apps/website/src/app/audience/audience-page.ts
-```typescript
-import { Component, input } from '@angular/core';
-
-import { AppPreview } from '../ui/app-preview';
-import { BrowserFrame } from '../ui/browser-frame';
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SiteIcon } from '../ui/site-icon';
-import { SIGNUP_URL } from '../ui/site-nav';
-import type { AudiencePageConfig } from './audience-content';
-
-/**
- * One template for the three audience landing pages (offices / campaigns /
- * non-profits). The `config` input is bound from the route's `data` via
- * withComponentInputBinding — see app.routes.ts.
- */
 @Component({
-  selector: 'pc-audience-page',
-  imports: [SiteHeader, SiteFooter, BrowserFrame, AppPreview, SiteIcon],
-  templateUrl: './audience-page.html',
+  selector: 'pc-compare-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './compare-page.html',
 })
-export class AudiencePage {
-  public readonly config = input.required<AudiencePageConfig>();
+export class ComparePage {
   protected readonly signupUrl = SIGNUP_URL;
-}
-```
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
 
-## File: apps/website/src/app/coming-soon/coming-soon-page.ts
-```typescript
-import { Component, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
+  protected readonly rows: readonly CompareRow[] = [
+    {
+      job: 'Keeping one person’s story straight',
+      stack: 'Three files hold three versions of the same person, and nobody is sure which one is current.',
+      crm: 'One record holds the household, the emails, the gifts, the knocks and the notes. Update it once; it’s correct everywhere.',
+    },
+    {
+      job: 'Sending the newsletter',
+      stack:
+        'Export a CSV, upload it to the email tool, clean the bounces, repeat next month. Unsubscribes live only in the email tool.',
+      crm: 'Segments come straight from the live list, and every unsubscribe and do-not-contact is honored automatically.',
+    },
+    {
+      job: 'Staying out of spam',
+      stack:
+        'Your mail shares a sending reputation with thousands of strangers on the same platform, including the spammers.',
+      crm: 'You send from your own verified domain. The reputation you build is yours alone.',
+    },
+    {
+      job: 'Answering everyone who writes in',
+      stack: 'Requests live in whoever’s inbox they landed in. Follow-up depends on memory and flags.',
+      crm: 'A shared inbox gives every message an owner and a due date; nothing waits on one person remembering.',
+    },
+    {
+      job: 'The field: knocks, signs, deliveries',
+      stack: 'Paper lists in the car, re-typed into the sheet at night, if it happens at all.',
+      crm: 'Offline-first companion apps for volunteers; every knock and delivery syncs back to the live report.',
+    },
+    {
+      job: 'When a staffer or volunteer leaves',
+      stack: 'The master file lived on their laptop. So did the passwords.',
+      crm: 'History belongs to the workspace, not a laptop. Access ends with one click; the story stays.',
+    },
+    {
+      job: 'What it costs',
+      stack: 'Free, plus the hours spent reconciling files and the mistakes that slip out in between.',
+      crm: 'Free forever for unlimited contacts and 1,000 email subscribers. Paid plans price by the people you email, never the size of your list.',
+    },
+  ];
 
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-/**
- * Shared placeholder for pages the design links to but we haven't built yet
- * (the audience pages, Pricing, and assorted footer links). `pageTitle` is
- * bound from the route's `data` or a `?pageTitle=` query param via
- * withComponentInputBinding — swap the route to a real component when it exists.
- */
-@Component({
-  selector: 'pc-coming-soon-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
-  template: `
-    <pc-site-header variant="solid" />
-
-    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
-      <div class="mx-auto max-w-[520px]">
-        <div class="eyebrow">{{ pageTitle() }}</div>
-        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
-        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
-          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
-          to lose.
-        </p>
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
-          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
-        </div>
-      </div>
-    </section>
-
-    <pc-site-footer />
-  `,
-})
-export class ComingSoonPage {
-  public readonly pageTitle = input<string>('Coming soon');
-  protected readonly signupUrl = SIGNUP_URL;
+  /** For visitors evaluating the big organizing platforms; principles, not a feature grid. */
+  protected readonly platformPoints: readonly PlatformPoint[] = [
+    {
+      title: 'Growth is never taxed',
+      body: 'Platforms that price by database size charge you for every name you collect. Here contacts and households are unlimited on every plan; you pay only for emailable subscribers.',
+    },
+    {
+      title: 'No contracts, no exit fee',
+      body: 'Month to month, and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
+    },
+    {
+      title: 'Try before you trust',
+      body: 'No sales call, no demo video. The free workspace opens with sample data already in it, so you evaluate with your own hands.',
+    },
+  ];
 }
 ```
 
@@ -35080,35 +35354,6 @@ export class SiteIcon {
   protected readonly px = computed<number>(() => this.size());
   protected readonly mask = computed<string>(() => `url('assets/icons/${this.name()}.svg') center / contain no-repeat`);
 }
-```
-
-## File: apps/website/src/app/ui/site-nav.ts
-```typescript
-import { environment } from '../../environments/environment';
-
-export interface NavLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path: string;
-}
-
-/** The primary audience + pricing nav, shared by the header and footers. */
-export const PRIMARY_NAV: readonly NavLink[] = [
-  { label: 'For constituency offices', path: '/for/offices' },
-  { label: 'For campaigns', path: '/for/campaigns' },
-  { label: 'For non-profits', path: '/for/nonprofits' },
-  { label: 'Pricing', path: '/pricing' },
-];
-
-/**
- * The CRM lives on a separate host (see environment.appUrl). "Log in" and
- * "Start free" leave the marketing site for the app, so they are absolute URLs,
- * not router links.
- */
-export const LOGIN_URL = `${environment.appUrl}/signin`;
-export const SIGNUP_URL = `${environment.appUrl}/signup`;
-// Signed-in visitors go straight to the app (its root redirects to the dashboard).
-export const DASHBOARD_URL = environment.appUrl;
 ```
 
 ## File: apps/website/src/app/app.config.server.ts
@@ -40152,6 +40397,145 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header -->
+  <div class="flex flex-wrap items-center justify-end gap-3">
+    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+    <h1 class="sr-only">Delivery requests</h1>
+    <pc-deliveries-nav class="mr-auto" />
+    <div class="flex items-center gap-2">
+      <span
+        class="tooltip-left"
+        [class.tooltip]="readyCount() === 0"
+        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
+      >
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+        </button>
+      </span>
+    </div>
+  </div>
+
+  <!-- Tabs with live counts (the standard pill tab bar) -->
+  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
+
+  <!-- Bulk selection bar -->
+  @if (selectedCount() > 0) {
+  <div
+    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
+  >
+    <span class="text-sm text-base-content/70">
+      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
+      of {{ rows().length }} rows on this page selected
+    </span>
+    @if (newInView() > selectedCount()) {
+    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
+      Select all {{ newInView() }} new
+    </button>
+    }
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
+        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
+        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th class="w-8"></th>
+      <th>Requested by</th>
+      <th>Address</th>
+      <th>Status</th>
+      <th>Readiness</th>
+      <th>Source</th>
+      <th>Route</th>
+      <th>Requested</th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6">
+        @if (readyCount() > 0) {
+        <pc-empty-state icon="map-pin" [bordered]="false" title="No delivery requests in this view yet">
+          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
+            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
+          </button>
+        </pc-empty-state>
+        } @else {
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No delivery requests in this view yet"
+          hint="Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes."
+        />
+        }
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+          [checked]="isSelected(row.id)"
+          (change)="toggle(row.id)"
+          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
+        />
+      </td>
+      <td>
+        @if (row.person_id) {
+        <a
+          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/people', row.person_id]"
+        >
+          {{ row.person_name || 'Unnamed person' }}
+        </a>
+        } @else {
+        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
+        }
+      </td>
+      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
+      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
+      <td>
+        <div class="flex items-center gap-2">
+          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
+          @if (row.geocoding_status === 'failed') {
+          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
+            Edit household
+          </a>
+          }
+        </div>
+      </td>
+      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
+      <td>
+        @if (row.route_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
+          {{ row.route_name || 'Route' }}
+        </a>
+        } @else {
+        <span class="text-base-content/40">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+    </tr>
+    } }
+  </pc-table>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.ts
 ```typescript
 import { DatePipe } from '@angular/common';
@@ -40312,6 +40696,98 @@ export class DeliveriesRequests implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
+  <div class="flex flex-wrap items-center justify-end gap-3">
+    <h1 class="sr-only">Routes</h1>
+    <pc-deliveries-nav class="mr-auto" />
+    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
+      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
+    </a>
+  </div>
+
+  <pc-table [loading]="loading.visible()" [columns]="8">
+    <ng-container pcTableHead>
+      <th>Name</th>
+      <th>Status</th>
+      <th>Stops</th>
+      <th>Est. time</th>
+      <th>Volunteer</th>
+      <th>Scheduled</th>
+      <th>Created</th>
+      <th></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="8" class="px-6">
+        <pc-empty-state
+          icon="map-pin"
+          [bordered]="false"
+          title="No routes yet"
+          hint="Approve requests, then plan routes."
+        >
+          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
+        </pc-empty-state>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr>
+      <td>
+        <a
+          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+          [routerLink]="['/deliveries/routes', row.id]"
+        >
+          {{ row.name }}
+        </a>
+      </td>
+      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
+      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
+      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
+      <td>
+        @if (row.volunteer_person_id) {
+        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
+          >{{ row.volunteer_name || 'Volunteer' }}</a
+        >
+        } @else {
+        <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="openAssign(row)">Assign</button>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">
+        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
+      </td>
+      <td class="text-right">
+        <div class="dropdown dropdown-end">
+          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
+            <pc-icon name="ellipsis-vertical" [size]="4" />
+          </button>
+          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
+            @if (row.volunteer_person_id) {
+            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
+            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
+            } @else {
+            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
+            } @if (canCancel(row.status)) {
+            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
+            } @if (canDelete(row.status)) {
+            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
+            }
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+  </pc-table>
+
+  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/deliveries/ui/yard-sign-standing.html
 ```html
 <label class="flex flex-col gap-1">
@@ -40349,6 +40825,146 @@ export class DeliveriesRequests implements OnInit {
   <ng-container i18n>Last attempt skipped:</ng-container> {{ r.skip_reason.toLowerCase() }}
 </p>
 } }
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
+    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      Record donation
+    </button>
+    <button
+      routerLink="/donation-pages/add"
+      class="btn btn-primary btn-sm gap-2"
+      title="Create a public form that charges cards through Stripe and records every gift here"
+    >
+      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
+      New donation form
+    </button>
+  </pc-grid-header>
+
+  <!-- Tabs (the standard pill tab bar; route-linked) -->
+  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">This Month</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] mt-1">
+          @if (monthOverMonthDelta() !== null) {
+          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
+            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
+          </span>
+          } @else {
+          <span class="text-base-content/40">No prior month to compare</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Average Gift</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Monthly Donors</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ monthlyDonorCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm">
+      <div class="stat p-4">
+        <div class="stat-title pc-eyebrow">Receipts</div>
+        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
+          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <pc-table [columns]="5">
+    <ng-container pcTableHead>
+      <th>Donor</th>
+      <th class="text-right">Amount</th>
+      <th>Method</th>
+      <th>Date</th>
+      <th>Receipt</th>
+    </ng-container>
+
+    @for (d of recentGifts(); track d.id) {
+    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
+      <td>
+        <div class="flex flex-col">
+          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline">
+            {{ d.person_first_name }} {{ d.person_last_name }}
+          </a>
+          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+        </div>
+      </td>
+      <td class="text-right font-bold text-base-content tabular-nums">{{ formatCurrency(d.amount) }}</td>
+      <td>
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
+      </td>
+      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+      <td>
+        @if (d.receipt_sent) {
+        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
+          <pc-icon name="check-circle" [size]="3"></pc-icon>
+          Receipted
+        </span>
+        } @else {
+        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
+        }
+      </td>
+    </tr>
+    } @empty {
+    <tr>
+      <td colspan="5">
+        <pc-empty-state
+          icon="currency-dollar"
+          [bordered]="false"
+          title="No donations recorded yet"
+          hint="Configure your Stripe integration and set up a donation form, or record an offline gift directly."
+        >
+          <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
+            <pc-icon name="plus" [size]="4"></pc-icon>
+            Record donation
+          </button>
+        </pc-empty-state>
+      </td>
+    </tr>
+    } @if (totalGiftCount() > recentGifts().length) {
+    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
+      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
+    </div>
+    }
+  </pc-table>
+</div>
+
+<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
@@ -43005,432 +43621,6 @@ export class HouseholdView {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
-
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, GrainTabs],
-  host: { class: 'block h-full' },
-  template: `
-    <div class="flex h-full min-h-0 flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        [grainLayout]="!inline()"
-        [fitColumns]="true"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        (rowsDeleted)="onRowsDeleted()"
-        [rowCanSelect]="rowCanSelectFn"
-        [totalSentence]="totalSentence()"
-        (importCSV)="openImportWizard()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      >
-        <div pcGridBelowHeader>
-          @if (!inline()) {
-            <pc-grain-tabs />
-          }
-        </div>
-        @if (!inline() && unhoused().count > 0) {
-          <p pcGridFooterStart class="truncate text-xs text-base-content/55" i18n>
-            <button
-              type="button"
-              class="cursor-pointer underline decoration-base-content/30 underline-offset-[3px] transition-colors hover:text-primary hover:decoration-primary"
-              (click)="openUnhoused()"
-            >
-              {{ unhoused().count }} {{ unhoused().count === 1 ? 'person' : 'people' }}
-            </button>
-            {{ unhoused().count === 1 ? "doesn't" : "don't" }} belong to a household: no address, or one that can't be
-            matched to a door.
-          </p>
-        }
-      </pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({
-      messages: {
-        entityNoun: 'household',
-        entityNounPlural: 'households',
-        exportEntity: 'households',
-        exportFileName: 'households-export.csv',
-      },
-    }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly router = inject(Router);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected col: ColDef[] = [
-    {
-      // The door that opens the household record: a generated address string, just like
-      // the People grid's combined Name column. People count rides along as a muted subtitle.
-      field: 'household',
-      headerName: 'Household',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 260,
-      minWidth: 180,
-      valueGetter: (params: CellParams) => this.addressString(params.data),
-      doorSubtitle: (params: CellParams) => {
-        const n = Number((params.data as Record<string, unknown> | undefined)?.['persons_count'] ?? 0);
-        return `${n} ${n === 1 ? 'person' : 'people'}`;
-      },
-    },
-    {
-      field: 'members',
-      headerName: 'Members',
-      editable: false,
-      // Grows to fill leftover width when no notes/description column is visible.
-      flex: true,
-      width: 320,
-      minWidth: 200,
-      // Each member name is a link to their person card. The renderer output is
-      // sanitized (event handlers stripped), so navigation is delegated to onCellClicked.
-      cellRenderer: (params: CellParams) => this.renderMembers(params.value),
-      onCellClicked: (params: CellParams) => this.onMemberClicked(params.event),
-    },
-    { field: 'city', headerName: 'City', editable: true, width: 150 },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'district', headerName: 'District / Riding', editable: false, hide: true, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, hide: true, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    {
-      field: 'updated_at',
-      headerName: 'Last touch',
-      editable: false,
-      minWidth: 120,
-      valueFormatter: (params: CellParams) => this.formatLastTouch(params.value),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      hide: true,
-      width: 280,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** People with no matchable address (the placeholder household) — footer note + link target. */
-  protected readonly unhoused = signal<{ count: number; household_id: string | null }>({
-    count: 0,
-    household_id: null,
-  });
-
-  public ngOnInit(): void {
-    // Mute the secondary columns so the bold "Household" door reads as the way in. Members
-    // keep full contrast — they're a second focal point (the People-grain of the household).
-    for (const c of this.col) if (!c.doorColumn && c.field !== 'members') c.cellClass = SECONDARY_CELL_CLASS;
-
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-  }
-
-  /** Deletes change the header counts — re-query the grain sentence, unhoused note, and tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadGrainSentence();
-    if (!this.inline()) void this.loadUnhoused();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  private async loadUnhoused(): Promise<void> {
-    try {
-      this.unhoused.set(await this.householdsService.getUnhoused());
-    } catch (err) {
-      console.error('Failed to load unhoused people count', err);
-    }
-  }
-
-  /** Opens the placeholder household, whose detail view lists everyone with no address. */
-  protected openUnhoused(): void {
-    const id = this.unhoused().household_id;
-    if (id) void this.router.navigate(['/households', id]);
-  }
-
-  private async loadGrainSentence(): Promise<void> {
-    try {
-      const [total, wards] = await Promise.all([
-        this.householdsService.count(),
-        this.householdsService.countDistinctWards(),
-      ]);
-      const fmt = new Intl.NumberFormat();
-      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
-      // Ward data comes from geocoding; until any exists, fall back to a plain total.
-      this.totalSentence.set(
-        wards > 0
-          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
-          : `${households} total`,
-      );
-    } catch (err) {
-      console.error('Failed to load household grain counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  /** Renders member names as person-card links; a comma separator keeps them on one line. */
-  private renderMembers(value: unknown): string {
-    const members = Array.isArray(value) ? (value as Array<{ id?: unknown; name?: unknown }>) : [];
-    const links = members
-      .filter((m) => m && m.id != null && typeof m.name === 'string' && m.name.trim().length)
-      .map((m) => {
-        const id = this.escapeHtml(String(m.id));
-        const name = this.escapeHtml(String(m.name));
-        return `<a data-person-id="${id}" class="cursor-pointer hover:text-primary hover:underline underline-offset-[3px]">${name}</a>`;
-      });
-    if (!links.length) return '';
-    // Block root truncates at the cell width; inline links stay on one line (not wrapped).
-    return `<span class="block truncate">${links.join('<span class="text-base-content/40">, </span>')}</span>`;
-  }
-
-  /** Delegated navigation for a clicked member link (renderer HTML can't hold Angular handlers). */
-  private onMemberClicked(event: Event | undefined): void {
-    const target = event?.target;
-    if (!(target instanceof HTMLElement)) return;
-    const anchor = target.closest('[data-person-id]');
-    const id = anchor?.getAttribute('data-person-id');
-    if (id) void this.router.navigate(['/people', id]);
-  }
-
-  private escapeHtml(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  /** Street number + name for the Household door column (city has its own column). */
-  private addressString(data: unknown): string {
-    const d = data as Record<string, unknown> | undefined;
-    if (!d) return '';
-    if (d['is_placeholder']) return 'People with no addresses';
-    return [d['street_num'], d['street1']].filter(Boolean).join(' ').trim();
-  }
-
-  /** Compact relative "last touch" — matches the household view's low-chrome style. */
-  private formatLastTouch(value: unknown): string {
-    if (value == null || (typeof value !== 'string' && !(value instanceof Date))) return '';
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job across every record type.
-  protected openImportWizard(): void {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'households' } });
-  }
 }
 ```
 
@@ -47067,57 +47257,458 @@ export class PersonStandingDraft {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
-```html
-<!-- Template for persons grid -->
-<div class="flex h-full min-h-0 flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [grainLayout]="!inline()"
-    [fitColumns]="true"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    (rowsDeleted)="onRowsDeleted()"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [totalSentence]="totalSentence()"
-    [limitToTags]="initialTagFilter()"
-    [limitToIssues]="initialIssueFilter()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  >
-    <div pcGridBelowHeader>
-      @if (!inline()) {
-      <pc-grain-tabs />
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import {
+  SUPPORT_LEVEL_LABELS,
+  UpdatePersonsObj,
+  UpdatePersonsType,
+  VOTING_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  deleteConfirmMessageFor,
+  deleteSuccessMessageFor,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, GrainTabs, Icon, ModalShell],
+  templateUrl: './persons-grid.html',
+  host: { class: 'block h-full' },
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly grainTabs = viewChild(GrainTabs);
+  private readonly confirmAddressEditDlg = viewChild.required<ModalShell>('confirmAddressEdit');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
+  protected onRowsDeleted(): void {
+    void this.loadTotalCount();
+    this.grainTabs()?.reloadCounts();
+  }
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      width: 220,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
+      width: 240,
+      minWidth: 160,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        // Keep the grid cell compact: street + city only. State/zip/country live on the
+        // person and household views, not in this at-a-glance column.
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (data.city) parts.push(String(data.city).trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    // Email grows to fill leftover width when no notes/description column is visible (address
+    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
+    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
+    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
+    {
+      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
+      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
+      field: 'support_level',
+      headerName: 'Support (context)',
+      editable: false,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
+    },
+    {
+      field: 'voting_status',
+      headerName: 'Voting (context)',
+      editable: false,
+      hide: true,
+      width: 150,
+      valueFormatter: (params: CellParams) =>
+        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
+    },
+    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  public listId = input<string | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
+  public ngOnInit() {
+    // Mute every column except the bold "Name" door, so the door reads as the way in.
+    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
+
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadTotalCount();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor is derived from donations and volunteer/staff are first-class person
+   * status (§15), not grid segments — so only the overall total is fetched.
+   */
+  private async loadTotalCount(): Promise<void> {
+    try {
+      const total = await this.personsService.count();
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
+    } catch (err) {
+      console.error('Failed to load total count', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
+  protected openImportDialog() {
+    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
+  }
+
+  protected routeToHouseholds() {
+    this.confirmAddressEditDlg().close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  private confirmAddressChange(): void {
+    this.confirmAddressEditDlg().show();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: deleteConfirmMessageFor(this.config.messages, selected.length),
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
       }
-    </div>
-  </pc-datagrid>
-</div>
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
 
-<pc-modal-shell #confirmAddressEdit title="Address edit" icon="home">
-  <p class="py-2 font-light">
-    Addresses can only be edited in the Households Component. Would you like me to take you there?
-  </p>
-
-  <div pc-modal-footer class="flex flex-row gap-2">
-    <button class="btn btn-primary" type="button" (click)="routeToHouseholds()">
-      <pc-icon name="arrow-right-start-on-rectangle" />
-      Yes
-    </button>
-    <button class="btn btn-outline btn-accent" type="button" (click)="confirmAddressEdit.close()">
-      <pc-icon name="x-circle" />
-      Cancel
-    </button>
-  </div>
-</pc-modal-shell>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
@@ -51639,7547 +52230,6 @@ export const SidebarItems: ISidebarItem[] = [
 </div>
 ```
 
-## File: apps/frontend/src/app/app.routes.ts
-```typescript
-import type { Routes } from '@angular/router';
-
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
-
-export const appRoutes = [
-  // Default redirect to the dashboard inside the app shell
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'new-password',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'f/:slug',
-    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
-  },
-  {
-    path: 'e/:slug',
-    data: { kind: 'event' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'v/:slug',
-    data: { kind: 'volunteer' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'volunteer',
-    loadComponent: () =>
-      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
-  },
-  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
-  // the separate apps/companion build — served path-routed on the same domain.
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
-
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
-
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
-```
-
-## File: apps/website/src/app/audience/audience-page.html
-```html
-<pc-site-header variant="over-hero" />
-
-<!-- Hero -->
-<section class="bg-navy px-5 pb-12 pt-10 text-center sm:px-8 sm:pb-16 sm:pt-14">
-  <div class="mx-auto max-w-[780px]">
-    <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">{{ config().eyebrow }}</div>
-    <h1
-      class="mt-3 text-balance text-[clamp(2.125rem,5.5vw,3.125rem)] font-bold leading-[1.1] tracking-[-0.02em] text-white"
-    >
-      {{ config().h1 }}
-    </h1>
-    <p class="mx-auto mt-5 max-w-[580px] text-[17.5px] leading-relaxed text-white/75">{{ config().sub }}</p>
-    <div class="mt-6">
-      <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[15px] font-semibold">
-        Start free with sample data
-      </a>
-    </div>
-    <div class="mt-3 text-[12.5px] text-white/50">No card. No commitment. Import your own list when you’re ready.</div>
-  </div>
-
-  <div class="mt-11">
-    @if (config().previewImg; as img) {
-    <pc-browser-frame [url]="config().previewUrl" [imageSrc]="img" [imageAlt]="config().h1" />
-    } @else {
-    <pc-browser-frame [url]="config().previewUrl">
-      <pc-app-preview [kind]="config().previewKind" />
-    </pc-browser-frame>
-    }
-  </div>
-</section>
-
-<!-- Features -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap">
-    <h2 class="mx-auto max-w-[640px] text-center text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
-      {{ config().featuresHeading }}
-    </h2>
-    <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
-      @for (feature of config().features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
-        <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
-          <pc-site-icon [name]="feature.icon" [size]="20" />
-        </span>
-        <div>
-          <div class="text-[15px] font-semibold">{{ feature.title }}</div>
-          <p class="mt-1 text-[13.5px] leading-snug text-base-content/60">{{ feature.body }}</p>
-        </div>
-      </div>
-      }
-    </div>
-  </div>
-</section>
-
-<!-- Outcomes -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
-  <div class="site-wrap grid gap-4 sm:grid-cols-3">
-    @for (outcome of config().outcomes; track outcome.label) {
-    <div class="rounded-xl border border-line bg-base-100 p-6 text-center">
-      <div class="text-[28px] font-bold tracking-[-0.01em] text-primary">{{ outcome.stat }}</div>
-      <div class="mt-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-base-content/55">
-        {{ outcome.label }}
-      </div>
-      <p class="mt-2.5 text-[13.5px] leading-relaxed text-base-content/60">{{ outcome.body }}</p>
-    </div>
-    }
-  </div>
-</section>
-
-<!-- Quote -->
-<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
-  <figure class="mx-auto max-w-[720px] text-center">
-    <blockquote class="text-balance text-[clamp(1.25rem,3vw,1.625rem)] font-semibold leading-snug tracking-[-0.01em]">
-      “{{ config().quote }}”
-    </blockquote>
-    <figcaption class="mt-4 text-[12.5px] font-semibold uppercase tracking-[0.08em] text-base-content/45">
-      {{ config().quoteWho }}
-    </figcaption>
-  </figure>
-</section>
-
-<!-- CTA band -->
-<section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
-  <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">Try it on sample data first.</h2>
-  <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Spin up the demo workspace and use every feature before you import a single contact. No card, nothing to lose.
-  </p>
-  <div class="mt-6">
-    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
-      Start free with sample data
-    </a>
-  </div>
-</section>
-
-<pc-site-footer />
-```
-
-## File: apps/website/src/app/ui/site-header.ts
-```typescript
-import { Component, computed, inject, input, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AuthHint } from './auth-hint';
-import { CurrencySwitcher } from './currency-switcher';
-import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
-import { SiteLogo } from './site-logo';
-
-type HeaderVariant = 'over-hero' | 'solid';
-
-/**
- * Site header. Two looks from one component:
- *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
- *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
- * Below `md` the nav collapses behind a hamburger toggle.
- */
-@Component({
-  selector: 'pc-site-header',
-  imports: [RouterLink, SiteLogo, CurrencySwitcher],
-  template: `
-    <header [class]="barClass()">
-      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
-          <pc-site-logo [onDark]="onDark()" />
-        </a>
-
-        <!-- Desktop nav -->
-        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
-          }
-          <pc-currency-switcher [onDark]="onDark()" />
-          @if (signedIn()) {
-            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-          } @else {
-            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
-            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-          }
-        </nav>
-
-        <!-- Mobile toggle -->
-        <button
-          type="button"
-          class="btn btn-square btn-ghost btn-sm lg:hidden"
-          [class.text-white]="onDark()"
-          [attr.aria-expanded]="open()"
-          aria-label="Toggle menu"
-          (click)="open.set(!open())"
-        >
-          @if (open()) {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-            </svg>
-          } @else {
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
-            </svg>
-          }
-        </button>
-      </div>
-
-      <!-- Mobile menu -->
-      @if (open()) {
-        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
-          @for (link of nav; track link.path) {
-            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
-              link.label
-            }}</a>
-          }
-          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-            <div class="pb-1">
-              <pc-currency-switcher />
-            </div>
-            @if (signedIn()) {
-              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
-            } @else {
-              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
-              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
-            }
-          </div>
-        </nav>
-      }
-    </header>
-  `,
-})
-export class SiteHeader {
-  public readonly variant = input<HeaderVariant>('solid');
-
-  private readonly auth = inject(AuthHint);
-
-  protected readonly nav = PRIMARY_NAV;
-  protected readonly loginUrl = LOGIN_URL;
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly dashboardUrl = DASHBOARD_URL;
-  protected readonly signedIn = this.auth.signedIn;
-  protected readonly open = signal(false);
-
-  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
-
-  protected readonly barClass = computed<string>(() =>
-    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
-  );
-
-  protected readonly linkClass = computed<string>(() =>
-    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
-  );
-
-  protected readonly loginBtnClass = computed<string>(() =>
-    this.onDark()
-      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
-      : 'btn btn-outline btn-sm rounded-field',
-  );
-}
-```
-
-## File: apps/website/src/app/ui/site-logo.ts
-```typescript
-import { Component, input } from '@angular/core';
-
-/**
- * The pplCRM logo. Renders the real brand mark (`logo.png`), the same asset the
- * CRM ships in its sidebar and auth screens — kept as a single source of truth
- * and copied into the website build via the frontend-assets glob in project.json.
- * The `onDark` input is retained for callers that place the logo on the navy hero.
- */
-@Component({
-  selector: 'pc-site-logo',
-  template: ` <img src="assets/logo.png" alt="pplCRM" class="h-7 w-auto select-none" /> `,
-})
-export class SiteLogo {
-  public readonly onDark = input<boolean>(false);
-}
-```
-
-## File: apps/website/src/app/app.routes.server.ts
-```typescript
-import { RenderMode, type ServerRoute } from '@angular/ssr';
-
-import { HELP_ARTICLES } from '@common';
-
-/**
- * Every marketing route is static, so prerender them all to plain HTML at build
- * time (SSG). No Node server runs in production — the output is a static bundle
- * for Cloudflare Pages.
- *
- * The `**` wildcard prerenders every fixed path but cannot enumerate the
- * parameterized `/docs/:id`, so that route is listed explicitly with a
- * `getPrerenderParams` that yields one entry per help article — every article
- * is emitted to static HTML at build.
- */
-export const serverRoutes: ServerRoute[] = [
-  {
-    path: 'docs/:id',
-    renderMode: RenderMode.Prerender,
-    getPrerenderParams: (): Promise<Record<string, string>[]> =>
-      Promise.resolve(HELP_ARTICLES.map((article) => ({ id: article.id }))),
-  },
-  { path: '**', renderMode: RenderMode.Prerender },
-];
-```
-
-## File: apps/website/src/app/app.routes.ts
-```typescript
-import type { Route } from '@angular/router';
-
-import { AUDIENCE_CONFIG } from './audience/audience-content';
-
-/**
- * Two real pages (Home, FAQ). The design links to several pages we haven't
- * built yet (the audience pages and Pricing) — those resolve to a shared
- * "coming soon" stub so the nav never 404s. Swap a stub for a real component
- * when the page exists.
- */
-export const appRoutes: Route[] = [
-  {
-    path: '',
-    pathMatch: 'full',
-    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
-    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
-  },
-  {
-    path: 'faq',
-    title: 'FAQ — pplCRM',
-    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
-  },
-  {
-    path: 'for/offices',
-    title: 'For constituency offices — pplCRM',
-    data: { config: AUDIENCE_CONFIG['offices'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'for/campaigns',
-    title: 'For campaigns — pplCRM',
-    data: { config: AUDIENCE_CONFIG['campaigns'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'for/nonprofits',
-    title: 'For non-profits — pplCRM',
-    data: { config: AUDIENCE_CONFIG['nonprofits'] },
-    loadComponent: () => import('./audience/audience-page').then((m) => m.AudiencePage),
-  },
-  {
-    path: 'pricing',
-    title: 'Pricing — pplCRM',
-    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
-  },
-  {
-    path: 'docs',
-    pathMatch: 'full',
-    title: 'Docs — pplCRM',
-    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
-  },
-  {
-    // Per-article title/meta/canonical are set inside the component from the
-    // resolved article (see DocsArticle).
-    path: 'docs/:id',
-    title: 'Docs — pplCRM',
-    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
-  },
-  {
-    // Generic stub for footer links whose real page doesn't exist yet; the
-    // heading comes from a ?pageTitle= query param (bound via component input).
-    path: 'soon',
-    title: 'Coming soon — pplCRM',
-    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
-  },
-  {
-    path: '**',
-    redirectTo: '',
-  },
-];
-```
-
-## File: apps/website/src/environments/environment.prod.ts
-```typescript
-export const environment = {
-  production: true,
-  appUrl: 'https://app.pplcrm.com',
-  siteUrl: 'https://pplcrm.com',
-};
-```
-
-## File: apps/website/src/environments/environment.ts
-```typescript
-export const environment = {
-  production: false,
-  /**
-   * Where the CRM app itself lives — the "Log in" and "Start free" buttons on
-   * the marketing site point here (`${appUrl}/signin`, `${appUrl}/signup`).
-   * The marketing site and the app are deployed to separate hosts, so this is
-   * an absolute URL. Change it in one place if the app ever moves.
-   */
-  appUrl: 'http://localhost:4200',
-  /**
-   * The marketing site's own public origin. Used to build absolute URLs for
-   * SEO (canonical tags, sitemap) and the AI-agent surface (llms.txt). Dev
-   * serves on port 4400 (see project.json).
-   */
-  siteUrl: 'http://localhost:4400',
-};
-```
-
-## File: apps/website/src/styles.css
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN. */
-@import '@fontsource-variable/inter';
-
-/* Theme tokens (the DaisyUI palette) are shared with the CRM and companion —
-   single source of truth in libs/uxcommon. The marketing design's colors ARE
-   this palette (primary #3498db, secondary #22a6b3, base-content #1f2937,
-   line #e7e5e4, base-200 #f8f8f8, base-50 #fbfbfc, warning/success chips). */
-@import '../../../libs/uxcommon/src/styles/themes.css';
-
-/* The one marketing-only color: the dark navy used for the hero, footer and
-   CTA bands. Registered as a Tailwind theme color so `bg-navy` / `text-navy`
-   (and opacity modifiers) are generated. */
-@theme {
-  --color-navy: #0e182b;
-}
-
-html,
-body {
-  min-height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-  /* The marketing site is light-only regardless of OS preference. */
-  color-scheme: light;
-}
-
-/* Centered content column shared by every section (design uses ~1080px). */
-.site-wrap {
-  width: 100%;
-  max-width: 1080px;
-  margin-inline: auto;
-}
-
-/* The small uppercase eyebrow label above section headings. */
-.eyebrow {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
-}
-
-/* Same eyebrow on the dark navy bands (white ink instead of base-content). */
-.eyebrow-dark {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgb(255 255 255 / 0.5);
-}
-```
-
-## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.html
-```html
-<pc-detail-layout
-  [title]="name() || 'Campaign'"
-  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!campaign()"
-  [showDelete]="false"
-  [showActions]="!isArchived()"
-  [btn1Text]="'Edit campaign'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editCampaign()"
->
-  @if (campaign()) {
-  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
-  @if (isArchived()) {
-  <div class="alert mb-6 border-warning/40 bg-warning/10">
-    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
-    <div>
-      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
-      <p class="text-xs text-base-content/70" i18n>
-        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
-      </p>
-    </div>
-    <button type="button" class="btn btn-outline btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
-  </div>
-  }
-
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left: campaign card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card iconName="square-3-stack-3d">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
-        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
-          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
-            · Archived</ng-container
-          >}
-        </p>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (description()) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
-          }
-
-          <pc-detail-row icon="file-calendar" iconClass="text-primary">
-            <span i18n>Starts:</span>
-            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="file-calendar" iconClass="text-primary">
-            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
-            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
-          </pc-detail-row>
-
-          @if (notes()) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
-            {{ notes() }}
-          </div>
-          }
-        </div>
-      </pc-profile-card>
-
-      <!-- Context actions -->
-      <div class="flex flex-col gap-2">
-        @if (isCurrentContext()) {
-        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
-          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
-          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
-        </div>
-        } @else {
-        <button type="button" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="workInThis()">
-          <pc-icon name="arrow-path" [size]="4"></pc-icon>
-          <span i18n>Work in this campaign</span>
-        </button>
-        } @if (!isOffice() && !isArchived()) {
-        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
-          <pc-icon name="archive-box" [size]="4"></pc-icon>
-          <span i18n>Archive campaign</span>
-        </button>
-        }
-      </div>
-
-      <!-- Carry-over (§15): seed this campaign from a prior one -->
-      @if (!isArchived() && carrySources().length) {
-      <div class="pc-panel p-4">
-        <h3 class="pc-eyebrow mb-1" i18n>Start from a previous campaign</h3>
-        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
-          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
-          behind an explicit confirmation. That judgment is yours.
-        </p>
-        <div class="flex flex-col gap-2">
-          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
-            <option value="" i18n>Choose a campaign…</option>
-            @for (source of carrySources(); track source.id) {
-            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
-            }
-          </select>
-          <label class="flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="carryCopySupport()"
-              (change)="carryCopySupport.set(!carryCopySupport())"
-            />
-            <span i18n>Copy support levels (as “carried over”)</span>
-          </label>
-          <label class="flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="carryCopySubscriptions()"
-              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
-            />
-            <span i18n>Copy email subscriptions (requires confirmation)</span>
-          </label>
-          <button
-            type="button"
-            class="btn btn-outline btn-secondary btn-sm mt-1"
-            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
-            (click)="runCarryOver()"
-          >
-            @if (carryRunning()) {
-            <span class="loading loading-spinner loading-xs"></span>
-            }
-            <span i18n>Carry over</span>
-          </button>
-        </div>
-      </div>
-      }
-    </div>
-
-    <!-- Right: activity log -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-requests.html
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header -->
-  <div class="flex flex-wrap items-center justify-end gap-3">
-    <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-    <h1 class="sr-only">Delivery requests</h1>
-    <pc-deliveries-nav class="mr-auto" />
-    <div class="flex items-center gap-2">
-      <span
-        class="tooltip-left"
-        [class.tooltip]="readyCount() === 0"
-        [attr.data-tip]="readyCount() === 0 ? 'Approve and locate some requests before planning a route' : null"
-      >
-        <button type="button" class="btn btn-primary btn-sm" [disabled]="readyCount() === 0" (click)="planRoutes()">
-          <pc-icon name="map-pin" [size]="4"></pc-icon>
-          Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-        </button>
-      </span>
-    </div>
-  </div>
-
-  <!-- Tabs with live counts (the standard pill tab bar) -->
-  <pc-tab-bar [tabs]="tabOptions()" [activeTab]="activeTab()" (activeTabChange)="setTab($event)" />
-
-  <!-- Bulk selection bar -->
-  @if (selectedCount() > 0) {
-  <div
-    class="animate-down flex flex-wrap items-center gap-3 rounded-xl border border-base-300 bg-base-200/60 px-4 py-2.5"
-  >
-    <span class="text-sm text-base-content/70">
-      <span class="font-semibold tabular-nums">{{ selectedCount() }}</span>
-      of {{ rows().length }} rows on this page selected
-    </span>
-    @if (newInView() > selectedCount()) {
-    <button type="button" class="btn btn-ghost btn-xs" (click)="selectAllNew()">
-      Select all {{ newInView() }} new
-    </button>
-    }
-    <div class="ml-auto flex items-center gap-2">
-      <button type="button" class="btn btn-primary btn-sm" (click)="approveSelected()">
-        Approve {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-error hover:bg-error/10" (click)="declineSelected()">
-        Decline {{ selectedCount() }} request{{ selectedCount() === 1 ? '' : 's' }}
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm" (click)="clearSelection()" aria-label="Clear selection">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  }
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="8">
-    <ng-container pcTableHead>
-      <th class="w-8"></th>
-      <th>Requested by</th>
-      <th>Address</th>
-      <th>Status</th>
-      <th>Readiness</th>
-      <th>Source</th>
-      <th>Route</th>
-      <th>Requested</th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="8" class="px-6">
-        @if (readyCount() > 0) {
-        <pc-empty-state icon="map-pin" [bordered]="false" title="No delivery requests in this view yet">
-          <button type="button" class="btn btn-primary btn-sm" (click)="planRoutes()">
-            Plan routes · <span class="tabular-nums">{{ readyCount() }}</span> ready
-          </button>
-        </pc-empty-state>
-        } @else {
-        <pc-empty-state
-          icon="map-pin"
-          [bordered]="false"
-          title="No delivery requests in this view yet"
-          hint="Requests appear here as neighbours ask for a sign. Once some are approved and located, you can plan routes."
-        />
-        }
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
-          [checked]="isSelected(row.id)"
-          (change)="toggle(row.id)"
-          [attr.aria-label]="'Select ' + (row.person_name || row.address)"
-        />
-      </td>
-      <td>
-        @if (row.person_id) {
-        <a
-          class="link link-hover text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/people', row.person_id]"
-        >
-          {{ row.person_name || 'Unnamed person' }}
-        </a>
-        } @else {
-        <span class="text-base-content/60">{{ row.person_name || '—' }}</span>
-        }
-      </td>
-      <td class="max-w-[240px] truncate">{{ row.address || '—' }}</td>
-      <td><pc-status-badge [type]="statusTone(row.status)">{{ row.status }}</pc-status-badge></td>
-      <td>
-        <div class="flex items-center gap-2">
-          <pc-geocode-chip [status]="row.geocoding_status"></pc-geocode-chip>
-          @if (row.geocoding_status === 'failed') {
-          <a class="text-xs text-primary underline underline-offset-2" [routerLink]="['/households', row.household_id]">
-            Edit household
-          </a>
-          }
-        </div>
-      </td>
-      <td class="text-base-content/70">{{ row.source === 'web_form' ? 'Web form' : 'Manual' }}</td>
-      <td>
-        @if (row.route_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/deliveries/routes', row.route_id]">
-          {{ row.route_name || 'Route' }}
-        </a>
-        } @else {
-        <span class="text-base-content/40">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-    </tr>
-    } }
-  </pc-table>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-routes.html
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Trail (Deliveries / Routes) renders in the navbar; keep an accessible heading only. -->
-  <div class="flex flex-wrap items-center justify-end gap-3">
-    <h1 class="sr-only">Routes</h1>
-    <pc-deliveries-nav class="mr-auto" />
-    <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">
-      <pc-icon name="map-pin" [size]="4"></pc-icon> Plan routes
-    </a>
-  </div>
-
-  <pc-table [loading]="loading.visible()" [columns]="8">
-    <ng-container pcTableHead>
-      <th>Name</th>
-      <th>Status</th>
-      <th>Stops</th>
-      <th>Est. time</th>
-      <th>Volunteer</th>
-      <th>Scheduled</th>
-      <th>Created</th>
-      <th></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="8" class="px-6">
-        <pc-empty-state
-          icon="map-pin"
-          [bordered]="false"
-          title="No routes yet"
-          hint="Approve requests, then plan routes."
-        >
-          <a class="btn btn-primary btn-sm" routerLink="/deliveries/plan">Plan routes</a>
-        </pc-empty-state>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr>
-      <td>
-        <a
-          class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-          [routerLink]="['/deliveries/routes', row.id]"
-        >
-          {{ row.name }}
-        </a>
-      </td>
-      <td><pc-status-badge [type]="tone(row.status)">{{ label(row.status) }}</pc-status-badge></td>
-      <td class="tabular-nums">{{ stopsLabel(row) }}</td>
-      <td class="tabular-nums text-base-content/70">{{ row.est_minutes }} min · {{ row.est_km }} km</td>
-      <td>
-        @if (row.volunteer_person_id) {
-        <a class="link link-hover text-primary" [routerLink]="['/people', row.volunteer_person_id]"
-          >{{ row.volunteer_name || 'Volunteer' }}</a
-        >
-        } @else {
-        <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="openAssign(row)">Assign</button>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.scheduled_for ? (row.scheduled_for | date: 'mediumDate') : '—' }}
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">
-        {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
-      </td>
-      <td class="text-right">
-        <div class="dropdown dropdown-end">
-          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
-            <pc-icon name="ellipsis-vertical" [size]="4" />
-          </button>
-          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
-            @if (row.volunteer_person_id) {
-            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
-            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
-            } @else {
-            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
-            } @if (canCancel(row.status)) {
-            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
-            } @if (canDelete(row.status)) {
-            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
-            }
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-  </pc-table>
-
-  <pc-assign-volunteer-dialog #assignDlg (selected)="onVolunteerSelected($event)"></pc-assign-volunteer-dialog>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Donations" [totalSentence]="headerSentence()">
-    <button id="record-donation-btn" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="openRecordDonation()">
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      Record donation
-    </button>
-    <button
-      routerLink="/donation-pages/add"
-      class="btn btn-primary btn-sm gap-2"
-      title="Create a public form that charges cards through Stripe and records every gift here"
-    >
-      <pc-icon name="document-currency-dollar" [size]="4"></pc-icon>
-      New donation form
-    </button>
-  </pc-grid-header>
-
-  <!-- Tabs (the standard pill tab bar; route-linked) -->
-  <pc-tab-bar class="mb-6" [tabs]="donationTabs" />
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid (Fig. 15: THIS MONTH, AVERAGE GIFT, monthly-donor, receipt-status) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">This Month</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ thisMonthTotal() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] mt-1">
-          @if (monthOverMonthDelta() !== null) {
-          <span [class.text-success]="monthOverMonthDelta()! >= 0" [class.text-error]="monthOverMonthDelta()! < 0">
-            {{ monthOverMonthDelta()! >= 0 ? '+' : '' }}{{ monthOverMonthDelta() }}% vs last month
-          </span>
-          } @else {
-          <span class="text-base-content/40">No prior month to compare</span>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Average Gift</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ averageGift() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">across {{ thisMonthCount() }} gifts</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Monthly Donors</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ monthlyDonorCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">active pledges</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm">
-      <div class="stat p-4">
-        <div class="stat-title pc-eyebrow">Receipts</div>
-        <div class="stat-value text-xl font-extrabold text-base-content sm:text-2xl mt-1 tabular-nums">
-          {{ receiptsSentThisMonth() }}/{{ thisMonthCount() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">sent automatically this month</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <pc-table [columns]="5">
-    <ng-container pcTableHead>
-      <th>Donor</th>
-      <th class="text-right">Amount</th>
-      <th>Method</th>
-      <th>Date</th>
-      <th>Receipt</th>
-    </ng-container>
-
-    @for (d of recentGifts(); track d.id) {
-    <tr class="hover:bg-base-200/30 transition-all duration-200" [class.animate-saved-flash]="highlightId() === d.id">
-      <td>
-        <div class="flex flex-col">
-          <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline">
-            {{ d.person_first_name }} {{ d.person_last_name }}
-          </a>
-          <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-        </div>
-      </td>
-      <td class="text-right font-bold text-base-content tabular-nums">{{ formatCurrency(d.amount) }}</td>
-      <td>
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1 capitalize">{{ methodLabel(d.method) }}</span>
-      </td>
-      <td class="text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-      <td>
-        @if (d.receipt_sent) {
-        <span class="badge badge-success badge-outline text-xs font-semibold px-2.5 py-1 gap-1">
-          <pc-icon name="check-circle" [size]="3"></pc-icon>
-          Receipted
-        </span>
-        } @else {
-        <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">No receipt</span>
-        }
-      </td>
-    </tr>
-    } @empty {
-    <tr>
-      <td colspan="5">
-        <pc-empty-state
-          icon="currency-dollar"
-          [bordered]="false"
-          title="No donations recorded yet"
-          hint="Configure your Stripe integration and set up a donation form, or record an offline gift directly."
-        >
-          <button class="btn btn-primary btn-sm gap-2" (click)="openRecordDonation()">
-            <pc-icon name="plus" [size]="4"></pc-icon>
-            Record donation
-          </button>
-        </pc-empty-state>
-      </td>
-    </tr>
-    } @if (totalGiftCount() > recentGifts().length) {
-    <div pcTableFooter class="px-4 py-3 text-xs text-base-content/50 border-t border-base-200">
-      Showing the latest {{ recentGifts().length }} of {{ totalGiftCount() }}
-    </div>
-    }
-  </pc-table>
-</div>
-
-<pc-record-donation-dialog (saved)="onDonationRecorded()"></pc-record-donation-dialog>
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
-```html
-<pc-modal-shell #dlg title="Record donation" icon="currency-dollar" [boxClass]="'max-w-md'" [dismissible]="false">
-  <form id="record-donation-form" class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
-    <!-- Donor -->
-    <div class="flex flex-col gap-1.5">
-      <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
-      @if (selectedDonor()) {
-      <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-        <div
-          class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-        >
-          {{ initials(selectedDonor()!) }}
-        </div>
-        <span class="text-sm font-medium flex-1 truncate"
-          >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
-        >
-        <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearDonor()" aria-label="Change donor">
-          <pc-icon name="x-mark" [size]="3"></pc-icon>
-        </button>
-      </div>
-      } @else {
-      <div class="relative">
-        <input
-          id="rd-donor"
-          type="text"
-          class="input input-bordered w-full pr-10 text-sm"
-          [class.input-error]="donorInvalid()"
-          placeholder="Search by name or email..."
-          [value]="donorSearch()"
-          (input)="onDonorSearchChange($any($event.target).value)"
-          (blur)="touchedDonor.set(true)"
-          autofocus
-        />
-        <pc-icon
-          name="magnifying-glass"
-          [size]="4"
-          class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-        ></pc-icon>
-      </div>
-      @if (donorResults().length > 0) {
-      <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
-        @for (p of donorResults(); track p.id) {
-        <button
-          type="button"
-          class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
-          (click)="selectDonor(p)"
-        >
-          <div
-            class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-          >
-            {{ initials(p) }}
-          </div>
-          <div class="flex flex-col min-w-0">
-            <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
-            @if (p.email) {
-            <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
-            }
-          </div>
-        </button>
-        }
-      </div>
-      } @if (isSearching() && donorSearch().length > 0) {
-      <span class="text-xs text-base-content/40 italic">Searching...</span>
-      } @if (donorInvalid()) {
-      <p class="text-xs text-error mt-1 flex items-center gap-1">
-        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-        Choose who gave this gift. Receipts need a name.
-      </p>
-      } }
-    </div>
-
-    <!-- Amount -->
-    <div class="flex flex-col gap-1.5">
-      <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
-      <div class="relative">
-        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-        <input
-          id="rd-amount"
-          type="number"
-          step="0.01"
-          inputmode="decimal"
-          class="input input-bordered w-full pl-7 text-sm tabular-nums"
-          [class.input-error]="amountInvalid()"
-          placeholder="50.00"
-          [formField]="amountForm"
-        />
-      </div>
-      @if (amountInvalid()) {
-      <p class="text-xs text-error mt-1 flex items-center gap-1">
-        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
-        Enter an amount above zero, like 50.
-      </p>
-      }
-    </div>
-
-    <!-- Method -->
-    <div class="flex flex-col gap-1.5">
-      <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
-      <select
-        id="rd-method"
-        class="select select-bordered w-full text-sm"
-        (change)="setMethod($any($event.target).value)"
-      >
-        @for (m of methods; track m) {
-        <option [value]="m" [selected]="m === method()">{{ methodLabels[m] }}</option>
-        }
-      </select>
-    </div>
-
-    <p class="text-xs text-base-content/50 flex items-start gap-1.5">
-      <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
-      A receipt goes out automatically. That's set in Workspace settings → Donations.
-    </p>
-  </form>
-
-  <div pc-modal-footer class="flex gap-2">
-    <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">Cancel</button>
-    <button type="submit" form="record-donation-form" class="btn btn-primary" [disabled]="submitting()">
-      @if (submitting()) {
-      <span class="loading loading-spinner loading-sm"></span>
-      } @else {
-      <pc-icon name="plus" [size]="4"></pc-icon>
-      } Record donation
-    </button>
-  </div>
-</pc-modal-shell>
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.ts
-```typescript
-import { Component, inject, output, signal, viewChild } from '@angular/core';
-import { FormField, form, min, required } from '@angular/forms/signals';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { DONATION_METHODS, DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
-import { DonationsService } from '../../../services/api/donations-service';
-import { PersonsService } from '../../persons/services/persons-service';
-
-type DonorSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
-
-/**
- * Fig. 15 "Record donation" dialog — records an offline gift (cash, check, bank transfer, or a
- * card payment taken outside Stripe checkout) against a donor. Distinct from the "Collect
- * donation" flow on the person page, which redirects to Stripe Checkout for a real card charge.
- */
-@Component({
-  selector: 'pc-record-donation-dialog',
-  imports: [Icon, FormField, ModalShell],
-  templateUrl: './record-donation-dialog.html',
-})
-export class RecordDonationDialog {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alertSvc = inject(AlertService);
-
-  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
-  private readonly _loading = createLoadingGate();
-
-  public readonly saved = output<void>();
-
-  protected readonly methods = DONATION_METHODS;
-  protected readonly methodLabels = DONATION_METHOD_LABELS;
-
-  protected readonly donorSearch = signal('');
-  protected readonly donorResults = signal<DonorSearchResult[]>([]);
-  protected readonly selectedDonor = signal<DonorSearchResult | null>(null);
-  protected readonly isSearching = signal(false);
-  protected readonly touchedDonor = signal(false);
-
-  protected readonly amount = signal<number | null>(null);
-  /** Signal form over the amount — required, and at least one cent (mirrors the input's min/step). */
-  protected readonly amountForm = form(this.amount, (a) => {
-    required(a);
-    min(a, 0.01);
-  });
-
-  protected readonly method = signal<DonationMethod>('card');
-  protected readonly submitting = signal(false);
-  protected readonly isLoading = this._loading.visible;
-
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly donorInvalid = () => this.touchedDonor() && !this.selectedDonor();
-  protected readonly amountInvalid = () => this.amountForm().invalid() && this.amountForm().touched();
-  public open(): void {
-    this.resetForm();
-    this.dlgRef().show();
-  }
-
-  public close(): void {
-    this.dlgRef().close();
-  }
-
-  protected initials(p: DonorSearchResult): string {
-    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
-  }
-
-  protected onDonorSearchChange(value: string): void {
-    this.donorSearch.set(value);
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    if (!value.trim()) {
-      this.donorResults.set([]);
-      return;
-    }
-    this.isSearching.set(true);
-    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
-  }
-
-  private async executeSearch(value: string): Promise<void> {
-    try {
-      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
-      const rows = (result as { rows?: unknown[] })?.rows ?? [];
-      this.donorResults.set(
-        rows.map((raw) => {
-          const p = raw as { id: string; first_name: string | null; last_name: string | null; email: string | null };
-          return { id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email };
-        }),
-      );
-    } catch {
-      this.donorResults.set([]);
-    } finally {
-      this.isSearching.set(false);
-    }
-  }
-
-  protected selectDonor(p: DonorSearchResult): void {
-    this.selectedDonor.set(p);
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-  }
-
-  protected clearDonor(): void {
-    this.selectedDonor.set(null);
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-  }
-
-  protected donorName(p: DonorSearchResult): string {
-    return `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'this donor';
-  }
-
-  protected async submit(): Promise<void> {
-    this.touchedDonor.set(true);
-    this.amountForm().markAsTouched();
-    const donor = this.selectedDonor();
-    const amt = this.amount();
-    if (!donor || amt === null || amt <= 0 || this.amountForm().invalid()) return;
-
-    this.submitting.set(true);
-    const end = this._loading.begin();
-    try {
-      await this.donationsSvc.recordDonation({
-        personId: donor.id,
-        amountCents: Math.round(amt * 100),
-        method: this.method(),
-      });
-      this.alertSvc.showSuccess(`Saved. $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
-      this.saved.emit();
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to record donation');
-    } finally {
-      this.submitting.set(false);
-      end();
-    }
-  }
-
-  /** Applies a method choice from the select, narrowing the raw DOM string to DonationMethod. */
-  protected setMethod(value: string): void {
-    const match = this.methods.find((m) => m === value);
-    if (match) this.method.set(match);
-  }
-
-  private resetForm(): void {
-    this.donorSearch.set('');
-    this.donorResults.set([]);
-    this.selectedDonor.set(null);
-    this.touchedDonor.set(false);
-    this.amount.set(null);
-    this.amountForm().reset();
-    this.method.set('card');
-    this.submitting.set(false);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-```html
-<header class="px-4 pb-2">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
-
-    <div class="flex items-center gap-1 text-xs text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
-
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
-        <div class="dropdown dropdown-end inline-block align-middle">
-          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
-            <pc-icon name="reply" [size]="4"></pc-icon>
-            <pc-icon name="chevron-down" [size]="3"></pc-icon>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-          >
-            <li>
-              <a
-                (click)="handleReply()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleReplyAll()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleForward()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        @if (!isFolderTrash()) {
-
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore"
-          aria-label="Restore"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
-
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            #personDropdownContent
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div class="min-w-0 flex-1">
-                  @if (editingName()) {
-                  <div class="flex items-center gap-1">
-                    <input
-                      #firstNameInput
-                      type="text"
-                      class="input input-bordered input-xs w-20"
-                      placeholder="First name"
-                      [value]="nameDraft().first_name"
-                      (input)="nameDraft.set({ first_name: $any($event.target).value, last_name: nameDraft().last_name })"
-                      (keydown.enter)="saveName(person.id)"
-                      (keydown.escape)="cancelEditName()"
-                    />
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-20"
-                      placeholder="Last name"
-                      [value]="nameDraft().last_name"
-                      (input)="nameDraft.set({ first_name: nameDraft().first_name, last_name: $any($event.target).value })"
-                      (keydown.enter)="saveName(person.id)"
-                      (keydown.escape)="cancelEditName()"
-                    />
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-xs btn-circle"
-                      aria-label="Save name"
-                      (click)="saveName(person.id)"
-                    >
-                      <pc-icon name="check-circle" [size]="4" class="text-success"></pc-icon>
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-xs btn-circle"
-                      aria-label="Cancel"
-                      (click)="cancelEditName()"
-                    >
-                      <pc-icon name="x-mark" [size]="4" class="text-base-content/50"></pc-icon>
-                    </button>
-                  </div>
-                  } @else {
-                  <div class="group flex items-center gap-1.5">
-                    <h3 class="font-bold text-sm">
-                      {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name ||
-                      '')).trim() : 'Add a name' }}
-                    </h3>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-xs btn-circle opacity-0 transition-opacity group-hover:opacity-100"
-                      aria-label="Edit name"
-                      (click)="startEditName(person)"
-                    >
-                      <pc-icon name="pencil-square" [size]="3" class="text-base-content/50"></pc-icon>
-                    </button>
-                  </div>
-                  } @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="pc-eyebrow block mb-1">Tags:</span>
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs text-base-content/50 block mt-1">No tags yet. Add one above.</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="pc-eyebrow block mb-1">Issues:</span>
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs text-base-content/50 block mt-1">No issues yet. Add one above.</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
-
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
-
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) { @if (recipient.name) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name}}</a>
-            </li>
-            }
-            <li>
-              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) { @if (recipient.name) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name}}</a>
-            </li>
-            }
-            <li>
-              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) { @if (recipient.name) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name}}</a>
-            </li>
-            }
-            <li>
-              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
-            </li>
-
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
-
-            <!-- Email Details Section -->
-            <li class="menu-title text-xs border-t border-base-300">Email Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
-
-            <!-- Technical Details Section -->
-            <li class="menu-title text-xs border-t border-base-300">Technical Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
-
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/event-form.html
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Annual Fundraising Dinner"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. annual-fundraising-dinner"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the event, agenda, and what attendees can expect..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., 123 Main St, City Hall Ballroom"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public RSVP form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact
-          </h4>
-          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Ticket Types (only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Ticket Types"
-          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
-          icon="tag"
-        >
-          <button
-            pc-card-actions
-            type="button"
-            class="btn btn-xs btn-primary gap-1"
-            (click)="startAddTicket()"
-            [disabled]="addingTicket()"
-          >
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
-          </button>
-
-          @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">
-            No ticket types defined. This event uses a simple free RSVP.
-          </p>
-          } @else {
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table pc-table w-full">
-              <thead>
-                <tr class="bg-base-200 text-base-content/70">
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Capacity</th>
-                  <th class="w-16 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
-                  <td>
-                    <div class="font-semibold">{{ ticket.name }}</div>
-                    @if (ticket.description) {
-                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
-                    }
-                  </td>
-                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
-                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
-                  <td>
-                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
-                      <pc-icon name="trash" [size]="4"></pc-icon>
-                    </button>
-                  </td>
-                </tr>
-                } @if (addingTicket()) {
-                <tr class="bg-base-200/30">
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-full"
-                      placeholder="Ticket name *"
-                      [value]="newTicket().name"
-                      (input)="setNewTicketName($event)"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="0"
-                      min="0"
-                      step="1"
-                      title="Price in cents (e.g. 2500 = $25.00)"
-                      [value]="newTicket().price_cents"
-                      (input)="setNewTicketPrice($event)"
-                    />
-                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="∞"
-                      min="1"
-                      [value]="newTicket().capacity ?? ''"
-                      (input)="setNewTicketCapacity($event)"
-                    />
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
-                        <pc-icon name="check-circle" [size]="4"></pc-icon>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
-                        <pc-icon name="x-mark" [size]="4"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          }
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right col: Scheduling, toggles -->
-      <div class="space-y-6">
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Total Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-        </pc-card>
-
-        <pc-card title="Publishing & Notifications">
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  When enabled, this event page is visible to the public.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email when someone RSVPs for this event.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_registration_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to registered attendees 24 hours before the event.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-        </pc-card>
-
-        @if (!isNew()) {
-        <pc-entity-overview
-          title="Event Overview"
-          [createdAt]="detail()?.created_at"
-          createdBy="Representative"
-        ></pc-entity-overview>
-        }
-      </div>
-
-      <!-- Right col: Fields & Public Link -->
-
-      @if (!isNew() && publicUrl()) {
-      <pc-public-link-panel
-        [url]="publicUrl()"
-        label="Public RSVP Link"
-        subtitle="Share this link so people can RSVP for the event."
-      ></pc-public-link-panel>
-      }
-    </form>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/public-event.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-
-import { apiBase, tenantQuery } from '../../../shared/public-pages';
-
-/**
- * Which public surface this page instance serves. Event RSVPs (/e/:slug, events table) and
- * volunteer signups (/v/:slug, volunteer_events table) share one page — same layout, same states —
- * differing only in API paths, copy, and the tickets section. The route provides the kind via
- * `data.kind`.
- */
-type PublicEventKind = 'event' | 'volunteer';
-
-interface PublicEventInfo {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: string;
-  end_time: string;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  is_private?: boolean;
-  fields: string[];
-}
-
-interface PublicTicket {
-  name: string;
-  description: string | null;
-  price_cents: number | null;
-  capacity: number | null;
-}
-
-interface FormFieldDef {
-  key: string;
-  label: string;
-  required: boolean;
-  kind: 'text' | 'email' | 'area' | 'country';
-}
-
-type PageState = 'loading' | 'open' | 'notfound' | 'thanks';
-
-const FIELD_LABELS: Record<string, string> = {
-  first_name: 'First name',
-  last_name: 'Last name',
-  mobile: 'Mobile / phone',
-  street1: 'Street address',
-  city: 'City',
-  state: 'State / province',
-  zip: 'Zip / postal code',
-  country: 'Country',
-  notes: 'Notes / message',
-};
-
-const COUNTRY_OPTIONS = [
-  { value: 'CA', label: 'Canada' },
-  { value: 'US', label: 'United States' },
-  { value: 'GB', label: 'United Kingdom' },
-  { value: 'AU', label: 'Australia' },
-] as const;
-
-/**
- * Unauthenticated public event page served at /e/:slug (event RSVP) and /v/:slug (volunteer
- * signup), outside the app shell — the event/volunteer sibling of the /f/:slug public form page.
- * The tenant comes from the page's own subdomain and is passed to the API as `?t=`.
- */
-@Component({
-  selector: 'pc-public-event',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, RouterLink],
-  template: `
-    <div class="flex min-h-screen items-start justify-center bg-base-200 px-4 py-10">
-      @switch (state()) {
-        @case ('loading') {
-          <span class="loading loading-spinner loading-lg mt-20 text-primary"></span>
-        }
-        @case ('open') {
-          <div class="w-full max-w-[760px]">
-            @if (kind === 'volunteer' && !event()!.is_private) {
-              <a class="link-hover link mb-4 inline-block text-sm text-primary" routerLink="/volunteer">
-                ← All volunteer events
-              </a>
-            }
-
-            <div class="pc-panel p-8">
-              <div class="mb-4 flex items-center gap-2">
-                <div
-                  class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
-                >
-                  {{ orgInitials() }}
-                </div>
-                <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
-              </div>
-
-              <p class="pc-eyebrow mb-1">
-                {{ kind === 'volunteer' ? 'Volunteer event' : 'Event' }}
-              </p>
-              <h1 class="mb-1 text-xl font-semibold text-base-content">{{ event()!.name }}</h1>
-              @if (event()!.description) {
-                <p class="mb-4 text-sm leading-relaxed text-base-content/60">{{ event()!.description }}</p>
-              }
-
-              <div class="mb-6 flex flex-col gap-2 text-sm text-base-content">
-                <div class="flex items-baseline gap-2">
-                  <span class="pc-eyebrow w-24 shrink-0">When</span>
-                  <span>
-                    {{ event()!.start_time | date: 'EEEE, MMMM d, y' }} ·
-                    {{ event()!.start_time | date: 'shortTime' }} – {{ event()!.end_time | date: 'shortTime' }}
-                  </span>
-                </div>
-                @if (event()!.location_address) {
-                  <div class="flex items-baseline gap-2">
-                    <span class="pc-eyebrow w-24 shrink-0">Where</span>
-                    <span>{{ event()!.location_address }}</span>
-                  </div>
-                }
-                @if (event()!.capacity !== null) {
-                  <div class="flex items-baseline gap-2">
-                    <span class="pc-eyebrow w-24 shrink-0">Spots</span>
-                    <span class="tabular-nums">{{ remaining() }} of {{ event()!.capacity }} left</span>
-                  </div>
-                }
-                @if (event()!.contact_email || event()!.contact_phone) {
-                  <div class="flex items-baseline gap-2">
-                    <span class="pc-eyebrow w-24 shrink-0">Questions</span>
-                    <span>
-                      @if (event()!.contact_email) {
-                        <a class="link-hover link text-primary" [href]="'mailto:' + event()!.contact_email">{{
-                          event()!.contact_email
-                        }}</a>
-                      }
-                      @if (event()!.contact_email && event()!.contact_phone) {
-                        ·
-                      }
-                      {{ event()!.contact_phone }}
-                    </span>
-                  </div>
-                }
-              </div>
-
-              @if (tickets().length > 0) {
-                <div class="mb-6">
-                  <h2 class="mb-2 text-sm font-semibold text-base-content">Tickets</h2>
-                  <div class="flex flex-col gap-2">
-                    @for (ticket of tickets(); track ticket.name) {
-                      <div class="flex items-center justify-between pc-panel px-4 py-3">
-                        <div>
-                          <p class="text-sm font-medium text-base-content">{{ ticket.name }}</p>
-                          @if (ticket.description) {
-                            <p class="text-xs text-base-content/60">{{ ticket.description }}</p>
-                          }
-                        </div>
-                        <span class="text-sm font-semibold tabular-nums text-primary">
-                          {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }}
-                        </span>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
-
-              <div class="divider my-2"></div>
-
-              <h2 class="mb-3 text-sm font-semibold text-base-content">
-                {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'RSVP for this event' }}
-              </h2>
-
-              @if (isPast()) {
-                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
-                  This event has passed and registration is closed.
-                </div>
-              } @else if (isFull()) {
-                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
-                  This event is at full capacity. No spots are left.
-                </div>
-              } @else {
-                <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
-                  @for (field of formFields(); track field.key) {
-                    <div class="flex flex-col gap-2" [class.md:max-w-[380px]]="field.kind !== 'area'">
-                      <label class="text-sm font-medium text-base-content" [for]="field.key">
-                        {{ field.label }}
-                        @if (field.required) {
-                          <span class="text-base-content/50"> *</span>
-                        }
-                      </label>
-                      @switch (field.kind) {
-                        @case ('area') {
-                          <textarea
-                            [id]="field.key"
-                            class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
-                            [class.textarea-error]="!!errors()[field.key]"
-                            (input)="setValue(field.key, $any($event.target).value)"
-                          ></textarea>
-                        }
-                        @case ('country') {
-                          <select
-                            [id]="field.key"
-                            class="select select-bordered w-full text-sm"
-                            [class.select-error]="!!errors()[field.key]"
-                            (change)="setValue(field.key, $any($event.target).value)"
-                          >
-                            <option value="">Choose…</option>
-                            @for (opt of countryOptions; track opt.value) {
-                              <option [value]="opt.value">{{ opt.label }}</option>
-                            }
-                          </select>
-                        }
-                        @default {
-                          <input
-                            [id]="field.key"
-                            class="input input-bordered w-full text-sm"
-                            [class.input-error]="!!errors()[field.key]"
-                            [type]="field.kind === 'email' ? 'email' : 'text'"
-                            (input)="setValue(field.key, $any($event.target).value)"
-                          />
-                        }
-                      }
-                      @if (errors()[field.key]) {
-                        <span class="text-xs text-error">{{ errors()[field.key] }}</span>
-                      }
-                    </div>
-                  }
-
-                  @if (submitError()) {
-                    <p class="text-sm text-error">{{ submitError() }}</p>
-                  }
-
-                  <button class="btn btn-primary mt-1 w-full md:max-w-[380px]" [disabled]="submitting()" type="submit">
-                    @if (submitting()) {
-                      <span class="loading loading-spinner loading-sm"></span>
-                    }
-                    {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'Confirm RSVP' }}
-                  </button>
-                </form>
-              }
-
-              <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
-            </div>
-          </div>
-        }
-        @case ('thanks') {
-          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
-            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
-              ✓
-            </div>
-            <h1 class="mb-2 text-xl font-semibold text-base-content">
-              {{ kind === 'volunteer' ? 'You’re signed up!' : 'You’re registered!' }}
-            </h1>
-            <p class="text-sm text-base-content/60">A confirmation email with the event details is on its way.</p>
-          </div>
-        }
-        @default {
-          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
-            <h1 class="mb-2 text-xl font-semibold text-base-content">Event not found</h1>
-            <p class="text-sm text-base-content/60">This event doesn’t exist or hasn’t been published yet.</p>
-          </div>
-        }
-      }
-    </div>
-  `,
-})
-export class PublicEventComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-
-  protected readonly kind: PublicEventKind = this.route.snapshot.data['kind'] === 'volunteer' ? 'volunteer' : 'event';
-  protected readonly countryOptions = COUNTRY_OPTIONS;
-
-  protected readonly state = signal<PageState>('loading');
-  protected readonly orgName = signal('Our organization');
-  protected readonly event = signal<PublicEventInfo | null>(null);
-  protected readonly tickets = signal<PublicTicket[]>([]);
-  protected readonly isPast = signal(false);
-  protected readonly isFull = signal(false);
-  protected readonly remaining = signal<number | null>(null);
-  protected readonly errors = signal<Record<string, string>>({});
-  protected readonly submitError = signal<string | null>(null);
-  protected readonly submitting = signal(false);
-
-  private readonly values = new Map<string, string>();
-
-  protected readonly orgInitials = computed(() => {
-    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
-    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
-  });
-
-  /**
-   * The signup form's fields, from the event's legacy string[] config ("mobile:required").
-   * Email is always present and required — it is the identity key server-side.
-   */
-  protected readonly formFields = computed<FormFieldDef[]>(() => {
-    const raw = this.event()?.fields ?? [];
-    const enabled = new Map<string, boolean>();
-    for (const entry of raw) {
-      if (typeof entry !== 'string') continue;
-      const required = entry.endsWith(':required');
-      const key = required ? entry.slice(0, -':required'.length) : entry;
-      if (key && key !== 'email') enabled.set(key, required);
-    }
-
-    const fields: FormFieldDef[] = [];
-    const push = (key: string): void => {
-      if (!enabled.has(key)) return;
-      const kind: FormFieldDef['kind'] = key === 'notes' ? 'area' : key === 'country' ? 'country' : 'text';
-      fields.push({ key, label: FIELD_LABELS[key] ?? key, required: enabled.get(key) === true, kind });
-    };
-
-    push('first_name');
-    push('last_name');
-    fields.push({ key: 'email', label: 'Email address', required: true, kind: 'email' });
-    for (const key of ['mobile', 'street1', 'city', 'state', 'zip', 'country', 'notes']) {
-      push(key);
-    }
-    return fields;
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected setValue(key: string, value: string): void {
-    this.values.set(key, value);
-    if (this.errors()[key]) {
-      this.errors.update((e) => {
-        const next = { ...e };
-        delete next[key];
-        return next;
-      });
-    }
-  }
-
-  protected async submit(): Promise<void> {
-    if (this.submitting()) return;
-
-    const errors: Record<string, string> = {};
-    for (const field of this.formFields()) {
-      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
-        errors[field.key] = `${field.label} is required.`;
-      }
-    }
-    if (Object.keys(errors).length > 0) {
-      this.errors.set(errors);
-      return;
-    }
-
-    this.submitting.set(true);
-    this.submitError.set(null);
-    try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of this.values.entries()) payload[key] = value;
-
-      const res = await fetch(this.submitUrl(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
-        return;
-      }
-      this.state.set('thanks');
-    } catch {
-      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private async load(): Promise<void> {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (!slug) {
-      this.state.set('notfound');
-      return;
-    }
-    try {
-      const res = await fetch(this.configUrl(slug));
-      if (!res.ok) {
-        this.state.set('notfound');
-        return;
-      }
-      const data = await res.json();
-      if (data?.orgName) this.orgName.set(String(data.orgName));
-      this.event.set(data.event as PublicEventInfo);
-      this.tickets.set(Array.isArray(data.tickets) ? (data.tickets as PublicTicket[]) : []);
-      this.isPast.set(!!data.isPast);
-      this.isFull.set(!!data.isFull);
-      this.remaining.set(typeof data.remaining === 'number' ? data.remaining : null);
-      this.state.set('open');
-    } catch {
-      this.state.set('notfound');
-    }
-  }
-
-  private configUrl(slug: string): string {
-    const path = this.kind === 'volunteer' ? 'api/events/v' : 'api/event-pages/e';
-    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
-  }
-
-  private submitUrl(): string {
-    const slug = this.route.snapshot.paramMap.get('slug') ?? '';
-    const path = this.kind === 'volunteer' ? 'api/events/signup' : 'api/event-pages/rsvp';
-    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-home.html
-```html
-<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-  <!-- Hero: title + search -->
-  <div class="mx-auto max-w-2xl text-center">
-    <p class="pc-eyebrow text-primary">Help center</p>
-    <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
-    <p class="mt-2 text-sm text-base-content/60">
-      Guides for every corner of pplCRM. Search, or browse by topic below.
-    </p>
-
-    <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
-      <pc-icon name="magnifying-glass" [size]="5" class="opacity-50"></pc-icon>
-      <input
-        #searchBox
-        type="search"
-        class="grow text-[15px]"
-        placeholder="Search help. Try “import”, “tags”, “newsletter”"
-        aria-label="Search help articles"
-        [value]="query()"
-        (input)="onSearchInput($event)"
-      />
-      @if (query()) {
-      <button type="button" class="btn btn-circle btn-ghost btn-xs" aria-label="Clear search" (click)="clearSearch()">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-      }
-    </label>
-
-    @if (!searching()) {
-    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
-      <span class="text-base-content/50">Popular:</span>
-      @for (article of popular; track article.id) {
-      <a
-        [routerLink]="['/help', article.id]"
-        class="badge badge-outline border-base-300 text-base-content/70 transition-colors hover:border-primary hover:text-primary"
-      >
-        {{ article.title }}
-      </a>
-      }
-    </div>
-    }
-  </div>
-
-  <!-- Search results -->
-  @if (searching()) { @if (results().length > 0) {
-  <div class="mx-auto mt-8 max-w-2xl">
-    <p class="text-sm text-base-content/60">
-      {{ results().length }} {{ results().length === 1 ? 'article matches' : 'articles match' }} “{{ query().trim() }}”
-    </p>
-    <div class="mt-3 space-y-3">
-      @for (result of results(); track result.article.id) {
-      <a
-        [routerLink]="['/help', result.article.id]"
-        class="card block border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-      >
-        <div class="card-body gap-1.5 p-4">
-          <p class="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-base-content/50">
-            <span>{{ categoryLabel(result.article) }}</span>
-            <span aria-hidden="true">·</span>
-            <span>{{ minutes(result.article) }} min read</span>
-          </p>
-          <h3 class="text-[15px] font-semibold leading-6 text-base-content">
-            @for (seg of result.title; track $index) { @if (seg.hit) {
-            <mark class="rounded bg-primary/15 px-0.5 text-primary">{{ seg.text }}</mark>
-            } @else {
-            <span>{{ seg.text }}</span>
-            } }
-          </h3>
-          <p class="text-sm leading-6 text-base-content/70">
-            @for (seg of result.snippet; track $index) { @if (seg.hit) {
-            <mark class="rounded bg-primary/15 px-0.5 font-medium text-primary">{{ seg.text }}</mark>
-            } @else {
-            <span>{{ seg.text }}</span>
-            } }
-          </p>
-        </div>
-      </a>
-      }
-    </div>
-  </div>
-  } @else {
-  <!-- Guided empty state -->
-  <div class="mx-auto mt-12 flex max-w-md flex-col items-center gap-3 text-center">
-    <pc-icon name="magnifying-glass" [size]="10" class="text-base-content/20"></pc-icon>
-    <p class="text-sm font-medium text-base-content/80">No articles match “{{ query().trim() }}”</p>
-    <p class="text-xs leading-5 text-base-content/50">
-      Try fewer or different words. Search covers titles, summaries, keywords, and the full article text.
-    </p>
-    <button type="button" class="btn btn-primary btn-sm mt-1" (click)="clearSearch()">Clear search</button>
-  </div>
-  } } @else {
-  <!-- Browse by category -->
-  <div class="mt-10 grid gap-4 sm:grid-cols-2">
-    @for (section of sections; track section.category.id) {
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-3 p-5">
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <pc-icon [name]="section.icon" [size]="5"></pc-icon>
-          </div>
-          <div class="min-w-0">
-            <h2 class="truncate text-base font-semibold text-base-content">{{ section.category.label }}</h2>
-            <p class="text-xs tabular-nums text-base-content/50">
-              {{ section.articles.length }} {{ section.articles.length === 1 ? 'article' : 'articles' }}
-            </p>
-          </div>
-        </div>
-        <p class="text-sm leading-6 text-base-content/60">{{ section.category.blurb }}</p>
-        <ul class="mt-1 space-y-0.5">
-          @for (article of section.articles; track article.id) {
-          <li>
-            <a
-              [routerLink]="['/help', article.id]"
-              class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
-            >
-              <span class="truncate">{{ article.title }}</span>
-              <pc-icon
-                name="chevron-right"
-                [size]="4"
-                class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
-              ></pc-icon>
-            </a>
-          </li>
-          }
-        </ul>
-      </div>
-    </section>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
-```typescript
-import {
-  CUSTOM_ELEMENTS_SCHEMA,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { FormField, email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
-import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
-import { NewslettersService } from '../services/newsletters-service';
-
-/** Sentence-case, heroicon-backed metadata for the four starting templates. */
-const TEMPLATE_OPTIONS: ReadonlyArray<{
-  id: TemplatePreset;
-  name: string;
-  description: string;
-  icon: PcIconNameType;
-}> = [
-  {
-    id: 'welcome',
-    name: 'Welcome email',
-    description: 'Warm greeting, hero image, social links & footer.',
-    icon: 'envelope',
-  },
-  {
-    id: 'product',
-    name: 'Announcement',
-    description: 'Hero, list of updates, CTA button & footer.',
-    icon: 'megaphone',
-  },
-  {
-    id: 'newsletter',
-    name: 'Weekly digest',
-    description: 'Heading divider, digest content & footer.',
-    icon: 'queue-list',
-  },
-  {
-    id: 'empty',
-    name: 'Empty canvas',
-    description: 'Start from scratch with a single heading block.',
-    icon: 'document',
-  },
-];
-
-const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
-const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
-const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
-const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
-const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
-const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
-const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
-const COMMS_SETTINGS_LINK = '/settings/communications';
-const VERIFY_SENDER_LINK = '/settings/communications';
-
-const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
-  subject: '',
-  previewText: '',
-  fromName: '',
-  fromAddress: '',
-  htmlContent: '',
-  plainTextContent: '',
-  includeLists: [],
-  includeTags: [],
-  excludeLists: [],
-  excludeTags: [],
-  timingMode: 'now',
-  scheduledDate: '',
-  scheduledTime: '',
-};
-
-@Component({
-  selector: 'pc-newsletter-add',
-  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
-  templateUrl: './newsletter-add.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class NewsletterAddComponent implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authSvc = inject(AuthService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  private readonly listsSvc = inject(ListsService);
-  private readonly newslettersSvc = inject(NewslettersService);
-  private readonly numberFormatter = new Intl.NumberFormat();
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly tagsSvc = inject(TagsService);
-  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-
-  private readonly user = this.authSvc.getUserSignal();
-  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
-  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
-  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
-
-  /** Raw wizard payload — the single source of truth the signal-form wraps. */
-  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
-
-  protected readonly regularForm = form(this.regularPayload, (p) => {
-    required(p.subject);
-    required(p.fromName);
-    required(p.fromAddress);
-    email(p.fromAddress);
-  });
-
-  private readonly requiresScheduleDate = computed(() => {
-    const raw = this.regularPayload();
-    if (raw.timingMode !== 'schedule') return false;
-    return !raw.scheduledDate || !raw.scheduledTime;
-  });
-
-  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
-  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
-  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
-  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
-  protected readonly currentStep = signal<StepIndex>(1);
-  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
-  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
-  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
-  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
-  protected readonly loadingLists = signal<boolean>(false);
-  protected readonly loadingTags = signal<boolean>(false);
-  protected readonly mode = signal<CreationMode>('options');
-  protected readonly saving = signal(false);
-  protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
-  protected readonly showDatePicker = signal(false);
-  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
-  protected readonly dirty = signal(false);
-  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
-  protected readonly showFieldErrors = signal(false);
-
-  protected readonly steps = STEP_LABELS;
-  protected readonly templateOptions = TEMPLATE_OPTIONS;
-  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
-  protected readonly subjectCoach = SUBJECT_COACH;
-  protected readonly fromNameCoach = FROM_NAME_COACH;
-  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
-  protected readonly scheduleCoach = SCHEDULE_COACH;
-  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
-  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
-  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
-  protected readonly mergeFieldExample = '{{first_name}}';
-
-  // --- Verified senders / workspace prefill ---------------------------------
-
-  protected readonly verifiedSenders = signal<string[]>([]);
-  protected readonly commsDefaultsApplied = signal(false);
-
-  // --- Audience math (every line is real; the total is the single source) ---
-
-  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
-  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
-  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
-  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
-  protected readonly estimatedAudienceCount = computed(() => {
-    const estimate =
-      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
-    return estimate > 0 ? Math.round(estimate) : 0;
-  });
-  protected readonly hasAudienceSelection = computed(
-    () =>
-      this.includeListIds().length > 0 ||
-      this.includeTagsList().length > 0 ||
-      this.excludeListIds().length > 0 ||
-      this.excludeTagsList().length > 0,
-  );
-  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
-  protected readonly skipBounced = computed(() =>
-    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
-  );
-
-  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
-
-  protected readonly includeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
-  );
-  protected readonly excludeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
-  );
-  protected readonly includeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
-  );
-  protected readonly excludeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
-  );
-
-  public ngOnInit(): void {
-    void this.loadLists();
-    void this.loadTags();
-    void this.loadCommsDefaults();
-  }
-
-  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
-  public canDeactivate(): Promise<boolean> {
-    if (!this.dirty()) return Promise.resolve(true);
-    return this.confirmDlg.confirm({
-      title: 'Leave without saving?',
-      message:
-        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
-      variant: 'warning',
-      confirmText: 'Discard draft',
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
-  }
-
-  // --- Step navigation ------------------------------------------------------
-
-  protected canReachStep(step: number): boolean {
-    return step <= this.currentStep();
-  }
-
-  protected goToStep(targetStep: number): void {
-    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
-    if (this.canReachStep(targetStep)) {
-      this.currentStep.set(targetStep as StepIndex);
-    }
-  }
-
-  protected handleBack(): void {
-    const step = this.currentStep();
-    if (step === 1) {
-      this.switchToOptions();
-    } else {
-      this.currentStep.set((step - 1) as StepIndex);
-    }
-  }
-
-  protected handleNext(): void {
-    const step = this.currentStep();
-
-    if (step === 3 && !this.validateDetails()) return;
-
-    if (step >= STEP_LABELS.length) return;
-    this.showFieldErrors.set(false);
-    this.currentStep.set((step + 1) as StepIndex);
-  }
-
-  // --- Mode / template ------------------------------------------------------
-
-  protected close(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected selectAutomated(): void {
-    this.mode.set('automated');
-  }
-
-  protected selectRegular(): void {
-    this.mode.set('regular');
-    this.currentStep.set(1);
-    this.applyTemplate('welcome');
-    // Auto-selecting the default template is not a user edit.
-    this.dirty.set(false);
-  }
-
-  protected switchToOptions(): void {
-    this.mode.set('options');
-    this.currentStep.set(1);
-  }
-
-  protected selectTemplate(preset: TemplatePreset): void {
-    this.applyTemplate(preset);
-    this.markDirty();
-  }
-
-  protected selectedTemplateName(): string {
-    return TEMPLATE_OPTIONS.find((t) => t.id === this.selectedTemplate())?.name ?? 'Template';
-  }
-
-  // --- Audience: add / remove -----------------------------------------------
-
-  protected addIncludeList(listId: string): void {
-    if (this.includeListIds().includes(listId)) return;
-    // A list can't be both included and excluded.
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
-    this.setIncludeLists([...this.includeListIds(), listId]);
-  }
-
-  protected removeIncludeList(listId: string): void {
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
-  }
-
-  protected addExcludeList(listId: string): void {
-    if (this.excludeListIds().includes(listId)) return;
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
-    this.setExcludeLists([...this.excludeListIds(), listId]);
-  }
-
-  protected removeExcludeList(listId: string): void {
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
-  }
-
-  protected addIncludeTag(name: string): void {
-    if (this.includeTagsList().includes(name)) return;
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-    this.setIncludeTags([...this.includeTagsList(), name]);
-  }
-
-  protected removeIncludeTag(name: string): void {
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-  }
-
-  protected addExcludeTag(name: string): void {
-    if (this.excludeTagsList().includes(name)) return;
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-    this.setExcludeTags([...this.excludeTagsList(), name]);
-  }
-
-  protected removeExcludeTag(name: string): void {
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-  }
-
-  protected listName(id: string): string {
-    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
-  }
-
-  protected listSize(id: string): number {
-    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
-  }
-
-  protected tagUsage(name: string): number {
-    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
-  }
-
-  protected formatCount(value: number): string {
-    return this.numberFormatter.format(value);
-  }
-
-  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
-  protected peopleLabel(value: number): string {
-    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
-  }
-
-  // --- Schedule -------------------------------------------------------------
-
-  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
-    const state = this.regularForm[field]();
-    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
-  }
-
-  protected onScheduledDateChange(event: unknown): void {
-    const value = this.normalizeCalendarValue(event) ?? '';
-    const state = this.regularForm.scheduledDate();
-    state.value.set(value);
-    state.markAsDirty();
-    state.markAsTouched();
-    this.markDirty();
-    this.showDatePicker.set(false);
-  }
-
-  protected scheduledDateDisplay(): string {
-    const value = this.scheduledDateValue();
-    if (!value) return 'Select a date';
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
-  }
-
-  protected scheduledDateValue(): string {
-    return this.regularPayload().scheduledDate;
-  }
-
-  protected timingNeedsDate(): boolean {
-    return this.requiresScheduleDate();
-  }
-
-  protected toggleDatePicker(): void {
-    this.showDatePicker.update((open) => !open);
-  }
-
-  protected onFieldInput(): void {
-    this.markDirty();
-  }
-
-  protected setTimingMode(mode: TimingMode): void {
-    this.regularForm.timingMode().value.set(mode);
-    this.markDirty();
-  }
-
-  protected onTimingChange(): void {
-    this.markDirty();
-  }
-
-  protected onEditorHtmlChange(html: string): void {
-    this.regularForm.htmlContent().value.set(html);
-    this.markDirty();
-  }
-
-  protected onEditorTextChange(text: string): void {
-    this.regularForm.plainTextContent().value.set(text);
-  }
-
-  protected goToVerifySender(): void {
-    void this.router.navigateByUrl(this.verifySenderLink);
-  }
-
-  // --- Test send ------------------------------------------------------------
-
-  protected async sendTestEmail(): Promise<void> {
-    const raw = this.regularPayload();
-    const to = this.authSvc.getUser()?.email;
-    if (!to) {
-      this.alertSvc.showError('We could not find your email address for the test send.');
-      return;
-    }
-    const subject = raw.subject || 'Your newsletter';
-    try {
-      await this.newslettersSvc.sendTest({
-        subject,
-        html: raw.htmlContent,
-        text: raw.plainTextContent,
-        to,
-        fromName: raw.fromName,
-        fromEmail: raw.fromAddress,
-      });
-      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
-    }
-  }
-
-  // --- Save draft -----------------------------------------------------------
-
-  protected async saveDraft(): Promise<void> {
-    if (this.saving()) return;
-    const raw = this.regularPayload();
-    const subject = raw.subject || 'Untitled draft';
-    this.saving.set(true);
-    try {
-      await this.newslettersSvc.add(this.buildPayload('draft'));
-      this.dirty.set(false);
-      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Send / schedule (with preflight) -------------------------------------
-
-  protected async sendRegular(): Promise<void> {
-    if (this.saving()) return;
-    if (!this.validateDetails()) {
-      this.currentStep.set(3);
-      return;
-    }
-    if (this.requiresScheduleDate()) {
-      this.regularForm.scheduledDate().markAsTouched();
-      this.regularForm.scheduledTime().markAsTouched();
-      this.showFieldErrors.set(true);
-      this.alertSvc.showError(this.scheduleCoach);
-      return;
-    }
-
-    const raw = this.regularPayload();
-    const scheduled = raw.timingMode === 'schedule';
-    const count = this.estimatedAudienceCount();
-    const subject = raw.subject || 'Untitled newsletter';
-    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
-      message: this.preflightMessage(count),
-      variant: 'info',
-      icon: 'paper-airplane',
-      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
-      const createdId = this.extractId(created);
-      if (!scheduled && createdId) {
-        await this.newslettersSvc.send(createdId);
-      }
-      this.dirty.set(false);
-      this.alertSvc.showSuccess(
-        scheduled
-          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
-          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
-      );
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Internals ------------------------------------------------------------
-
-  private applyTemplate(preset: TemplatePreset): void {
-    this.selectedTemplate.set(preset);
-    this.regularPayload.update((p) => ({
-      ...p,
-      htmlContent: compileTemplateHtml(preset),
-      plainTextContent: compileTemplatePlainText(preset),
-    }));
-  }
-
-  private validateDetails(): boolean {
-    this.markDetailsTouched();
-    this.showFieldErrors.set(true);
-    const invalidField = this.firstInvalidDetail();
-    if (invalidField) {
-      this.focusAndCoach(invalidField);
-      return false;
-    }
-    return true;
-  }
-
-  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
-    if (this.regularForm.subject().invalid()) return 'subject';
-    if (this.regularForm.fromName().invalid()) return 'fromName';
-    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
-    return null;
-  }
-
-  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
-    const map = {
-      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
-      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
-      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
-    } as const;
-    const target = map[field];
-    target.ref?.nativeElement.focus();
-    this.alertSvc.showError(target.coach);
-  }
-
-  private preflightMessage(count: number): string {
-    const base = `It will go to ${this.peopleLabel(count)}.`;
-    if (this.skipBounced()) {
-      return `${base} Previously bounced addresses are skipped automatically.`;
-    }
-    return `${base} Bounced addresses are NOT being skipped (Workspace setting).`;
-  }
-
-  private scheduleWhenLabel(): string {
-    const date = this.scheduledDateValue();
-    const time = this.regularPayload().scheduledTime;
-    if (!date) return 'the scheduled time';
-    const parsed = new Date(`${date}T${time || '00:00'}`);
-    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
-    return time
-      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
-      : this.dateFormatter.format(parsed);
-  }
-
-  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
-    const raw = this.regularPayload();
-    const scheduledAt =
-      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
-        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
-        : null;
-
-    return {
-      name: raw.subject || 'Unnamed Newsletter',
-      status,
-      subject: raw.subject,
-      preview_text: raw.previewText,
-      audience_description: this.buildAudienceDescription(),
-      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
-      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
-      html_content: raw.htmlContent,
-      plain_text_content: raw.plainTextContent,
-      send_date: scheduledAt,
-      total_recipients: this.estimatedAudienceCount(),
-    };
-  }
-
-  private buildAudienceDescription(): string {
-    const includeLists = this.includeListIds().map((id) => this.listName(id));
-    const includeTags = this.includeTagsList();
-    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
-    const excludeTags = this.excludeTagsList();
-
-    const parts: string[] = [];
-    if (includeLists.length || includeTags.length) {
-      parts.push(
-        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
-      );
-    }
-    if (excludeLists.length || excludeTags.length) {
-      parts.push(
-        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
-      );
-    }
-    return parts.length ? parts.join(' ') : 'No target audience configured.';
-  }
-
-  private markDetailsTouched(): void {
-    this.regularForm.subject().markAsTouched();
-    this.regularForm.fromName().markAsTouched();
-    this.regularForm.fromAddress().markAsTouched();
-  }
-
-  private markDirty(): void {
-    if (!this.dirty()) this.dirty.set(true);
-  }
-
-  private setIncludeLists(next: string[]): void {
-    this.writeAudience('includeLists', next);
-  }
-
-  private setExcludeLists(next: string[]): void {
-    this.writeAudience('excludeLists', next);
-  }
-
-  private setIncludeTags(next: string[]): void {
-    this.writeAudience('includeTags', next);
-  }
-
-  private setExcludeTags(next: string[]): void {
-    this.writeAudience('excludeTags', next);
-  }
-
-  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
-    this.regularPayload.update((p) => ({ ...p, [key]: next }));
-    this.markDirty();
-  }
-
-  private sumListSizes(ids: string[]): number {
-    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
-    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
-  }
-
-  private sumTagUsage(names: string[]): number {
-    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
-    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
-  }
-
-  private async loadLists(): Promise<void> {
-    this.loadingLists.set(true);
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows
-          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
-          .map((row: Record<string, unknown>) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            size:
-              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
-              0,
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
-    } finally {
-      this.loadingLists.set(false);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    this.loadingTags.set(true);
-    try {
-      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
-      this.availableTags.set(
-        rows
-          .filter(
-            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
-          )
-          .filter((row) => row['id'] && row['name'])
-          .map((row) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
-    } finally {
-      this.loadingTags.set(false);
-    }
-  }
-
-  private async loadCommsDefaults(): Promise<void> {
-    try {
-      await this.settingsSvc.load();
-    } catch {
-      // Non-fatal: the sender fields simply won't prefill.
-      return;
-    }
-    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
-
-    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
-    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
-    let applied = false;
-    if (defaultName && !this.regularPayload().fromName) {
-      this.regularForm.fromName().value.set(defaultName);
-      applied = true;
-    }
-    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
-      this.regularForm.fromAddress().value.set(defaultEmail);
-      applied = true;
-    }
-    this.commsDefaultsApplied.set(applied);
-  }
-
-  private normalizeCalendarValue(event: unknown): string | null {
-    const raw = this.readCalendarRaw(event);
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
-  }
-
-  private readCalendarRaw(event: unknown): string | null {
-    if (typeof event === 'string') return event;
-    if (!event || typeof event !== 'object') return null;
-    const e = event as Record<string, unknown>;
-    const detail = e['detail'];
-    if (typeof detail === 'string') return detail;
-    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
-      return (detail as Record<string, unknown>)['value'] as string;
-    }
-    const target = e['target'];
-    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
-      return (target as Record<string, unknown>)['value'] as string;
-    }
-    if (typeof e['value'] === 'string') return e['value'] as string;
-    return null;
-  }
-
-  private extractId(created: unknown): string | null {
-    if (created && typeof created === 'object' && 'id' in created) {
-      const id = (created as Record<string, unknown>)['id'];
-      return id != null ? String(id) : null;
-    }
-    return null;
-  }
-
-  private errorMessage(err: unknown, fallback: string): string {
-    return err instanceof Error && err.message ? err.message : fallback;
-  }
-}
-
-type CreationMode = 'options' | 'regular' | 'automated';
-
-type StepIndex = 1 | 2 | 3 | 4;
-
-type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
-
-type TimingMode = 'now' | 'schedule';
-
-interface RegularNewsletterPayload {
-  subject: string;
-  previewText: string;
-  fromName: string;
-  fromAddress: string;
-  htmlContent: string;
-  plainTextContent: string;
-  includeLists: string[];
-  includeTags: string[];
-  excludeLists: string[];
-  excludeTags: string[];
-  timingMode: TimingMode;
-  scheduledDate: string;
-  scheduledTime: string;
-}
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
-import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
-import { Table } from '@uxcommon/components/table/table';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Icon } from '@icons/icon';
-
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { AuthService } from '../../../auth/auth-service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { NewslettersService } from '../services/newsletters-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-interface NewsletterRow {
-  bounce_count: number;
-  click_rate: number;
-  delivered_count: number;
-  has_audience: boolean;
-  has_content: boolean;
-  id: string;
-  name: string;
-  open_rate: number;
-  send_date: Date | null;
-  status: string;
-  total_recipients: number;
-  unique_clicks: number;
-  unique_opens: number;
-}
-
-interface NewsletterStats {
-  avgClickRate: number;
-  avgOpenRate: number;
-  bounces: number;
-  delivered: number;
-  sentCount: number;
-}
-
-const STATUS_TONE: Record<string, PcStatusType> = {
-  archived: 'ghost',
-  draft: 'ghost',
-  paused: 'warning',
-  queuing: 'info',
-  scheduled: 'info',
-  sending: 'info',
-  sent: 'success',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  archived: 'Archived',
-  draft: 'Draft',
-  paused: 'Paused',
-  queuing: 'Sending',
-  scheduled: 'Scheduled',
-  sending: 'Sending',
-  sent: 'Sent',
-};
-
-/** Statuses that count as "in progress" for the header sentence. */
-const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused']);
-
-/**
- * Newsletters list page: stat tiles summarising all-time engagement, then a bespoke
- * pc-table of campaigns. Drafts get a "Send…" action behind the danger confirm; everything
- * else links to its report (the newsletter detail page).
- */
-@Component({
-  selector: 'pc-newsletters-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EmptyState, RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
-  templateUrl: './newsletters-page.html',
-})
-export class NewslettersPage {
-  private readonly svc = inject(NewslettersService);
-  private readonly auth = inject(AuthService);
-  private readonly userSignal = this.auth.getUserSignal();
-  /** Sending is blocked server-side during demo mode; sendBlocker() explains it (§2 explained-disabled). */
-  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
-  private readonly context = inject(CampaignContextService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly loading = createLoadingGate();
-  protected readonly rows = signal<NewsletterRow[]>([]);
-  protected readonly loaded = signal(false);
-  /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
-  protected readonly verifiedSenders = signal<string[]>([]);
-
-  /** The campaign context the current rows were loaded for; undefined = never loaded. */
-  private loadedForCampaign: string | null | undefined = undefined;
-
-  private readonly numberFormatter = new Intl.NumberFormat();
-
-  protected readonly stats = computed<NewsletterStats>(() => {
-    const sent = this.rows().filter((r) => r.status === 'sent');
-    let delivered = 0;
-    let opens = 0;
-    let clicks = 0;
-    let bounces = 0;
-    for (const r of sent) {
-      delivered += r.delivered_count;
-      opens += r.unique_opens;
-      clicks += r.unique_clicks;
-      bounces += r.bounce_count;
-    }
-    return {
-      sentCount: sent.length,
-      delivered,
-      avgOpenRate: delivered > 0 ? (opens / delivered) * 100 : 0,
-      avgClickRate: delivered > 0 ? (clicks / delivered) * 100 : 0,
-      bounces,
-    };
-  });
-
-  protected readonly headerSentence = computed<string | null>(() => {
-    if (!this.loaded()) return null;
-    const sent = this.stats().sentCount;
-    const inProgress = this.rows().filter((r) => IN_PROGRESS_STATUSES.has(r.status)).length;
-    const parts = [`${this.numberFormatter.format(sent)} campaign${sent === 1 ? '' : 's'} sent`];
-    if (inProgress > 0) parts.push(`${this.numberFormatter.format(inProgress)} in progress`);
-    return parts.join(' · ');
-  });
-
-  constructor() {
-    // Reload whenever the campaign context switches (§15) — and once on first render.
-    effect(() => {
-      const campaignId = this.context.activeCampaignId();
-      if (campaignId === this.loadedForCampaign) return;
-      this.loadedForCampaign = campaignId;
-      void untracked(() => this.reload());
-    });
-  }
-
-  protected statusLabel(status: string): string {
-    return STATUS_LABEL[status] ?? (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—');
-  }
-
-  protected statusTone(status: string): PcStatusType {
-    return STATUS_TONE[status] ?? 'ghost';
-  }
-
-  protected formatNumber(value: number): string {
-    return this.numberFormatter.format(value);
-  }
-
-  protected formatPercent(value: number): string {
-    return `${value.toFixed(1)}%`;
-  }
-
-  /**
-   * The first unmet send condition for a draft, or null when it can go out (§2 explained-disabled:
-   * the Send button never greys out silently — the tooltip names exactly what's missing).
-   */
-  protected sendBlocker(row: NewsletterRow): string | null {
-    if (this.isDemo()) {
-      return 'Sending is locked during the demo. Choose a plan, then exit demo mode';
-    }
-    if (this.verifiedSenders().length === 0) {
-      return 'Verify a sender address under Settings → Communications before sending';
-    }
-    if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
-    if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
-    return null;
-  }
-
-  protected async sendDraft(row: NewsletterRow): Promise<void> {
-    if (this.sendBlocker(row) !== null) return;
-    const name = row.name || 'this newsletter';
-    const confirmed = await this.dialogs.confirm({
-      title: `Send "${name}"?`,
-      message: 'It goes out to everyone in its selected lists and tags right away. Sending cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Send newsletter',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    const end = this.loading.begin();
-    try {
-      await this.svc.send(row.id);
-      this.alerts.showSuccess(`"${name}" is on its way`);
-      await this.reload();
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not send the newsletter'));
-    } finally {
-      end();
-    }
-  }
-
-  private async reload(): Promise<void> {
-    const end = this.loading.begin();
-    try {
-      await this.context.ensureLoaded();
-      const { rows } = await this.svc.getAll();
-      this.rows.set((rows as Record<string, unknown>[]).map((r) => this.toRow(r)));
-      this.loaded.set(true);
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not load newsletters'));
-    } finally {
-      end();
-    }
-    await this.loadVerifiedSenders();
-  }
-
-  private async loadVerifiedSenders(): Promise<void> {
-    try {
-      await this.settings.load();
-      this.verifiedSenders.set(this.settings.getValue<string[]>('communications.verified_emails', []) ?? []);
-    } catch {
-      // Non-fatal: with no snapshot the Send buttons stay disabled with the verify-sender tooltip.
-    }
-  }
-
-  private toRow(record: Record<string, unknown>): NewsletterRow {
-    const asNumber = (value: unknown): number => {
-      const num = Number(value);
-      return Number.isFinite(num) ? num : 0;
-    };
-    const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-    return {
-      has_audience: asText(record['target_lists']).length > 0 || asText(record['segments']).length > 0,
-      has_content:
-        asText(record['subject']).length > 0 &&
-        (asText(record['html_content']).length > 0 || asText(record['plain_text_content']).length > 0),
-      id: String(record['id']),
-      name: typeof record['name'] === 'string' ? record['name'] : '',
-      status: typeof record['status'] === 'string' ? record['status'] : 'draft',
-      total_recipients: asNumber(record['total_recipients']),
-      delivered_count: asNumber(record['delivered_count']),
-      bounce_count: asNumber(record['bounce_count']),
-      open_rate: asNumber(record['open_rate']),
-      click_rate: asNumber(record['click_rate']),
-      unique_opens: asNumber(record['unique_opens']),
-      unique_clicks: asNumber(record['unique_clicks']),
-      send_date: record['send_date'] instanceof Date ? record['send_date'] : null,
-    };
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import {
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
-
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
-import {
-  CampaignsService,
-  PersonCampaignFact,
-  PersonSubscriptionsPayload,
-} from '../../campaigns/services/campaigns-service';
-import { PersonsService } from '../services/persons-service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-/**
- * Campaign standing card (Campaigns §15): this person's support level and voting
- * status in the ACTIVE context, their history across every campaign, and the
- * global do-not-contact override. Unknown = no stored value, on purpose.
- */
-@Component({
-  selector: 'pc-person-campaign-facts',
-  imports: [DatePipe, Icon, PcCard, YardSignStanding],
-  templateUrl: './person-campaign-facts.html',
-})
-export class PersonCampaignFacts {
-  readonly personId = input.required<string>();
-  readonly dncFlag = input<boolean>(false);
-  /** Seed values for the global volunteer/staff status selects (§15). */
-  readonly volunteerStatus = input<string | null>(null);
-  readonly staffStatus = input<string | null>(null);
-  /** The person's household (null = no address) — drives the yard-sign standing control. */
-  readonly householdId = input<string | null>(null);
-
-  protected readonly context = inject(CampaignContextService);
-  private readonly campaignsSvc = inject(CampaignsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly supportLevels = SUPPORT_LEVELS;
-  protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
-  protected readonly votingStatuses = VOTING_STATUSES;
-  protected readonly votingLabels = VOTING_STATUS_LABELS;
-  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
-  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
-  protected readonly staffStatuses = STAFF_STATUSES;
-  protected readonly staffLabels = STAFF_STATUS_LABELS;
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly facts = signal<PersonCampaignFact[]>([]);
-  protected readonly doNotContact = signal(false);
-  /** Global volunteer/staff standing ('' = not one). Seeded from the person row. */
-  protected readonly volunteerSel = signal<string>('');
-  protected readonly staffSel = signal<string>('');
-  protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
-
-  protected readonly activeCampaign = this.context.activeCampaign;
-  protected readonly readonlyContext = this.context.isArchivedContext;
-
-  /** The fact row for the active context (undefined = everything Unknown). */
-  protected readonly activeFact = computed(() => {
-    const id = this.context.activeCampaignId();
-    return id ? this.facts().find((f) => String(f.campaign_id) === id) : undefined;
-  });
-
-  /** History rows for campaigns other than the active one. */
-  protected readonly otherFacts = computed(() => {
-    const id = this.context.activeCampaignId();
-    return this.facts().filter((f) => String(f.campaign_id) !== id);
-  });
-
-  /** Subscription row for the active context (undefined = never asked). */
-  protected readonly activeSubscription = computed(() => {
-    const id = this.context.activeCampaignId();
-    return id ? this.consent()?.subscriptions.find((s) => String(s.campaign_id) === id) : undefined;
-  });
-
-  protected readonly hasEmail = computed(() => !!this.consent()?.email);
-  protected readonly suppressed = computed(() => (this.consent()?.suppressions.length ?? 0) > 0);
-
-  /**
-   * One honest, derived sendability state for the active context (§15):
-   * subscribed in this campaign ∧ address healthy ∧ not DNC(email).
-   */
-  protected readonly sendState = computed<{ label: string; tone: 'ok' | 'warn' | 'muted' }>(() => {
-    if (!this.hasEmail()) return { label: 'No email address', tone: 'muted' };
-    if (this.doNotContact()) return { label: 'Do not contact', tone: 'warn' };
-    const sub = this.activeSubscription();
-    if (!sub) return { label: 'Never asked', tone: 'muted' };
-    if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
-    if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
-    if (this.suppressed()) return { label: 'Subscribed, address bouncing', tone: 'warn' };
-    return { label: 'Subscribed', tone: 'ok' };
-  });
-
-  constructor() {
-    effect(() => {
-      const personId = this.personId();
-      void untracked(() => this.load(personId));
-    });
-    effect(() => {
-      this.doNotContact.set(this.dncFlag());
-    });
-    effect(() => {
-      this.volunteerSel.set(this.volunteerStatus() ?? '');
-    });
-    effect(() => {
-      this.staffSel.set(this.staffStatus() ?? '');
-    });
-  }
-
-  protected supportBadgeClass(level: string | null): string {
-    switch (level) {
-      case 'strong':
-        return 'badge-success';
-      case 'leaning':
-        return 'badge-info';
-      case 'leaning_against':
-        return 'badge-warning';
-      case 'against':
-        return 'badge-error';
-      case 'neutral':
-      case 'undecided':
-        return 'badge-neutral';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected supportLabel(level: string | null): string {
-    return level ? (this.supportLabels[level as SupportLevel] ?? level) : 'Unknown';
-  }
-
-  protected votingLabel(status: string | null): string {
-    return status ? (this.votingLabels[status as VotingStatus] ?? status) : 'Unknown';
-  }
-
-  protected async onSupportChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    await this.saveFact({ support_level: value === '' ? null : (value as SupportLevel) });
-  }
-
-  protected async onVotingChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    await this.saveFact({ voting_status: value === '' ? null : (value as VotingStatus) });
-  }
-
-  protected async setSubscription(status: 'subscribed' | 'unsubscribed'): Promise<void> {
-    const campaignId = this.context.activeCampaignId();
-    if (!campaignId) return;
-    this.saving.set(true);
-    try {
-      await this.campaignsSvc.setSubscription({ campaign_id: campaignId, person_id: this.personId(), status });
-      await this.load(this.personId());
-      this.alerts.showSuccess(status === 'subscribed' ? 'Subscribed' : 'Unsubscribed');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update the subscription'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async toggleDnc(): Promise<void> {
-    const next = !this.doNotContact();
-    if (next) {
-      const confirmed = await this.dialogs.confirm({
-        title: 'Mark as do-not-contact',
-        message:
-          'This stops all outreach to this person (email, calls, and door knocks) in the office and every campaign. It is a global override, not a per-campaign preference.',
-        variant: 'danger',
-        confirmText: 'Stop all contact',
-      });
-      if (!confirmed) return;
-    }
-    this.saving.set(true);
-    try {
-      await this.personsSvc.update(this.personId(), { do_not_contact: next });
-      this.doNotContact.set(next);
-      this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async onVolunteerStatusChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    const next = value === '' ? null : (value as VolunteerStatus);
-    await this.saveGlobalStatus({ volunteer_status: next }, this.volunteerSel, value, 'volunteer status');
-  }
-
-  protected async onStaffStatusChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    const next = value === '' ? null : (value as StaffStatus);
-    await this.saveGlobalStatus({ staff_status: next }, this.staffSel, value, 'staff status');
-  }
-
-  /**
-   * Persist a global person status (volunteer/staff, §15). Optimistically stores
-   * the new value on success; reverts on error by re-reading nothing (the select
-   * is re-bound to the signal, so we just leave the prior value on failure).
-   */
-  private async saveGlobalStatus(
-    change: { volunteer_status?: VolunteerStatus | null; staff_status?: StaffStatus | null },
-    target: { set(v: string): void },
-    value: string,
-    label: string,
-  ): Promise<void> {
-    this.saving.set(true);
-    try {
-      await this.personsSvc.update(this.personId(), change);
-      target.set(value);
-      this.alerts.showSuccess('Saved');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, `Could not update ${label}`));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async saveFact(change: {
-    support_level?: SupportLevel | null;
-    voting_status?: VotingStatus | null;
-  }): Promise<void> {
-    const campaignId = this.context.activeCampaignId();
-    if (!campaignId) return;
-    this.saving.set(true);
-    try {
-      await this.campaignsSvc.upsertPersonFact({
-        campaign_id: campaignId,
-        person_id: this.personId(),
-        ...change,
-      });
-      await this.load(this.personId());
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not save. Please try again.'));
-      await this.load(this.personId());
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load(personId: string): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [facts, consent] = await Promise.all([
-        this.campaignsSvc.getPersonFacts(personId),
-        this.campaignsSvc.getPersonSubscriptions(personId),
-        this.context.ensureLoaded(),
-      ]);
-      this.facts.set(facts);
-      this.consent.set(consent);
-      this.doNotContact.set(!!consent.do_not_contact);
-    } catch {
-      // The card degrades to "Unknown" rather than blocking the person page.
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
-```typescript
-import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Tags } from '@experiences/tags/ui/tags';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { CompaniesService } from '../../companies/services/companies-service';
-import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { Selectable } from 'kysely';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { PersonCampaignFacts } from './person-campaign-facts';
-import { PersonStandingDraft } from './person-standing-draft';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { CampaignsService } from '../../campaigns/services/campaigns-service';
-
-@Component({
-  selector: 'pc-person-form',
-  imports: [
-    PcInput,
-    PcSelect,
-    PcTextarea,
-    Tags,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    SideDrawer,
-    PcCard,
-    DatePipe,
-    PersonCampaignFacts,
-    PersonStandingDraft,
-  ],
-  templateUrl: './person-form.html',
-})
-export class PersonForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly campaignsSvc = inject(CampaignsService);
-  private readonly campaignContext = inject(CampaignContextService);
-  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
-
-  private _loading = createLoadingGate();
-  private usersById = new Map<string, IAuthUser>();
-
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return null;
-    return this.getFormattedAddress(hh);
-  });
-
-  /** Overview rail (§6): everyone else sharing this person's household. */
-  protected readonly householdMembersResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getPeopleCount(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly companyName = computed(() => {
-    const id = this.person()?.company_id;
-    if (!id) return null;
-    return this.companies().find((c) => c.id === id)?.name ?? null;
-  });
-
-  protected readonly preferredContactLabel = computed(() => {
-    switch (this.person()?.preferred_contact) {
-      case 'email':
-        return 'Email';
-      case 'mobile':
-        return 'Mobile phone';
-      case 'home_phone':
-        return 'Home phone';
-      default:
-        return 'No preference';
-    }
-  });
-
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
-  });
-
-  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
-  protected readonly addressWithWard = computed(() => {
-    const base = this.addressString();
-    if (!base) return null;
-    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
-    return ward ? `${base} · Ward ${ward}` : base;
-  });
-
-  // Drawer state for assigning household
-  protected readonly assignDrawerOpen = signal(false);
-  protected readonly householdResults = signal<any[]>([]);
-  protected readonly householdSearch = signal('');
-  protected readonly householdsLoading = signal(false);
-
-  protected readonly pendingHouseholdId = signal<string | null>(null);
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly emailError = linkedSignal({
-    source: () => this.form.email().value(),
-    computation: () => null as string | null,
-  });
-  protected readonly person = signal<Selectable<Persons> | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly companies = signal<any[]>([]);
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-
-  protected readonly payload = signal({
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    email: '',
-    email2: '',
-    home_phone: '',
-    mobile: '',
-    notes: '',
-    company_id: '',
-    preferred_contact: '',
-    linkedin: '',
-    twitter: '',
-    facebook: '',
-    instagram: '',
-    assigned_to: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, UpdatePersonsObj);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected id = input<string>();
-  protected tags = signal<string[]>([]);
-  protected issues = signal<string[]>([]);
-
-  // Campaign standing captured on the NEW-person form (§15). Support/voting/subscribe
-  // are campaign-scoped and can only be written once the person has an id, so they are
-  // applied after the add succeeds; do_not_contact is a plain person field folded into
-  // the add payload. Bound two-way to <pc-person-standing-draft>.
-  protected readonly draftSupport = signal<SupportLevel | ''>('');
-  protected readonly draftVoting = signal<VotingStatus | ''>('');
-  protected readonly draftSubscribe = signal(false);
-  protected readonly draftDnc = signal(false);
-  // Volunteer/staff are global person status (§15) — folded straight into the add payload.
-  protected readonly draftVolunteer = signal<VolunteerStatus | ''>('');
-  protected readonly draftStaff = signal<StaffStatus | ''>('');
-
-  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
-  protected readonly allTagNames = signal<string[]>([]);
-  protected readonly allIssueNames = signal<string[]>([]);
-  private readonly SUGGESTION_LIMIT = 6;
-  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
-  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
-
-  private suggestFrom(all: string[], applied: string[]): string[] {
-    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
-    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
-  }
-
-  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
-  protected addTagSuggestion(name: string): void {
-    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.tags.update((list) => [...list, name]);
-    void this.tagAdded(name);
-  }
-
-  protected addIssueSuggestion(name: string): void {
-    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
-    this.issues.update((list) => [...list, name]);
-    void this.issueAdded(name);
-  }
-
-  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  protected readonly formName = computed(() => {
-    const v = this.payload();
-    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const people: PcBreadcrumb = { label: 'People', route: '/people' };
-    const id = this.person()?.id;
-    if (id) {
-      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
-    }
-    return [people, { label: 'New person' }];
-  });
-
-  protected readonly formInitials = computed(() => {
-    const name = this.formName() || '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
-
-  constructor() {
-    // Load users once for display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadPerson();
-    await this.loadCompanies();
-    void this.loadSuggestionNames();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          first_name: data.first_name ?? '',
-          middle_names: data.middle_names ?? '',
-          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
-          email: data.email ?? '',
-          email2: data.email2 ?? '',
-          home_phone: data.home_phone ?? '',
-          mobile: data.mobile ?? '',
-          notes: data.notes ?? '',
-          company_id: data.company_id ?? '',
-          preferred_contact: data.preferred_contact ?? '',
-          linkedin: data.linkedin ?? '',
-          twitter: data.twitter ?? '',
-          facebook: data.facebook ?? '',
-          instagram: data.instagram ?? '',
-          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
-        });
-        if (data.household_id) {
-          this.pendingHouseholdId.set(data.household_id);
-        }
-      }
-    }
-  }
-
-  private async loadSuggestionNames() {
-    try {
-      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
-      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
-    } catch (err) {
-      console.error('Failed to load tag/issue suggestions', err);
-    }
-  }
-
-  private async loadCompanies() {
-    try {
-      const res = await this.companiesSvc.getAll();
-      this.companies.set(res.rows || []);
-    } catch {
-      this.companies.set([]);
-    }
-  }
-
-  protected async deletePerson() {
-    const id = this.id();
-    if (!id) return;
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(id);
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
-  }
-
-  public save(done?: () => void) {
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      // §4: Save never disables — instead of blocking, surface the errors and
-      // move focus to the first invalid field so the user knows what to fix.
-      queueMicrotask(() => {
-        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
-        el?.focus();
-      });
-      return;
-    }
-    const raw = this.payload();
-    const data = {
-      ...raw,
-      company_id: raw.company_id || null,
-      assigned_to: raw.assigned_to || null,
-      preferred_contact: raw.preferred_contact || null,
-    } as UpdatePersonsType;
-    return this.id() ? this.update(data, done) : this.add(data, done);
-  }
-
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
-    }
-  }
-
-  protected async assignToHousehold(household_id: string) {
-    const id = this.id();
-    // NEW PERSON: just store the pending selection; it will be sent on save
-    if (!id) {
-      this.pendingHouseholdId.set(household_id);
-      this.alertSvc.showSuccess('Household selected. It will be saved when you add the person');
-      this.closeAssignDrawer();
-      return;
-    }
-
-    // Ask scope: just this person vs everyone in current household
-    const applyToAll = await this.confirmDlg.confirm({
-      title: 'Change household',
-      message: 'Apply to everyone in the current household, or just this person?',
-      variant: 'info',
-      confirmText: 'Everyone',
-      cancelText: 'Just this person',
-    });
-
-    const currentHousehold = this.householdId();
-
-    const end = this._loading.begin();
-    try {
-      if (applyToAll && currentHousehold) {
-        // Single atomic tRPC call to the backend
-        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
-      } else {
-        // Only move this person
-        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
-      }
-
-      // update local state for current person and UI
-      this.person.update((p) => (p ? { ...p, household_id } : p));
-
-      this.alertSvc.showSuccess('Assigned to selected household');
-      this.closeAssignDrawer();
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  protected closeAssignDrawer() {
-    this.assignDrawerOpen.set(false);
-  }
-
-  protected formatHouseholdRow(row: any) {
-    const address = {
-      apt: row.apt ?? null,
-      street_num: row.street_num ?? '',
-      street1: row.street1 ?? '',
-      street2: row.street2 ?? '',
-      city: row.city ?? '',
-      state: row.state ?? '',
-      zip: row.zip ?? '',
-      country: row.country ?? '',
-    } as AddressType;
-    return this.getFormattedAddress(address);
-  }
-
-  protected getId() {
-    const id = this.person()?.id;
-    if (!id) return null;
-
-    return id as unknown as string;
-  }
-
-  protected getUserName(id: string | null | undefined = null): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  protected onHouseholdSearch(ev: Event) {
-    const target = ev.target as HTMLInputElement | null;
-    const val = target?.value ?? '';
-    this.householdSearch.set(val);
-    void this.fetchHouseholds();
-  }
-
-  protected openAssignDrawer() {
-    this.assignDrawerOpen.set(true);
-    // Initial fetch
-    void this.fetchHouseholds();
-  }
-
-  protected async removeAddress() {
-    const id = this.id();
-    // New person: just clear the pending household — no API call needed yet
-    if (!id) {
-      this.pendingHouseholdId.set(null);
-      return;
-    }
-
-    if (!this.person()) return;
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: 'Remove Address',
-      message: 'This will move the person to a new blank household (clearing address). Continue?',
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.removeHousehold(id);
-      this.person.update((p) => (p ? { ...p, household_id: null } : p));
-      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
-    } catch (err) {
-      this.alertSvc.showError(
-        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
-      );
-    } finally {
-      end();
-    }
-  }
-
-  protected async tagAdded(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to attach tag:', err);
-    }
-  }
-
-  protected async tagRemoved(tag: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
-
-    try {
-      // Volunteer/staff are first-class person status now (§15), no longer tags —
-      // tag removal is the plain path with no team cascade.
-      await this.personsSvc.detachTag(id, tag, 'tag');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to detach tag:', err);
-      restoreTag();
-    }
-  }
-
-  protected async issueAdded(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.personsSvc.attachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to attach issue:', err);
-    }
-  }
-
-  protected async issueRemoved(issue: string) {
-    const id = this.id();
-    if (!id) return;
-
-    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
-
-    try {
-      await this.personsSvc.detachTag(id, issue, 'issue');
-      await this.updateTags();
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to detach issue:', err);
-      restoreIssue();
-    }
-  }
-
-  private add(data: UpdatePersonsType, done?: () => void) {
-    // Include any household selected via the drawer before saving
-    const pendingHousehold = this.pendingHouseholdId();
-    if (pendingHousehold) {
-      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
-    }
-
-    // do_not_contact is a plain person field — save it with the person.
-    if (this.draftDnc()) {
-      data = { ...data, do_not_contact: true } as UpdatePersonsType;
-    }
-
-    // Volunteer/staff are global person status (§15) — fold non-empty values in.
-    if (this.draftVolunteer()) {
-      data = { ...data, volunteer_status: this.draftVolunteer() } as UpdatePersonsType;
-    }
-    if (this.draftStaff()) {
-      data = { ...data, staff_status: this.draftStaff() } as UpdatePersonsType;
-    }
-
-    // Snapshot the campaign-scoped standing NOW, before the success handler resets
-    // the draft signals — it is applied after the person id exists.
-    const standing = {
-      support: this.draftSupport(),
-      voting: this.draftVoting(),
-      subscribe: this.draftSubscribe(),
-      email: this.payload().email,
-    };
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .add(data, { context: { skipErrorHandler: true } })
-      .then((created: unknown) => {
-        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
-        this.personsSvc.triggerRefresh();
-        void this.applyStanding(created, standing);
-        if (done) {
-          done();
-          this.pendingHouseholdId.set(null);
-          this.tags.set([]);
-          this.issues.set([]);
-          this.draftSupport.set('');
-          this.draftVoting.set('');
-          this.draftSubscribe.set(false);
-          this.draftDnc.set(false);
-          this.draftVolunteer.set('');
-          this.draftStaff.set('');
-          this.form().reset();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  /**
-   * Apply the standing captured on the add form once the person exists (§15).
-   * Campaign-scoped writes are keyed to the active context; a failure here does
-   * not undo the person — it was already saved — so we surface a soft error.
-   */
-  private async applyStanding(
-    created: unknown,
-    standing: { support: SupportLevel | ''; voting: VotingStatus | ''; subscribe: boolean; email: string },
-  ): Promise<void> {
-    const personId = isRecord(created) && created['id'] != null ? String(created['id']) : null;
-    if (!personId) return;
-
-    const wantsFact = !!standing.support || !!standing.voting;
-    const wantsSubscription = standing.subscribe && !!standing.email.trim();
-    if (!wantsFact && !wantsSubscription) return;
-
-    try {
-      await this.campaignContext.ensureLoaded();
-      const campaign_id = this.campaignContext.activeCampaignId();
-      if (!campaign_id) return;
-
-      if (wantsFact) {
-        await this.campaignsSvc.upsertPersonFact({
-          campaign_id,
-          person_id: personId,
-          ...(standing.support ? { support_level: standing.support } : {}),
-          ...(standing.voting ? { voting_status: standing.voting } : {}),
-        });
-      }
-      if (wantsSubscription) {
-        await this.campaignsSvc.setSubscription({ campaign_id, person_id: personId, status: 'subscribed' });
-      }
-    } catch (err) {
-      this.alertSvc.showError(
-        getUserErrorMessage(err, 'The person was added, but their campaign standing could not be saved.'),
-      );
-    }
-  }
-
-  private isDuplicateEmailError(err: unknown): boolean {
-    if (!err || typeof err !== 'object') return false;
-    const e = err as Record<string, any>;
-    // tRPC wraps backend errors; check both data.httpStatus and message
-    return (
-      e['data']?.['httpStatus'] === 409 ||
-      String(e['message'] ?? '')
-        .toLowerCase()
-        .includes('already exists')
-    );
-  }
-
-  private async fetchHouseholds() {
-    try {
-      this.householdsLoading.set(true);
-      const opts = {
-        searchStr: this.householdSearch(),
-        limit: 25,
-        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
-      };
-      const res = await this.householdsSvc.getAll(opts);
-      this.householdResults.set(res.rows || []);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
-      this.householdResults.set([]);
-    } finally {
-      this.householdsLoading.set(false);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-
-  private async loadPerson() {
-    const id = this.id();
-    if (!id) return;
-
-    const end = this._loading.begin();
-    try {
-      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
-
-      await this.updateTags();
-      await this.loadVolunteerInfo();
-
-      this.refreshForm();
-    } finally {
-      end();
-    }
-  }
-
-  private refreshForm() {
-    const person = this.person();
-    if (!person) return;
-
-    this.payload.set({
-      first_name: person.first_name ?? '',
-      middle_names: person.middle_names ?? '',
-      last_name: person.last_name ?? '',
-      email: person.email ?? '',
-      email2: person.email2 ?? '',
-      home_phone: person.home_phone ?? '',
-      mobile: person.mobile ?? '',
-      notes: person.notes ?? '',
-      company_id: person.company_id ?? '',
-      preferred_contact: person.preferred_contact ?? '',
-      linkedin: person.linkedin ?? '',
-      twitter: person.twitter ?? '',
-      facebook: person.facebook ?? '',
-      instagram: person.instagram ?? '',
-      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
-    });
-  }
-
-  // Friendly labels for the field-naming save toast (§4).
-  private readonly fieldLabels: Record<string, string> = {
-    first_name: 'first name',
-    middle_names: 'middle name',
-    last_name: 'last name',
-    email: 'email',
-    email2: 'secondary email',
-    mobile: 'mobile phone',
-    home_phone: 'home phone',
-    company_id: 'company',
-    preferred_contact: 'preferred contact',
-    assigned_to: 'owner',
-    notes: 'notes',
-    linkedin: 'LinkedIn',
-    twitter: 'X',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-  };
-
-  private changedFieldLabels(): string[] {
-    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
-    return Object.keys(this.fieldLabels)
-      .filter((k) => {
-        try {
-          return !!f[k]?.().dirty?.();
-        } catch {
-          return false;
-        }
-      })
-      .map((k) => this.fieldLabels[k]!);
-  }
-
-  private joinWithAnd(items: string[]): string {
-    if (items.length <= 1) return items[0] ?? '';
-    if (items.length === 2) return `${items[0]} and ${items[1]}`;
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
-  }
-
-  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
-    const id = this.id();
-    if (!id) return;
-
-    const changed = this.changedFieldLabels();
-    const savedName = this.formName() || 'person';
-
-    this.emailError.set(null);
-    const end = this._loading.begin();
-    this.personsSvc
-      .update(id, data, { context: { skipErrorHandler: true } })
-      .then(() => {
-        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
-        const detail = changed.length ? `: ${this.joinWithAnd(changed)} updated` : '';
-        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
-        this.form().reset();
-        this.personsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .catch((err: unknown) => {
-        if (this.isDuplicateEmailError(err)) {
-          this.emailError.set('This email address is already used by another person.');
-        } else {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
-        }
-      })
-      .finally(() => end());
-  }
-
-  private async updateTags() {
-    if (!this.person()) return;
-
-    const id = this.id();
-    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
-    this.tags.set(tags);
-
-    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
-    this.issues.set(issues);
-  }
-
-  private async loadVolunteerInfo() {
-    const id = this.id();
-    if (!id) return;
-    try {
-      const stats = await this.volunteerSvc.getVolunteerStats(id);
-      this.volunteerStats.set(stats);
-      const history = await this.volunteerSvc.getHistoryForPerson(id);
-      this.volunteerHistory.set(history || []);
-    } catch (err) {
-      console.error('Failed to load volunteer info', err);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-standing-draft.html
-```html
-<pc-card>
-  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
-
-  @if (activeCampaign(); as campaign) {
-  <p class="mb-3 text-[11px] text-base-content/50">
-    <ng-container i18n>In</ng-container>
-    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
-    @if (readonlyContext()) {
-    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
-    }
-  </p>
-
-  <div class="grid gap-3 sm:grid-cols-2">
-    <label class="flex flex-col gap-1">
-      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
-      <select
-        class="select select-bordered select-sm w-full"
-        [value]="supportLevel()"
-        [disabled]="readonlyContext()"
-        (change)="onSupportChange($event)"
-      >
-        <option value="" i18n>Unknown (never asked)</option>
-        @for (level of supportLevels; track level) {
-        <option [value]="level">{{ supportLabels[level] }}</option>
-        }
-      </select>
-    </label>
-
-    <label class="flex flex-col gap-1">
-      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
-      <select
-        class="select select-bordered select-sm w-full"
-        [value]="votingStatus()"
-        [disabled]="readonlyContext()"
-        (change)="onVotingChange($event)"
-      >
-        <option value="" i18n>Unknown</option>
-        @for (status of votingStatuses; track status) {
-        <option [value]="status">{{ votingLabels[status] }}</option>
-        }
-      </select>
-    </label>
-  </div>
-
-  <!-- Email consent for the active context (§15). Consent needs an address to matter. -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block pc-eyebrow" i18n>Email consent</span>
-    @if (hasEmail()) {
-    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="doNotContact() || readonlyContext()">
-      <input
-        type="checkbox"
-        class="checkbox checkbox-sm mt-0.5"
-        [checked]="subscribe()"
-        [disabled]="doNotContact() || readonlyContext()"
-        (change)="onSubscribeToggle($event)"
-      />
-      <span class="leading-snug">
-        <span class="font-medium text-base-content/80" i18n>Subscribe to campaign emails</span>
-        <span class="block text-[11px] text-base-content/50" i18n>Records express consent for this campaign.</span>
-      </span>
-    </label>
-    } @else {
-    <p class="text-[11px] italic text-base-content/45" i18n>Add an email address to enable subscription.</p>
-    }
-  </div>
-
-  <!-- Global do-not-contact override — a plain person field, saved with the person. -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="readonlyContext()">
-      <input
-        type="checkbox"
-        class="checkbox checkbox-sm checkbox-error mt-0.5"
-        [checked]="doNotContact()"
-        [disabled]="readonlyContext()"
-        (change)="onDncToggle($event)"
-      />
-      <span class="leading-snug">
-        <span class="font-medium text-base-content/80" i18n>Do not contact</span>
-        <span class="block text-[11px] text-base-content/50" i18n>
-          Suppresses all outreach. Every channel, every campaign.
-        </span>
-      </span>
-    </label>
-  </div>
-  }
-
-  <!-- Global volunteer & staff standing (§15) — first-class person status, not campaign-scoped. -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block pc-eyebrow" i18n>Volunteer &amp; staff</span>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-base-content/60" i18n>Volunteer status</span>
-        <select
-          class="select select-bordered select-sm w-full"
-          [value]="volunteerStatus()"
-          (change)="onVolunteerChange($event)"
-        >
-          <option value="" i18n>Not a volunteer</option>
-          @for (status of volunteerStatuses; track status) {
-          <option [value]="status">{{ volunteerLabels[status] }}</option>
-          }
-        </select>
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-base-content/60" i18n>Staff status</span>
-        <select
-          class="select select-bordered select-sm w-full"
-          [value]="staffStatus()"
-          (change)="onStaffChange($event)"
-        >
-          <option value="" i18n>Not staff</option>
-          @for (status of staffStatuses; track status) {
-          <option [value]="status">{{ staffLabels[status] }}</option>
-          }
-        </select>
-      </label>
-    </div>
-  </div>
-</pc-card>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import {
-  SUPPORT_LEVEL_LABELS,
-  UpdatePersonsObj,
-  UpdatePersonsType,
-  VOTING_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { SECONDARY_CELL_CLASS } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  deleteConfirmMessageFor,
-  deleteSuccessMessageFor,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon, ModalShell],
-  templateUrl: './persons-grid.html',
-  host: { class: 'block h-full' },
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-  private readonly grainTabs = viewChild(GrainTabs);
-  private readonly confirmAddressEditDlg = viewChild.required<ModalShell>('confirmAddressEdit');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  /** Deletes change the header counts — re-query the total sentence and grain-tab totals. */
-  protected onRowsDeleted(): void {
-    void this.loadTotalCount();
-    this.grainTabs()?.reloadCounts();
-  }
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      width: 220,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      // Not a grow column — a narrow address just wraps to a second line, which reads fine.
-      width: 240,
-      minWidth: 160,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        // Keep the grid cell compact: street + city only. State/zip/country live on the
-        // person and household views, not in this at-a-glance column.
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (data.city) parts.push(String(data.city).trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    // Email grows to fill leftover width when no notes/description column is visible (address
-    // is intentionally a fixed, wrapping column). Notes/description still win when shown.
-    { field: 'email', headerName: 'Email', editable: true, flex: true, width: 220, minWidth: 180 },
-    { field: 'mobile', headerName: 'Mobile', editable: true, width: 140 },
-    {
-      // Campaign-scoped facts for the ACTIVE context (§15); blank = Unknown.
-      // Edited on the person page, not inline — they live in campaign_person_facts, not on persons.
-      field: 'support_level',
-      headerName: 'Support (context)',
-      editable: false,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        SUPPORT_LEVEL_LABELS[params.value as keyof typeof SUPPORT_LEVEL_LABELS] ?? '',
-    },
-    {
-      field: 'voting_status',
-      headerName: 'Voting (context)',
-      editable: false,
-      hide: true,
-      width: 150,
-      valueFormatter: (params: CellParams) =>
-        VOTING_STATUS_LABELS[params.value as keyof typeof VOTING_STATUS_LABELS] ?? '',
-    },
-    { field: 'company_name', headerName: 'Company', editable: false, hide: true },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  public listId = input<string | null>(null);
-
-  /** Grain total sentence for the header (spec §5): "{n} people total". */
-  protected readonly totalSentence = signal<string | null>(null);
-
-  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
-   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
-   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
-   * the chip shows what's filtering, not a hidden query param). */
-  protected readonly initialTagFilter = signal<string[]>([]);
-  protected readonly initialIssueFilter = signal<string[]>([]);
-
-  public ngOnInit() {
-    // Mute every column except the bold "Name" door, so the door reads as the way in.
-    for (const c of this.col) if (!c.doorColumn) c.cellClass = SECONDARY_CELL_CLASS;
-
-    const params = this.route.snapshot.queryParamMap;
-    const tag = params.get('tag');
-    const issue = params.get('issue');
-    if (tag) this.initialTagFilter.set([tag]);
-    if (issue) this.initialIssueFilter.set([issue]);
-
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadTotalCount();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Total people count for the grain header sentence (spec §5): "{n} people total".
-   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
-   * donor is derived from donations and volunteer/staff are first-class person
-   * status (§15), not grid segments — so only the overall total is fetched.
-   */
-  private async loadTotalCount(): Promise<void> {
-    try {
-      const total = await this.personsService.count();
-      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
-    } catch (err) {
-      console.error('Failed to load total count', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
-  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
-  // the shared header-mapping heuristic this grid used to own inline.
-  protected openImportDialog() {
-    void this.router.navigate(['/imports/new'], { queryParams: { type: 'people' } });
-  }
-
-  protected routeToHouseholds() {
-    this.confirmAddressEditDlg().close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  private confirmAddressChange(): void {
-    this.confirmAddressEditDlg().show();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: deleteConfirmMessageFor(this.config.messages, selected.length),
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(deleteSuccessMessageFor(this.config.messages, ids.length));
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.ts
-```typescript
-import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-
-export interface DNSVerificationRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid: boolean;
-}
-
-export interface VerifiedDomain {
-  domain: string;
-  status: 'verified' | 'pending';
-  spf: boolean;
-  dkim: boolean;
-  dmarc: boolean;
-  domainAuthId?: number;
-  linkBrandingId?: number;
-  domainAuthDns?: {
-    mail_cname?: DNSVerificationRecord;
-    dkim1?: DNSVerificationRecord;
-    dkim2?: DNSVerificationRecord;
-  };
-  linkBrandingDns?: {
-    domain?: DNSVerificationRecord;
-  };
-  linkBranded?: boolean;
-}
-
-@Component({
-  selector: 'pc-domains-settings',
-  imports: [EmptyState, Icon, StatusBadge],
-  templateUrl: './domains-settings.html',
-})
-export class DomainSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly newDomain = signal('');
-  protected readonly addingDomain = signal(false);
-  protected readonly verifyingDomain = signal<string | null>(null);
-  protected readonly lastDomainVerificationTimes = signal<Record<string, number>>({});
-  protected readonly domainCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
-    source: () => this.domainsList(),
-    computation: (list, prev) => {
-      const prevVal = prev?.value;
-      if (prevVal && list.some((d) => d.domain === prevVal)) {
-        return prevVal;
-      }
-      return null;
-    },
-  });
-
-  protected readonly domainsList = computed<VerifiedDomain[]>(() => {
-    return this.settingsSvc.getValue<VerifiedDomain[]>('communications.verified_domains') || [];
-  });
-
-  ngOnInit() {
-    // Ensure settings are loaded
-    void this.settingsSvc.load();
-  }
-
-  protected toggleExpand(domainName: string) {
-    if (this.expandedDomain() === domainName) {
-      this.expandedDomain.set(null);
-    } else {
-      this.expandedDomain.set(domainName);
-    }
-  }
-
-  protected async addDomain() {
-    const domainVal = this.newDomain().trim().toLowerCase();
-    if (!domainVal) return;
-
-    // Basic domain validation
-    const domainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/i;
-    if (!domainRegex.test(domainVal)) {
-      this.alerts.showError('Please provide a valid domain name (e.g. example.com).');
-      return;
-    }
-
-    const currentList = this.domainsList();
-    if (currentList.some((d) => d.domain === domainVal)) {
-      this.alerts.showError('This domain is already added.');
-      return;
-    }
-
-    this.addingDomain.set(true);
-
-    try {
-      await this.settingsSvc.addVerifiedDomain(domainVal);
-      this.newDomain.set('');
-      this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
-      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
-      this.alerts.showError(errMsg);
-    } finally {
-      this.addingDomain.set(false);
-    }
-  }
-
-  protected isDomainVerifyCooldown(domainName: string): boolean {
-    const lastTime = this.lastDomainVerificationTimes()[domainName];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  private startDomainCooldown(domainName: string) {
-    this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.domainCooldownSeconds()[domainName] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.domainCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[domainName];
-          return next;
-        });
-      } else {
-        this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: current - 1 }));
-      }
-    }, 1000);
-  }
-
-  protected async verifyDomain(domainName: string) {
-    if (this.isDomainVerifyCooldown(domainName)) {
-      this.alerts.showError('Please wait at least one minute before verifying this domain again.');
-      return;
-    }
-
-    this.verifyingDomain.set(domainName);
-
-    try {
-      const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
-      this.lastDomainVerificationTimes.update((prev) => ({
-        ...prev,
-        [domainName]: Date.now(),
-      }));
-      this.startDomainCooldown(domainName);
-      const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
-
-      if (updatedDomain && updatedDomain.status === 'verified') {
-        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
-      } else {
-        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
-      }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
-      this.alerts.showError(errMsg);
-    } finally {
-      this.verifyingDomain.set(null);
-    }
-  }
-
-  protected async deleteDomain(domainName: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Domain',
-      message: `Are you sure you want to remove the domain ${domainName}?`,
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.settingsSvc.deleteVerifiedDomain(domainName);
-      this.alerts.showSuccess(`Domain ${domainName} removed.`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
-      this.alerts.showError(errMsg);
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
-```typescript
-import { Component, computed, effect, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { AuthService } from '../../auth/auth-service';
-import { GettingStartedService } from './services/getting-started.service';
-
-/**
- * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
- * show a success check with their evidence; the next incomplete step is a primary link. Auto-
- * hides once all steps are done; dismissible before then (§3). All state is real (see the
- * service) — nothing is faked, which is also why the card stays hidden during demo mode: the
- * seeded sample data would tick every step. It appears (and fetches fresh counts) once the
- * tenant exits the demo.
- */
-@Component({
-  selector: 'pc-getting-started-card',
-  imports: [Icon, RouterLink],
-  template: `
-    @if (visible()) {
-      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
-        <div class="card-body gap-3 p-5">
-          <div class="flex items-center justify-between gap-3">
-            <div class="pc-eyebrow">Getting started · {{ doneCount() }} of {{ total() }} done</div>
-            <button
-              type="button"
-              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
-              (click)="dismiss()"
-              i18n="@@gettingStarted.dismiss.label"
-            >
-              Dismiss
-            </button>
-          </div>
-
-          <ul class="flex flex-col gap-2.5">
-            @for (step of steps(); track step.id) {
-              <li class="flex items-center gap-2.5">
-                @if (step.done) {
-                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
-                  <span class="text-sm text-base-content/70"
-                    >{{ step.label }}
-                    @if (step.evidence) {
-                      ({{ step.evidence }})
-                    }
-                  </span>
-                } @else if (step.id === nextStep()?.id) {
-                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
-                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
-                    step.label
-                  }}</a>
-                } @else {
-                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
-                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
-                }
-              </li>
-            }
-          </ul>
-        </div>
-      </div>
-    }
-  `,
-})
-export class GettingStartedCard {
-  private readonly svc = inject(GettingStartedService);
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-
-  private readonly user = this.auth.getUserSignal();
-  private readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
-
-  protected readonly visible = computed(() => !this.isDemo() && this.svc.visible());
-  protected readonly steps = this.svc.steps;
-  protected readonly doneCount = this.svc.doneCount;
-  protected readonly total = this.svc.total;
-  protected readonly nextStep = this.svc.nextStep;
-
-  constructor() {
-    // Refresh only outside demo mode — and again the moment the demo flag clears,
-    // so the steps reflect the emptied workspace, not the seeded counts.
-    effect(() => {
-      if (!this.isDemo()) void this.svc.refresh();
-    });
-  }
-
-  protected dismiss(): void {
-    this.svc.dismiss();
-    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.html
-```html
-<div class="mx-auto max-w-7xl space-y-6 p-6">
-  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
-      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
-      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
-        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ unassignedOpenCount() }} unassigned conversations</a
-        >
-        need an owner and
-        <button
-          type="button"
-          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          (click)="toggleSlaDetails('tasks')"
-        >
-          {{ totalTaskSlaBreaches() }} tasks
-        </button>
-        have breached SLA. Email response is {{ emailHealthWord() }},
-        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ activeContactsCount() }} new contacts</a
-        >
-        arrived this month@if (draftNewsletter(); as draft) {, and
-        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
-        >}.
-      </p>
-    </div>
-
-    <button
-      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
-      pcSpinOnClick
-      (click)="loadStats(true)"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload stats
-    </button>
-  </div>
-
-  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
-  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
-
-  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
-
-  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <!-- Task SLA -->
-    @if (totalTaskSlaBreaches() > 0) {
-    <button
-      type="button"
-      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
-      (click)="toggleSlaDetails('tasks')"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
-        <span class="text-sm font-semibold">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs opacity-70">
-        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
-        View the {{ totalTaskSlaBreaches() }} tasks
-      </div>
-    </button>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="pc-eyebrow">On track</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
-    </div>
-    }
-
-    <!-- Unassigned conversations -->
-    @if (unassignedOpenCount() > 0) {
-    <a
-      routerLink="/inbox"
-      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Waiting for an owner</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
-        <span class="text-sm font-semibold">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/60">
-        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
-        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
-    </a>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="pc-eyebrow">Inbox clear</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
-    </div>
-    }
-
-    <!-- Draft newsletter -->
-    @if (draftNewsletter(); as draft) {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Ready to send</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
-        <span class="text-sm font-semibold">Draft newsletter</span>
-      </div>
-      <div class="mt-1 truncate text-xs text-base-content/60">
-        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
-    </a>
-    } @else {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Reach your people</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
-        <span class="text-sm font-semibold">Draft newsletters</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
-    </a>
-    }
-  </div>
-
-  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
-  @if (showSlaDetails()) {
-  <pc-sla-details
-    [breachedEmails]="breachedEmails()"
-    [breachedTasks]="breachedTasks()"
-    [emailSlaHours]="emailSlaHours()"
-    [taskSlaHours]="taskSlaHours()"
-    [totalEmailBreaches]="totalEmailSlaBreaches()"
-    [totalTaskBreaches]="totalTaskSlaBreaches()"
-    [hasMoreEmails]="hasMoreEmails()"
-    [hasMoreTasks]="hasMoreTasks()"
-    [isLoadingEmails]="isLoadingEmails()"
-    [isLoadingTasks]="isLoadingTasks()"
-    (loadMoreEmails)="loadMoreEmails()"
-    (loadMoreTasks)="loadMoreTasks()"
-    [(activeTab)]="defaultSlaTab"
-  />
-  }
-
-  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Open emails</div>
-        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Unassigned open</div>
-        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Avg first response</div>
-        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
-        {{ avgFirstResponse() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Avg time to close</div>
-        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Contacts growth</div>
-        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
-        +{{ activeContactsCount() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
-    </div>
-  </div>
-
-  <!-- Growth chart (2fr) + Coming up (1fr) -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- New contacts line chart -->
-    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
-        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
-      </div>
-
-      @if (isInitialLoading()) {
-      <div class="skeleton h-[200px] w-full rounded-lg"></div>
-      } @else if (linePoints().length > 0) {
-      <div class="relative h-[200px] w-full">
-        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
-              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
-            </linearGradient>
-          </defs>
-
-          @for (label of yAxisLabels(); track label.y) {
-          <line
-            x1="20"
-            [attr.y1]="label.y"
-            x2="580"
-            [attr.y2]="label.y"
-            stroke="currentColor"
-            class="text-base-content/10"
-            stroke-dasharray="4"
-          ></line>
-          <text
-            [attr.x]="12"
-            [attr.y]="label.y + 3"
-            text-anchor="end"
-            class="fill-current text-[9px] tabular-nums text-base-content/40"
-          >
-            {{ label.value }}
-          </text>
-          }
-
-          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
-          <path
-            [attr.d]="linePath()"
-            fill="none"
-            stroke="var(--color-primary)"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-
-          @for (p of linePoints(); track p.date) {
-          <circle
-            [attr.cx]="p.x"
-            [attr.cy]="p.y"
-            r="4"
-            fill="var(--color-base-100)"
-            stroke="var(--color-primary)"
-            stroke-width="2"
-            class="cursor-pointer"
-            (mouseenter)="hoveredPoint.set(p)"
-            (mouseleave)="hoveredPoint.set(null)"
-          ></circle>
-          } @for (label of xAxisLabels(); track label.x) {
-          <text
-            [attr.x]="label.x"
-            [attr.y]="195"
-            text-anchor="middle"
-            class="fill-current text-[9px] text-base-content/40"
-          >
-            {{ label.label }}
-          </text>
-          }
-        </svg>
-
-        @if (hoveredPoint(); as p) {
-        <div
-          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
-          [style.left.%]="(p.x / 600) * 100"
-          [style.top.%]="(p.y / 200) * 100"
-        >
-          <div class="pc-eyebrow">{{ formatDate(p.date) }}</div>
-          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
-            <span class="h-2 w-2 rounded-full bg-primary"></span>
-            +{{ p.count }} contacts
-          </div>
-        </div>
-        }
-      </div>
-      } @else {
-      <div class="flex min-h-[200px] flex-col items-center justify-center">
-        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
-          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-            >Import your people</a
-          >
-        </pc-empty-state>
-      </div>
-      }
-    </div>
-
-    <!-- Coming up -->
-    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
-      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
-
-      @if (upcomingEvents().length > 0) {
-      <ul class="flex flex-col gap-1">
-        @for (ev of upcomingEvents(); track ev.id) {
-        <li>
-          <a
-            [routerLink]="['/events/shifts', ev.id]"
-            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
-          >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
-              <span class="block text-xs text-base-content/55">
-                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
-              </span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-      } @else {
-      <div class="flex flex-1 flex-col items-center justify-center">
-        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
-          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-            >Plan an event</a
-          >
-        </pc-empty-state>
-      </div>
-      }
-
-      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
-        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
-        below
-      </div>
-    </div>
-  </div>
-
-  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
-  <div class="rounded-xl border border-line bg-base-100 p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
-      <span class="text-xs text-base-content/50">Real-time</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="table pc-table w-full">
-        <thead>
-          <tr
-            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
-          >
-            <th class="py-2 pr-4 font-medium">Representative</th>
-            <th class="py-2 pr-4 text-right font-medium">Open</th>
-            <th class="py-2 pr-4 text-right font-medium">Closed</th>
-            <th class="py-2 pr-4 font-medium">Resolution</th>
-            <th class="py-2 pr-4 font-medium">Avg first response</th>
-            <th class="py-2 font-medium">SLA breaches</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of userStats(); track user.user_id) {
-          <tr class="border-b border-line last:border-0">
-            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
-            <td class="py-2.5 pr-4">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.resolutionRate >= 75"
-                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                [class.badge-error]="user.resolutionRate < 40"
-                >{{ user.resolutionRate }}%</span
-              >
-            </td>
-            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
-            <td class="py-2.5">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
-                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
-                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
-              >
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6">
-              <pc-empty-state
-                icon="user-group"
-                [bordered]="false"
-                title="No representative activity yet"
-                hint="Stats build up as your team works emails and tasks."
-              />
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.ts
-```typescript
-import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DashboardService } from './services/dashboard.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { SlaDetails } from './sla-details';
-import { GettingStartedCard } from './getting-started-card';
-import { DemoModeCard } from './demo-mode-card';
-import { AuthService } from '../../auth/auth-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-interface UpcomingEvent {
-  id: string;
-  name: string;
-  start_time: string;
-  capacity: number | null;
-  location_address: string | null;
-}
-
-interface DraftNewsletter {
-  id: string;
-  name: string;
-  total_recipients: number;
-}
-
-@Component({
-  imports: [EmptyState, Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
-  selector: 'pc-summary',
-  templateUrl: './summary.html',
-})
-export class Summary implements OnInit {
-  private readonly dashboardSvc = inject(DashboardService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
-
-  constructor() {
-    effect(() => {
-      const tab = this.defaultSlaTab();
-      const open = this.showSlaDetails();
-      if (open) {
-        if (tab === 'emails') {
-          if (this.breachedEmails().length === 0) {
-            this.emailPage.set(1);
-            void this.loadMoreEmails();
-          }
-        } else {
-          if (this.breachedTasks().length === 0) {
-            this.taskPage.set(1);
-            void this.loadMoreTasks();
-          }
-        }
-      }
-    });
-  }
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly isRefreshing = signal(false);
-
-  // Greeting + date line (§1 "where am I": name the person and the day)
-  private readonly currentUser = this.auth.getUserSignal();
-  protected readonly todayLabel = computed(() =>
-    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
-  );
-  protected readonly greeting = computed(() => {
-    const hour = new Date().getHours();
-    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-    const name = this.currentUser()?.first_name?.trim();
-    return name ? `Good ${part}, ${name}` : `Good ${part}`;
-  });
-
-  // KPIs
-  protected readonly totalAssignedCount = signal(0);
-  protected readonly unassignedOpenCount = signal(0);
-  protected readonly totalOpenCount = signal(0);
-  protected readonly avgFirstResponse = signal('—');
-  protected readonly avgTimeToClose = signal('—');
-  protected readonly activeContactsCount = signal(0);
-  protected readonly resolutionRate = signal(0);
-
-  // Next-action context (real data from the backend; null when nothing applies)
-  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
-  protected readonly firstResponseDueHours = signal<number | null>(null);
-  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
-  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
-
-  // SLA Signals
-  protected readonly unassignedEmailSlaBreaches = signal(0);
-  protected readonly unassignedTaskSlaBreaches = signal(0);
-  protected readonly totalEmailSlaBreaches = signal(0);
-  protected readonly totalTaskSlaBreaches = signal(0);
-
-  protected readonly breachedEmails = signal<unknown[]>([]);
-  protected readonly breachedTasks = signal<unknown[]>([]);
-  protected readonly emailPage = signal(1);
-  protected readonly taskPage = signal(1);
-  protected readonly hasMoreEmails = signal(false);
-  protected readonly hasMoreTasks = signal(false);
-  protected readonly isLoadingEmails = signal(false);
-  protected readonly isLoadingTasks = signal(false);
-
-  protected readonly emailSlaHours = signal(24);
-  protected readonly taskSlaHours = signal(24);
-  protected readonly emailSlaWarningThreshold = signal(1);
-  protected readonly emailSlaCriticalThreshold = signal(4);
-  protected readonly taskSlaWarningThreshold = signal(1);
-  protected readonly taskSlaCriticalThreshold = signal(4);
-  protected readonly showSlaDetails = signal(false);
-  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
-
-  protected readonly emailSlaStatus = computed(() => {
-    const breaches = this.totalEmailSlaBreaches();
-    const warning = this.emailSlaWarningThreshold();
-    const critical = this.emailSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  /** One-word email-health phrase for the briefing paragraph. */
-  protected readonly emailHealthWord = computed(() => {
-    switch (this.emailSlaStatus()) {
-      case 'critical':
-        return 'breaching SLA';
-      case 'warning':
-        return 'under pressure';
-      default:
-        return 'healthy';
-    }
-  });
-
-  // SVG line chart data (contacts growth)
-  protected readonly linePath = signal('');
-  protected readonly areaPath = signal('');
-  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
-  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
-  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
-  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
-
-  protected readonly userStats = signal<
-    Array<{
-      user_id: string;
-      first_name: string;
-      last_name: string;
-      openCount: number;
-      closedCount: number;
-      resolutionRate: number;
-      avgFirstResponse: string;
-      avgTimeToClose: string;
-      emailSlaBreaches: number;
-      taskSlaBreaches: number;
-    }>
-  >([]);
-  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
-
-  public ngOnInit() {
-    void this.loadStats();
-  }
-
-  protected async loadStats(announce = false) {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    const end = this._loading.begin();
-    try {
-      const stats = await this.dashboardSvc.getStats();
-
-      // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.totalAssignedCount.set(totalAssigned);
-      this.unassignedOpenCount.set(stats.unassignedCount || 0);
-      this.totalOpenCount.set(stats.totalOpenCount || 0);
-
-      const respHours = stats.avgFirstResponseHours;
-      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
-
-      const closeHours = stats.avgTimeToCloseHours;
-      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
-
-      const totalNewContacts = (stats.contactsGrowth || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.activeContactsCount.set(totalNewContacts);
-
-      const totalClosed = (stats.emailsClosed || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      const totalEmails = totalAssigned + totalClosed;
-      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
-      this.resolutionRate.set(Math.round(rate));
-
-      // Next-action context
-      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
-      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
-      this.draftNewsletter.set(stats.draftNewsletter ?? null);
-      this.upcomingEvents.set(stats.upcomingEvents ?? []);
-
-      // Set SLA breaches
-      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
-      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
-      this.unassignedEmailSlaBreaches.set(unassignedEmails);
-      this.unassignedTaskSlaBreaches.set(unassignedTasks);
-
-      const assignedEmailSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
-        0,
-      );
-      const assignedTaskSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
-        0,
-      );
-
-      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
-      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
-
-      // Reset breached lists (loaded on demand when the drill-down opens)
-      if (this.showSlaDetails()) {
-        if (this.defaultSlaTab() === 'emails') {
-          this.breachedEmails.set([]);
-          this.emailPage.set(1);
-        } else {
-          this.breachedTasks.set([]);
-          this.taskPage.set(1);
-        }
-      } else {
-        this.breachedEmails.set([]);
-        this.emailPage.set(1);
-        this.hasMoreEmails.set(false);
-
-        this.breachedTasks.set([]);
-        this.taskPage.set(1);
-        this.hasMoreTasks.set(false);
-      }
-
-      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
-      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
-      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
-      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
-      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
-      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
-
-      // Representative stats table
-      const formattedUserStats = (stats.userStats || []).map(
-        (u: {
-          user_id: string;
-          first_name: string;
-          last_name: string;
-          openCount: number;
-          closedCount: number;
-          resolutionRate: number;
-          avgFirstResponseHours: number;
-          avgTimeToCloseHours: number;
-          emailSlaBreaches?: number;
-          taskSlaBreaches?: number;
-        }) => ({
-          user_id: u.user_id,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          openCount: u.openCount,
-          closedCount: u.closedCount,
-          resolutionRate: u.resolutionRate,
-          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
-          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
-          emailSlaBreaches: u.emailSlaBreaches || 0,
-          taskSlaBreaches: u.taskSlaBreaches || 0,
-        }),
-      );
-      this.userStats.set(formattedUserStats);
-
-      // Line chart: contacts growth (last 30 days)
-      const growth = stats.contactsGrowth || [];
-      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
-      const width = 600;
-      const height = 200;
-      const padding = 20;
-
-      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
-        (g: { date: string; count: number }, i: number) => {
-          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
-          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
-          return { x, y, date: g.date, count: g.count };
-        },
-      );
-      this.linePoints.set(points);
-
-      const firstPoint = points[0];
-      const lastPoint = points[points.length - 1];
-      if (firstPoint && lastPoint) {
-        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        this.linePath.set(lPath);
-        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
-      } else {
-        this.linePath.set('');
-        this.areaPath.set('');
-      }
-
-      const yLabels = [
-        { y: 20, value: maxCount },
-        { y: 60, value: Math.round(maxCount * 0.75) },
-        { y: 100, value: Math.round(maxCount * 0.5) },
-        { y: 140, value: Math.round(maxCount * 0.25) },
-        { y: 180, value: 0 },
-      ];
-      this.yAxisLabels.set(yLabels);
-
-      const xLabels: { x: number; label: string }[] = [];
-      if (points.length > 0) {
-        const indices = [
-          0,
-          Math.floor(points.length * 0.25),
-          Math.floor(points.length * 0.5),
-          Math.floor(points.length * 0.75),
-          points.length - 1,
-        ];
-        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
-        for (const idx of uniqueIndices) {
-          const pt = points[idx];
-          if (!pt) continue;
-          let dateStr = pt.date;
-          try {
-            const dateObj = new Date(pt.date);
-            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch {
-            /* keep raw date string on parse failure */
-          }
-          xLabels.push({ x: pt.x, label: dateStr });
-        }
-      }
-      this.xAxisLabels.set(xLabels);
-
-      if (announce) {
-        this.alertSvc.showSuccess('Stats reloaded. All figures current as of now');
-      }
-    } catch {
-      this.alertSvc.showError('Failed to load dashboard metrics');
-    } finally {
-      end();
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  private formatHours(hours: number): string {
-    if (hours < 1) {
-      const minutes = Math.round(hours * 60);
-      return `${minutes}m`;
-    }
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = Math.round(hours % 24);
-      return `${days}d ${remainingHours}h`;
-    }
-    return `${hours.toFixed(1)}h`;
-  }
-
-  /** Short "2h" / "3d" relative label for the next-action cards. */
-  protected roundedHours(hours: number | null): string {
-    if (hours == null) return '—';
-    if (hours < 1) return `${Math.round(hours * 60)}m`;
-    if (hours >= 24) return `${Math.round(hours / 24)}d`;
-    return `${Math.round(hours)}h`;
-  }
-
-  protected formatEventTime(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
-    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
-      this.showSlaDetails.set(false);
-    } else {
-      this.defaultSlaTab.set(tab);
-      this.showSlaDetails.set(true);
-    }
-  }
-
-  protected async loadMoreEmails() {
-    if (this.isLoadingEmails()) return;
-    this.isLoadingEmails.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
-      if (this.emailPage() === 1) {
-        this.breachedEmails.set(res.items);
-      } else {
-        this.breachedEmails.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreEmails.set(res.hasMore);
-      this.emailPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached emails');
-    } finally {
-      this.isLoadingEmails.set(false);
-    }
-  }
-
-  protected async loadMoreTasks() {
-    if (this.isLoadingTasks()) return;
-    this.isLoadingTasks.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
-      if (this.taskPage() === 1) {
-        this.breachedTasks.set(res.items);
-      } else {
-        this.breachedTasks.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreTasks.set(res.hasMore);
-      this.taskPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached tasks');
-    } finally {
-      this.isLoadingTasks.set(false);
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
-```html
-@if (error() && !detail() && !isNew()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!isNew() && !detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading team…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
-    [eyebrow]="isNew() ? 'New' : 'Editing'"
-    [crumbs]="crumbs()"
-    subtitle="Teams group volunteers for easier coordination."
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
-    [showDelete]="!isNew()"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    deleteText="Delete team"
-    (save)="save($event)"
-    (delete)="deleteTeam()"
-  ></pc-detail-header>
-
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <form class="grid gap-6" (submit)="save($event)" novalidate>
-    <pc-card>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
-
-        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
-          <option value="">No captain</option>
-          @for (person of people(); track person.id) {
-          <option [value]="person.id">{{ person.label }}</option>
-          }
-        </pc-select>
-
-        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
-          <option value="">No lead</option>
-          @for (user of users(); track user.id) {
-          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
-          }
-        </pc-select>
-      </div>
-
-      <pc-textarea
-        id="team-description"
-        label="Description"
-        [rows]="3"
-        [formField]="form.description"
-        placeholder="Describe this team's focus"
-      ></pc-textarea>
-    </pc-card>
-
-    <!-- Volunteers Section -->
-    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
-      <div pc-card-actions class="text-sm text-base-content/60">
-        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
-          <select
-            id="volunteer-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onVolunteersChange($event)"
-            multiple
-          >
-            @for (person of people(); track person.id) {
-            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (volunteers().length === 0) {
-            <p class="p-3 text-sm text-base-content/50">
-              No volunteers assigned yet. Pick them from the list on the left.
-            </p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
-                  @if (volunteer.email) {
-                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
-                  }
-                </div>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </div>
-      </div>
-    </pc-card>
-
-    <!-- Assigned target constituent lists section -->
-    <pc-card
-      title="Target Constituent Lists"
-      subtitle="Assign lists of people or households this team is responsible for contacting."
-    >
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
-          <select
-            id="lists-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onListsChange($event)"
-            multiple
-          >
-            @for (list of availableLists(); track list.id) {
-            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/50">No lists assigned yet. Pick them from the list on the left.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (list of assignedLists(); track list.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/60">
-                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                  </p>
-                </div>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </div>
-      </div>
-    </pc-card>
-
-    <!-- Team Tasks Section -->
-    @if (!isNew()) {
-    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
-      <a
-        pc-card-actions
-        class="btn btn-xs btn-primary gap-1"
-        [routerLink]="['/tasks/add']"
-        [queryParams]="{ team_id: id }"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-      </a>
-
-      <div class="overflow-x-auto rounded border border-base-200">
-        @if (teamTasks().length === 0) {
-        <pc-empty-state icon="task" [bordered]="false" title="No tasks assigned to this team yet">
-          <a class="btn btn-primary btn-sm gap-1" [routerLink]="['/tasks/add']" [queryParams]="{ team_id: id }">
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-          </a>
-        </pc-empty-state>
-        } @else {
-        <table class="table pc-table table-zebra w-full">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Due date</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (task of teamTasks(); track task.id) {
-            <tr>
-              <td class="font-medium">
-                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
-                  {{ task.priority || 'medium' }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
-                  {{ task.status || 'todo' }}
-                </span>
-              </td>
-              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
-              <td>
-                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-        }
-      </div>
-    </pc-card>
-    }
-  </form>
-</section>
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-page.html
-```html
-<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
-    <span class="tooltip-left" [class.tooltip]="inviteLockReason() !== null" [attr.data-tip]="inviteLockReason()">
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        [disabled]="inviteLockReason() !== null"
-        (click)="openInvite()"
-      >
-        <pc-icon name="user-plus" [size]="4"></pc-icon>
-        Invite user
-      </button>
-    </span>
-  </pc-grid-header>
-
-  <!-- Table -->
-  <pc-table [loading]="loading.visible()" [columns]="6">
-    <ng-container pcTableHead>
-      <th>User</th>
-      <th>Role</th>
-      <th>Status</th>
-      <th>MFA</th>
-      <th>Last active</th>
-      <th class="w-10"></th>
-    </ng-container>
-
-    @if (loaded() && rows().length === 0) {
-    <tr>
-      <td colspan="6" class="px-6">
-        <pc-empty-state icon="users" [bordered]="false" title="No users yet" hint="Invite your first teammate.">
-          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
-        </pc-empty-state>
-      </td>
-    </tr>
-    } @else { @for (row of rows(); track row.id) {
-    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="isDeactivated(row)">
-      <td>
-        <div class="flex items-center gap-3">
-          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <a
-                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
-                [routerLink]="['/users', row.id]"
-              >
-                {{ displayName(row) }}
-              </a>
-              @if (isSelf(row)) {
-              <span class="text-xs text-base-content/50">(you)</span>
-              }
-            </div>
-            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
-          </div>
-        </div>
-      </td>
-      <td>
-        @if (roleLockReason(row); as reason) {
-        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
-          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role: ' + reason">
-            <option>{{ roleLabel(row.role) }}</option>
-          </select>
-        </span>
-        } @else {
-        <select
-          class="select select-bordered select-sm w-32"
-          [disabled]="savingIds().has(row.id)"
-          [attr.aria-label]="'Role for ' + displayName(row)"
-          (change)="changeRole(row, $event)"
-        >
-          @for (r of roleOptions(row); track r) {
-          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
-          }
-        </select>
-        }
-      </td>
-      <td>
-        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
-      </td>
-      <td>
-        @if (row.two_factor_enabled) {
-        <span class="tooltip" data-tip="MFA enabled">
-          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
-        </span>
-        } @else {
-        <span class="text-base-content/30">—</span>
-        }
-      </td>
-      <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
-      <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
-          >
-            <li>
-              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
-            </li>
-            <li>
-              <a (click)="sendPasswordReset(row)">
-                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
-              </a>
-            </li>
-          </ul>
-        </div>
-      </td>
-    </tr>
-    } }
-
-    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
-      Users are staff logins. Volunteers live in
-      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
-      and don't need an account.
-    </div>
-  </pc-table>
-
-  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
-```html
-<div class="mx-auto flex h-full min-h-[calc(100vh-120px)] max-w-7xl flex-col gap-6 p-6">
-  <!-- Header ------------------------------------------------------------------->
-  <div class="mb-2 flex items-center justify-between border-b border-base-200 pb-4">
-    <div class="flex items-center gap-3">
-      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <pc-icon name="add-schedule" [size]="5"></pc-icon>
-      </div>
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          {{ isNew() && !triggerSelected() ? 'New automation' : payload().name || 'Untitled automation' }}
-        </h1>
-        <p class="mt-0.5 text-sm text-base-content/60">
-          {{ isNew() && !triggerSelected() ? 'Pick a trigger to begin.' : 'Design the sequence and set who enrolls.' }}
-        </p>
-      </div>
-    </div>
-    @if (triggerSelected()) {
-    <pc-form-actions
-      [isLoading]="isLoading()"
-      [signalForm]="form"
-      [saveAlwaysEnabled]="true"
-      (btn1Clicked)="save($event)"
-      [buttonsToShow]="'two'"
-      [btn1Text]="'Save automation'"
-      [btn1Icon]="'save'"
-      [showDelete]="!isNew()"
-      [deleteText]="'Delete automation'"
-      (deleteClicked)="deleteWorkflow()"
-    ></pc-form-actions>
-    }
-  </div>
-
-  <!-- TRIGGER PICKER (new automation / Change) --------------------------------->
-  @if (!triggerSelected()) {
-  <div class="mx-auto flex w-full max-w-5xl flex-col items-center gap-8 py-6">
-    <div class="flex flex-col gap-2 text-center">
-      <h2 class="text-2xl font-bold tracking-tight text-base-content">Select a trigger event</h2>
-      <p class="text-sm text-base-content/60">
-        The trigger decides when someone enters this automation; everything after it is the sequence.
-      </p>
-    </div>
-
-    <div class="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      @for (card of triggerCards; track card.type) {
-      <button
-        type="button"
-        (click)="selectTrigger(card.type)"
-        class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
-      >
-        <div
-          class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
-        >
-          <pc-icon [name]="card.icon" [size]="5"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
-          <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
-        </div>
-        <span class="mt-1 text-xs font-semibold text-primary">Select trigger →</span>
-      </button>
-      }
-    </div>
-  </div>
-  }
-
-  <!-- WORKSPACE ---------------------------------------------------------------->
-  @if (triggerSelected()) {
-  <pc-tabs [tabs]="tabs()" [(activeTab)]="activeTab">
-    <!-- SEQUENCE DESIGNER ------------------------------------------------------>
-    <pc-tab-panel id="sequence" [activeTab]="activeTab()">
-      <div class="flex w-full flex-col items-start gap-6 lg:flex-row">
-        <!-- Left: vertical sequence flow -->
-        <div
-          class="flex w-full flex-1 flex-col items-center gap-0 rounded-2xl border border-base-300 bg-base-200/40 p-8"
-        >
-          <!-- Trigger card -->
-          <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
-            <div class="flex items-center justify-between">
-              <span class="pc-eyebrow">Trigger: when</span>
-              <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
-            </div>
-            <div class="mt-2 flex items-center gap-2">
-              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <pc-icon [name]="triggerMeta()?.icon ?? 'user-plus'" [size]="5"></pc-icon>
-              </div>
-              <span class="text-sm font-semibold text-base-content">{{ triggerMeta()?.title ?? 'Trigger' }}</span>
-            </div>
-            @if (triggerNeedsTarget()) {
-            <select
-              class="select select-bordered select-sm mt-3 w-full text-xs"
-              [value]="payload().trigger_event_id"
-              (change)="setTriggerTarget($any($event.target).value)"
-            >
-              <option value="">Any</option>
-              @for (opt of triggerTargetOptions(); track opt.id) {
-              <option [value]="opt.id">{{ opt.name }}</option>
-              }
-            </select>
-            }
-          </div>
-
-          <!-- Insertion point 0 -->
-          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: 0 }"></ng-container>
-
-          <!-- Steps -->
-          @for (step of steps(); track step.uid; let i = $index) {
-          <!-- WAIT pill -->
-          @if (step.kind === 'wait') {
-          <div
-            class="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-warning-content"
-          >
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            <span>Wait</span>
-            <input
-              type="number"
-              min="0"
-              class="input input-xs w-14 text-center"
-              [value]="step.delay_days"
-              (input)="setStepDelay(i, $any($event.target).value)"
-            />
-            <select
-              class="select select-xs"
-              [value]="step.delay_unit"
-              (change)="setStepDelayUnit(i, $any($event.target).value)"
-            >
-              <option value="days">days</option>
-              <option value="hours">hours</option>
-            </select>
-            <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-          } @else {
-          <!-- STEP card -->
-          <div class="w-80 pc-panel p-4">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <pc-icon [name]="stepMeta(step.kind).icon" [size]="4"></pc-icon>
-                </div>
-                <span class="text-sm font-semibold text-base-content">{{ stepMeta(step.kind).label }}</span>
-              </div>
-              <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
-                <pc-icon name="x-mark" [size]="4"></pc-icon>
-              </button>
-            </div>
-
-            <!-- Inline value input per kind -->
-            <div class="mt-3">
-              @switch (step.kind) { @case ('send_email') {
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full text-xs"
-                placeholder="Email subject"
-                [value]="step.subject ?? ''"
-                (input)="setStepEmailSubject(i, $any($event.target).value)"
-              />
-              <button
-                type="button"
-                class="btn btn-outline btn-secondary btn-xs mt-2 gap-1"
-                (click)="openEmailDesigner(i)"
-              >
-                <pc-icon name="pencil-square" [size]="4"></pc-icon>
-                Design email
-              </button>
-              } @case ('add_tag') {
-              <select
-                class="select select-bordered select-sm w-full text-xs"
-                [value]="step.config.tag_id ?? ''"
-                (change)="setStepTag(i, $any($event.target).value)"
-              >
-                <option value="">Choose a tag…</option>
-                @for (tag of tags(); track tag.id) {
-                <option [value]="tag.id">{{ tag.name }}</option>
-                }
-              </select>
-              } @case ('create_task') {
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full text-xs"
-                placeholder="Task title"
-                [value]="step.config.task_title ?? ''"
-                (input)="setStepTaskTitle(i, $any($event.target).value)"
-              />
-              } @case ('notify_team') {
-              <select
-                class="select select-bordered select-sm w-full text-xs"
-                [value]="step.config.notify_user_id ?? ''"
-                (change)="setStepNotifyMember(i, $any($event.target).value)"
-              >
-                <option value="">Automation owner</option>
-                @for (member of teamMembers(); track member.id) {
-                <option [value]="member.id">{{ member.name }}</option>
-                }
-              </select>
-              } }
-            </div>
-          </div>
-          }
-
-          <!-- Insertion point after this step -->
-          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: i + 1 }"></ng-container>
-          }
-
-          <!-- Empty state -->
-          @if (steps().length === 0) {
-          <div class="my-4 max-w-sm rounded-xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center">
-            <p class="text-sm text-base-content/60">
-              No steps yet. Use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
-              mixed in any order.
-            </p>
-          </div>
-          }
-
-          <!-- Exit terminator -->
-          <div
-            class="flex items-center gap-2 rounded-2xl bg-neutral px-6 py-3 text-xs font-bold uppercase tracking-wider text-neutral-content"
-          >
-            <pc-icon name="check-circle" [size]="4"></pc-icon>
-            Exit automation
-          </div>
-        </div>
-
-        <!-- Right rail --------------------------------------------------------->
-        <aside class="flex w-full shrink-0 flex-col gap-6 lg:w-96">
-          <!-- WORKFLOW SETTINGS -->
-          <section class="pc-panel p-5">
-            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Workflow settings</h3>
-            <div class="mt-3 flex flex-col gap-4">
-              <div class="form-control">
-                <label class="label label-text py-1 text-xs font-semibold">Name</label>
-                <input
-                  type="text"
-                  class="input input-bordered input-sm w-full"
-                  placeholder="e.g. Volunteer follow-up"
-                  [formField]="form.name"
-                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-                />
-                <p class="mt-1 text-[10px] text-base-content/50">
-                  Name the automation so the list and the Activity log can name it.
-                </p>
-              </div>
-
-              <div class="form-control">
-                <label class="label label-text py-1 text-xs font-semibold">Description</label>
-                <textarea
-                  class="textarea textarea-bordered textarea-sm w-full text-xs"
-                  rows="3"
-                  placeholder="What it does, for the next teammate"
-                  [formField]="form.description"
-                ></textarea>
-              </div>
-
-              <div class="form-control">
-                <label class="label cursor-pointer justify-start gap-3 py-1">
-                  <input
-                    type="checkbox"
-                    class="toggle toggle-primary toggle-sm"
-                    [checked]="payload().status === 'active'"
-                    (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
-                  />
-
-                  <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
-                </label>
-                <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
-                  @if (payload().status === 'active') { Runs every time the trigger fires; nothing queues. } @else {
-                  Paused. Nothing runs or queues until you resume it. }
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <!-- ONLY ENROLL IF -->
-          <section class="pc-panel p-5">
-            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Only enroll if</h3>
-            <div class="mt-3">
-              <pc-query-builder
-                [group]="conditions()"
-                [fields]="conditionFields"
-                [showSummary]="false"
-                (changed)="onConditionsChange()"
-              ></pc-query-builder>
-              @if (!hasConditions()) {
-              <p class="mt-2 text-[10px] text-base-content/50">No conditions. Everyone who hits the trigger enrolls.</p>
-              }
-            </div>
-          </section>
-
-          <!-- SEQUENCE OVERVIEW -->
-          <section class="pc-panel p-5">
-            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Sequence overview</h3>
-            <div class="mt-3 flex flex-col gap-1.5 text-xs text-base-content/70">
-              <div class="flex justify-between">
-                <span>Total steps</span><span class="font-mono">{{ steps().length }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span>Enrolled contacts</span><span class="font-mono">{{ enrollments().length }}</span>
-              </div>
-            </div>
-          </section>
-
-          <!-- RECENT RUNS -->
-          <section class="pc-panel p-5">
-            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Recent runs</h3>
-            @if (runs().length === 0) {
-            <p class="mt-3 text-[10px] text-base-content/50">
-              No runs yet. History appears here after the first trigger fires.
-            </p>
-            } @else {
-            <ul class="mt-3 flex flex-col gap-2">
-              @for (run of runs(); track run.id) {
-              <li class="flex items-center justify-between gap-2 text-xs">
-                <div class="flex min-w-0 items-center gap-2">
-                  <pc-status-badge [type]="run.status === 'success' ? 'success' : 'error'">
-                    {{ run.status === 'success' ? 'Success' : 'Failed' }}
-                  </pc-status-badge>
-                  <span class="truncate text-base-content/70">{{ runContact(run) }}</span>
-                </div>
-                @if (run.status === 'failed' && run.error) {
-                <span class="truncate text-[10px] text-error" [title]="run.error">{{ run.error }}</span>
-                }
-              </li>
-              }
-            </ul>
-            }
-          </section>
-        </aside>
-      </div>
-    </pc-tab-panel>
-
-    <!-- ENROLLED CONTACTS ------------------------------------------------------>
-    <pc-tab-panel id="enrolled" [activeTab]="activeTab()">
-      <div class="flex flex-col gap-4">
-        <p class="text-xs text-base-content/60">
-          Enrollment is per contact. Someone already in the sequence isn't enrolled twice by the same trigger.
-        </p>
-
-        @if (enrollments().length === 0) {
-        <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center">
-          <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-base-200">
-            <pc-icon name="user-group" [size]="5"></pc-icon>
-          </div>
-          <p class="mx-auto max-w-md text-sm text-base-content/60">
-            No one enrolled yet. Contacts appear here the first time the trigger fires. Save the automation active and
-            it starts watching immediately.
-          </p>
-        </div>
-        } @else {
-        <div class="overflow-x-auto pc-panel">
-          <table class="table pc-table w-full">
-            <thead>
-              <tr>
-                <th>Contact</th>
-                <th>Entered</th>
-                <th>Where they are</th>
-                <th>Status</th>
-                <th class="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (en of enrollments(); track en.id) {
-              <tr>
-                <td class="text-xs font-semibold">{{ contactName(en) }}</td>
-                <td class="text-xs text-base-content/60">{{ en.enrolled_at | date: 'mediumDate' }}</td>
-                <td class="text-xs text-base-content/70">{{ stepPositionLabel(en) }}</td>
-                <td>
-                  <pc-status-badge
-                    [type]="en.status === 'active' ? 'info' : en.status === 'completed' ? 'success' : 'ghost'"
-                  >
-                    {{ en.status }}
-                  </pc-status-badge>
-                </td>
-                <td class="text-right">
-                  @if (en.status === 'active') {
-                  <button type="button" class="btn btn-ghost btn-xs gap-1 text-error" (click)="cancelEnrollment(en.id)">
-                    <pc-icon name="x-mark" [size]="4"></pc-icon>
-                    Cancel
-                  </button>
-                  }
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-
-  @if (!isNew() && workflowId()) {
-  <div class="mt-8 border-t border-base-200 pt-6">
-    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
-  </div>
-  } }
-</div>
-
-<!-- ADD A STEP insertion point (dashed connector + menu) ----------------------->
-<ng-template #insertionPoint let-index="index">
-  <div class="flex flex-col items-center">
-    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
-    <div class="dropdown dropdown-bottom dropdown-center">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-circle btn-outline btn-secondary btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
-        title="Add a step"
-      >
-        <pc-icon name="add-schedule" [size]="4"></pc-icon>
-      </div>
-      <ul
-        tabindex="0"
-        class="menu dropdown-content z-10 mt-1 w-64 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-      >
-        <li class="menu-title text-[10px] uppercase tracking-wider">Add a step</li>
-        @for (sk of stepKinds; track sk.kind) {
-        <li>
-          <a class="flex items-start gap-2 py-2" (click)="addStepAt(index, sk.kind)">
-            <pc-icon [name]="sk.icon" [size]="4" class="text-primary"></pc-icon>
-            <span class="flex flex-col">
-              <span class="text-xs font-semibold">{{ sk.label }}</span>
-              <span class="text-[10px] text-base-content/50">{{ sk.hint }}</span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-    </div>
-    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
-  </div>
-</ng-template>
-
-<!-- EMAIL DESIGNER modal ------------------------------------------------------->
-@if (editingEmailStepIndex() !== null) {
-<div class="animate-fade-in fixed inset-0 z-[150] flex flex-col bg-base-100">
-  <div class="flex items-center justify-between border-b border-base-300 bg-base-100 px-6 py-4">
-    <div class="flex items-center gap-3">
-      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <pc-icon name="paper-airplane" [size]="5"></pc-icon>
-      </div>
-      <div class="flex flex-col">
-        <h2 class="text-base font-bold text-base-content">Email designer</h2>
-        <p class="text-xs text-base-content/50">Step {{ editingEmailStepIndex()! + 1 }} email</p>
-      </div>
-    </div>
-    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="closeEmailDesigner()">
-      <pc-icon name="check-circle" [size]="4"></pc-icon>
-      Done
-    </button>
-  </div>
-  <div class="flex-1 overflow-hidden bg-base-200 p-6">
-    <pc-visual-newsletter-editor
-      [htmlContent]="editingEmailHtml()"
-      [plainTextContent]="editingEmailText()"
-      (htmlContentChange)="onEmailHtmlChange($event)"
-      (plainTextContentChange)="onEmailTextChange($event)"
-    ></pc-visual-newsletter-editor>
-  </div>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
-```html
-<div class="flex flex-col gap-6 p-6">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Automations" [totalSentence]="summarySentence()">
-    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
-      <pc-icon name="add-schedule" [size]="4"></pc-icon>
-      New automation
-    </button>
-  </pc-grid-header>
-
-  @if (isLoading() && !loaded()) {
-  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
-  } @else if (rows().length === 0) {
-  <!-- Empty state ------------------------------------------------------------->
-  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
-    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
-      <pc-icon name="add-schedule" [size]="6"></pc-icon>
-    </div>
-    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
-    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
-      Automations run a sequence (waits, emails, tags, tasks and notifications) every time a trigger fires. Create your
-      first one to start.
-    </p>
-    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
-  </div>
-  } @else {
-  <!-- List -------------------------------------------------------------------->
-  <div class="overflow-hidden pc-panel">
-    <!-- Column header -->
-    <div
-      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 pc-eyebrow md:grid"
-    >
-      <span class="w-24">Status</span>
-      <span>Automation</span>
-      <span class="text-right">Runs 30d</span>
-      <span>Last run</span>
-    </div>
-
-    @for (row of rows(); track row.id) {
-    <div
-      class="grid cursor-pointer text-xs grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
-      [class.opacity-60]="row.status === 'paused'"
-      (click)="openAutomation(row)"
-    >
-      <!-- STATUS toggle -->
-      <div class="flex items-center text-xs gap-2 w-24" (click)="$event.stopPropagation()">
-        <input
-          type="checkbox"
-          class="toggle toggle-primary toggle-sm"
-          [checked]="row.status === 'active'"
-          [title]="statusTooltip(row)"
-          [attr.aria-label]="statusTooltip(row)"
-          (change)="toggleStatus(row, $event)"
-        />
-        <span>{{ row.status === 'active' ? 'Active' : 'Paused' }}</span>
-      </div>
-
-      <!-- AUTOMATION: name door + recipe sentence -->
-      <div class="min-w-0">
-        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
-        <div class="truncate text-xs text-base-content/60">{{ recipe(row) }}</div>
-      </div>
-
-      <!-- RUNS 30D -->
-      <div class="text-xs tabular-nums text-base-content/80 md:text-right">
-        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
-      </div>
-
-      <!-- LAST RUN (+ inline failure narration) -->
-      <div class="text-xs">
-        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
-        @if (row.last_run_error) {
-        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
-          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
-          <span>Last run failed: {{ row.last_run_error }}</span>
-        </div>
-        }
-      </div>
-    </div>
-    }
-  </div>
-
-  <!-- Footer (verbatim spec copy) --------------------------------------------->
-  <p class="text-xs text-base-content/50">
-    Every run is written to the Activity log. Pausing stops new runs immediately. Nothing queues while paused.
-  </p>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
 ```typescript
 //tsco: ignore
@@ -62070,132 +55120,7561 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/website/src/app/ui/site-footer.ts
+## File: apps/frontend/src/app/shared/public-pages.ts
 ```typescript
-import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { SiteLogo } from './site-logo';
-import { SIGNUP_URL } from './site-nav';
-
-interface FooterLink {
-  readonly label: string;
-  /** Internal router path. */
-  readonly path?: string;
-  /** External / mailto URL. */
-  readonly href?: string;
-  /** Query params (used with the /soon stub). */
-  readonly qp?: Record<string, string>;
-}
-
-interface FooterColumn {
-  readonly heading: string;
-  readonly links: readonly FooterLink[];
-}
-
-const CONTACT_EMAIL = 'hello@pplcrm.com';
+import { environment } from '../../environments/environment';
 
 /**
- * Site footer — the one multi-column footer used on every page. Links to pages
- * that don't exist yet point at the /soon stub (carrying their label as the
- * heading).
+ * Helpers for the tenant-subdomain public page model. Every public surface (forms /f/:slug,
+ * event RSVP /e/:slug, volunteer /volunteer + /v/:slug, donations) lives on
+ * `https://<tenantSlug>.<publicBaseDomain>/<path>`; the SPA passes its own subdomain to the API as
+ * `?t=` so tenant resolution works on any host (including dev, where the Host header is enough in
+ * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
+ */
+
+/**
+ * Base for public-page API calls (unauthenticated `fetch` to REST `/api/*`).
+ *
+ * In production these pages are served on the dedicated public origin `<org>.pplforms.com`, whose
+ * reverse proxy forwards `/api` and `/d` to the backend. So public calls must be **same-origin**
+ * (origin-relative `''`) — hitting the absolute `api.pplcrm.com` origin would be cross-origin and
+ * CORS-blocked (CORS is deliberately locked to the CRM origin only). In dev we keep the absolute
+ * `apiUrl`, which the backend CORS already allows for `localhost:4200`.
+ */
+export function apiBase(): string {
+  return environment.production ? '' : environment.apiUrl.replace(/\/$/, '');
+}
+
+/**
+ * The tenant subdomain the current page is being served on
+ * (`riverton.mydomain.com` → `riverton`), or null on the bare app host.
+ */
+export function tenantFromHost(): string | null {
+  const host = window.location.hostname.toLowerCase();
+  const base = environment.publicBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  if (!label || label.includes('.')) return null;
+  return label;
+}
+
+/** `?t=<tenant>` query suffix for public API calls made from a public page. */
+export function tenantQuery(): string {
+  const tenant = tenantFromHost();
+  return tenant ? `?t=${encodeURIComponent(tenant)}` : '';
+}
+
+/**
+ * Shareable public URL for authenticated admin UI: `https://<tenantSlug>.<base>/<path>`, falling
+ * back to the current origin when no tenant subdomain is configured (dev without wildcard DNS).
+ * `path` must not start with a slash.
+ */
+export function publicPageUrl(tenantSlug: string | null | undefined, path: string): string {
+  const base = environment.publicBaseDomain;
+  if (tenantSlug && base) {
+    return `https://${tenantSlug}.${base}/${path}`;
+  }
+  return `${window.location.origin}/${path}`;
+}
+
+/**
+ * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
+ * production the companion apps are path-routed on the CRM's own domain, so we use the current
+ * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —
+ * otherwise a copied link would point back at the CRM host and 404. `path` must start with a slash.
+ */
+export function companionUrl(path: string): string {
+  return `${environment.companionOrigin || window.location.origin}${path}`;
+}
+```
+
+## File: apps/frontend/src/app/app.routes.ts
+```typescript
+import type { Routes } from '@angular/router';
+
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
+
+export const appRoutes = [
+  // Default redirect to the dashboard inside the app shell
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'new-password',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  // The volunteer companions (canvass /t/:token, deliveries /r/:token) live in
+  // the separate apps/companion build — served path-routed on the same domain.
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
+
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
+```
+
+## File: apps/frontend/src/environments/environment.prod.ts
+```typescript
+export const environment = {
+  production: true,
+  // The backend has its own origin because tRPC is mounted at the root path '/' and can't share a
+  // host with the CRM's static SPA. The CRM SPA (app.pplcrm.com) reaches this cross-origin; CORS is
+  // locked to APP_URL and the refresh cookie is same-site (both under pplcrm.com).
+  apiUrl: 'https://api.pplcrm.com',
+  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  // The public submission surface (forms, events, volunteer signups, donations) lives on a dedicated
+  // domain at '<org>.pplforms.com'; this is the base the tenant subdomain hangs off of.
+  publicBaseDomain: 'pplforms.com',
+  // The volunteer companion apps (canvass /t/:token, deliveries /r/:token) are served on their own
+  // subdomain in production — they're a separate root-based SPA that can't share app.pplcrm.com's
+  // root with the CRM. companionUrl() builds shareable volunteer links against this origin.
+  companionOrigin: 'https://go.pplcrm.com',
+};
+```
+
+## File: apps/website/src/app/coming-soon/coming-soon-page.ts
+```typescript
+import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
+
+/**
+ * Shared placeholder for pages the design links to but we haven't built yet
+ * (assorted footer links). `pageTitle` is
+ * bound from the route's `data` or a `?pageTitle=` query param via
+ * withComponentInputBinding — swap the route to a real component when it exists.
  */
 @Component({
-  selector: 'pc-site-footer',
-  imports: [RouterLink, SiteLogo],
+  selector: 'pc-coming-soon-page',
+  imports: [RouterLink, SiteHeader, SiteFooter],
   template: `
-    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
-      <div class="site-wrap">
-        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
-          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
-            <pc-site-logo />
-            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
-              One list for constituents, voters, donors and volunteers. Your people are not our product.
-            </p>
-            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
-              email
-            }}</a>
-          </div>
+    <pc-site-header variant="solid" />
 
-          @for (col of columns; track col.heading) {
-            <div class="flex flex-col gap-2.5 text-[13px]">
-              <div class="eyebrow mb-1">{{ col.heading }}</div>
-              @for (link of col.links; track link.label) {
-                @if (link.href) {
-                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
-                } @else {
-                  <a
-                    class="text-base-content/65 hover:text-primary"
-                    [routerLink]="link.path"
-                    [queryParams]="link.qp ?? null"
-                    >{{ link.label }}</a
-                  >
-                }
-              }
-            </div>
-          }
-        </div>
-
-        <div
-          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
-        >
-          <span>© 2026 pplCRM · pplcrm.com</span>
-          <span
-            >Your data stays in your region — Canadian data in Canada, EU data in the EU. Export everything anytime.
-            Delete means deleted.</span
-          >
+    <section class="flex min-h-[62vh] items-center justify-center px-5 py-20 text-center sm:px-8">
+      <div class="mx-auto max-w-[520px]">
+        <div class="eyebrow">{{ pageTitle() }}</div>
+        <h1 class="mt-3 text-[clamp(1.75rem,5vw,2.25rem)] font-bold tracking-[-0.02em]">This page is on the way.</h1>
+        <p class="mx-auto mt-3.5 max-w-[420px] text-[15px] leading-relaxed text-base-content/60">
+          We’re still writing this one. In the meantime you can try the whole product on sample data — no card, nothing
+          to lose.
+        </p>
+        <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 font-semibold">Start free with sample data</a>
+          <a routerLink="/" class="btn btn-ghost rounded-field font-semibold">Back to home</a>
         </div>
       </div>
-    </footer>
+    </section>
+
+    <pc-site-footer />
   `,
 })
-export class SiteFooter {
-  protected readonly email = CONTACT_EMAIL;
-  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
-
-  protected readonly columns: readonly FooterColumn[] = [
-    {
-      heading: 'Product',
-      links: [
-        { label: 'Pricing', path: '/pricing' },
-        { label: 'FAQ', path: '/faq' },
-        { label: 'Start free', href: SIGNUP_URL },
-      ],
-    },
-    {
-      heading: 'Industries',
-      links: [
-        { label: 'Constituency offices', path: '/for/offices' },
-        { label: 'Campaigns', path: '/for/campaigns' },
-        { label: 'Non-profits', path: '/for/nonprofits' },
-      ],
-    },
-    {
-      heading: 'Resources',
-      links: [
-        { label: 'Help center', path: '/docs' },
-        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
-      ],
-    },
-    {
-      heading: 'Company',
-      links: [
-        { label: 'About us', path: '/soon', qp: { pageTitle: 'About us' } },
-        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Careers', path: '/soon', qp: { pageTitle: 'Careers' } },
-      ],
-    },
-    {
-      heading: 'Legal',
-      links: [
-        { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
-        { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
-        { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
-      ],
-    },
-  ];
+export class ComingSoonPage {
+  public readonly pageTitle = input<string>('Coming soon');
+  protected readonly signupUrl = SIGNUP_URL;
 }
+```
+
+## File: apps/website/src/app/ui/site-header.ts
+```typescript
+import { Component, computed, inject, input, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AuthHint } from './auth-hint';
+import { CurrencySwitcher } from './currency-switcher';
+import { DASHBOARD_URL, LOGIN_URL, PRIMARY_NAV, SIGNUP_URL } from './site-nav';
+import { SiteLogo } from './site-logo';
+
+type HeaderVariant = 'over-hero' | 'solid';
+
+/**
+ * Site header. Two looks from one component:
+ *  - `over-hero`  transparent bar with light text, sits on the navy hero (Home)
+ *  - `solid`      white bar with a hairline border and dark text (FAQ, stubs)
+ * Below `md` the nav collapses behind a hamburger toggle.
+ */
+@Component({
+  selector: 'pc-site-header',
+  imports: [RouterLink, SiteLogo, CurrencySwitcher],
+  template: `
+    <header [class]="barClass()">
+      <div class="site-wrap flex items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
+        <a routerLink="/" class="flex items-center" aria-label="pplCRM home">
+          <pc-site-logo [onDark]="onDark()" />
+        </a>
+
+        <!-- Desktop nav -->
+        <nav class="hidden items-center gap-5 text-[13.5px] font-medium lg:flex xl:gap-6">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" [class]="linkClass()">{{ link.label }}</a>
+          }
+          <pc-currency-switcher [onDark]="onDark()" />
+          @if (signedIn()) {
+            <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+          } @else {
+            <a [href]="loginUrl" [class]="loginBtnClass()">Log in</a>
+            <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+          }
+        </nav>
+
+        <!-- Mobile toggle -->
+        <button
+          type="button"
+          class="btn btn-square btn-ghost btn-sm lg:hidden"
+          [class.text-white]="onDark()"
+          [attr.aria-expanded]="open()"
+          aria-label="Toggle menu"
+          (click)="open.set(!open())"
+        >
+          @if (open()) {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+            </svg>
+          }
+        </button>
+      </div>
+
+      <!-- Mobile menu -->
+      @if (open()) {
+        <nav class="border-t border-line bg-base-100 px-5 py-3 text-sm font-medium text-base-content lg:hidden">
+          @for (link of nav; track link.path) {
+            <a [routerLink]="link.path" class="block py-2.5 hover:text-primary" (click)="open.set(false)">{{
+              link.label
+            }}</a>
+          }
+          <div class="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+            <div class="pb-1">
+              <pc-currency-switcher />
+            </div>
+            @if (signedIn()) {
+              <a [href]="dashboardUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Dashboard</a>
+            } @else {
+              <a [href]="loginUrl" class="btn btn-outline btn-sm rounded-field">Log in</a>
+              <a [href]="signupUrl" class="btn btn-primary btn-sm rounded-field font-semibold">Start free</a>
+            }
+          </div>
+        </nav>
+      }
+    </header>
+  `,
+})
+export class SiteHeader {
+  public readonly variant = input<HeaderVariant>('solid');
+
+  private readonly auth = inject(AuthHint);
+
+  protected readonly nav = PRIMARY_NAV;
+  protected readonly loginUrl = LOGIN_URL;
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly dashboardUrl = DASHBOARD_URL;
+  protected readonly signedIn = this.auth.signedIn;
+  protected readonly open = signal(false);
+
+  protected readonly onDark = computed<boolean>(() => this.variant() === 'over-hero');
+
+  protected readonly barClass = computed<string>(() =>
+    this.onDark() ? 'sticky top-0 z-50 bg-navy' : 'sticky top-0 z-50 border-b border-line bg-base-100',
+  );
+
+  protected readonly linkClass = computed<string>(() =>
+    this.onDark() ? 'text-white/85 hover:text-white' : 'text-base-content hover:text-primary',
+  );
+
+  protected readonly loginBtnClass = computed<string>(() =>
+    this.onDark()
+      ? 'rounded-field border border-white/35 px-4 py-2 font-semibold text-white hover:bg-white/10'
+      : 'btn btn-outline btn-sm rounded-field',
+  );
+}
+```
+
+## File: apps/website/src/app/ui/site-logo.ts
+```typescript
+import { Component, input } from '@angular/core';
+
+/**
+ * The pplCRM logo. Renders the real brand mark (`logo.png`), the same asset the
+ * CRM ships in its sidebar and auth screens — kept as a single source of truth
+ * and copied into the website build via the frontend-assets glob in project.json.
+ * The `onDark` input is retained for callers that place the logo on the navy hero.
+ */
+@Component({
+  selector: 'pc-site-logo',
+  template: ` <img src="assets/logo.png" alt="pplCRM" class="h-7 w-auto select-none" /> `,
+})
+export class SiteLogo {
+  public readonly onDark = input<boolean>(false);
+}
+```
+
+## File: apps/website/src/app/ui/site-nav.ts
+```typescript
+import { environment } from '../../environments/environment';
+
+export interface NavLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path: string;
+}
+
+/** The primary audience + pricing nav, shared by the header and footers. */
+export const PRIMARY_NAV: readonly NavLink[] = [
+  { label: 'For constituency offices', path: '/for/offices' },
+  { label: 'For campaigns', path: '/for/campaigns' },
+  { label: 'For non-profits', path: '/for/nonprofits' },
+  { label: 'Compare', path: '/compare' },
+  { label: 'Pricing', path: '/pricing' },
+];
+
+/**
+ * The CRM lives on a separate host (see environment.appUrl). "Log in" and
+ * "Start free" leave the marketing site for the app, so they are absolute URLs,
+ * not router links.
+ */
+export const LOGIN_URL = `${environment.appUrl}/signin`;
+export const SIGNUP_URL = `${environment.appUrl}/signup`;
+// Signed-in visitors go straight to the app (its root redirects to the dashboard).
+export const DASHBOARD_URL = environment.appUrl;
+```
+
+## File: apps/website/src/app/app.routes.server.ts
+```typescript
+import { RenderMode, type ServerRoute } from '@angular/ssr';
+
+import { HELP_ARTICLES } from '@common';
+
+/**
+ * Every marketing route is static, so prerender them all to plain HTML at build
+ * time (SSG). No Node server runs in production — the output is a static bundle
+ * for Cloudflare Pages.
+ *
+ * The `**` wildcard prerenders every fixed path but cannot enumerate the
+ * parameterized `/docs/:id`, so that route is listed explicitly with a
+ * `getPrerenderParams` that yields one entry per help article — every article
+ * is emitted to static HTML at build.
+ */
+export const serverRoutes: ServerRoute[] = [
+  {
+    path: 'docs/:id',
+    renderMode: RenderMode.Prerender,
+    getPrerenderParams: (): Promise<Record<string, string>[]> =>
+      Promise.resolve(HELP_ARTICLES.map((article) => ({ id: article.id }))),
+  },
+  { path: '**', renderMode: RenderMode.Prerender },
+];
+```
+
+## File: apps/website/src/environments/environment.prod.ts
+```typescript
+export const environment = {
+  production: true,
+  appUrl: 'https://app.pplcrm.com',
+  siteUrl: 'https://pplcrm.com',
+};
+```
+
+## File: apps/website/src/environments/environment.ts
+```typescript
+export const environment = {
+  production: false,
+  /**
+   * Where the CRM app itself lives — the "Log in" and "Start free" buttons on
+   * the marketing site point here (`${appUrl}/signin`, `${appUrl}/signup`).
+   * The marketing site and the app are deployed to separate hosts, so this is
+   * an absolute URL. Change it in one place if the app ever moves.
+   */
+  appUrl: 'http://localhost:4200',
+  /**
+   * The marketing site's own public origin. Used to build absolute URLs for
+   * SEO (canonical tags, sitemap) and the AI-agent surface (llms.txt). Dev
+   * serves on port 4400 (see project.json).
+   */
+  siteUrl: 'http://localhost:4400',
+};
+```
+
+## File: apps/website/src/styles.css
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN. */
+@import '@fontsource-variable/inter';
+
+/* Theme tokens (the DaisyUI palette) are shared with the CRM and companion —
+   single source of truth in libs/uxcommon. The marketing design's colors ARE
+   this palette (primary #3498db, secondary #22a6b3, base-content #1f2937,
+   line #e7e5e4, base-200 #f8f8f8, base-50 #fbfbfc, warning/success chips). */
+@import '../../../libs/uxcommon/src/styles/themes.css';
+
+/* The one marketing-only color: the dark navy used for the hero, footer and
+   CTA bands. Registered as a Tailwind theme color so `bg-navy` / `text-navy`
+   (and opacity modifiers) are generated. */
+@theme {
+  --color-navy: #0e182b;
+}
+
+html,
+body {
+  min-height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  /* The marketing site is light-only regardless of OS preference. */
+  color-scheme: light;
+}
+
+/* Centered content column shared by every section (design uses ~1080px). */
+.site-wrap {
+  width: 100%;
+  max-width: 1080px;
+  margin-inline: auto;
+}
+
+/* The small uppercase eyebrow label above section headings. */
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-base-content) 45%, transparent);
+}
+
+/* Same eyebrow on the dark navy bands (white ink instead of base-content). */
+.eyebrow-dark {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(255 255 255 / 0.5);
+}
+```
+
+## File: apps/frontend/src/app/experiences/campaigns/ui/campaign-view.html
+```html
+<pc-detail-layout
+  [title]="name() || 'Campaign'"
+  [eyebrow]="isOffice() ? 'Office context' : 'Election campaign'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!campaign()"
+  [showDelete]="false"
+  [showActions]="!isArchived()"
+  [btn1Text]="'Edit campaign'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editCampaign()"
+>
+  @if (campaign()) {
+  <!-- Archived: read-only banner (disclosure over suppression, §3) -->
+  @if (isArchived()) {
+  <div class="alert mb-6 border-warning/40 bg-warning/10">
+    <pc-icon name="archive-box" [size]="5" class="text-warning"></pc-icon>
+    <div>
+      <p class="text-sm font-semibold" i18n>This campaign is archived</p>
+      <p class="text-xs text-base-content/70" i18n>
+        Its history stays viewable, but nothing new can be recorded. Unarchive it to make changes.
+      </p>
+    </div>
+    <button type="button" class="btn btn-outline btn-warning btn-sm" (click)="unarchive()" i18n>Unarchive</button>
+  </div>
+  }
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: campaign card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="square-3-stack-3d">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ name() }}</h2>
+        <p class="text-center text-xs uppercase tracking-widest text-base-content/50 mb-4">
+          {{ isOffice() ? 'Office · Permanent' : 'Election' }}@if (isArchived()) {<ng-container i18n>
+            · Archived</ng-container
+          >}
+        </p>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (description()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ description() }}</div>
+          }
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>Starts:</span>
+            <span pc-row-action class="font-bold">{{ startdate() ? (startdate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="file-calendar" iconClass="text-primary">
+            <span i18n>{{ isOffice() ? 'Ends:' : 'Election day:' }}</span>
+            <span pc-row-action class="font-bold">{{ enddate() ? (enddate() | date: 'MMM d, y') : '—' }}</span>
+          </pc-detail-row>
+
+          @if (notes()) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70 whitespace-pre-line">
+            {{ notes() }}
+          </div>
+          }
+        </div>
+      </pc-profile-card>
+
+      <!-- Context actions -->
+      <div class="flex flex-col gap-2">
+        @if (isCurrentContext()) {
+        <div class="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+          <pc-icon name="check-circle" [size]="4" class="text-primary"></pc-icon>
+          <span class="text-sm font-medium text-primary" i18n>You are working in this campaign</span>
+        </div>
+        } @else {
+        <button type="button" class="btn btn-outline btn-secondary btn-sm gap-2" (click)="workInThis()">
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          <span i18n>Work in this campaign</span>
+        </button>
+        } @if (!isOffice() && !isArchived()) {
+        <button type="button" class="btn btn-ghost btn-sm gap-2 text-base-content/60" (click)="archive()">
+          <pc-icon name="archive-box" [size]="4"></pc-icon>
+          <span i18n>Archive campaign</span>
+        </button>
+        }
+      </div>
+
+      <!-- Carry-over (§15): seed this campaign from a prior one -->
+      @if (!isArchived() && carrySources().length) {
+      <div class="pc-panel p-4">
+        <h3 class="pc-eyebrow mb-1" i18n>Start from a previous campaign</h3>
+        <p class="mb-3 text-[11px] leading-snug text-base-content/55" i18n>
+          Copy support levels as a starting assumption. Voting status never carries over. Email consent copies only
+          behind an explicit confirmation. That judgment is yours.
+        </p>
+        <div class="flex flex-col gap-2">
+          <select class="select select-bordered select-sm w-full" (change)="onCarrySourceChange($event)">
+            <option value="" i18n>Choose a campaign…</option>
+            @for (source of carrySources(); track source.id) {
+            <option [value]="source.id">{{ source.name }}@if (source.status === 'archived') { (archived) }</option>
+            }
+          </select>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySupport()"
+              (change)="carryCopySupport.set(!carryCopySupport())"
+            />
+            <span i18n>Copy support levels (as “carried over”)</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="carryCopySubscriptions()"
+              (change)="carryCopySubscriptions.set(!carryCopySubscriptions())"
+            />
+            <span i18n>Copy email subscriptions (requires confirmation)</span>
+          </label>
+          <button
+            type="button"
+            class="btn btn-outline btn-secondary btn-sm mt-1"
+            [disabled]="!carrySourceId() || carryRunning() || (!carryCopySupport() && !carryCopySubscriptions())"
+            (click)="runCarryOver()"
+          >
+            @if (carryRunning()) {
+            <span class="loading loading-spinner loading-xs"></span>
+            }
+            <span i18n>Carry over</span>
+          </button>
+        </div>
+      </div>
+      }
+    </div>
+
+    <!-- Right: activity log -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-record-activities [entity]="'campaigns'" [entityId]="id()"></pc-record-activities>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
+```html
+<pc-modal-shell #dlg title="Record donation" icon="currency-dollar" [boxClass]="'max-w-md'" [dismissible]="false">
+  <form id="record-donation-form" class="flex flex-col gap-4" (submit)="$event.preventDefault(); submit()" novalidate>
+    <!-- Donor -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-donor">Donor</label>
+      @if (selectedDonor()) {
+      <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
+        <div
+          class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+        >
+          {{ initials(selectedDonor()!) }}
+        </div>
+        <span class="text-sm font-medium flex-1 truncate"
+          >{{ selectedDonor()!.first_name }} {{ selectedDonor()!.last_name }}</span
+        >
+        <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearDonor()" aria-label="Change donor">
+          <pc-icon name="x-mark" [size]="3"></pc-icon>
+        </button>
+      </div>
+      } @else {
+      <div class="relative">
+        <input
+          id="rd-donor"
+          type="text"
+          class="input input-bordered w-full pr-10 text-sm"
+          [class.input-error]="donorInvalid()"
+          placeholder="Search by name or email..."
+          [value]="donorSearch()"
+          (input)="onDonorSearchChange($any($event.target).value)"
+          (blur)="touchedDonor.set(true)"
+          autofocus
+        />
+        <pc-icon
+          name="magnifying-glass"
+          [size]="4"
+          class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+        ></pc-icon>
+      </div>
+      @if (donorResults().length > 0) {
+      <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
+        @for (p of donorResults(); track p.id) {
+        <button
+          type="button"
+          class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
+          (click)="selectDonor(p)"
+        >
+          <div
+            class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+          >
+            {{ initials(p) }}
+          </div>
+          <div class="flex flex-col min-w-0">
+            <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
+            @if (p.email) {
+            <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
+            }
+          </div>
+        </button>
+        }
+      </div>
+      } @if (isSearching() && donorSearch().length > 0) {
+      <span class="text-xs text-base-content/40 italic">Searching...</span>
+      } @if (donorInvalid()) {
+      <p class="text-xs text-error mt-1 flex items-center gap-1">
+        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+        Choose who gave this gift. Receipts need a name.
+      </p>
+      } }
+    </div>
+
+    <!-- Amount -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-amount">Amount</label>
+      <div class="relative">
+        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+        <input
+          id="rd-amount"
+          type="number"
+          step="0.01"
+          inputmode="decimal"
+          class="input input-bordered w-full pl-7 text-sm tabular-nums"
+          [class.input-error]="amountInvalid()"
+          placeholder="50.00"
+          [formField]="amountForm"
+        />
+      </div>
+      @if (amountInvalid()) {
+      <p class="text-xs text-error mt-1 flex items-center gap-1">
+        <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+        Enter an amount above zero, like 50.
+      </p>
+      }
+    </div>
+
+    <!-- Method -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-sm font-semibold text-base-content/80" for="rd-method">Method</label>
+      <select
+        id="rd-method"
+        class="select select-bordered w-full text-sm"
+        (change)="setMethod($any($event.target).value)"
+      >
+        @for (m of methods; track m) {
+        <option [value]="m" [selected]="m === method()">{{ methodLabels[m] }}</option>
+        }
+      </select>
+    </div>
+
+    <p class="text-xs text-base-content/50 flex items-start gap-1.5">
+      <pc-icon name="information-circle" [size]="4" class="flex-shrink-0 mt-0.5"></pc-icon>
+      A receipt goes out automatically. That's set in Workspace settings → Donations.
+    </p>
+  </form>
+
+  <div pc-modal-footer class="flex gap-2">
+    <button type="button" class="btn btn-outline btn-accent" (click)="close()" [disabled]="submitting()">Cancel</button>
+    <button type="submit" form="record-donation-form" class="btn btn-primary" [disabled]="submitting()">
+      @if (submitting()) {
+      <span class="loading loading-spinner loading-sm"></span>
+      } @else {
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      } Record donation
+    </button>
+  </div>
+</pc-modal-shell>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.ts
+```typescript
+import { Component, inject, output, signal, viewChild } from '@angular/core';
+import { FormField, form, min, required } from '@angular/forms/signals';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { DONATION_METHODS, DONATION_METHOD_LABELS, type DonationMethod } from '../../../../../../../libs/common/src';
+import { DonationsService } from '../../../services/api/donations-service';
+import { PersonsService } from '../../persons/services/persons-service';
+
+type DonorSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
+
+/**
+ * Fig. 15 "Record donation" dialog — records an offline gift (cash, check, bank transfer, or a
+ * card payment taken outside Stripe checkout) against a donor. Distinct from the "Collect
+ * donation" flow on the person page, which redirects to Stripe Checkout for a real card charge.
+ */
+@Component({
+  selector: 'pc-record-donation-dialog',
+  imports: [Icon, FormField, ModalShell],
+  templateUrl: './record-donation-dialog.html',
+})
+export class RecordDonationDialog {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly dlgRef = viewChild.required<ModalShell>('dlg');
+  private readonly _loading = createLoadingGate();
+
+  public readonly saved = output<void>();
+
+  protected readonly methods = DONATION_METHODS;
+  protected readonly methodLabels = DONATION_METHOD_LABELS;
+
+  protected readonly donorSearch = signal('');
+  protected readonly donorResults = signal<DonorSearchResult[]>([]);
+  protected readonly selectedDonor = signal<DonorSearchResult | null>(null);
+  protected readonly isSearching = signal(false);
+  protected readonly touchedDonor = signal(false);
+
+  protected readonly amount = signal<number | null>(null);
+  /** Signal form over the amount — required, and at least one cent (mirrors the input's min/step). */
+  protected readonly amountForm = form(this.amount, (a) => {
+    required(a);
+    min(a, 0.01);
+  });
+
+  protected readonly method = signal<DonationMethod>('card');
+  protected readonly submitting = signal(false);
+  protected readonly isLoading = this._loading.visible;
+
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly donorInvalid = () => this.touchedDonor() && !this.selectedDonor();
+  protected readonly amountInvalid = () => this.amountForm().invalid() && this.amountForm().touched();
+  public open(): void {
+    this.resetForm();
+    this.dlgRef().show();
+  }
+
+  public close(): void {
+    this.dlgRef().close();
+  }
+
+  protected initials(p: DonorSearchResult): string {
+    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
+  }
+
+  protected onDonorSearchChange(value: string): void {
+    this.donorSearch.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (!value.trim()) {
+      this.donorResults.set([]);
+      return;
+    }
+    this.isSearching.set(true);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
+  }
+
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const rows = (result as { rows?: unknown[] })?.rows ?? [];
+      this.donorResults.set(
+        rows.map((raw) => {
+          const p = raw as { id: string; first_name: string | null; last_name: string | null; email: string | null };
+          return { id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email };
+        }),
+      );
+    } catch {
+      this.donorResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
+  }
+
+  protected selectDonor(p: DonorSearchResult): void {
+    this.selectedDonor.set(p);
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+  }
+
+  protected clearDonor(): void {
+    this.selectedDonor.set(null);
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+  }
+
+  protected donorName(p: DonorSearchResult): string {
+    return `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || p.email || 'this donor';
+  }
+
+  protected async submit(): Promise<void> {
+    this.touchedDonor.set(true);
+    this.amountForm().markAsTouched();
+    const donor = this.selectedDonor();
+    const amt = this.amount();
+    if (!donor || amt === null || amt <= 0 || this.amountForm().invalid()) return;
+
+    this.submitting.set(true);
+    const end = this._loading.begin();
+    try {
+      await this.donationsSvc.recordDonation({
+        personId: donor.id,
+        amountCents: Math.round(amt * 100),
+        method: this.method(),
+      });
+      this.alertSvc.showSuccess(`Saved. $${amt.toFixed(2)} from ${this.donorName(donor)} recorded and receipted`);
+      this.saved.emit();
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to record donation');
+    } finally {
+      this.submitting.set(false);
+      end();
+    }
+  }
+
+  /** Applies a method choice from the select, narrowing the raw DOM string to DonationMethod. */
+  protected setMethod(value: string): void {
+    const match = this.methods.find((m) => m === value);
+    if (match) this.method.set(match);
+  }
+
+  private resetForm(): void {
+    this.donorSearch.set('');
+    this.donorResults.set([]);
+    this.selectedDonor.set(null);
+    this.touchedDonor.set(false);
+    this.amount.set(null);
+    this.amountForm().reset();
+    this.method.set('card');
+    this.submitting.set(false);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+```html
+<header class="px-4 pb-2">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
+
+    <div class="flex items-center gap-1 text-xs text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
+
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        @if (!isFolderTrash()) {
+
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore"
+          aria-label="Restore"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            #personDropdownContent
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div class="min-w-0 flex-1">
+                  @if (editingName()) {
+                  <div class="flex items-center gap-1">
+                    <input
+                      #firstNameInput
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="First name"
+                      [value]="nameDraft().first_name"
+                      (input)="nameDraft.set({ first_name: $any($event.target).value, last_name: nameDraft().last_name })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-20"
+                      placeholder="Last name"
+                      [value]="nameDraft().last_name"
+                      (input)="nameDraft.set({ first_name: nameDraft().first_name, last_name: $any($event.target).value })"
+                      (keydown.enter)="saveName(person.id)"
+                      (keydown.escape)="cancelEditName()"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Save name"
+                      (click)="saveName(person.id)"
+                    >
+                      <pc-icon name="check-circle" [size]="4" class="text-success"></pc-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      aria-label="Cancel"
+                      (click)="cancelEditName()"
+                    >
+                      <pc-icon name="x-mark" [size]="4" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @else {
+                  <div class="group flex items-center gap-1.5">
+                    <h3 class="font-bold text-sm">
+                      {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name ||
+                      '')).trim() : 'Add a name' }}
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-label="Edit name"
+                      (click)="startEditName(person)"
+                    >
+                      <pc-icon name="pencil-square" [size]="3" class="text-base-content/50"></pc-icon>
+                    </button>
+                  </div>
+                  } @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="pc-eyebrow block mb-1">Tags:</span>
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs text-base-content/50 block mt-1">No tags yet. Add one above.</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="pc-eyebrow block mb-1">Issues:</span>
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs text-base-content/50 block mt-1">No issues yet. Add one above.</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) { @if (recipient.name) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name}}</a>
+            </li>
+            }
+            <li>
+              <a class="truncate text-xs">&lt;{{ recipient.email }}&gt;</a>
+            </li>
+
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="menu-title text-xs border-t border-base-300">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="menu-title text-xs border-t border-base-300">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/event-form.html
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
+
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined. This event uses a simple free RSVP.
+          </p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table pc-table w-full">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                } @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [value]="newTicket().name"
+                      (input)="setNewTicketName($event)"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [value]="newTicket().price_cents"
+                      (input)="setNewTicketPrice($event)"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [value]="newTicket().capacity ?? ''"
+                      (input)="setNewTicketCapacity($event)"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          }
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
+      }
+    </form>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/public-event.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+
+import { apiBase, tenantQuery } from '../../../shared/public-pages';
+
+/**
+ * Which public surface this page instance serves. Event RSVPs (/e/:slug, events table) and
+ * volunteer signups (/v/:slug, volunteer_events table) share one page — same layout, same states —
+ * differing only in API paths, copy, and the tickets section. The route provides the kind via
+ * `data.kind`.
+ */
+type PublicEventKind = 'event' | 'volunteer';
+
+interface PublicEventInfo {
+  name: string;
+  description: string | null;
+  location_address: string | null;
+  start_time: string;
+  end_time: string;
+  capacity: number | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  is_private?: boolean;
+  fields: string[];
+}
+
+interface PublicTicket {
+  name: string;
+  description: string | null;
+  price_cents: number | null;
+  capacity: number | null;
+}
+
+interface FormFieldDef {
+  key: string;
+  label: string;
+  required: boolean;
+  kind: 'text' | 'email' | 'area' | 'country';
+}
+
+type PageState = 'loading' | 'open' | 'notfound' | 'thanks';
+
+const FIELD_LABELS: Record<string, string> = {
+  first_name: 'First name',
+  last_name: 'Last name',
+  mobile: 'Mobile / phone',
+  street1: 'Street address',
+  city: 'City',
+  state: 'State / province',
+  zip: 'Zip / postal code',
+  country: 'Country',
+  notes: 'Notes / message',
+};
+
+const COUNTRY_OPTIONS = [
+  { value: 'CA', label: 'Canada' },
+  { value: 'US', label: 'United States' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'AU', label: 'Australia' },
+] as const;
+
+/**
+ * Unauthenticated public event page served at /e/:slug (event RSVP) and /v/:slug (volunteer
+ * signup), outside the app shell — the event/volunteer sibling of the /f/:slug public form page.
+ * The tenant comes from the page's own subdomain and is passed to the API as `?t=`.
+ */
+@Component({
+  selector: 'pc-public-event',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DatePipe, RouterLink],
+  template: `
+    <div class="flex min-h-screen items-start justify-center bg-base-200 px-4 py-10">
+      @switch (state()) {
+        @case ('loading') {
+          <span class="loading loading-spinner loading-lg mt-20 text-primary"></span>
+        }
+        @case ('open') {
+          <div class="w-full max-w-[760px]">
+            @if (kind === 'volunteer' && !event()!.is_private) {
+              <a class="link-hover link mb-4 inline-block text-sm text-primary" routerLink="/volunteer">
+                ← All volunteer events
+              </a>
+            }
+
+            <div class="pc-panel p-8">
+              <div class="mb-4 flex items-center gap-2">
+                <div
+                  class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+                >
+                  {{ orgInitials() }}
+                </div>
+                <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
+              </div>
+
+              <p class="pc-eyebrow mb-1">
+                {{ kind === 'volunteer' ? 'Volunteer event' : 'Event' }}
+              </p>
+              <h1 class="mb-1 text-xl font-semibold text-base-content">{{ event()!.name }}</h1>
+              @if (event()!.description) {
+                <p class="mb-4 text-sm leading-relaxed text-base-content/60">{{ event()!.description }}</p>
+              }
+
+              <div class="mb-6 flex flex-col gap-2 text-sm text-base-content">
+                <div class="flex items-baseline gap-2">
+                  <span class="pc-eyebrow w-24 shrink-0">When</span>
+                  <span>
+                    {{ event()!.start_time | date: 'EEEE, MMMM d, y' }} ·
+                    {{ event()!.start_time | date: 'shortTime' }} – {{ event()!.end_time | date: 'shortTime' }}
+                  </span>
+                </div>
+                @if (event()!.location_address) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="pc-eyebrow w-24 shrink-0">Where</span>
+                    <span>{{ event()!.location_address }}</span>
+                  </div>
+                }
+                @if (event()!.capacity !== null) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="pc-eyebrow w-24 shrink-0">Spots</span>
+                    <span class="tabular-nums">{{ remaining() }} of {{ event()!.capacity }} left</span>
+                  </div>
+                }
+                @if (event()!.contact_email || event()!.contact_phone) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="pc-eyebrow w-24 shrink-0">Questions</span>
+                    <span>
+                      @if (event()!.contact_email) {
+                        <a class="link-hover link text-primary" [href]="'mailto:' + event()!.contact_email">{{
+                          event()!.contact_email
+                        }}</a>
+                      }
+                      @if (event()!.contact_email && event()!.contact_phone) {
+                        ·
+                      }
+                      {{ event()!.contact_phone }}
+                    </span>
+                  </div>
+                }
+              </div>
+
+              @if (tickets().length > 0) {
+                <div class="mb-6">
+                  <h2 class="mb-2 text-sm font-semibold text-base-content">Tickets</h2>
+                  <div class="flex flex-col gap-2">
+                    @for (ticket of tickets(); track ticket.name) {
+                      <div class="flex items-center justify-between pc-panel px-4 py-3">
+                        <div>
+                          <p class="text-sm font-medium text-base-content">{{ ticket.name }}</p>
+                          @if (ticket.description) {
+                            <p class="text-xs text-base-content/60">{{ ticket.description }}</p>
+                          }
+                        </div>
+                        <span class="text-sm font-semibold tabular-nums text-primary">
+                          {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <div class="divider my-2"></div>
+
+              <h2 class="mb-3 text-sm font-semibold text-base-content">
+                {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'RSVP for this event' }}
+              </h2>
+
+              @if (isPast()) {
+                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
+                  This event has passed and registration is closed.
+                </div>
+              } @else if (isFull()) {
+                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
+                  This event is at full capacity. No spots are left.
+                </div>
+              } @else {
+                <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
+                  @for (field of formFields(); track field.key) {
+                    <div class="flex flex-col gap-2" [class.md:max-w-[380px]]="field.kind !== 'area'">
+                      <label class="text-sm font-medium text-base-content" [for]="field.key">
+                        {{ field.label }}
+                        @if (field.required) {
+                          <span class="text-base-content/50"> *</span>
+                        }
+                      </label>
+                      @switch (field.kind) {
+                        @case ('area') {
+                          <textarea
+                            [id]="field.key"
+                            class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
+                            [class.textarea-error]="!!errors()[field.key]"
+                            (input)="setValue(field.key, $any($event.target).value)"
+                          ></textarea>
+                        }
+                        @case ('country') {
+                          <select
+                            [id]="field.key"
+                            class="select select-bordered w-full text-sm"
+                            [class.select-error]="!!errors()[field.key]"
+                            (change)="setValue(field.key, $any($event.target).value)"
+                          >
+                            <option value="">Choose…</option>
+                            @for (opt of countryOptions; track opt.value) {
+                              <option [value]="opt.value">{{ opt.label }}</option>
+                            }
+                          </select>
+                        }
+                        @default {
+                          <input
+                            [id]="field.key"
+                            class="input input-bordered w-full text-sm"
+                            [class.input-error]="!!errors()[field.key]"
+                            [type]="field.kind === 'email' ? 'email' : 'text'"
+                            (input)="setValue(field.key, $any($event.target).value)"
+                          />
+                        }
+                      }
+                      @if (errors()[field.key]) {
+                        <span class="text-xs text-error">{{ errors()[field.key] }}</span>
+                      }
+                    </div>
+                  }
+
+                  @if (submitError()) {
+                    <p class="text-sm text-error">{{ submitError() }}</p>
+                  }
+
+                  <button class="btn btn-primary mt-1 w-full md:max-w-[380px]" [disabled]="submitting()" type="submit">
+                    @if (submitting()) {
+                      <span class="loading loading-spinner loading-sm"></span>
+                    }
+                    {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'Confirm RSVP' }}
+                  </button>
+                </form>
+              }
+
+              <p class="mt-6 text-center text-xs text-base-content/40">Powered by pplCRM</p>
+            </div>
+          </div>
+        }
+        @case ('thanks') {
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
+            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
+              ✓
+            </div>
+            <h1 class="mb-2 text-xl font-semibold text-base-content">
+              {{ kind === 'volunteer' ? 'You’re signed up!' : 'You’re registered!' }}
+            </h1>
+            <p class="text-sm text-base-content/60">A confirmation email with the event details is on its way.</p>
+          </div>
+        }
+        @default {
+          <div class="mt-20 w-full max-w-[440px] pc-panel p-8 text-center">
+            <h1 class="mb-2 text-xl font-semibold text-base-content">Event not found</h1>
+            <p class="text-sm text-base-content/60">This event doesn’t exist or hasn’t been published yet.</p>
+          </div>
+        }
+      }
+    </div>
+  `,
+})
+export class PublicEventComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+
+  protected readonly kind: PublicEventKind = this.route.snapshot.data['kind'] === 'volunteer' ? 'volunteer' : 'event';
+  protected readonly countryOptions = COUNTRY_OPTIONS;
+
+  protected readonly state = signal<PageState>('loading');
+  protected readonly orgName = signal('Our organization');
+  protected readonly event = signal<PublicEventInfo | null>(null);
+  protected readonly tickets = signal<PublicTicket[]>([]);
+  protected readonly isPast = signal(false);
+  protected readonly isFull = signal(false);
+  protected readonly remaining = signal<number | null>(null);
+  protected readonly errors = signal<Record<string, string>>({});
+  protected readonly submitError = signal<string | null>(null);
+  protected readonly submitting = signal(false);
+
+  private readonly values = new Map<string, string>();
+
+  protected readonly orgInitials = computed(() => {
+    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
+  });
+
+  /**
+   * The signup form's fields, from the event's legacy string[] config ("mobile:required").
+   * Email is always present and required — it is the identity key server-side.
+   */
+  protected readonly formFields = computed<FormFieldDef[]>(() => {
+    const raw = this.event()?.fields ?? [];
+    const enabled = new Map<string, boolean>();
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const required = entry.endsWith(':required');
+      const key = required ? entry.slice(0, -':required'.length) : entry;
+      if (key && key !== 'email') enabled.set(key, required);
+    }
+
+    const fields: FormFieldDef[] = [];
+    const push = (key: string): void => {
+      if (!enabled.has(key)) return;
+      const kind: FormFieldDef['kind'] = key === 'notes' ? 'area' : key === 'country' ? 'country' : 'text';
+      fields.push({ key, label: FIELD_LABELS[key] ?? key, required: enabled.get(key) === true, kind });
+    };
+
+    push('first_name');
+    push('last_name');
+    fields.push({ key: 'email', label: 'Email address', required: true, kind: 'email' });
+    for (const key of ['mobile', 'street1', 'city', 'state', 'zip', 'country', 'notes']) {
+      push(key);
+    }
+    return fields;
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected setValue(key: string, value: string): void {
+    this.values.set(key, value);
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  protected async submit(): Promise<void> {
+    if (this.submitting()) return;
+
+    const errors: Record<string, string> = {};
+    for (const field of this.formFields()) {
+      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
+        errors[field.key] = `${field.label} is required.`;
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      this.errors.set(errors);
+      return;
+    }
+
+    this.submitting.set(true);
+    this.submitError.set(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const [key, value] of this.values.entries()) payload[key] = value;
+
+      const res = await fetch(this.submitUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
+        return;
+      }
+      this.state.set('thanks');
+    } catch {
+      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug) {
+      this.state.set('notfound');
+      return;
+    }
+    try {
+      const res = await fetch(this.configUrl(slug));
+      if (!res.ok) {
+        this.state.set('notfound');
+        return;
+      }
+      const data = await res.json();
+      if (data?.orgName) this.orgName.set(String(data.orgName));
+      this.event.set(data.event as PublicEventInfo);
+      this.tickets.set(Array.isArray(data.tickets) ? (data.tickets as PublicTicket[]) : []);
+      this.isPast.set(!!data.isPast);
+      this.isFull.set(!!data.isFull);
+      this.remaining.set(typeof data.remaining === 'number' ? data.remaining : null);
+      this.state.set('open');
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+
+  private configUrl(slug: string): string {
+    const path = this.kind === 'volunteer' ? 'api/events/v' : 'api/event-pages/e';
+    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
+  }
+
+  private submitUrl(): string {
+    const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+    const path = this.kind === 'volunteer' ? 'api/events/signup' : 'api/event-pages/rsvp';
+    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-home.html
+```html
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+  <!-- Hero: title + search -->
+  <div class="mx-auto max-w-2xl text-center">
+    <p class="pc-eyebrow text-primary">Help center</p>
+    <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
+    <p class="mt-2 text-sm text-base-content/60">
+      Guides for every corner of pplCRM. Search, or browse by topic below.
+    </p>
+
+    <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
+      <pc-icon name="magnifying-glass" [size]="5" class="opacity-50"></pc-icon>
+      <input
+        #searchBox
+        type="search"
+        class="grow text-[15px]"
+        placeholder="Search help. Try “import”, “tags”, “newsletter”"
+        aria-label="Search help articles"
+        [value]="query()"
+        (input)="onSearchInput($event)"
+      />
+      @if (query()) {
+      <button type="button" class="btn btn-circle btn-ghost btn-xs" aria-label="Clear search" (click)="clearSearch()">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+      }
+    </label>
+
+    @if (!searching()) {
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+      <span class="text-base-content/50">Popular:</span>
+      @for (article of popular; track article.id) {
+      <a
+        [routerLink]="['/help', article.id]"
+        class="badge badge-outline border-base-300 text-base-content/70 transition-colors hover:border-primary hover:text-primary"
+      >
+        {{ article.title }}
+      </a>
+      }
+    </div>
+    }
+  </div>
+
+  <!-- Search results -->
+  @if (searching()) { @if (results().length > 0) {
+  <div class="mx-auto mt-8 max-w-2xl">
+    <p class="text-sm text-base-content/60">
+      {{ results().length }} {{ results().length === 1 ? 'article matches' : 'articles match' }} “{{ query().trim() }}”
+    </p>
+    <div class="mt-3 space-y-3">
+      @for (result of results(); track result.article.id) {
+      <a
+        [routerLink]="['/help', result.article.id]"
+        class="card block border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+      >
+        <div class="card-body gap-1.5 p-4">
+          <p class="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-base-content/50">
+            <span>{{ categoryLabel(result.article) }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ minutes(result.article) }} min read</span>
+          </p>
+          <h3 class="text-[15px] font-semibold leading-6 text-base-content">
+            @for (seg of result.title; track $index) { @if (seg.hit) {
+            <mark class="rounded bg-primary/15 px-0.5 text-primary">{{ seg.text }}</mark>
+            } @else {
+            <span>{{ seg.text }}</span>
+            } }
+          </h3>
+          <p class="text-sm leading-6 text-base-content/70">
+            @for (seg of result.snippet; track $index) { @if (seg.hit) {
+            <mark class="rounded bg-primary/15 px-0.5 font-medium text-primary">{{ seg.text }}</mark>
+            } @else {
+            <span>{{ seg.text }}</span>
+            } }
+          </p>
+        </div>
+      </a>
+      }
+    </div>
+  </div>
+  } @else {
+  <!-- Guided empty state -->
+  <div class="mx-auto mt-12 flex max-w-md flex-col items-center gap-3 text-center">
+    <pc-icon name="magnifying-glass" [size]="10" class="text-base-content/20"></pc-icon>
+    <p class="text-sm font-medium text-base-content/80">No articles match “{{ query().trim() }}”</p>
+    <p class="text-xs leading-5 text-base-content/50">
+      Try fewer or different words. Search covers titles, summaries, keywords, and the full article text.
+    </p>
+    <button type="button" class="btn btn-primary btn-sm mt-1" (click)="clearSearch()">Clear search</button>
+  </div>
+  } } @else {
+  <!-- Browse by category -->
+  <div class="mt-10 grid gap-4 sm:grid-cols-2">
+    @for (section of sections; track section.category.id) {
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body gap-3 p-5">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <pc-icon [name]="section.icon" [size]="5"></pc-icon>
+          </div>
+          <div class="min-w-0">
+            <h2 class="truncate text-base font-semibold text-base-content">{{ section.category.label }}</h2>
+            <p class="text-xs tabular-nums text-base-content/50">
+              {{ section.articles.length }} {{ section.articles.length === 1 ? 'article' : 'articles' }}
+            </p>
+          </div>
+        </div>
+        <p class="text-sm leading-6 text-base-content/60">{{ section.category.blurb }}</p>
+        <ul class="mt-1 space-y-0.5">
+          @for (article of section.articles; track article.id) {
+          <li>
+            <a
+              [routerLink]="['/help', article.id]"
+              class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
+            >
+              <span class="truncate">{{ article.title }}</span>
+              <pc-icon
+                name="chevron-right"
+                [size]="4"
+                class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
+              ></pc-icon>
+            </a>
+          </li>
+          }
+        </ul>
+      </div>
+    </section>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
+    @if (tab() === 'imports') {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
+      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+      <span>Import CSV</span>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <span>New export</span>
+    </button>
+    }
+  </pc-grid-header>
+
+  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
+
+  <!-- ============ IMPORTS TAB ============ -->
+  @if (tab() === 'imports') {
+  <div>
+    @if (loading()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    } @if (error()) {
+    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
+      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <pc-table [columns]="7">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>Type</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Outcome</th>
+        <th>Tags applied</th>
+        <th class="text-right">Actions</th>
+      </ng-container>
+
+      @for (item of items(); track item.id) {
+      <tr>
+        <td>
+          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
+          <div class="text-xs text-base-content/60">
+            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
+          </div>
+        </td>
+        <td>
+          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
+        </td>
+        <td>
+          @if (item.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (item.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Pending</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <div class="text-xs text-base-content">
+            <div>{{ item.insertedCount }} imported</div>
+            @if (item.mergedCount > 0) {
+            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
+            } @if (item.skippedCount > 0) {
+            <div class="text-xs text-base-content/60 flex items-center gap-1">
+              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
+              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
+                download reasons
+              </button>
+              }
+            </div>
+            } @if (item.errorCount > 0) {
+            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
+            }
+          </div>
+          } @case ('failed') {
+          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
+            Failed
+          </pc-status-badge>
+          } }
+        </td>
+        <td>
+          @if (item.tagsApplied.length > 0) {
+          <div class="flex flex-wrap gap-1">
+            @for (tag of item.tagsApplied; track tag) {
+            <span class="badge badge-outline text-xs">{{ tag }}</span>
+            }
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (item.canDownloadSource) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download original file"
+              (click)="downloadSource(item)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              (click)="openDeleteDialog(item, deleteDialog)"
+              [disabled]="deleting()"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="7" class="text-center py-12 text-base-content/50">
+          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1 mb-3">
+            Bring in people, companies, households or tasks from a spreadsheet to get started.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import CSV
+          </button>
+        </td>
+      </tr>
+      }
+    </pc-table>
+
+    <p class="text-xs text-base-content/50 mt-4">
+      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
+      skipped.
+    </p>
+  </div>
+  }
+
+  <!-- ============ EXPORTS TAB ============ -->
+  @if (tab() === 'exports') {
+  <div>
+    @if (showNewExportInfo()) {
+    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
+      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm">
+        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
+        files land on this page.
+      </span>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
+        Go to People
+      </button>
+    </div>
+    } @if (exportsLoading.visible()) {
+    <progress class="progress w-full text-primary mb-4"></progress>
+    }
+
+    <pc-table [columns]="5">
+      <ng-container pcTableHead>
+        <th>File</th>
+        <th>When</th>
+        <th>By</th>
+        <th>Contents</th>
+        <th class="text-right">Download</th>
+      </ng-container>
+
+      @for (job of exportJobs(); track job.id) {
+      <tr>
+        <td>
+          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
+        </td>
+        <td>
+          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
+        </td>
+        <td>
+          @if (job.createdBy) {
+          <div class="flex flex-col">
+            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
+            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
+          </div>
+          } @else {
+          <span class="text-xs text-base-content/40">—</span>
+          }
+        </td>
+        <td>
+          @switch (job.status) { @case ('pending') {
+          <pc-status-badge type="ghost">Queued</pc-status-badge>
+          } @case ('processing') {
+          <span class="badge badge-info text-xs gap-1">
+            <span class="loading loading-spinner loading-xs"></span>
+            Processing
+          </span>
+          } @case ('completed') {
+          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
+          } @default {
+          <pc-status-badge type="error">Failed</pc-status-badge>
+          } }
+        </td>
+        <td class="text-right">
+          <div class="flex justify-end gap-1">
+            @if (job.status === 'completed') { @if (isExpired(job)) {
+            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
+            } @else if (job.downloadable) {
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-primary"
+              title="Download CSV"
+              (click)="downloadExportJob(job)"
+            >
+              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+            </button>
+            } @else {
+            <span
+              class="text-xs text-base-content/40 mr-2"
+              title="Downloaded directly to your device, not stored on the server"
+            >
+              Downloaded
+            </span>
+            } }
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error"
+              title="Delete export"
+              (click)="deleteExportJob(job)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+        </td>
+      </tr>
+      } @empty {
+      <tr>
+        <td colspan="5" class="text-center py-12 text-base-content/50">
+          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
+          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
+          <p class="text-xs text-base-content/50 mt-1">
+            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
+          </p>
+        </td>
+      </tr>
+      }
+    </pc-table>
+  </div>
+  }
+</div>
+
+<pc-modal-shell
+  #deleteDialog
+  title="Delete import"
+  icon="trash"
+  [dismissible]="!deleting()"
+  (closed)="pendingDelete.set(null)"
+>
+  @if (pendingDelete(); as item) {
+  <p class="text-sm text-base-content/70 mt-2">
+    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
+    records created by this import:
+  </p>
+
+  <div class="space-y-3 mt-4">
+    @if (item.contactCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deletePeople()"
+        (change)="deletePeople.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
+    </label>
+    } @if (item.householdCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteHouseholds()"
+        (change)="deleteHouseholds.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
+    </label>
+    } @if (item.companyCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteCompanies()"
+        (change)="deleteCompanies.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
+    </label>
+    } @if (item.taskCount > 0) {
+    <label
+      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
+    >
+      <input
+        type="checkbox"
+        class="checkbox checkbox-primary checkbox-sm"
+        [checked]="deleteTasks()"
+        (change)="deleteTasks.set($any($event.target).checked)"
+      />
+      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
+    </label>
+    }
+  </div>
+  }
+
+  <div pc-modal-footer class="flex gap-2">
+    <button
+      type="button"
+      class="btn btn-outline btn-accent"
+      (click)="closeDeleteDialog(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="btn btn-outline btn-error gap-2"
+      (click)="confirmDelete(deleteDialog)"
+      [disabled]="deleting()"
+    >
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      Delete
+    </button>
+  </div>
+</pc-modal-shell>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
+```typescript
+import {
+  CUSTOM_ELEMENTS_SCHEMA,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { FormField, email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
+import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
+import { NewslettersService } from '../services/newsletters-service';
+
+/** Sentence-case, heroicon-backed metadata for the four starting templates. */
+const TEMPLATE_OPTIONS: ReadonlyArray<{
+  id: TemplatePreset;
+  name: string;
+  description: string;
+  icon: PcIconNameType;
+}> = [
+  {
+    id: 'welcome',
+    name: 'Welcome email',
+    description: 'Warm greeting, hero image, social links & footer.',
+    icon: 'envelope',
+  },
+  {
+    id: 'product',
+    name: 'Announcement',
+    description: 'Hero, list of updates, CTA button & footer.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'newsletter',
+    name: 'Weekly digest',
+    description: 'Heading divider, digest content & footer.',
+    icon: 'queue-list',
+  },
+  {
+    id: 'empty',
+    name: 'Empty canvas',
+    description: 'Start from scratch with a single heading block.',
+    icon: 'document',
+  },
+];
+
+const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
+const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
+const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
+const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
+const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
+const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
+const COMMS_SETTINGS_LINK = '/settings/communications';
+const VERIFY_SENDER_LINK = '/settings/communications';
+
+const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
+  subject: '',
+  previewText: '',
+  fromName: '',
+  fromAddress: '',
+  htmlContent: '',
+  plainTextContent: '',
+  includeLists: [],
+  includeTags: [],
+  excludeLists: [],
+  excludeTags: [],
+  timingMode: 'now',
+  scheduledDate: '',
+  scheduledTime: '',
+};
+
+@Component({
+  selector: 'pc-newsletter-add',
+  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
+  templateUrl: './newsletter-add.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class NewsletterAddComponent implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authSvc = inject(AuthService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+  private readonly listsSvc = inject(ListsService);
+  private readonly newslettersSvc = inject(NewslettersService);
+  private readonly numberFormatter = new Intl.NumberFormat();
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly tagsSvc = inject(TagsService);
+  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  private readonly user = this.authSvc.getUserSignal();
+  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
+  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
+
+  /** Raw wizard payload — the single source of truth the signal-form wraps. */
+  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
+
+  protected readonly regularForm = form(this.regularPayload, (p) => {
+    required(p.subject);
+    required(p.fromName);
+    required(p.fromAddress);
+    email(p.fromAddress);
+  });
+
+  private readonly requiresScheduleDate = computed(() => {
+    const raw = this.regularPayload();
+    if (raw.timingMode !== 'schedule') return false;
+    return !raw.scheduledDate || !raw.scheduledTime;
+  });
+
+  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
+  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
+  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
+  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
+  protected readonly currentStep = signal<StepIndex>(1);
+  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
+  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
+  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
+  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
+  protected readonly loadingLists = signal<boolean>(false);
+  protected readonly loadingTags = signal<boolean>(false);
+  protected readonly mode = signal<CreationMode>('options');
+  protected readonly saving = signal(false);
+  protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
+  protected readonly showDatePicker = signal(false);
+  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
+  protected readonly dirty = signal(false);
+  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
+  protected readonly showFieldErrors = signal(false);
+
+  protected readonly steps = STEP_LABELS;
+  protected readonly templateOptions = TEMPLATE_OPTIONS;
+  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
+  protected readonly subjectCoach = SUBJECT_COACH;
+  protected readonly fromNameCoach = FROM_NAME_COACH;
+  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
+  protected readonly scheduleCoach = SCHEDULE_COACH;
+  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
+  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
+  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
+  protected readonly mergeFieldExample = '{{first_name}}';
+
+  // --- Verified senders / workspace prefill ---------------------------------
+
+  protected readonly verifiedSenders = signal<string[]>([]);
+  protected readonly commsDefaultsApplied = signal(false);
+
+  // --- Audience math (every line is real; the total is the single source) ---
+
+  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
+  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
+  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
+  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
+  protected readonly estimatedAudienceCount = computed(() => {
+    const estimate =
+      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
+    return estimate > 0 ? Math.round(estimate) : 0;
+  });
+  protected readonly hasAudienceSelection = computed(
+    () =>
+      this.includeListIds().length > 0 ||
+      this.includeTagsList().length > 0 ||
+      this.excludeListIds().length > 0 ||
+      this.excludeTagsList().length > 0,
+  );
+  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
+  protected readonly skipBounced = computed(() =>
+    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
+  );
+
+  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
+
+  protected readonly includeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
+  );
+  protected readonly excludeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
+  );
+  protected readonly includeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
+  );
+  protected readonly excludeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
+  );
+
+  public ngOnInit(): void {
+    void this.loadLists();
+    void this.loadTags();
+    void this.loadCommsDefaults();
+  }
+
+  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
+  public canDeactivate(): Promise<boolean> {
+    if (!this.dirty()) return Promise.resolve(true);
+    return this.confirmDlg.confirm({
+      title: 'Leave without saving?',
+      message:
+        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
+      variant: 'warning',
+      confirmText: 'Discard draft',
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+  }
+
+  // --- Step navigation ------------------------------------------------------
+
+  protected canReachStep(step: number): boolean {
+    return step <= this.currentStep();
+  }
+
+  protected goToStep(targetStep: number): void {
+    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
+    if (this.canReachStep(targetStep)) {
+      this.currentStep.set(targetStep as StepIndex);
+    }
+  }
+
+  protected handleBack(): void {
+    const step = this.currentStep();
+    if (step === 1) {
+      this.switchToOptions();
+    } else {
+      this.currentStep.set((step - 1) as StepIndex);
+    }
+  }
+
+  protected handleNext(): void {
+    const step = this.currentStep();
+
+    if (step === 3 && !this.validateDetails()) return;
+
+    if (step >= STEP_LABELS.length) return;
+    this.showFieldErrors.set(false);
+    this.currentStep.set((step + 1) as StepIndex);
+  }
+
+  // --- Mode / template ------------------------------------------------------
+
+  protected close(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected selectAutomated(): void {
+    this.mode.set('automated');
+  }
+
+  protected selectRegular(): void {
+    this.mode.set('regular');
+    this.currentStep.set(1);
+    this.applyTemplate('welcome');
+    // Auto-selecting the default template is not a user edit.
+    this.dirty.set(false);
+  }
+
+  protected switchToOptions(): void {
+    this.mode.set('options');
+    this.currentStep.set(1);
+  }
+
+  protected selectTemplate(preset: TemplatePreset): void {
+    this.applyTemplate(preset);
+    this.markDirty();
+  }
+
+  protected selectedTemplateName(): string {
+    return TEMPLATE_OPTIONS.find((t) => t.id === this.selectedTemplate())?.name ?? 'Template';
+  }
+
+  // --- Audience: add / remove -----------------------------------------------
+
+  protected addIncludeList(listId: string): void {
+    if (this.includeListIds().includes(listId)) return;
+    // A list can't be both included and excluded.
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+    this.setIncludeLists([...this.includeListIds(), listId]);
+  }
+
+  protected removeIncludeList(listId: string): void {
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+  }
+
+  protected addExcludeList(listId: string): void {
+    if (this.excludeListIds().includes(listId)) return;
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+    this.setExcludeLists([...this.excludeListIds(), listId]);
+  }
+
+  protected removeExcludeList(listId: string): void {
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+  }
+
+  protected addIncludeTag(name: string): void {
+    if (this.includeTagsList().includes(name)) return;
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+    this.setIncludeTags([...this.includeTagsList(), name]);
+  }
+
+  protected removeIncludeTag(name: string): void {
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+  }
+
+  protected addExcludeTag(name: string): void {
+    if (this.excludeTagsList().includes(name)) return;
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+    this.setExcludeTags([...this.excludeTagsList(), name]);
+  }
+
+  protected removeExcludeTag(name: string): void {
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+  }
+
+  protected listName(id: string): string {
+    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
+  }
+
+  protected listSize(id: string): number {
+    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
+  }
+
+  protected tagUsage(name: string): number {
+    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
+  }
+
+  protected formatCount(value: number): string {
+    return this.numberFormatter.format(value);
+  }
+
+  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
+  protected peopleLabel(value: number): string {
+    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
+  }
+
+  // --- Schedule -------------------------------------------------------------
+
+  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
+    const state = this.regularForm[field]();
+    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
+  }
+
+  protected onScheduledDateChange(event: unknown): void {
+    const value = this.normalizeCalendarValue(event) ?? '';
+    const state = this.regularForm.scheduledDate();
+    state.value.set(value);
+    state.markAsDirty();
+    state.markAsTouched();
+    this.markDirty();
+    this.showDatePicker.set(false);
+  }
+
+  protected scheduledDateDisplay(): string {
+    const value = this.scheduledDateValue();
+    if (!value) return 'Select a date';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
+  }
+
+  protected scheduledDateValue(): string {
+    return this.regularPayload().scheduledDate;
+  }
+
+  protected timingNeedsDate(): boolean {
+    return this.requiresScheduleDate();
+  }
+
+  protected toggleDatePicker(): void {
+    this.showDatePicker.update((open) => !open);
+  }
+
+  protected onFieldInput(): void {
+    this.markDirty();
+  }
+
+  protected setTimingMode(mode: TimingMode): void {
+    this.regularForm.timingMode().value.set(mode);
+    this.markDirty();
+  }
+
+  protected onTimingChange(): void {
+    this.markDirty();
+  }
+
+  protected onEditorHtmlChange(html: string): void {
+    this.regularForm.htmlContent().value.set(html);
+    this.markDirty();
+  }
+
+  protected onEditorTextChange(text: string): void {
+    this.regularForm.plainTextContent().value.set(text);
+  }
+
+  protected goToVerifySender(): void {
+    void this.router.navigateByUrl(this.verifySenderLink);
+  }
+
+  // --- Test send ------------------------------------------------------------
+
+  protected async sendTestEmail(): Promise<void> {
+    const raw = this.regularPayload();
+    const to = this.authSvc.getUser()?.email;
+    if (!to) {
+      this.alertSvc.showError('We could not find your email address for the test send.');
+      return;
+    }
+    const subject = raw.subject || 'Your newsletter';
+    try {
+      await this.newslettersSvc.sendTest({
+        subject,
+        html: raw.htmlContent,
+        text: raw.plainTextContent,
+        to,
+        fromName: raw.fromName,
+        fromEmail: raw.fromAddress,
+      });
+      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
+    }
+  }
+
+  // --- Save draft -----------------------------------------------------------
+
+  protected async saveDraft(): Promise<void> {
+    if (this.saving()) return;
+    const raw = this.regularPayload();
+    const subject = raw.subject || 'Untitled draft';
+    this.saving.set(true);
+    try {
+      await this.newslettersSvc.add(this.buildPayload('draft'));
+      this.dirty.set(false);
+      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Send / schedule (with preflight) -------------------------------------
+
+  protected async sendRegular(): Promise<void> {
+    if (this.saving()) return;
+    if (!this.validateDetails()) {
+      this.currentStep.set(3);
+      return;
+    }
+    if (this.requiresScheduleDate()) {
+      this.regularForm.scheduledDate().markAsTouched();
+      this.regularForm.scheduledTime().markAsTouched();
+      this.showFieldErrors.set(true);
+      this.alertSvc.showError(this.scheduleCoach);
+      return;
+    }
+
+    const raw = this.regularPayload();
+    const scheduled = raw.timingMode === 'schedule';
+    const count = this.estimatedAudienceCount();
+    const subject = raw.subject || 'Untitled newsletter';
+    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
+      message: this.preflightMessage(count),
+      variant: 'info',
+      icon: 'paper-airplane',
+      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+      const createdId = this.extractId(created);
+      if (!scheduled && createdId) {
+        await this.newslettersSvc.send(createdId);
+      }
+      this.dirty.set(false);
+      this.alertSvc.showSuccess(
+        scheduled
+          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
+          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
+      );
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Internals ------------------------------------------------------------
+
+  private applyTemplate(preset: TemplatePreset): void {
+    this.selectedTemplate.set(preset);
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: compileTemplateHtml(preset),
+      plainTextContent: compileTemplatePlainText(preset),
+    }));
+  }
+
+  private validateDetails(): boolean {
+    this.markDetailsTouched();
+    this.showFieldErrors.set(true);
+    const invalidField = this.firstInvalidDetail();
+    if (invalidField) {
+      this.focusAndCoach(invalidField);
+      return false;
+    }
+    return true;
+  }
+
+  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
+    if (this.regularForm.subject().invalid()) return 'subject';
+    if (this.regularForm.fromName().invalid()) return 'fromName';
+    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
+    return null;
+  }
+
+  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
+    const map = {
+      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
+      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
+      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
+    } as const;
+    const target = map[field];
+    target.ref?.nativeElement.focus();
+    this.alertSvc.showError(target.coach);
+  }
+
+  private preflightMessage(count: number): string {
+    const base = `It will go to ${this.peopleLabel(count)}.`;
+    if (this.skipBounced()) {
+      return `${base} Previously bounced addresses are skipped automatically.`;
+    }
+    return `${base} Bounced addresses are NOT being skipped (Workspace setting).`;
+  }
+
+  private scheduleWhenLabel(): string {
+    const date = this.scheduledDateValue();
+    const time = this.regularPayload().scheduledTime;
+    if (!date) return 'the scheduled time';
+    const parsed = new Date(`${date}T${time || '00:00'}`);
+    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
+    return time
+      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
+      : this.dateFormatter.format(parsed);
+  }
+
+  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
+    const raw = this.regularPayload();
+    const scheduledAt =
+      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
+        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
+        : null;
+
+    return {
+      name: raw.subject || 'Unnamed Newsletter',
+      status,
+      subject: raw.subject,
+      preview_text: raw.previewText,
+      audience_description: this.buildAudienceDescription(),
+      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
+      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
+      html_content: raw.htmlContent,
+      plain_text_content: raw.plainTextContent,
+      send_date: scheduledAt,
+      total_recipients: this.estimatedAudienceCount(),
+    };
+  }
+
+  private buildAudienceDescription(): string {
+    const includeLists = this.includeListIds().map((id) => this.listName(id));
+    const includeTags = this.includeTagsList();
+    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
+    const excludeTags = this.excludeTagsList();
+
+    const parts: string[] = [];
+    if (includeLists.length || includeTags.length) {
+      parts.push(
+        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
+      );
+    }
+    if (excludeLists.length || excludeTags.length) {
+      parts.push(
+        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
+      );
+    }
+    return parts.length ? parts.join(' ') : 'No target audience configured.';
+  }
+
+  private markDetailsTouched(): void {
+    this.regularForm.subject().markAsTouched();
+    this.regularForm.fromName().markAsTouched();
+    this.regularForm.fromAddress().markAsTouched();
+  }
+
+  private markDirty(): void {
+    if (!this.dirty()) this.dirty.set(true);
+  }
+
+  private setIncludeLists(next: string[]): void {
+    this.writeAudience('includeLists', next);
+  }
+
+  private setExcludeLists(next: string[]): void {
+    this.writeAudience('excludeLists', next);
+  }
+
+  private setIncludeTags(next: string[]): void {
+    this.writeAudience('includeTags', next);
+  }
+
+  private setExcludeTags(next: string[]): void {
+    this.writeAudience('excludeTags', next);
+  }
+
+  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
+    this.regularPayload.update((p) => ({ ...p, [key]: next }));
+    this.markDirty();
+  }
+
+  private sumListSizes(ids: string[]): number {
+    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
+    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
+  }
+
+  private sumTagUsage(names: string[]): number {
+    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
+    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
+  }
+
+  private async loadLists(): Promise<void> {
+    this.loadingLists.set(true);
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows
+          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
+          .map((row: Record<string, unknown>) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            size:
+              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
+              0,
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
+    } finally {
+      this.loadingLists.set(false);
+    }
+  }
+
+  private async loadTags(): Promise<void> {
+    this.loadingTags.set(true);
+    try {
+      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
+      this.availableTags.set(
+        rows
+          .filter(
+            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
+          )
+          .filter((row) => row['id'] && row['name'])
+          .map((row) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
+    } finally {
+      this.loadingTags.set(false);
+    }
+  }
+
+  private async loadCommsDefaults(): Promise<void> {
+    try {
+      await this.settingsSvc.load();
+    } catch {
+      // Non-fatal: the sender fields simply won't prefill.
+      return;
+    }
+    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
+
+    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
+    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
+    let applied = false;
+    if (defaultName && !this.regularPayload().fromName) {
+      this.regularForm.fromName().value.set(defaultName);
+      applied = true;
+    }
+    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
+      this.regularForm.fromAddress().value.set(defaultEmail);
+      applied = true;
+    }
+    this.commsDefaultsApplied.set(applied);
+  }
+
+  private normalizeCalendarValue(event: unknown): string | null {
+    const raw = this.readCalendarRaw(event);
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  }
+
+  private readCalendarRaw(event: unknown): string | null {
+    if (typeof event === 'string') return event;
+    if (!event || typeof event !== 'object') return null;
+    const e = event as Record<string, unknown>;
+    const detail = e['detail'];
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
+      return (detail as Record<string, unknown>)['value'] as string;
+    }
+    const target = e['target'];
+    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
+      return (target as Record<string, unknown>)['value'] as string;
+    }
+    if (typeof e['value'] === 'string') return e['value'] as string;
+    return null;
+  }
+
+  private extractId(created: unknown): string | null {
+    if (created && typeof created === 'object' && 'id' in created) {
+      const id = (created as Record<string, unknown>)['id'];
+      return id != null ? String(id) : null;
+    }
+    return null;
+  }
+
+  private errorMessage(err: unknown, fallback: string): string {
+    return err instanceof Error && err.message ? err.message : fallback;
+  }
+}
+
+type CreationMode = 'options' | 'regular' | 'automated';
+
+type StepIndex = 1 | 2 | 3 | 4;
+
+type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
+
+type TimingMode = 'now' | 'schedule';
+
+interface RegularNewsletterPayload {
+  subject: string;
+  previewText: string;
+  fromName: string;
+  fromAddress: string;
+  htmlContent: string;
+  plainTextContent: string;
+  includeLists: string[];
+  includeTags: string[];
+  excludeLists: string[];
+  excludeTags: string[];
+  timingMode: TimingMode;
+  scheduledDate: string;
+  scheduledTime: string;
+}
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-page.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Icon } from '@icons/icon';
+
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { AuthService } from '../../../auth/auth-service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { NewslettersService } from '../services/newsletters-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+interface NewsletterRow {
+  bounce_count: number;
+  click_rate: number;
+  delivered_count: number;
+  has_audience: boolean;
+  has_content: boolean;
+  id: string;
+  name: string;
+  open_rate: number;
+  send_date: Date | null;
+  status: string;
+  total_recipients: number;
+  unique_clicks: number;
+  unique_opens: number;
+}
+
+interface NewsletterStats {
+  avgClickRate: number;
+  avgOpenRate: number;
+  bounces: number;
+  delivered: number;
+  sentCount: number;
+}
+
+const STATUS_TONE: Record<string, PcStatusType> = {
+  archived: 'ghost',
+  draft: 'ghost',
+  paused: 'warning',
+  queuing: 'info',
+  scheduled: 'info',
+  sending: 'info',
+  sent: 'success',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  archived: 'Archived',
+  draft: 'Draft',
+  paused: 'Paused',
+  queuing: 'Sending',
+  scheduled: 'Scheduled',
+  sending: 'Sending',
+  sent: 'Sent',
+};
+
+/** Statuses that count as "in progress" for the header sentence. */
+const IN_PROGRESS_STATUSES = new Set(['scheduled', 'queuing', 'sending', 'paused']);
+
+/**
+ * Newsletters list page: stat tiles summarising all-time engagement, then a bespoke
+ * pc-table of campaigns. Drafts get a "Send…" action behind the danger confirm; everything
+ * else links to its report (the newsletter detail page).
+ */
+@Component({
+  selector: 'pc-newsletters-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [EmptyState, RouterLink, DatePipe, Icon, GridHeaderComponent, StatusBadge, Table],
+  templateUrl: './newsletters-page.html',
+})
+export class NewslettersPage {
+  private readonly svc = inject(NewslettersService);
+  private readonly auth = inject(AuthService);
+  private readonly userSignal = this.auth.getUserSignal();
+  /** Sending is blocked server-side during demo mode; sendBlocker() explains it (§2 explained-disabled). */
+  private readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+  private readonly context = inject(CampaignContextService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly loading = createLoadingGate();
+  protected readonly rows = signal<NewsletterRow[]>([]);
+  protected readonly loaded = signal(false);
+  /** Verified sender addresses (Workspace → Communications) — sending needs at least one. */
+  protected readonly verifiedSenders = signal<string[]>([]);
+
+  /** The campaign context the current rows were loaded for; undefined = never loaded. */
+  private loadedForCampaign: string | null | undefined = undefined;
+
+  private readonly numberFormatter = new Intl.NumberFormat();
+
+  protected readonly stats = computed<NewsletterStats>(() => {
+    const sent = this.rows().filter((r) => r.status === 'sent');
+    let delivered = 0;
+    let opens = 0;
+    let clicks = 0;
+    let bounces = 0;
+    for (const r of sent) {
+      delivered += r.delivered_count;
+      opens += r.unique_opens;
+      clicks += r.unique_clicks;
+      bounces += r.bounce_count;
+    }
+    return {
+      sentCount: sent.length,
+      delivered,
+      avgOpenRate: delivered > 0 ? (opens / delivered) * 100 : 0,
+      avgClickRate: delivered > 0 ? (clicks / delivered) * 100 : 0,
+      bounces,
+    };
+  });
+
+  protected readonly headerSentence = computed<string | null>(() => {
+    if (!this.loaded()) return null;
+    const sent = this.stats().sentCount;
+    const inProgress = this.rows().filter((r) => IN_PROGRESS_STATUSES.has(r.status)).length;
+    const parts = [`${this.numberFormatter.format(sent)} campaign${sent === 1 ? '' : 's'} sent`];
+    if (inProgress > 0) parts.push(`${this.numberFormatter.format(inProgress)} in progress`);
+    return parts.join(' · ');
+  });
+
+  constructor() {
+    // Reload whenever the campaign context switches (§15) — and once on first render.
+    effect(() => {
+      const campaignId = this.context.activeCampaignId();
+      if (campaignId === this.loadedForCampaign) return;
+      this.loadedForCampaign = campaignId;
+      void untracked(() => this.reload());
+    });
+  }
+
+  protected statusLabel(status: string): string {
+    return STATUS_LABEL[status] ?? (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—');
+  }
+
+  protected statusTone(status: string): PcStatusType {
+    return STATUS_TONE[status] ?? 'ghost';
+  }
+
+  protected formatNumber(value: number): string {
+    return this.numberFormatter.format(value);
+  }
+
+  protected formatPercent(value: number): string {
+    return `${value.toFixed(1)}%`;
+  }
+
+  /**
+   * The first unmet send condition for a draft, or null when it can go out (§2 explained-disabled:
+   * the Send button never greys out silently — the tooltip names exactly what's missing).
+   */
+  protected sendBlocker(row: NewsletterRow): string | null {
+    if (this.isDemo()) {
+      return 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+    }
+    if (this.verifiedSenders().length === 0) {
+      return 'Verify a sender address under Settings → Communications before sending';
+    }
+    if (!row.has_audience) return 'This draft has no audience yet. Pick lists or tags in the newsletter wizard';
+    if (!row.has_content) return 'This draft has no subject or content yet. Finish it in the newsletter wizard';
+    return null;
+  }
+
+  protected async sendDraft(row: NewsletterRow): Promise<void> {
+    if (this.sendBlocker(row) !== null) return;
+    const name = row.name || 'this newsletter';
+    const confirmed = await this.dialogs.confirm({
+      title: `Send "${name}"?`,
+      message: 'It goes out to everyone in its selected lists and tags right away. Sending cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Send newsletter',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this.loading.begin();
+    try {
+      await this.svc.send(row.id);
+      this.alerts.showSuccess(`"${name}" is on its way`);
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not send the newsletter'));
+    } finally {
+      end();
+    }
+  }
+
+  private async reload(): Promise<void> {
+    const end = this.loading.begin();
+    try {
+      await this.context.ensureLoaded();
+      const { rows } = await this.svc.getAll();
+      this.rows.set((rows as Record<string, unknown>[]).map((r) => this.toRow(r)));
+      this.loaded.set(true);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load newsletters'));
+    } finally {
+      end();
+    }
+    await this.loadVerifiedSenders();
+  }
+
+  private async loadVerifiedSenders(): Promise<void> {
+    try {
+      await this.settings.load();
+      this.verifiedSenders.set(this.settings.getValue<string[]>('communications.verified_emails', []) ?? []);
+    } catch {
+      // Non-fatal: with no snapshot the Send buttons stay disabled with the verify-sender tooltip.
+    }
+  }
+
+  private toRow(record: Record<string, unknown>): NewsletterRow {
+    const asNumber = (value: unknown): number => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
+    };
+    const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+    return {
+      has_audience: asText(record['target_lists']).length > 0 || asText(record['segments']).length > 0,
+      has_content:
+        asText(record['subject']).length > 0 &&
+        (asText(record['html_content']).length > 0 || asText(record['plain_text_content']).length > 0),
+      id: String(record['id']),
+      name: typeof record['name'] === 'string' ? record['name'] : '',
+      status: typeof record['status'] === 'string' ? record['status'] : 'draft',
+      total_recipients: asNumber(record['total_recipients']),
+      delivered_count: asNumber(record['delivered_count']),
+      bounce_count: asNumber(record['bounce_count']),
+      open_rate: asNumber(record['open_rate']),
+      click_rate: asNumber(record['click_rate']),
+      unique_opens: asNumber(record['unique_opens']),
+      unique_clicks: asNumber(record['unique_clicks']),
+      send_date: record['send_date'] instanceof Date ? record['send_date'] : null,
+    };
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import {
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
+
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
+import {
+  CampaignsService,
+  PersonCampaignFact,
+  PersonSubscriptionsPayload,
+} from '../../campaigns/services/campaigns-service';
+import { PersonsService } from '../services/persons-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/**
+ * Campaign standing card (Campaigns §15): this person's support level and voting
+ * status in the ACTIVE context, their history across every campaign, and the
+ * global do-not-contact override. Unknown = no stored value, on purpose.
+ */
+@Component({
+  selector: 'pc-person-campaign-facts',
+  imports: [DatePipe, Icon, PcCard, YardSignStanding],
+  templateUrl: './person-campaign-facts.html',
+})
+export class PersonCampaignFacts {
+  readonly personId = input.required<string>();
+  readonly dncFlag = input<boolean>(false);
+  /** Seed values for the global volunteer/staff status selects (§15). */
+  readonly volunteerStatus = input<string | null>(null);
+  readonly staffStatus = input<string | null>(null);
+  /** The person's household (null = no address) — drives the yard-sign standing control. */
+  readonly householdId = input<string | null>(null);
+
+  protected readonly context = inject(CampaignContextService);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly supportLevels = SUPPORT_LEVELS;
+  protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
+  protected readonly votingStatuses = VOTING_STATUSES;
+  protected readonly votingLabels = VOTING_STATUS_LABELS;
+  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
+  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
+  protected readonly staffStatuses = STAFF_STATUSES;
+  protected readonly staffLabels = STAFF_STATUS_LABELS;
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly facts = signal<PersonCampaignFact[]>([]);
+  protected readonly doNotContact = signal(false);
+  /** Global volunteer/staff standing ('' = not one). Seeded from the person row. */
+  protected readonly volunteerSel = signal<string>('');
+  protected readonly staffSel = signal<string>('');
+  protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
+
+  protected readonly activeCampaign = this.context.activeCampaign;
+  protected readonly readonlyContext = this.context.isArchivedContext;
+
+  /** The fact row for the active context (undefined = everything Unknown). */
+  protected readonly activeFact = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.facts().find((f) => String(f.campaign_id) === id) : undefined;
+  });
+
+  /** History rows for campaigns other than the active one. */
+  protected readonly otherFacts = computed(() => {
+    const id = this.context.activeCampaignId();
+    return this.facts().filter((f) => String(f.campaign_id) !== id);
+  });
+
+  /** Subscription row for the active context (undefined = never asked). */
+  protected readonly activeSubscription = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.consent()?.subscriptions.find((s) => String(s.campaign_id) === id) : undefined;
+  });
+
+  protected readonly hasEmail = computed(() => !!this.consent()?.email);
+  protected readonly suppressed = computed(() => (this.consent()?.suppressions.length ?? 0) > 0);
+
+  /**
+   * One honest, derived sendability state for the active context (§15):
+   * subscribed in this campaign ∧ address healthy ∧ not DNC(email).
+   */
+  protected readonly sendState = computed<{ label: string; tone: 'ok' | 'warn' | 'muted' }>(() => {
+    if (!this.hasEmail()) return { label: 'No email address', tone: 'muted' };
+    if (this.doNotContact()) return { label: 'Do not contact', tone: 'warn' };
+    const sub = this.activeSubscription();
+    if (!sub) return { label: 'Never asked', tone: 'muted' };
+    if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
+    if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
+    if (this.suppressed()) return { label: 'Subscribed, address bouncing', tone: 'warn' };
+    return { label: 'Subscribed', tone: 'ok' };
+  });
+
+  constructor() {
+    effect(() => {
+      const personId = this.personId();
+      void untracked(() => this.load(personId));
+    });
+    effect(() => {
+      this.doNotContact.set(this.dncFlag());
+    });
+    effect(() => {
+      this.volunteerSel.set(this.volunteerStatus() ?? '');
+    });
+    effect(() => {
+      this.staffSel.set(this.staffStatus() ?? '');
+    });
+  }
+
+  protected supportBadgeClass(level: string | null): string {
+    switch (level) {
+      case 'strong':
+        return 'badge-success';
+      case 'leaning':
+        return 'badge-info';
+      case 'leaning_against':
+        return 'badge-warning';
+      case 'against':
+        return 'badge-error';
+      case 'neutral':
+      case 'undecided':
+        return 'badge-neutral';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected supportLabel(level: string | null): string {
+    return level ? (this.supportLabels[level as SupportLevel] ?? level) : 'Unknown';
+  }
+
+  protected votingLabel(status: string | null): string {
+    return status ? (this.votingLabels[status as VotingStatus] ?? status) : 'Unknown';
+  }
+
+  protected async onSupportChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ support_level: value === '' ? null : (value as SupportLevel) });
+  }
+
+  protected async onVotingChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ voting_status: value === '' ? null : (value as VotingStatus) });
+  }
+
+  protected async setSubscription(status: 'subscribed' | 'unsubscribed'): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.setSubscription({ campaign_id: campaignId, person_id: this.personId(), status });
+      await this.load(this.personId());
+      this.alerts.showSuccess(status === 'subscribed' ? 'Subscribed' : 'Unsubscribed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the subscription'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async toggleDnc(): Promise<void> {
+    const next = !this.doNotContact();
+    if (next) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Mark as do-not-contact',
+        message:
+          'This stops all outreach to this person (email, calls, and door knocks) in the office and every campaign. It is a global override, not a per-campaign preference.',
+        variant: 'danger',
+        confirmText: 'Stop all contact',
+      });
+      if (!confirmed) return;
+    }
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), { do_not_contact: next });
+      this.doNotContact.set(next);
+      this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async onVolunteerStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as VolunteerStatus);
+    await this.saveGlobalStatus({ volunteer_status: next }, this.volunteerSel, value, 'volunteer status');
+  }
+
+  protected async onStaffStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as StaffStatus);
+    await this.saveGlobalStatus({ staff_status: next }, this.staffSel, value, 'staff status');
+  }
+
+  /**
+   * Persist a global person status (volunteer/staff, §15). Optimistically stores
+   * the new value on success; reverts on error by re-reading nothing (the select
+   * is re-bound to the signal, so we just leave the prior value on failure).
+   */
+  private async saveGlobalStatus(
+    change: { volunteer_status?: VolunteerStatus | null; staff_status?: StaffStatus | null },
+    target: { set(v: string): void },
+    value: string,
+    label: string,
+  ): Promise<void> {
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), change);
+      target.set(value);
+      this.alerts.showSuccess('Saved');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, `Could not update ${label}`));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async saveFact(change: {
+    support_level?: SupportLevel | null;
+    voting_status?: VotingStatus | null;
+  }): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.upsertPersonFact({
+        campaign_id: campaignId,
+        person_id: this.personId(),
+        ...change,
+      });
+      await this.load(this.personId());
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not save. Please try again.'));
+      await this.load(this.personId());
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async load(personId: string): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [facts, consent] = await Promise.all([
+        this.campaignsSvc.getPersonFacts(personId),
+        this.campaignsSvc.getPersonSubscriptions(personId),
+        this.context.ensureLoaded(),
+      ]);
+      this.facts.set(facts);
+      this.consent.set(consent);
+      this.doNotContact.set(!!consent.do_not_contact);
+    } catch {
+      // The card degrades to "Unknown" rather than blocking the person page.
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
+```typescript
+import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { CompaniesService } from '../../companies/services/companies-service';
+import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { PersonCampaignFacts } from './person-campaign-facts';
+import { PersonStandingDraft } from './person-standing-draft';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { CampaignsService } from '../../campaigns/services/campaigns-service';
+
+@Component({
+  selector: 'pc-person-form',
+  imports: [
+    PcInput,
+    PcSelect,
+    PcTextarea,
+    Tags,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    SideDrawer,
+    PcCard,
+    DatePipe,
+    PersonCampaignFacts,
+    PersonStandingDraft,
+  ],
+  templateUrl: './person-form.html',
+})
+export class PersonForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly router = inject(Router);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly campaignContext = inject(CampaignContextService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+
+  private _loading = createLoadingGate();
+  private usersById = new Map<string, IAuthUser>();
+
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return null;
+    return this.getFormattedAddress(hh);
+  });
+
+  /** Overview rail (§6): everyone else sharing this person's household. */
+  protected readonly householdMembersResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getPeopleCount(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly companyName = computed(() => {
+    const id = this.person()?.company_id;
+    if (!id) return null;
+    return this.companies().find((c) => c.id === id)?.name ?? null;
+  });
+
+  protected readonly preferredContactLabel = computed(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return 'No preference';
+    }
+  });
+
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  /** Address line with the household's ward appended when known (e.g. "312 Alder St … · Ward 3"). */
+  protected readonly addressWithWard = computed(() => {
+    const base = this.addressString();
+    if (!base) return null;
+    const ward = (this.householdResource.value() as Households | null | undefined)?.ward;
+    return ward ? `${base} · Ward ${ward}` : base;
+  });
+
+  // Drawer state for assigning household
+  protected readonly assignDrawerOpen = signal(false);
+  protected readonly householdResults = signal<any[]>([]);
+  protected readonly householdSearch = signal('');
+  protected readonly householdsLoading = signal(false);
+
+  protected readonly pendingHouseholdId = signal<string | null>(null);
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly emailError = linkedSignal({
+    source: () => this.form.email().value(),
+    computation: () => null as string | null,
+  });
+  protected readonly person = signal<Selectable<Persons> | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly companies = signal<any[]>([]);
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+
+  protected readonly payload = signal({
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    email: '',
+    email2: '',
+    home_phone: '',
+    mobile: '',
+    notes: '',
+    company_id: '',
+    preferred_contact: '',
+    linkedin: '',
+    twitter: '',
+    facebook: '',
+    instagram: '',
+    assigned_to: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdatePersonsObj);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected id = input<string>();
+  protected tags = signal<string[]>([]);
+  protected issues = signal<string[]>([]);
+
+  // Campaign standing captured on the NEW-person form (§15). Support/voting/subscribe
+  // are campaign-scoped and can only be written once the person has an id, so they are
+  // applied after the add succeeds; do_not_contact is a plain person field folded into
+  // the add payload. Bound two-way to <pc-person-standing-draft>.
+  protected readonly draftSupport = signal<SupportLevel | ''>('');
+  protected readonly draftVoting = signal<VotingStatus | ''>('');
+  protected readonly draftSubscribe = signal(false);
+  protected readonly draftDnc = signal(false);
+  // Volunteer/staff are global person status (§15) — folded straight into the add payload.
+  protected readonly draftVolunteer = signal<VolunteerStatus | ''>('');
+  protected readonly draftStaff = signal<StaffStatus | ''>('');
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
+
+  public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  protected readonly formName = computed(() => {
+    const v = this.payload();
+    return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
+    }
+    return [people, { label: 'New person' }];
+  });
+
+  protected readonly formInitials = computed(() => {
+    const name = this.formName() || '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
+
+  constructor() {
+    // Load users once for display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadPerson();
+    await this.loadCompanies();
+    void this.loadSuggestionNames();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          first_name: data.first_name ?? '',
+          middle_names: data.middle_names ?? '',
+          last_name: data.last_name ? `${data.last_name} (Copy)` : '',
+          email: data.email ?? '',
+          email2: data.email2 ?? '',
+          home_phone: data.home_phone ?? '',
+          mobile: data.mobile ?? '',
+          notes: data.notes ?? '',
+          company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
+          linkedin: data.linkedin ?? '',
+          twitter: data.twitter ?? '',
+          facebook: data.facebook ?? '',
+          instagram: data.instagram ?? '',
+          assigned_to: data.assigned_to ? String(data.assigned_to) : '',
+        });
+        if (data.household_id) {
+          this.pendingHouseholdId.set(data.household_id);
+        }
+      }
+    }
+  }
+
+  private async loadSuggestionNames() {
+    try {
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
+    } catch (err) {
+      console.error('Failed to load tag/issue suggestions', err);
+    }
+  }
+
+  private async loadCompanies() {
+    try {
+      const res = await this.companiesSvc.getAll();
+      this.companies.set(res.rows || []);
+    } catch {
+      this.companies.set([]);
+    }
+  }
+
+  protected async deletePerson() {
+    const id = this.id();
+    if (!id) return;
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(id);
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
+  }
+
+  public save(done?: () => void) {
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      // §4: Save never disables — instead of blocking, surface the errors and
+      // move focus to the first invalid field so the user knows what to fix.
+      queueMicrotask(() => {
+        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
+        el?.focus();
+      });
+      return;
+    }
+    const raw = this.payload();
+    const data = {
+      ...raw,
+      company_id: raw.company_id || null,
+      assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
+    } as UpdatePersonsType;
+    return this.id() ? this.update(data, done) : this.add(data, done);
+  }
+
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected async assignToHousehold(household_id: string) {
+    const id = this.id();
+    // NEW PERSON: just store the pending selection; it will be sent on save
+    if (!id) {
+      this.pendingHouseholdId.set(household_id);
+      this.alertSvc.showSuccess('Household selected. It will be saved when you add the person');
+      this.closeAssignDrawer();
+      return;
+    }
+
+    // Ask scope: just this person vs everyone in current household
+    const applyToAll = await this.confirmDlg.confirm({
+      title: 'Change household',
+      message: 'Apply to everyone in the current household, or just this person?',
+      variant: 'info',
+      confirmText: 'Everyone',
+      cancelText: 'Just this person',
+    });
+
+    const currentHousehold = this.householdId();
+
+    const end = this._loading.begin();
+    try {
+      if (applyToAll && currentHousehold) {
+        // Single atomic tRPC call to the backend
+        await this.personsSvc.moveEntireHousehold(currentHousehold, household_id);
+      } else {
+        // Only move this person
+        await this.personsSvc.update(id, { household_id } as UpdatePersonsType);
+      }
+
+      // update local state for current person and UI
+      this.person.update((p) => (p ? { ...p, household_id } : p));
+
+      this.alertSvc.showSuccess('Assigned to selected household');
+      this.closeAssignDrawer();
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  protected closeAssignDrawer() {
+    this.assignDrawerOpen.set(false);
+  }
+
+  protected formatHouseholdRow(row: any) {
+    const address = {
+      apt: row.apt ?? null,
+      street_num: row.street_num ?? '',
+      street1: row.street1 ?? '',
+      street2: row.street2 ?? '',
+      city: row.city ?? '',
+      state: row.state ?? '',
+      zip: row.zip ?? '',
+      country: row.country ?? '',
+    } as AddressType;
+    return this.getFormattedAddress(address);
+  }
+
+  protected getId() {
+    const id = this.person()?.id;
+    if (!id) return null;
+
+    return id as unknown as string;
+  }
+
+  protected getUserName(id: string | null | undefined = null): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  protected onHouseholdSearch(ev: Event) {
+    const target = ev.target as HTMLInputElement | null;
+    const val = target?.value ?? '';
+    this.householdSearch.set(val);
+    void this.fetchHouseholds();
+  }
+
+  protected openAssignDrawer() {
+    this.assignDrawerOpen.set(true);
+    // Initial fetch
+    void this.fetchHouseholds();
+  }
+
+  protected async removeAddress() {
+    const id = this.id();
+    // New person: just clear the pending household — no API call needed yet
+    if (!id) {
+      this.pendingHouseholdId.set(null);
+      return;
+    }
+
+    if (!this.person()) return;
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: 'Remove Address',
+      message: 'This will move the person to a new blank household (clearing address). Continue?',
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.removeHousehold(id);
+      this.person.update((p) => (p ? { ...p, household_id: null } : p));
+      this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
+    } catch (err) {
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
+    } finally {
+      end();
+    }
+  }
+
+  protected async tagAdded(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to attach tag:', err);
+    }
+  }
+
+  protected async tagRemoved(tag: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const restoreTag = () => this.tags.update((curr) => (curr.includes(tag) ? curr : [...curr, tag]));
+
+    try {
+      // Volunteer/staff are first-class person status now (§15), no longer tags —
+      // tag removal is the plain path with no team cascade.
+      await this.personsSvc.detachTag(id, tag, 'tag');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to detach tag:', err);
+      restoreTag();
+    }
+  }
+
+  protected async issueAdded(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.personsSvc.attachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to attach issue:', err);
+    }
+  }
+
+  protected async issueRemoved(issue: string) {
+    const id = this.id();
+    if (!id) return;
+
+    const restoreIssue = () => this.issues.update((curr) => (curr.includes(issue) ? curr : [...curr, issue]));
+
+    try {
+      await this.personsSvc.detachTag(id, issue, 'issue');
+      await this.updateTags();
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to detach issue:', err);
+      restoreIssue();
+    }
+  }
+
+  private add(data: UpdatePersonsType, done?: () => void) {
+    // Include any household selected via the drawer before saving
+    const pendingHousehold = this.pendingHouseholdId();
+    if (pendingHousehold) {
+      data = { ...data, household_id: pendingHousehold } as UpdatePersonsType;
+    }
+
+    // do_not_contact is a plain person field — save it with the person.
+    if (this.draftDnc()) {
+      data = { ...data, do_not_contact: true } as UpdatePersonsType;
+    }
+
+    // Volunteer/staff are global person status (§15) — fold non-empty values in.
+    if (this.draftVolunteer()) {
+      data = { ...data, volunteer_status: this.draftVolunteer() } as UpdatePersonsType;
+    }
+    if (this.draftStaff()) {
+      data = { ...data, staff_status: this.draftStaff() } as UpdatePersonsType;
+    }
+
+    // Snapshot the campaign-scoped standing NOW, before the success handler resets
+    // the draft signals — it is applied after the person id exists.
+    const standing = {
+      support: this.draftSupport(),
+      voting: this.draftVoting(),
+      subscribe: this.draftSubscribe(),
+      email: this.payload().email,
+    };
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .add(data, { context: { skipErrorHandler: true } })
+      .then((created: unknown) => {
+        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
+        this.personsSvc.triggerRefresh();
+        void this.applyStanding(created, standing);
+        if (done) {
+          done();
+          this.pendingHouseholdId.set(null);
+          this.tags.set([]);
+          this.issues.set([]);
+          this.draftSupport.set('');
+          this.draftVoting.set('');
+          this.draftSubscribe.set(false);
+          this.draftDnc.set(false);
+          this.draftVolunteer.set('');
+          this.draftStaff.set('');
+          this.form().reset();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  /**
+   * Apply the standing captured on the add form once the person exists (§15).
+   * Campaign-scoped writes are keyed to the active context; a failure here does
+   * not undo the person — it was already saved — so we surface a soft error.
+   */
+  private async applyStanding(
+    created: unknown,
+    standing: { support: SupportLevel | ''; voting: VotingStatus | ''; subscribe: boolean; email: string },
+  ): Promise<void> {
+    const personId = isRecord(created) && created['id'] != null ? String(created['id']) : null;
+    if (!personId) return;
+
+    const wantsFact = !!standing.support || !!standing.voting;
+    const wantsSubscription = standing.subscribe && !!standing.email.trim();
+    if (!wantsFact && !wantsSubscription) return;
+
+    try {
+      await this.campaignContext.ensureLoaded();
+      const campaign_id = this.campaignContext.activeCampaignId();
+      if (!campaign_id) return;
+
+      if (wantsFact) {
+        await this.campaignsSvc.upsertPersonFact({
+          campaign_id,
+          person_id: personId,
+          ...(standing.support ? { support_level: standing.support } : {}),
+          ...(standing.voting ? { voting_status: standing.voting } : {}),
+        });
+      }
+      if (wantsSubscription) {
+        await this.campaignsSvc.setSubscription({ campaign_id, person_id: personId, status: 'subscribed' });
+      }
+    } catch (err) {
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'The person was added, but their campaign standing could not be saved.'),
+      );
+    }
+  }
+
+  private isDuplicateEmailError(err: unknown): boolean {
+    if (!err || typeof err !== 'object') return false;
+    const e = err as Record<string, any>;
+    // tRPC wraps backend errors; check both data.httpStatus and message
+    return (
+      e['data']?.['httpStatus'] === 409 ||
+      String(e['message'] ?? '')
+        .toLowerCase()
+        .includes('already exists')
+    );
+  }
+
+  private async fetchHouseholds() {
+    try {
+      this.householdsLoading.set(true);
+      const opts = {
+        searchStr: this.householdSearch(),
+        limit: 25,
+        columns: ['id', 'street_num', 'street1', 'street2', 'apt', 'city', 'state', 'zip', 'country', 'persons_count'],
+      };
+      const res = await this.householdsSvc.getAll(opts);
+      this.householdResults.set(res.rows || []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
+      this.householdResults.set([]);
+    } finally {
+      this.householdsLoading.set(false);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
+  }
+
+  private async loadPerson() {
+    const id = this.id();
+    if (!id) return;
+
+    const end = this._loading.begin();
+    try {
+      this.person.set((await this.personsSvc.getById(id)) as Selectable<Persons>);
+
+      await this.updateTags();
+      await this.loadVolunteerInfo();
+
+      this.refreshForm();
+    } finally {
+      end();
+    }
+  }
+
+  private refreshForm() {
+    const person = this.person();
+    if (!person) return;
+
+    this.payload.set({
+      first_name: person.first_name ?? '',
+      middle_names: person.middle_names ?? '',
+      last_name: person.last_name ?? '',
+      email: person.email ?? '',
+      email2: person.email2 ?? '',
+      home_phone: person.home_phone ?? '',
+      mobile: person.mobile ?? '',
+      notes: person.notes ?? '',
+      company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
+      linkedin: person.linkedin ?? '',
+      twitter: person.twitter ?? '',
+      facebook: person.facebook ?? '',
+      instagram: person.instagram ?? '',
+      assigned_to: person.assigned_to ? String(person.assigned_to) : '',
+    });
+  }
+
+  // Friendly labels for the field-naming save toast (§4).
+  private readonly fieldLabels: Record<string, string> = {
+    first_name: 'first name',
+    middle_names: 'middle name',
+    last_name: 'last name',
+    email: 'email',
+    email2: 'secondary email',
+    mobile: 'mobile phone',
+    home_phone: 'home phone',
+    company_id: 'company',
+    preferred_contact: 'preferred contact',
+    assigned_to: 'owner',
+    notes: 'notes',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  };
+
+  private changedFieldLabels(): string[] {
+    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
+    return Object.keys(this.fieldLabels)
+      .filter((k) => {
+        try {
+          return !!f[k]?.().dirty?.();
+        } catch {
+          return false;
+        }
+      })
+      .map((k) => this.fieldLabels[k]!);
+  }
+
+  private joinWithAnd(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
+  private update(data: Partial<UpdatePersonsType>, done?: () => void) {
+    const id = this.id();
+    if (!id) return;
+
+    const changed = this.changedFieldLabels();
+    const savedName = this.formName() || 'person';
+
+    this.emailError.set(null);
+    const end = this._loading.begin();
+    this.personsSvc
+      .update(id, data, { context: { skipErrorHandler: true } })
+      .then(() => {
+        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
+        const detail = changed.length ? `: ${this.joinWithAnd(changed)} updated` : '';
+        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
+        this.form().reset();
+        this.personsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
+      .catch((err: unknown) => {
+        if (this.isDuplicateEmailError(err)) {
+          this.emailError.set('This email address is already used by another person.');
+        } else {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
+        }
+      })
+      .finally(() => end());
+  }
+
+  private async updateTags() {
+    if (!this.person()) return;
+
+    const id = this.id();
+    const tags = id ? await this.personsSvc.getTags(id, 'tag') : [];
+    this.tags.set(tags);
+
+    const issues = id ? await this.personsSvc.getTags(id, 'issue') : [];
+    this.issues.set(issues);
+  }
+
+  private async loadVolunteerInfo() {
+    const id = this.id();
+    if (!id) return;
+    try {
+      const stats = await this.volunteerSvc.getVolunteerStats(id);
+      this.volunteerStats.set(stats);
+      const history = await this.volunteerSvc.getHistoryForPerson(id);
+      this.volunteerHistory.set(history || []);
+    } catch (err) {
+      console.error('Failed to load volunteer info', err);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-standing-draft.html
+```html
+<pc-card>
+  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
+
+  @if (activeCampaign(); as campaign) {
+  <p class="mb-3 text-[11px] text-base-content/50">
+    <ng-container i18n>In</ng-container>
+    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+    @if (readonlyContext()) {
+    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+    }
+  </p>
+
+  <div class="grid gap-3 sm:grid-cols-2">
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="supportLevel()"
+        [disabled]="readonlyContext()"
+        (change)="onSupportChange($event)"
+      >
+        <option value="" i18n>Unknown (never asked)</option>
+        @for (level of supportLevels; track level) {
+        <option [value]="level">{{ supportLabels[level] }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="votingStatus()"
+        [disabled]="readonlyContext()"
+        (change)="onVotingChange($event)"
+      >
+        <option value="" i18n>Unknown</option>
+        @for (status of votingStatuses; track status) {
+        <option [value]="status">{{ votingLabels[status] }}</option>
+        }
+      </select>
+    </label>
+  </div>
+
+  <!-- Email consent for the active context (§15). Consent needs an address to matter. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n>Email consent</span>
+    @if (hasEmail()) {
+    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="doNotContact() || readonlyContext()">
+      <input
+        type="checkbox"
+        class="checkbox checkbox-sm mt-0.5"
+        [checked]="subscribe()"
+        [disabled]="doNotContact() || readonlyContext()"
+        (change)="onSubscribeToggle($event)"
+      />
+      <span class="leading-snug">
+        <span class="font-medium text-base-content/80" i18n>Subscribe to campaign emails</span>
+        <span class="block text-[11px] text-base-content/50" i18n>Records express consent for this campaign.</span>
+      </span>
+    </label>
+    } @else {
+    <p class="text-[11px] italic text-base-content/45" i18n>Add an email address to enable subscription.</p>
+    }
+  </div>
+
+  <!-- Global do-not-contact override — a plain person field, saved with the person. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <label class="flex items-start gap-2 text-xs" [class.opacity-50]="readonlyContext()">
+      <input
+        type="checkbox"
+        class="checkbox checkbox-sm checkbox-error mt-0.5"
+        [checked]="doNotContact()"
+        [disabled]="readonlyContext()"
+        (change)="onDncToggle($event)"
+      />
+      <span class="leading-snug">
+        <span class="font-medium text-base-content/80" i18n>Do not contact</span>
+        <span class="block text-[11px] text-base-content/50" i18n>
+          Suppresses all outreach. Every channel, every campaign.
+        </span>
+      </span>
+    </label>
+  </div>
+  }
+
+  <!-- Global volunteer & staff standing (§15) — first-class person status, not campaign-scoped. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n>Volunteer &amp; staff</span>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Volunteer status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="volunteerStatus()"
+          (change)="onVolunteerChange($event)"
+        >
+          <option value="" i18n>Not a volunteer</option>
+          @for (status of volunteerStatuses; track status) {
+          <option [value]="status">{{ volunteerLabels[status] }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Staff status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="staffStatus()"
+          (change)="onStaffChange($event)"
+        >
+          <option value="" i18n>Not staff</option>
+          @for (status of staffStatuses; track status) {
+          <option [value]="status">{{ staffLabels[status] }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  </div>
+</pc-card>
+```
+
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
+```typescript
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
+import {
+  IAuthUserDetail,
+  IUserStatsSnapshot,
+  UpdateAuthUserType,
+  authRoleLabel,
+} from '../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+
+@Component({
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, DecimalPipe, RouterLink, ModalShell],
+  templateUrl: './profile-page.html',
+})
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
+
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
+
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
+
+  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+  });
+
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
+  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
+
+  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
+  protected readonly roleWithAccess = computed(() => {
+    const role = this.detail()?.role;
+    const descriptions: Record<string, string> = {
+      owner: 'Owner: full access',
+      admin: 'Admin: users & workspace settings',
+      user: 'Editor: day-to-day work',
+      viewer: 'Viewer: read-only',
+    };
+    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
+  });
+
+  // Narrate unsaved identity edits (§2 disclosure).
+  protected readonly dirtyFieldCount = computed(() => {
+    const f = this.form;
+    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly initials = computed(() => {
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
+    }
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
+  });
+
+  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
+  protected readonly activityRows = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const emails = s.emails_assigned;
+    const emailRest =
+      emails.total === 0
+        ? 'assigned to you'
+        : emails.open === emails.total
+          ? 'assigned to you, all open'
+          : emails.open === 0
+            ? 'assigned to you, all closed'
+            : `assigned to you, ${emails.open} open · ${emails.closed} closed`;
+    return [
+      {
+        key: 'emails',
+        icon: 'inbox-stack' as const,
+        link: '/inbox',
+        count: plural(emails.total, 'conversation'),
+        rest: emailRest,
+      },
+      {
+        key: 'contacts',
+        icon: 'user-group' as const,
+        link: '/people',
+        count: plural(s.contacts_added.total, 'contact'),
+        rest: 'added by you',
+      },
+      {
+        key: 'files',
+        icon: 'arrows-up-down-tray' as const,
+        link: null,
+        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
+        rest: 'all time',
+      },
+    ];
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const user = this.detail();
+    if (!user) return;
+
+    const payload = this.buildPayload();
+
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropZoomInput(event: Event) {
+    const value = (event.target as HTMLInputElement).valueAsNumber;
+    if (!Number.isNaN(value)) this.cropZoom.set(value);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
+      }
+
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    // Identity only — notification preferences live in Settings (avatar menu), not here.
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.ts
+```typescript
+import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
+
+export interface VerifiedDomain {
+  domain: string;
+  status: 'verified' | 'pending';
+  spf: boolean;
+  dkim: boolean;
+  dmarc: boolean;
+  domainAuthId?: number;
+  linkBrandingId?: number;
+  domainAuthDns?: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+  linkBrandingDns?: {
+    domain?: DNSVerificationRecord;
+  };
+  linkBranded?: boolean;
+}
+
+@Component({
+  selector: 'pc-domains-settings',
+  imports: [EmptyState, Icon, StatusBadge],
+  templateUrl: './domains-settings.html',
+})
+export class DomainSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly newDomain = signal('');
+  protected readonly addingDomain = signal(false);
+  protected readonly verifyingDomain = signal<string | null>(null);
+  protected readonly lastDomainVerificationTimes = signal<Record<string, number>>({});
+  protected readonly domainCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
+    source: () => this.domainsList(),
+    computation: (list, prev) => {
+      const prevVal = prev?.value;
+      if (prevVal && list.some((d) => d.domain === prevVal)) {
+        return prevVal;
+      }
+      return null;
+    },
+  });
+
+  protected readonly domainsList = computed<VerifiedDomain[]>(() => {
+    return this.settingsSvc.getValue<VerifiedDomain[]>('communications.verified_domains') || [];
+  });
+
+  ngOnInit() {
+    // Ensure settings are loaded
+    void this.settingsSvc.load();
+  }
+
+  protected toggleExpand(domainName: string) {
+    if (this.expandedDomain() === domainName) {
+      this.expandedDomain.set(null);
+    } else {
+      this.expandedDomain.set(domainName);
+    }
+  }
+
+  protected async addDomain() {
+    const domainVal = this.newDomain().trim().toLowerCase();
+    if (!domainVal) return;
+
+    // Basic domain validation
+    const domainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/i;
+    if (!domainRegex.test(domainVal)) {
+      this.alerts.showError('Please provide a valid domain name (e.g. example.com).');
+      return;
+    }
+
+    const currentList = this.domainsList();
+    if (currentList.some((d) => d.domain === domainVal)) {
+      this.alerts.showError('This domain is already added.');
+      return;
+    }
+
+    this.addingDomain.set(true);
+
+    try {
+      await this.settingsSvc.addVerifiedDomain(domainVal);
+      this.newDomain.set('');
+      this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
+      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
+      this.alerts.showError(errMsg);
+    } finally {
+      this.addingDomain.set(false);
+    }
+  }
+
+  protected isDomainVerifyCooldown(domainName: string): boolean {
+    const lastTime = this.lastDomainVerificationTimes()[domainName];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  private startDomainCooldown(domainName: string) {
+    this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.domainCooldownSeconds()[domainName] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.domainCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[domainName];
+          return next;
+        });
+      } else {
+        this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: current - 1 }));
+      }
+    }, 1000);
+  }
+
+  protected async verifyDomain(domainName: string) {
+    if (this.isDomainVerifyCooldown(domainName)) {
+      this.alerts.showError('Please wait at least one minute before verifying this domain again.');
+      return;
+    }
+
+    this.verifyingDomain.set(domainName);
+
+    try {
+      const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
+      this.lastDomainVerificationTimes.update((prev) => ({
+        ...prev,
+        [domainName]: Date.now(),
+      }));
+      this.startDomainCooldown(domainName);
+      const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
+
+      if (updatedDomain && updatedDomain.status === 'verified') {
+        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
+      } else {
+        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
+      this.alerts.showError(errMsg);
+    } finally {
+      this.verifyingDomain.set(null);
+    }
+  }
+
+  protected async deleteDomain(domainName: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Domain',
+      message: `Are you sure you want to remove the domain ${domainName}?`,
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.settingsSvc.deleteVerifiedDomain(domainName);
+      this.alerts.showSuccess(`Domain ${domainName} removed.`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
+      this.alerts.showError(errMsg);
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
+```typescript
+import { Component, computed, effect, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { AuthService } from '../../auth/auth-service';
+import { GettingStartedService } from './services/getting-started.service';
+
+/**
+ * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
+ * show a success check with their evidence; the next incomplete step is a primary link. Auto-
+ * hides once all steps are done; dismissible before then (§3). All state is real (see the
+ * service) — nothing is faked, which is also why the card stays hidden during demo mode: the
+ * seeded sample data would tick every step. It appears (and fetches fresh counts) once the
+ * tenant exits the demo.
+ */
+@Component({
+  selector: 'pc-getting-started-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="pc-eyebrow">Getting started · {{ doneCount() }} of {{ total() }} done</div>
+            <button
+              type="button"
+              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
+              (click)="dismiss()"
+              i18n="@@gettingStarted.dismiss.label"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          <ul class="flex flex-col gap-2.5">
+            @for (step of steps(); track step.id) {
+              <li class="flex items-center gap-2.5">
+                @if (step.done) {
+                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
+                  <span class="text-sm text-base-content/70"
+                    >{{ step.label }}
+                    @if (step.evidence) {
+                      ({{ step.evidence }})
+                    }
+                  </span>
+                } @else if (step.id === nextStep()?.id) {
+                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
+                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
+                    step.label
+                  }}</a>
+                } @else {
+                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
+                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+  `,
+})
+export class GettingStartedCard {
+  private readonly svc = inject(GettingStartedService);
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+
+  private readonly user = this.auth.getUserSignal();
+  private readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+
+  protected readonly visible = computed(() => !this.isDemo() && this.svc.visible());
+  protected readonly steps = this.svc.steps;
+  protected readonly doneCount = this.svc.doneCount;
+  protected readonly total = this.svc.total;
+  protected readonly nextStep = this.svc.nextStep;
+
+  constructor() {
+    // Refresh only outside demo mode — and again the moment the demo flag clears,
+    // so the steps reflect the emptied workspace, not the seeded counts.
+    effect(() => {
+      if (!this.isDemo()) void this.svc.refresh();
+    });
+  }
+
+  protected dismiss(): void {
+    this.svc.dismiss();
+    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.html
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
+
+    <button
+      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats(true)"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
+
+  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
+  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
+
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
+
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="pc-eyebrow">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
+
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="pc-eyebrow">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
+          }
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
+          }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="pc-eyebrow">{{ formatDate(p.date) }}</div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
+        }
+      </div>
+      } @else {
+      <div class="flex min-h-[200px] flex-col items-center justify-center">
+        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
+          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Import your people</a
+          >
+        </pc-empty-state>
+      </div>
+      }
+    </div>
+
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
+
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            [routerLink]="['/events/shifts', ev.id]"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center">
+        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
+          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Plan an event</a
+          >
+        </pc-empty-state>
+      </div>
+      }
+
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
+
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table pc-table w-full">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6">
+              <pc-empty-state
+                icon="user-group"
+                [bordered]="false"
+                title="No representative activity yet"
+                hint="Stats build up as your team works emails and tasks."
+              />
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.ts
+```typescript
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { DashboardService } from './services/dashboard.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
+import { GettingStartedCard } from './getting-started-card';
+import { DemoModeCard } from './demo-mode-card';
+import { AuthService } from '../../auth/auth-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+interface UpcomingEvent {
+  id: string;
+  name: string;
+  start_time: string;
+  capacity: number | null;
+  location_address: string | null;
+}
+
+interface DraftNewsletter {
+  id: string;
+  name: string;
+  total_recipients: number;
+}
+
+@Component({
+  imports: [EmptyState, Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
+  selector: 'pc-summary',
+  templateUrl: './summary.html',
+})
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
+
+  // Greeting + date line (§1 "where am I": name the person and the day)
+  private readonly currentUser = this.auth.getUserSignal();
+  protected readonly todayLabel = computed(() =>
+    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+  );
+  protected readonly greeting = computed(() => {
+    const hour = new Date().getHours();
+    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const name = this.currentUser()?.first_name?.trim();
+    return name ? `Good ${part}, ${name}` : `Good ${part}`;
+  });
+
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
+
+  // Next-action context (real data from the backend; null when nothing applies)
+  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
+  protected readonly firstResponseDueHours = signal<number | null>(null);
+  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
+  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
+
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<unknown[]>([]);
+  protected readonly breachedTasks = signal<unknown[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  /** One-word email-health phrase for the briefing paragraph. */
+  protected readonly emailHealthWord = computed(() => {
+    switch (this.emailSlaStatus()) {
+      case 'critical':
+        return 'breaching SLA';
+      case 'warning':
+        return 'under pressure';
+      default:
+        return 'healthy';
+    }
+  });
+
+  // SVG line chart data (contacts growth)
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
+
+  protected readonly userStats = signal<
+    Array<{
+      user_id: string;
+      first_name: string;
+      last_name: string;
+      openCount: number;
+      closedCount: number;
+      resolutionRate: number;
+      avgFirstResponse: string;
+      avgTimeToClose: string;
+      emailSlaBreaches: number;
+      taskSlaBreaches: number;
+    }>
+  >([]);
+  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  public ngOnInit() {
+    void this.loadStats();
+  }
+
+  protected async loadStats(announce = false) {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
+
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
+
+      // Next-action context
+      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
+      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
+      this.draftNewsletter.set(stats.draftNewsletter ?? null);
+      this.upcomingEvents.set(stats.upcomingEvents ?? []);
+
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Reset breached lists (loaded on demand when the drill-down opens)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+
+      // Representative stats table
+      const formattedUserStats = (stats.userStats || []).map(
+        (u: {
+          user_id: string;
+          first_name: string;
+          last_name: string;
+          openCount: number;
+          closedCount: number;
+          resolutionRate: number;
+          avgFirstResponseHours: number;
+          avgTimeToCloseHours: number;
+          emailSlaBreaches?: number;
+          taskSlaBreaches?: number;
+        }) => ({
+          user_id: u.user_id,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          openCount: u.openCount,
+          closedCount: u.closedCount,
+          resolutionRate: u.resolutionRate,
+          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+          emailSlaBreaches: u.emailSlaBreaches || 0,
+          taskSlaBreaches: u.taskSlaBreaches || 0,
+        }),
+      );
+      this.userStats.set(formattedUserStats);
+
+      // Line chart: contacts growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
+        (g: { date: string; count: number }, i: number) => {
+          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+          return { x, y, date: g.date, count: g.count };
+        },
+      );
+      this.linePoints.set(points);
+
+      const firstPoint = points[0];
+      const lastPoint = points[points.length - 1];
+      if (firstPoint && lastPoint) {
+        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          if (!pt) continue;
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch {
+            /* keep raw date string on parse failure */
+          }
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+
+      if (announce) {
+        this.alertSvc.showSuccess('Stats reloaded. All figures current as of now');
+      }
+    } catch {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
+      end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
+  }
+
+  /** Short "2h" / "3d" relative label for the next-action cards. */
+  protected roundedHours(hours: number | null): string {
+    if (hours == null) return '—';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours >= 24) return `${Math.round(hours / 24)}d`;
+    return `${Math.round(hours)}h`;
+  }
+
+  protected formatEventTime(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
+```html
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading team…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="Teams group volunteers for easier coordination."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
+    [showDelete]="!isNew()"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete team"
+    (save)="save($event)"
+    (delete)="deleteTeam()"
+  ></pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
+
+        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
+          <option value="">No captain</option>
+          @for (person of people(); track person.id) {
+          <option [value]="person.id">{{ person.label }}</option>
+          }
+        </pc-select>
+
+        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
+          <option value="">No lead</option>
+          @for (user of users(); track user.id) {
+          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
+          }
+        </pc-select>
+      </div>
+
+      <pc-textarea
+        id="team-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="Describe this team's focus"
+      ></pc-textarea>
+    </pc-card>
+
+    <!-- Volunteers Section -->
+    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
+      <div pc-card-actions class="text-sm text-base-content/60">
+        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
+          <select
+            id="volunteer-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onVolunteersChange($event)"
+            multiple
+          >
+            @for (person of people(); track person.id) {
+            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (volunteers().length === 0) {
+            <p class="p-3 text-sm text-base-content/50">
+              No volunteers assigned yet. Pick them from the list on the left.
+            </p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (volunteer of volunteers(); track volunteer.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                  @if (volunteer.email) {
+                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  }
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Assigned target constituent lists section -->
+    <pc-card
+      title="Target Constituent Lists"
+      subtitle="Assign lists of people or households this team is responsible for contacting."
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
+          <select
+            id="lists-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onListsChange($event)"
+            multiple
+          >
+            @for (list of availableLists(); track list.id) {
+            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (assignedLists().length === 0) {
+            <p class="p-3 text-sm text-base-content/50">No lists assigned yet. Pick them from the list on the left.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (list of assignedLists(); track list.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ list.name }}</p>
+                  <p class="text-xs text-base-content/60">
+                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                  </p>
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Team Tasks Section -->
+    @if (!isNew()) {
+    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
+      <a
+        pc-card-actions
+        class="btn btn-xs btn-primary gap-1"
+        [routerLink]="['/tasks/add']"
+        [queryParams]="{ team_id: id }"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+      </a>
+
+      <div class="overflow-x-auto rounded border border-base-200">
+        @if (teamTasks().length === 0) {
+        <pc-empty-state icon="task" [bordered]="false" title="No tasks assigned to this team yet">
+          <a class="btn btn-primary btn-sm gap-1" [routerLink]="['/tasks/add']" [queryParams]="{ team_id: id }">
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+          </a>
+        </pc-empty-state>
+        } @else {
+        <table class="table pc-table table-zebra w-full">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Due date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (task of teamTasks(); track task.id) {
+            <tr>
+              <td class="font-medium">
+                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                  {{ task.priority || 'medium' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                  {{ task.status || 'todo' }}
+                </span>
+              </td>
+              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+              <td>
+                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+    </pc-card>
+    }
+  </form>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-page.html
+```html
+<div class="mx-auto flex w-full max-w-[980px] flex-col gap-5 p-4">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Users" [totalSentence]="loaded() ? headerSentence() : null">
+    <span class="tooltip-left" [class.tooltip]="inviteLockReason() !== null" [attr.data-tip]="inviteLockReason()">
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="inviteLockReason() !== null"
+        (click)="openInvite()"
+      >
+        <pc-icon name="user-plus" [size]="4"></pc-icon>
+        Invite user
+      </button>
+    </span>
+  </pc-grid-header>
+
+  <!-- Table -->
+  <pc-table [loading]="loading.visible()" [columns]="6">
+    <ng-container pcTableHead>
+      <th>User</th>
+      <th>Role</th>
+      <th>Status</th>
+      <th>MFA</th>
+      <th>Last active</th>
+      <th class="w-10"></th>
+    </ng-container>
+
+    @if (loaded() && rows().length === 0) {
+    <tr>
+      <td colspan="6" class="px-6">
+        <pc-empty-state icon="users" [bordered]="false" title="No users yet" hint="Invite your first teammate.">
+          <button type="button" class="btn btn-primary btn-sm" (click)="openInvite()">Invite user</button>
+        </pc-empty-state>
+      </td>
+    </tr>
+    } @else { @for (row of rows(); track row.id) {
+    <tr [class.animate-saved-flash]="flashedId() === row.id" [class.opacity-60]="isDeactivated(row)">
+      <td>
+        <div class="flex items-center gap-3">
+          <pc-user-avatar [avatarUrl]="avatarUrl(row)" [name]="displayName(row)" [size]="9"></pc-user-avatar>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <a
+                class="link link-hover font-medium text-primary underline decoration-primary/20 underline-offset-[3px]"
+                [routerLink]="['/users', row.id]"
+              >
+                {{ displayName(row) }}
+              </a>
+              @if (isSelf(row)) {
+              <span class="text-xs text-base-content/50">(you)</span>
+              }
+            </div>
+            <p class="max-w-[260px] truncate text-xs text-base-content/50">{{ row.email }}</p>
+          </div>
+        </div>
+      </td>
+      <td>
+        @if (roleLockReason(row); as reason) {
+        <span class="tooltip tooltip-right" [attr.data-tip]="reason">
+          <select class="select select-bordered select-sm w-32" disabled [attr.aria-label]="'Role: ' + reason">
+            <option>{{ roleLabel(row.role) }}</option>
+          </select>
+        </span>
+        } @else {
+        <select
+          class="select select-bordered select-sm w-32"
+          [disabled]="savingIds().has(row.id)"
+          [attr.aria-label]="'Role for ' + displayName(row)"
+          (change)="changeRole(row, $event)"
+        >
+          @for (r of roleOptions(row); track r) {
+          <option [value]="r" [selected]="r === row.role">{{ roleLabel(r) }}</option>
+          }
+        </select>
+        }
+      </td>
+      <td>
+        <pc-status-badge [type]="status(row).tone">{{ status(row).label }}</pc-status-badge>
+      </td>
+      <td>
+        @if (row.two_factor_enabled) {
+        <span class="tooltip" data-tip="MFA enabled">
+          <pc-icon name="check-circle" [size]="5" class="text-success"></pc-icon>
+        </span>
+        } @else {
+        <span class="text-base-content/30">—</span>
+        }
+      </td>
+      <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
+      <td>
+        <div class="dropdown dropdown-end dropdown-bottom">
+          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
+            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+          </label>
+          <ul
+            tabindex="0"
+            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
+          >
+            <li>
+              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+            </li>
+            <li>
+              <a (click)="sendPasswordReset(row)">
+                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+              </a>
+            </li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    } }
+
+    <div pcTableFooter class="border-t border-base-200 px-4 py-3 text-xs text-base-content/50">
+      Users are staff logins. Volunteers live in
+      <a routerLink="/teams" class="link link-hover text-primary">Teams</a>
+      and don't need an account.
+    </div>
+  </pc-table>
+
+  <pc-invite-user-dialog [seatUsage]="seatUsage()" (saved)="onInvited()"></pc-invite-user-dialog>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
+```html
+<div class="mx-auto flex h-full min-h-[calc(100vh-120px)] max-w-7xl flex-col gap-6 p-6">
+  <!-- Header ------------------------------------------------------------------->
+  <div class="mb-2 flex items-center justify-between border-b border-base-200 pb-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <pc-icon name="add-schedule" [size]="5"></pc-icon>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">
+          {{ isNew() && !triggerSelected() ? 'New automation' : payload().name || 'Untitled automation' }}
+        </h1>
+        <p class="mt-0.5 text-sm text-base-content/60">
+          {{ isNew() && !triggerSelected() ? 'Pick a trigger to begin.' : 'Design the sequence and set who enrolls.' }}
+        </p>
+      </div>
+    </div>
+    @if (triggerSelected()) {
+    <pc-form-actions
+      [isLoading]="isLoading()"
+      [signalForm]="form"
+      [saveAlwaysEnabled]="true"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="'Save automation'"
+      [btn1Icon]="'save'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete automation'"
+      (deleteClicked)="deleteWorkflow()"
+    ></pc-form-actions>
+    }
+  </div>
+
+  <!-- TRIGGER PICKER (new automation / Change) --------------------------------->
+  @if (!triggerSelected()) {
+  <div class="mx-auto flex w-full max-w-5xl flex-col items-center gap-8 py-6">
+    <div class="flex flex-col gap-2 text-center">
+      <h2 class="text-2xl font-bold tracking-tight text-base-content">Select a trigger event</h2>
+      <p class="text-sm text-base-content/60">
+        The trigger decides when someone enters this automation; everything after it is the sequence.
+      </p>
+    </div>
+
+    <div class="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (card of triggerCards; track card.type) {
+      <button
+        type="button"
+        (click)="selectTrigger(card.type)"
+        class="group flex cursor-pointer flex-col items-start gap-3 pc-panel p-5 text-left transition-all hover:border-primary hover:shadow-md"
+      >
+        <div
+          class="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-content"
+        >
+          <pc-icon [name]="card.icon" [size]="5"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-semibold text-base-content">{{ card.title }}</h3>
+          <p class="text-xs leading-relaxed text-base-content/60">{{ card.description }}</p>
+        </div>
+        <span class="mt-1 text-xs font-semibold text-primary">Select trigger →</span>
+      </button>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- WORKSPACE ---------------------------------------------------------------->
+  @if (triggerSelected()) {
+  <pc-tabs [tabs]="tabs()" [(activeTab)]="activeTab">
+    <!-- SEQUENCE DESIGNER ------------------------------------------------------>
+    <pc-tab-panel id="sequence" [activeTab]="activeTab()">
+      <div class="flex w-full flex-col items-start gap-6 lg:flex-row">
+        <!-- Left: vertical sequence flow -->
+        <div
+          class="flex w-full flex-1 flex-col items-center gap-0 rounded-2xl border border-base-300 bg-base-200/40 p-8"
+        >
+          <!-- Trigger card -->
+          <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
+            <div class="flex items-center justify-between">
+              <span class="pc-eyebrow">Trigger: when</span>
+              <button type="button" class="btn btn-ghost btn-xs text-primary" (click)="changeTrigger()">Change</button>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+              <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="triggerMeta()?.icon ?? 'user-plus'" [size]="5"></pc-icon>
+              </div>
+              <span class="text-sm font-semibold text-base-content">{{ triggerMeta()?.title ?? 'Trigger' }}</span>
+            </div>
+            @if (triggerNeedsTarget()) {
+            <select
+              class="select select-bordered select-sm mt-3 w-full text-xs"
+              [value]="payload().trigger_event_id"
+              (change)="setTriggerTarget($any($event.target).value)"
+            >
+              <option value="">Any</option>
+              @for (opt of triggerTargetOptions(); track opt.id) {
+              <option [value]="opt.id">{{ opt.name }}</option>
+              }
+            </select>
+            }
+          </div>
+
+          <!-- Insertion point 0 -->
+          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: 0 }"></ng-container>
+
+          <!-- Steps -->
+          @for (step of steps(); track step.uid; let i = $index) {
+          <!-- WAIT pill -->
+          @if (step.kind === 'wait') {
+          <div
+            class="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-warning-content"
+          >
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            <span>Wait</span>
+            <input
+              type="number"
+              min="0"
+              class="input input-xs w-14 text-center"
+              [value]="step.delay_days"
+              (input)="setStepDelay(i, $any($event.target).value)"
+            />
+            <select
+              class="select select-xs"
+              [value]="step.delay_unit"
+              (change)="setStepDelayUnit(i, $any($event.target).value)"
+            >
+              <option value="days">days</option>
+              <option value="hours">hours</option>
+            </select>
+            <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
+              <pc-icon name="x-mark" [size]="4"></pc-icon>
+            </button>
+          </div>
+          } @else {
+          <!-- STEP card -->
+          <div class="w-80 pc-panel p-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <pc-icon [name]="stepMeta(step.kind).icon" [size]="4"></pc-icon>
+                </div>
+                <span class="text-sm font-semibold text-base-content">{{ stepMeta(step.kind).label }}</span>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs px-1 text-error" (click)="removeStep(i)" title="Remove">
+                <pc-icon name="x-mark" [size]="4"></pc-icon>
+              </button>
+            </div>
+
+            <!-- Inline value input per kind -->
+            <div class="mt-3">
+              @switch (step.kind) { @case ('send_email') {
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full text-xs"
+                placeholder="Email subject"
+                [value]="step.subject ?? ''"
+                (input)="setStepEmailSubject(i, $any($event.target).value)"
+              />
+              <button
+                type="button"
+                class="btn btn-outline btn-secondary btn-xs mt-2 gap-1"
+                (click)="openEmailDesigner(i)"
+              >
+                <pc-icon name="pencil-square" [size]="4"></pc-icon>
+                Design email
+              </button>
+              } @case ('add_tag') {
+              <select
+                class="select select-bordered select-sm w-full text-xs"
+                [value]="step.config.tag_id ?? ''"
+                (change)="setStepTag(i, $any($event.target).value)"
+              >
+                <option value="">Choose a tag…</option>
+                @for (tag of tags(); track tag.id) {
+                <option [value]="tag.id">{{ tag.name }}</option>
+                }
+              </select>
+              } @case ('create_task') {
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full text-xs"
+                placeholder="Task title"
+                [value]="step.config.task_title ?? ''"
+                (input)="setStepTaskTitle(i, $any($event.target).value)"
+              />
+              } @case ('notify_team') {
+              <select
+                class="select select-bordered select-sm w-full text-xs"
+                [value]="step.config.notify_user_id ?? ''"
+                (change)="setStepNotifyMember(i, $any($event.target).value)"
+              >
+                <option value="">Automation owner</option>
+                @for (member of teamMembers(); track member.id) {
+                <option [value]="member.id">{{ member.name }}</option>
+                }
+              </select>
+              } }
+            </div>
+          </div>
+          }
+
+          <!-- Insertion point after this step -->
+          <ng-container [ngTemplateOutlet]="insertionPoint" [ngTemplateOutletContext]="{ index: i + 1 }"></ng-container>
+          }
+
+          <!-- Empty state -->
+          @if (steps().length === 0) {
+          <div class="my-4 max-w-sm rounded-xl border border-dashed border-base-300 bg-base-100 px-4 py-6 text-center">
+            <p class="text-sm text-base-content/60">
+              No steps yet. Use the + above to add the first one. Waits, emails, tags, tasks and notifications can be
+              mixed in any order.
+            </p>
+          </div>
+          }
+
+          <!-- Exit terminator -->
+          <div
+            class="flex items-center gap-2 rounded-2xl bg-neutral px-6 py-3 text-xs font-bold uppercase tracking-wider text-neutral-content"
+          >
+            <pc-icon name="check-circle" [size]="4"></pc-icon>
+            Exit automation
+          </div>
+        </div>
+
+        <!-- Right rail --------------------------------------------------------->
+        <aside class="flex w-full shrink-0 flex-col gap-6 lg:w-96">
+          <!-- WORKFLOW SETTINGS -->
+          <section class="pc-panel p-5">
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Workflow settings</h3>
+            <div class="mt-3 flex flex-col gap-4">
+              <div class="form-control">
+                <label class="label label-text py-1 text-xs font-semibold">Name</label>
+                <input
+                  type="text"
+                  class="input input-bordered input-sm w-full"
+                  placeholder="e.g. Volunteer follow-up"
+                  [formField]="form.name"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+                />
+                <p class="mt-1 text-[10px] text-base-content/50">
+                  Name the automation so the list and the Activity log can name it.
+                </p>
+              </div>
+
+              <div class="form-control">
+                <label class="label label-text py-1 text-xs font-semibold">Description</label>
+                <textarea
+                  class="textarea textarea-bordered textarea-sm w-full text-xs"
+                  rows="3"
+                  placeholder="What it does, for the next teammate"
+                  [formField]="form.description"
+                ></textarea>
+              </div>
+
+              <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-3 py-1">
+                  <input
+                    type="checkbox"
+                    class="toggle toggle-primary toggle-sm"
+                    [checked]="payload().status === 'active'"
+                    (change)="setStatus($any($event.target).checked ? 'active' : 'paused')"
+                  />
+
+                  <span class="text-xs font-semibold">{{ payload().status === 'active' ? 'Active' : 'Paused' }}</span>
+                </label>
+                <p class="mt-1 text-[10px] leading-relaxed text-base-content/50">
+                  @if (payload().status === 'active') { Runs every time the trigger fires; nothing queues. } @else {
+                  Paused. Nothing runs or queues until you resume it. }
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ONLY ENROLL IF -->
+          <section class="pc-panel p-5">
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Only enroll if</h3>
+            <div class="mt-3">
+              <pc-query-builder
+                [group]="conditions()"
+                [fields]="conditionFields"
+                [showSummary]="false"
+                (changed)="onConditionsChange()"
+              ></pc-query-builder>
+              @if (!hasConditions()) {
+              <p class="mt-2 text-[10px] text-base-content/50">No conditions. Everyone who hits the trigger enrolls.</p>
+              }
+            </div>
+          </section>
+
+          <!-- SEQUENCE OVERVIEW -->
+          <section class="pc-panel p-5">
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Sequence overview</h3>
+            <div class="mt-3 flex flex-col gap-1.5 text-xs text-base-content/70">
+              <div class="flex justify-between">
+                <span>Total steps</span><span class="font-mono">{{ steps().length }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Enrolled contacts</span><span class="font-mono">{{ enrollments().length }}</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- RECENT RUNS -->
+          <section class="pc-panel p-5">
+            <h3 class="border-b border-base-200 pb-2 pc-eyebrow">Recent runs</h3>
+            @if (runs().length === 0) {
+            <p class="mt-3 text-[10px] text-base-content/50">
+              No runs yet. History appears here after the first trigger fires.
+            </p>
+            } @else {
+            <ul class="mt-3 flex flex-col gap-2">
+              @for (run of runs(); track run.id) {
+              <li class="flex items-center justify-between gap-2 text-xs">
+                <div class="flex min-w-0 items-center gap-2">
+                  <pc-status-badge [type]="run.status === 'success' ? 'success' : 'error'">
+                    {{ run.status === 'success' ? 'Success' : 'Failed' }}
+                  </pc-status-badge>
+                  <span class="truncate text-base-content/70">{{ runContact(run) }}</span>
+                </div>
+                @if (run.status === 'failed' && run.error) {
+                <span class="truncate text-[10px] text-error" [title]="run.error">{{ run.error }}</span>
+                }
+              </li>
+              }
+            </ul>
+            }
+          </section>
+        </aside>
+      </div>
+    </pc-tab-panel>
+
+    <!-- ENROLLED CONTACTS ------------------------------------------------------>
+    <pc-tab-panel id="enrolled" [activeTab]="activeTab()">
+      <div class="flex flex-col gap-4">
+        <p class="text-xs text-base-content/60">
+          Enrollment is per contact. Someone already in the sequence isn't enrolled twice by the same trigger.
+        </p>
+
+        @if (enrollments().length === 0) {
+        <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-12 text-center">
+          <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-base-200">
+            <pc-icon name="user-group" [size]="5"></pc-icon>
+          </div>
+          <p class="mx-auto max-w-md text-sm text-base-content/60">
+            No one enrolled yet. Contacts appear here the first time the trigger fires. Save the automation active and
+            it starts watching immediately.
+          </p>
+        </div>
+        } @else {
+        <div class="overflow-x-auto pc-panel">
+          <table class="table pc-table w-full">
+            <thead>
+              <tr>
+                <th>Contact</th>
+                <th>Entered</th>
+                <th>Where they are</th>
+                <th>Status</th>
+                <th class="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (en of enrollments(); track en.id) {
+              <tr>
+                <td class="text-xs font-semibold">{{ contactName(en) }}</td>
+                <td class="text-xs text-base-content/60">{{ en.enrolled_at | date: 'mediumDate' }}</td>
+                <td class="text-xs text-base-content/70">{{ stepPositionLabel(en) }}</td>
+                <td>
+                  <pc-status-badge
+                    [type]="en.status === 'active' ? 'info' : en.status === 'completed' ? 'success' : 'ghost'"
+                  >
+                    {{ en.status }}
+                  </pc-status-badge>
+                </td>
+                <td class="text-right">
+                  @if (en.status === 'active') {
+                  <button type="button" class="btn btn-ghost btn-xs gap-1 text-error" (click)="cancelEnrollment(en.id)">
+                    <pc-icon name="x-mark" [size]="4"></pc-icon>
+                    Cancel
+                  </button>
+                  }
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+
+  @if (!isNew() && workflowId()) {
+  <div class="mt-8 border-t border-base-200 pt-6">
+    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+  </div>
+  } }
+</div>
+
+<!-- ADD A STEP insertion point (dashed connector + menu) ----------------------->
+<ng-template #insertionPoint let-index="index">
+  <div class="flex flex-col items-center">
+    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
+    <div class="dropdown dropdown-bottom dropdown-center">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-circle btn-outline btn-secondary btn-xs border-base-content/20 bg-base-100 hover:border-primary hover:bg-primary hover:text-primary-content"
+        title="Add a step"
+      >
+        <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      </div>
+      <ul
+        tabindex="0"
+        class="menu dropdown-content z-10 mt-1 w-64 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+      >
+        <li class="menu-title text-[10px] uppercase tracking-wider">Add a step</li>
+        @for (sk of stepKinds; track sk.kind) {
+        <li>
+          <a class="flex items-start gap-2 py-2" (click)="addStepAt(index, sk.kind)">
+            <pc-icon [name]="sk.icon" [size]="4" class="text-primary"></pc-icon>
+            <span class="flex flex-col">
+              <span class="text-xs font-semibold">{{ sk.label }}</span>
+              <span class="text-[10px] text-base-content/50">{{ sk.hint }}</span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+    </div>
+    <div class="h-8 w-0.5 border-l-2 border-dashed border-base-content/20"></div>
+  </div>
+</ng-template>
+
+<!-- EMAIL DESIGNER modal ------------------------------------------------------->
+@if (editingEmailStepIndex() !== null) {
+<div class="animate-fade-in fixed inset-0 z-[150] flex flex-col bg-base-100">
+  <div class="flex items-center justify-between border-b border-base-300 bg-base-100 px-6 py-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <pc-icon name="paper-airplane" [size]="5"></pc-icon>
+      </div>
+      <div class="flex flex-col">
+        <h2 class="text-base font-bold text-base-content">Email designer</h2>
+        <p class="text-xs text-base-content/50">Step {{ editingEmailStepIndex()! + 1 }} email</p>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm gap-2" (click)="closeEmailDesigner()">
+      <pc-icon name="check-circle" [size]="4"></pc-icon>
+      Done
+    </button>
+  </div>
+  <div class="flex-1 overflow-hidden bg-base-200 p-6">
+    <pc-visual-newsletter-editor
+      [htmlContent]="editingEmailHtml()"
+      [plainTextContent]="editingEmailText()"
+      (htmlContentChange)="onEmailHtmlChange($event)"
+      (plainTextContentChange)="onEmailTextChange($event)"
+    ></pc-visual-newsletter-editor>
+  </div>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.html
+```html
+<div class="flex flex-col gap-6 p-6">
+  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
+  <pc-grid-header title="Automations" [totalSentence]="summarySentence()">
+    <button class="btn btn-primary btn-sm gap-1" type="button" (click)="newAutomation()">
+      <pc-icon name="add-schedule" [size]="4"></pc-icon>
+      New automation
+    </button>
+  </pc-grid-header>
+
+  @if (isLoading() && !loaded()) {
+  <div class="flex justify-center py-16"><span class="loading loading-spinner text-primary"></span></div>
+  } @else if (rows().length === 0) {
+  <!-- Empty state ------------------------------------------------------------->
+  <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 px-6 py-16 text-center">
+    <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-base-200">
+      <pc-icon name="add-schedule" [size]="6"></pc-icon>
+    </div>
+    <h2 class="text-base font-semibold text-base-content">No automations yet</h2>
+    <p class="mx-auto mt-1 max-w-md text-sm text-base-content/60">
+      Automations run a sequence (waits, emails, tags, tasks and notifications) every time a trigger fires. Create your
+      first one to start.
+    </p>
+    <button class="btn btn-primary btn-sm mt-4" type="button" (click)="newAutomation()">New automation</button>
+  </div>
+  } @else {
+  <!-- List -------------------------------------------------------------------->
+  <div class="overflow-hidden pc-panel">
+    <!-- Column header -->
+    <div
+      class="hidden grid-cols-[auto_1fr_6rem_9rem] items-center gap-4 border-b border-base-200 px-4 py-2 pc-eyebrow md:grid"
+    >
+      <span class="w-24">Status</span>
+      <span>Automation</span>
+      <span class="text-right">Runs 30d</span>
+      <span>Last run</span>
+    </div>
+
+    @for (row of rows(); track row.id) {
+    <div
+      class="grid cursor-pointer text-xs grid-cols-1 items-center gap-3 border-b border-base-200 px-4 py-3 transition-colors last:border-b-0 hover:bg-base-200/40 md:grid-cols-[auto_1fr_6rem_9rem] md:gap-4"
+      [class.opacity-60]="row.status === 'paused'"
+      (click)="openAutomation(row)"
+    >
+      <!-- STATUS toggle -->
+      <div class="flex items-center text-xs gap-2 w-24" (click)="$event.stopPropagation()">
+        <input
+          type="checkbox"
+          class="toggle toggle-primary toggle-sm"
+          [checked]="row.status === 'active'"
+          [title]="statusTooltip(row)"
+          [attr.aria-label]="statusTooltip(row)"
+          (change)="toggleStatus(row, $event)"
+        />
+        <span>{{ row.status === 'active' ? 'Active' : 'Paused' }}</span>
+      </div>
+
+      <!-- AUTOMATION: name door + recipe sentence -->
+      <div class="min-w-0">
+        <div class="truncate font-medium text-base-content">{{ row.name }}</div>
+        <div class="truncate text-xs text-base-content/60">{{ recipe(row) }}</div>
+      </div>
+
+      <!-- RUNS 30D -->
+      <div class="text-xs tabular-nums text-base-content/80 md:text-right">
+        <span class="text-xs text-base-content/40 md:hidden">Runs 30d: </span>{{ row.runs_30d.toLocaleString() }}
+      </div>
+
+      <!-- LAST RUN (+ inline failure narration) -->
+      <div class="text-xs">
+        <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
+        @if (row.last_run_error) {
+        <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
+          <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
+          <span>Last run failed: {{ row.last_run_error }}</span>
+        </div>
+        }
+      </div>
+    </div>
+    }
+  </div>
+
+  <!-- Footer (verbatim spec copy) --------------------------------------------->
+  <p class="text-xs text-base-content/50">
+    Every run is written to the Activity log. Pausing stops new runs immediately. Nothing queues while paused.
+  </p>
+  }
+</div>
+```
+
+## File: apps/website/src/app/app.routes.ts
+```typescript
+import type { Route } from '@angular/router';
+
+/**
+ * The /for/… audience URLs render the home page with that audience's hero
+ * preselected (via route data) — the full story, tailored, instead of a thin
+ * duplicate page that would strand visitors who land on it first. Footer
+ * links to pages we haven't built yet resolve to the shared "coming soon"
+ * stub so the nav never 404s; swap a stub for a real component when the page
+ * exists.
+ */
+export const appRoutes: Route[] = [
+  {
+    path: '',
+    pathMatch: 'full',
+    title: 'pplCRM — One list for constituents, voters, donors and volunteers',
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'faq',
+    title: 'FAQ — pplCRM',
+    loadComponent: () => import('./faq/faq-page').then((m) => m.FaqPage),
+  },
+  {
+    path: 'for/offices',
+    title: 'For constituency offices — pplCRM',
+    data: { audience: 'office' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/campaigns',
+    title: 'For campaigns — pplCRM',
+    data: { audience: 'camp' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'for/nonprofits',
+    title: 'For non-profits — pplCRM',
+    data: { audience: 'np' },
+    loadComponent: () => import('./home/home-page').then((m) => m.HomePage),
+  },
+  {
+    path: 'compare',
+    title: 'pplCRM vs. the spreadsheet stack — pplCRM',
+    loadComponent: () => import('./compare/compare-page').then((m) => m.ComparePage),
+  },
+  {
+    path: 'pricing',
+    title: 'Pricing — pplCRM',
+    loadComponent: () => import('./pricing/pricing-page').then((m) => m.PricingPage),
+  },
+  {
+    path: 'docs',
+    pathMatch: 'full',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-home').then((m) => m.DocsHome),
+  },
+  {
+    // Per-article title/meta/canonical are set inside the component from the
+    // resolved article (see DocsArticle).
+    path: 'docs/:id',
+    title: 'Docs — pplCRM',
+    loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
+  },
+  {
+    // Generic stub for footer links whose real page doesn't exist yet; the
+    // heading comes from a ?pageTitle= query param (bound via component input).
+    path: 'soon',
+    title: 'Coming soon — pplCRM',
+    loadComponent: () => import('./coming-soon/coming-soon-page').then((m) => m.ComingSoonPage),
+  },
+  {
+    path: '**',
+    redirectTo: '',
+  },
+];
 ```
 
 ## File: apps/website/project.json
@@ -62967,6 +63446,439 @@ export class RoutePage {
     </span>
   </div>
 </pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+```html
+<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
+  <!-- Header -->
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
+      <h1 class="sr-only">Canvassing</h1>
+      @if (headline()) {
+      <p class="text-xs text-base-content/70">{{ headline() }}</p>
+      } @else {
+      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
+        <pc-icon name="cog" [size]="4" />
+        Survey settings
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
+        <pc-icon name="map-pin" [size]="4" />
+        Cut new turfs
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs (the standard pill tab bar) -->
+  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
+
+  @if (tab() === 'turfs') {
+  <!-- In the field today -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
+          <span class="badge badge-ghost badge-sm">Live: updates as knocks are logged</span>
+        </div>
+        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
+          Full field report →
+        </button>
+      </div>
+
+      @if (today(); as t) {
+      <div class="flex flex-wrap items-center gap-6">
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
+          <div class="text-xs text-base-content/60">doors knocked</div>
+        </div>
+        <div>
+          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
+          <div class="text-xs text-base-content/60">conversations</div>
+        </div>
+        <div class="min-w-48 flex-1">
+          @if (todayTotal() > 0) {
+          <div class="flex h-3 w-full overflow-hidden rounded-full">
+            @for (seg of todaySegments(); track seg.key) {
+            <div
+              class="h-full {{ seg.cls }}"
+              [style.width.%]="barPct(seg.value, todayTotal())"
+              [title]="seg.label + ': ' + seg.value"
+            ></div>
+            }
+          </div>
+          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+            @for (seg of todaySegments(); track seg.key) {
+            <span class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
+              {{ seg.label }} {{ seg.value }}
+            </span>
+            }
+          </div>
+          } @else {
+          <p class="text-sm text-base-content/50">No knocks logged yet today. Outcomes appear as companions sync.</p>
+          }
+        </div>
+      </div>
+      }
+    </div>
+  </section>
+
+  <!-- Turf map strip -->
+  <section class="card mb-4 border border-base-300 bg-base-100">
+    <div class="card-body p-4">
+      @if (hasMap()) {
+      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+      } @else {
+      <div
+        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
+      >
+        Turfs appear here on the ward map once they are cut.
+      </div>
+      }
+      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
+    </div>
+  </section>
+
+  <!-- Turf table -->
+  <section class="card border border-base-300 bg-base-100">
+    <div class="overflow-x-auto">
+      <table class="table pc-table">
+        <thead>
+          <tr class="text-xs uppercase text-base-content/50">
+            <th>Turf</th>
+            <th>Size</th>
+            <th>Team</th>
+            <th>Progress</th>
+            <th>Last activity</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (t of turfs(); track t.id) {
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-base-content">{{ t.name }}</span>
+                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
+              </div>
+              @if (t.list_name) {
+              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
+              }
+            </td>
+            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
+            <td>
+              @if (t.team_name) {
+              <span>{{ t.team_name }}</span>
+              } @else {
+              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
+              }
+            </td>
+            <td class="min-w-40">
+              <div class="flex items-center gap-2">
+                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
+                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
+                @if (t.status === 'in_field') {
+                <span
+                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
+                  title="In the field now"
+                ></span>
+                }
+              </div>
+              @if (t.conversations > 0) {
+              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
+              }
+            </td>
+            <td class="whitespace-nowrap text-xs text-base-content/60">
+              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
+            </td>
+            <td class="text-right">
+              <div class="dropdown dropdown-end">
+                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
+                  <pc-icon name="ellipsis-vertical" [size]="4" />
+                </button>
+                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
+                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                  <li>
+                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                  </li>
+                </ul>
+              </div>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
+              No turfs yet. Choose a smart-list universe and
+              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
+      Assigning a turf sends it to every member of its team's Canvass Companion. The Companion is a web app, so a copied
+      link does the same job for walk-up volunteers. Progress and conversations sync back live. Knocks land on the
+      person, the household, and the Activity log.
+    </div>
+  </section>
+  } @else {
+  <!-- Field report -->
+  <section>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        @for (r of ranges; track r.key) {
+        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
+          {{ r.label }}
+        </button>
+        }
+      </div>
+      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
+        <pc-icon name="arrow-down-tray" [size]="4" />
+        Export CSV
+      </button>
+    </div>
+
+    @if (report(); as r) {
+    <!-- Stat tiles -->
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.doors }}</div>
+        <div class="text-xs text-base-content/60">doors</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
+        <div class="text-xs text-base-content/60">conversations</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
+        <div class="text-xs text-base-content/60">contact rate</div>
+      </div>
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
+        <div class="text-xs text-base-content/60">support IDs</div>
+      </div>
+    </div>
+
+    <!-- Coverage — where we've walked (§13.3) -->
+    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
+        <h3 class="text-sm font-semibold">Coverage</h3>
+        <div role="tablist" class="tabs tabs-boxed tabs-xs">
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'map'"
+            (click)="coverageView.set('map')"
+          >
+            Street map
+          </button>
+          <button
+            role="tab"
+            class="tab"
+            [class.tab-active]="coverageView() === 'ward'"
+            (click)="coverageView.set('ward')"
+          >
+            By ward
+          </button>
+        </div>
+      </div>
+      <div class="p-4 pt-0">
+        @if (coverageView() === 'map') {
+        <pc-map
+          class="block h-72 w-full rounded-lg"
+          [markers]="coverageMarkers()"
+          [polygons]="coveragePolygons()"
+          ariaLabel="Coverage map"
+        ></pc-map>
+        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+          @for (l of coverageLegend; track l.status) {
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
+          </span>
+          }
+          <span class="flex items-center gap-1">
+            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
+            Turf boundary
+          </span>
+        </div>
+        } @else {
+        <div class="overflow-x-auto">
+          <table class="table pc-table">
+            <thead>
+              <tr class="text-xs uppercase text-base-content/50">
+                <th>Ward</th>
+                <th>Doors</th>
+                <th class="w-1/2">Coverage</th>
+                <th class="text-right">Talked</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (w of cov.byWard; track w.ward) {
+              <tr>
+                <td class="font-medium">{{ w.ward }}</td>
+                <td class="whitespace-nowrap">{{ w.doors }}</td>
+                <td>
+                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
+                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
+                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
+                  </div>
+                  <div class="mt-1 text-[10px] text-base-content/50">
+                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
+                  </div>
+                </td>
+                <td class="text-right">{{ w.conversation }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        }
+      </div>
+    </div>
+    } } @if (r.doors === 0) {
+    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
+      No knocks in this range yet. Every number here flows in from synced Canvass Companions. Nothing is entered by
+      hand.
+    </div>
+    } @else {
+    <!-- What voters said -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
+      <div class="flex h-3 w-full overflow-hidden rounded-full">
+        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
+        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
+        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
+        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
+        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
+        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
+        <span>Supporters {{ r.responseMix.supporter }}</span>
+        <span>Undecided {{ r.responseMix.undecided }}</span>
+        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
+        <span>Not voting {{ r.responseMix.not_voting }}</span>
+        <span>Already voted {{ r.responseMix.already_voted }}</span>
+        <span>No answer {{ r.responseMix.no_answer }}</span>
+      </div>
+    </div>
+
+    <!-- Doors knocked per day -->
+    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
+      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
+      <div class="flex items-end gap-2" style="height: 120px">
+        @for (d of r.perDay; track d.day) {
+        <div class="flex flex-1 flex-col items-center justify-end gap-1">
+          <div class="flex w-6 flex-col justify-end" style="height: 90px">
+            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
+            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
+          </div>
+          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
+        </div>
+        }
+      </div>
+      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
+        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
+      </div>
+    </div>
+
+    <!-- Performance by team -->
+    <div class="card mb-4 border border-base-300 bg-base-100">
+      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
+      <div class="overflow-x-auto">
+        <table class="table pc-table">
+          <thead>
+            <tr class="text-xs uppercase text-base-content/50">
+              <th>Team</th>
+              <th>Doors</th>
+              <th>Conversations</th>
+              <th>Support IDs</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (t of r.byTeam; track t.team_name) {
+            <tr>
+              <td>{{ t.team_name }}</td>
+              <td>{{ t.doors }}</td>
+              <td>{{ t.conversations }}</td>
+              <td>{{ t.supportIds }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <!-- When doors answer -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
+        @if (r.byHour.length > 0) {
+        <div class="flex items-end gap-1" style="height: 100px">
+          @for (h of r.byHour; track h.hour) {
+          <div class="flex flex-1 flex-col items-center justify-end gap-1">
+            <div
+              class="w-full rounded-t bg-info"
+              [style.height.%]="barPct(h.attempts, maxByHour())"
+              [title]="hourLabel(h.hour) + ': ' + h.attempts"
+            ></div>
+            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
+          </div>
+          }
+        </div>
+        <p class="mt-2 text-xs text-base-content/60">Evenings answer best. Schedule shifts 4–8 pm when you can.</p>
+        } @else {
+        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
+        }
+      </div>
+
+      <!-- Top canvassers -->
+      <div class="card border border-base-300 bg-base-100 p-4">
+        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
+        @if (r.topCanvassers.length > 0) {
+        <ol class="space-y-1">
+          @for (c of r.topCanvassers; track c.name) {
+          <li class="flex justify-between text-sm">
+            <span>{{ c.name }}</span>
+            <span class="text-base-content/60">{{ c.doors }} doors</span>
+          </li>
+          }
+        </ol>
+        } @else {
+        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
+        }
+      </div>
+    </div>
+
+    <p class="mt-4 text-xs text-base-content/50">
+      Every number here flows in from synced Canvass Companions. Nothing is entered by hand. Contact rate counts
+      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
+    </p>
+    } }
+  </section>
+  } @if (cutOpen()) {
+  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
+  } @if (assignTarget(); as target) {
+  <pc-assign-turf-dialog
+    [turfId]="target.id"
+    [turfName]="target.name"
+    (cancelled)="assignTarget.set(null)"
+    (assigned)="onAssigned($event)"
+  />
+  } @if (settingsOpen()) {
+  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.ts
@@ -64771,358 +65683,6 @@ export class EventViewComponent {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header: the one list-page header idiom (pc-grid-header, design §4) -->
-  <pc-grid-header title="Import / export" [totalSentence]="tab() === 'imports' ? historySentence() : exportsSentence()">
-    @if (tab() === 'imports') {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="startNewImport()">
-      <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-      <span>Import CSV</span>
-    </button>
-    } @else {
-    <button type="button" class="btn btn-primary btn-sm gap-1.5 shrink-0" (click)="toggleNewExportInfo()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <span>New export</span>
-    </button>
-    }
-  </pc-grid-header>
-
-  <!-- Tabs: Imports N / Exports N (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="historyTabs()" [activeTab]="tab()" (activeTabChange)="switchTab($event)" />
-
-  <!-- ============ IMPORTS TAB ============ -->
-  @if (tab() === 'imports') {
-  <div>
-    @if (loading()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    } @if (error()) {
-    <div class="alert alert-error mb-4 gap-2 text-sm text-error-content shadow-lg">
-      <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <pc-table [columns]="7">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>Type</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Outcome</th>
-        <th>Tags applied</th>
-        <th class="text-right">Actions</th>
-      </ng-container>
-
-      @for (item of items(); track item.id) {
-      <tr>
-        <td>
-          <div class="font-mono text-xs text-base-content">{{ item.fileName }}</div>
-          <div class="text-xs text-base-content/60">
-            {{ item.rowCount }} rows @if (formatFileSize(item.sourceFileSize); as size) { · {{ size }} }
-          </div>
-        </td>
-        <td>
-          <span class="badge badge-ghost text-xs">{{ sourceLabel(item.source) }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatDate(item.processedAt) }}</span>
-        </td>
-        <td>
-          @if (item.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ item.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ item.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (item.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Pending</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <div class="text-xs text-base-content">
-            <div>{{ item.insertedCount }} imported</div>
-            @if (item.mergedCount > 0) {
-            <div class="text-xs text-base-content/60">{{ item.mergedCount }} merged</div>
-            } @if (item.skippedCount > 0) {
-            <div class="text-xs text-base-content/60 flex items-center gap-1">
-              {{ item.skippedCount }} skipped @if (item.canDownloadSkipped) {
-              <button type="button" class="link link-primary text-xs" (click)="downloadSkipped(item)">
-                download reasons
-              </button>
-              }
-            </div>
-            } @if (item.errorCount > 0) {
-            <div class="text-xs text-error">{{ item.errorCount }} errors</div>
-            }
-          </div>
-          } @case ('failed') {
-          <pc-status-badge type="error" class="cursor-help" [title]="item.errorMessage || 'Unknown error'">
-            Failed
-          </pc-status-badge>
-          } }
-        </td>
-        <td>
-          @if (item.tagsApplied.length > 0) {
-          <div class="flex flex-wrap gap-1">
-            @for (tag of item.tagsApplied; track tag) {
-            <span class="badge badge-outline text-xs">{{ tag }}</span>
-            }
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (item.canDownloadSource) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download original file"
-              (click)="downloadSource(item)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              (click)="openDeleteDialog(item, deleteDialog)"
-              [disabled]="deleting()"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="7" class="text-center py-12 text-base-content/50">
-          <pc-icon name="document-text" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No imports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1 mb-3">
-            Bring in people, companies, households or tasks from a spreadsheet to get started.
-          </p>
-          <button type="button" class="btn btn-primary btn-sm gap-2" (click)="startNewImport()">
-            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
-            Import CSV
-          </button>
-        </td>
-      </tr>
-      }
-    </pc-table>
-
-    <p class="text-xs text-base-content/50 mt-4">
-      Every import keeps its source file for 90 days, and skipped rows stay downloadable with the reason each was
-      skipped.
-    </p>
-  </div>
-  }
-
-  <!-- ============ EXPORTS TAB ============ -->
-  @if (tab() === 'exports') {
-  <div>
-    @if (showNewExportInfo()) {
-    <div class="alert bg-info/10 text-base-content border border-info/30 mb-4 gap-3">
-      <pc-icon name="information-circle" class="text-info shrink-0" [size]="5"></pc-icon>
-      <span class="text-sm">
-        Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar. Finished
-        files land on this page.
-      </span>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="goToPeopleGrid()">
-        Go to People
-      </button>
-    </div>
-    } @if (exportsLoading.visible()) {
-    <progress class="progress w-full text-primary mb-4"></progress>
-    }
-
-    <pc-table [columns]="5">
-      <ng-container pcTableHead>
-        <th>File</th>
-        <th>When</th>
-        <th>By</th>
-        <th>Contents</th>
-        <th class="text-right">Download</th>
-      </ng-container>
-
-      @for (job of exportJobs(); track job.id) {
-      <tr>
-        <td>
-          <span class="font-mono text-xs text-base-content">{{ job.file_name }}</span>
-        </td>
-        <td>
-          <span class="text-xs text-base-content/70">{{ formatExportDate(job.created_at) }}</span>
-        </td>
-        <td>
-          @if (job.createdBy) {
-          <div class="flex flex-col">
-            <span class="font-medium text-base-content text-xs">{{ job.createdBy.name || 'Unknown' }}</span>
-            <span class="text-xs text-base-content/60">{{ job.createdBy.email }}</span>
-          </div>
-          } @else {
-          <span class="text-xs text-base-content/40">—</span>
-          }
-        </td>
-        <td>
-          @switch (job.status) { @case ('pending') {
-          <pc-status-badge type="ghost">Queued</pc-status-badge>
-          } @case ('processing') {
-          <span class="badge badge-info text-xs gap-1">
-            <span class="loading loading-spinner loading-xs"></span>
-            Processing
-          </span>
-          } @case ('completed') {
-          <span class="text-xs text-base-content capitalize">{{ job.row_count ?? '—' }} {{ job.entity }}</span>
-          } @default {
-          <pc-status-badge type="error">Failed</pc-status-badge>
-          } }
-        </td>
-        <td class="text-right">
-          <div class="flex justify-end gap-1">
-            @if (job.status === 'completed') { @if (isExpired(job)) {
-            <span class="text-xs text-base-content/40 mr-2">Expired (30d)</span>
-            } @else if (job.downloadable) {
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-primary"
-              title="Download CSV"
-              (click)="downloadExportJob(job)"
-            >
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            } @else {
-            <span
-              class="text-xs text-base-content/40 mr-2"
-              title="Downloaded directly to your device, not stored on the server"
-            >
-              Downloaded
-            </span>
-            } }
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error"
-              title="Delete export"
-              (click)="deleteExportJob(job)"
-            >
-              <pc-icon name="trash" [size]="4"></pc-icon>
-            </button>
-          </div>
-        </td>
-      </tr>
-      } @empty {
-      <tr>
-        <td colspan="5" class="text-center py-12 text-base-content/50">
-          <pc-icon name="information-circle" class="text-base-content/30 mb-2 mx-auto" [size]="10"></pc-icon>
-          <h3 class="font-semibold text-base-content/70">No exports yet</h3>
-          <p class="text-xs text-base-content/50 mt-1">
-            Exports start where the data is. Filter the People grid or Donations and use Export in the toolbar.
-          </p>
-        </td>
-      </tr>
-      }
-    </pc-table>
-  </div>
-  }
-</div>
-
-<pc-modal-shell
-  #deleteDialog
-  title="Delete import"
-  icon="trash"
-  [dismissible]="!deleting()"
-  (closed)="pendingDelete.set(null)"
->
-  @if (pendingDelete(); as item) {
-  <p class="text-sm text-base-content/70 mt-2">
-    This removes <strong>{{ item.fileName }}</strong> from the import history. You can choose to delete associated
-    records created by this import:
-  </p>
-
-  <div class="space-y-3 mt-4">
-    @if (item.contactCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deletePeople()"
-        (change)="deletePeople.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete people ({{ item.contactCount }} found) </span>
-    </label>
-    } @if (item.householdCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteHouseholds()"
-        (change)="deleteHouseholds.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete households ({{ item.householdCount }} found) </span>
-    </label>
-    } @if (item.companyCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteCompanies()"
-        (change)="deleteCompanies.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete companies ({{ item.companyCount }} found) </span>
-    </label>
-    } @if (item.taskCount > 0) {
-    <label
-      class="flex items-center gap-3 text-sm cursor-pointer hover:bg-base-200/50 p-2 rounded transition-colors duration-150"
-    >
-      <input
-        type="checkbox"
-        class="checkbox checkbox-primary checkbox-sm"
-        [checked]="deleteTasks()"
-        (change)="deleteTasks.set($any($event.target).checked)"
-      />
-      <span class="text-base-content"> Also delete tasks ({{ item.taskCount }} found) </span>
-    </label>
-    }
-  </div>
-  }
-
-  <div pc-modal-footer class="flex gap-2">
-    <button
-      type="button"
-      class="btn btn-outline btn-accent"
-      (click)="closeDeleteDialog(deleteDialog)"
-      [disabled]="deleting()"
-    >
-      Cancel
-    </button>
-    <button
-      type="button"
-      class="btn btn-outline btn-error gap-2"
-      (click)="confirmDelete(deleteDialog)"
-      [disabled]="deleting()"
-    >
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      Delete
-    </button>
-  </div>
-</pc-modal-shell>
-```
-
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
 ```typescript
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
@@ -66863,424 +67423,6 @@ export class PersonView {
 
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
-```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import {
-  IAuthUserDetail,
-  IUserStatsSnapshot,
-  UpdateAuthUserType,
-  authRoleLabel,
-} from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, DecimalPipe, RouterLink, ModalShell],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
-
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  // Deliberate-save card: identity fields only (name/email). Saved on an explicit Save click.
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-  });
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  /** Product name for the stored role value — 'user' reads as "Editor", same as everywhere else. */
-  protected readonly roleLabel = computed(() => authRoleLabel(this.detail()?.role));
-
-  /** Account-panel variant with the access summary, e.g. "Owner — full access". */
-  protected readonly roleWithAccess = computed(() => {
-    const role = this.detail()?.role;
-    const descriptions: Record<string, string> = {
-      owner: 'Owner: full access',
-      admin: 'Admin: users & workspace settings',
-      user: 'Editor: day-to-day work',
-      viewer: 'Viewer: read-only',
-    };
-    return role ? (descriptions[role] ?? authRoleLabel(role)) : '—';
-  });
-
-  // Narrate unsaved identity edits (§2 disclosure).
-  protected readonly dirtyFieldCount = computed(() => {
-    const f = this.form;
-    return [f.first_name().dirty(), f.last_name().dirty(), f.email().dirty()].filter(Boolean).length;
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  /** "Your activity" sentences (approved design) — counts are all-time, so no invented time windows. */
-  protected readonly activityRows = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
-    const emails = s.emails_assigned;
-    const emailRest =
-      emails.total === 0
-        ? 'assigned to you'
-        : emails.open === emails.total
-          ? 'assigned to you, all open'
-          : emails.open === 0
-            ? 'assigned to you, all closed'
-            : `assigned to you, ${emails.open} open · ${emails.closed} closed`;
-    return [
-      {
-        key: 'emails',
-        icon: 'inbox-stack' as const,
-        link: '/inbox',
-        count: plural(emails.total, 'conversation'),
-        rest: emailRest,
-      },
-      {
-        key: 'contacts',
-        icon: 'user-group' as const,
-        link: '/people',
-        count: plural(s.contacts_added.total, 'contact'),
-        rest: 'added by you',
-      },
-      {
-        key: 'files',
-        icon: 'arrows-up-down-tray' as const,
-        link: null,
-        count: `${plural(s.files_imported.count, 'import')} · ${plural(s.files_exported.count, 'export')}`,
-        rest: 'all time',
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const user = this.detail();
-    if (!user) return;
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropZoomInput(event: Event) {
-    const value = (event.target as HTMLInputElement).valueAsNumber;
-    if (!Number.isNaN(value)) this.cropZoom.set(value);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    // Identity only — notification preferences live in Settings (avatar menu), not here.
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-    } as UpdateAuthUserType;
   }
 }
 
@@ -69089,108 +69231,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
-```typescript
-import { Component, computed, inject, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthService } from '../../auth/auth-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
-import { ConfirmDialogService } from '../../services/shared-dialog.service';
-import { DemoService } from './services/demo.service';
-
-/**
- * Demo-mode callout on the dashboard: explains what was seeded and hosts the
- * one place to exit demo mode. Demo mode is the pre-plan test drive — the
- * backend refuses to exit until the tenant has an active subscription, and it
- * blocks outward-facing configuration (senders, domains, mailbox sync,
- * newsletter sending, teammate invites) while the flag is set. Exiting deletes the seeded data
- * (the six draft forms, the built-in tags, and anything the user created are
- * kept) and refreshes the session so the shell banner disappears immediately.
- */
-@Component({
-  selector: 'pc-demo-mode-card',
-  imports: [Icon, RouterLink],
-  template: `
-    @if (visible()) {
-      <div class="animate-drop card border border-info/40 bg-info/5 shadow-sm">
-        <div class="card-body gap-3 p-5">
-          <div class="pc-eyebrow flex items-center gap-2 text-info">
-            <pc-icon name="information-circle" [size]="4"></pc-icon>
-            Demo mode
-          </div>
-
-          <p class="text-sm text-base-content/80">
-            You’re exploring pplCRM with realistic sample data: people and households across Ottawa, companies, tags,
-            issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a full
-            report. Everything here is safe to open, edit, and delete.
-          </p>
-          <p class="text-sm text-base-content/60">
-            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
-            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
-            the built-in tags, and anything you created yourself will be kept.
-          </p>
-
-          <div class="card-actions items-center gap-3">
-            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
-            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
-              @if (loading()) {
-                <span class="loading loading-spinner loading-xs"></span>
-              }
-              Exit demo mode
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-  `,
-})
-export class DemoModeCard {
-  private readonly auth = inject(AuthService);
-  private readonly demoSvc = inject(DemoService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-
-  private readonly user = this.auth.getUserSignal();
-
-  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
-  protected readonly loading = this._loading.visible;
-
-  /** Fires after the demo data is gone so the dashboard can reload its stats. */
-  public readonly exited = output<void>();
-
-  protected async exitDemo(): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove all demo data?',
-      message:
-        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
-        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
-        'yourself will be kept.',
-      variant: 'danger',
-      confirmText: 'Remove demo data',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.demoSvc.exitDemo();
-      await this.auth.getCurrentUser();
-      this.alerts.showSuccess('Demo data removed. Your workspace is ready for real contacts.');
-      this.exited.emit();
-    } catch (err) {
-      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
-      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -69563,437 +69603,1583 @@ export class UsersPageComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/canvassing/ui/canvassing-page.html
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
 ```html
-<div class="mx-auto w-full max-w-6xl p-4 sm:p-6">
-  <!-- Header -->
-  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-    <div>
-      <!-- Visible title lives in the navbar breadcrumb; keep an accessible heading only. -->
-      <h1 class="sr-only">Canvassing</h1>
-      @if (headline()) {
-      <p class="text-xs text-base-content/70">{{ headline() }}</p>
-      } @else {
-      <p class="text-xs text-base-content/70">Cut your first turfs to start knocking doors.</p>
+<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
+     full 24px below it would just steal height from the grid. -->
+<div
+  class="flex h-full w-full flex-col"
+  [class.px-6]="displayTitle() || grainLayout()"
+  [class.pt-6]="displayTitle() || grainLayout()"
+  [class.pb-2]="displayTitle() || grainLayout()"
+>
+  @if (grainLayout()) {
+  <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
+       (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
+  <div class="mb-3 flex items-center justify-between gap-4">
+    <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
+    @if (showToolbar()) {
+    <div class="shrink-0"><pc-dg-toolbar /></div>
+    }
+  </div>
+  } @else { @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasLoaded() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+    [totalSentence]="totalSentence()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
       }
-    </div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-sm" (click)="settingsOpen.set(true)">
-        <pc-icon name="cog" [size]="4" />
-        Survey settings
-      </button>
-      <button type="button" class="btn btn-primary btn-sm" (click)="openCut()">
-        <pc-icon name="map-pin" [size]="4" />
-        Cut new turfs
-      </button>
     </div>
   </div>
+  } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (showToolbar() && (allowFilter() || showTagFilter() || showIssueFilter() || showListFilter())) {
+  <!-- Filter chip row (spec §5): muted funnel marker · active chips · Clear all · dashed entry pills.
+       No surrounding box — sits directly on the page. -->
+  <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+    <pc-icon name="funnel" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
 
-  <!-- Tabs (the standard pill tab bar) -->
-  <pc-tab-bar class="mb-4" [tabs]="pageTabs" [activeTab]="tab()" (activeTabChange)="selectTab($event)" />
-
-  @if (tab() === 'turfs') {
-  <!-- In the field today -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <h2 class="text-sm font-semibold text-base-content">In the field today</h2>
-          <span class="badge badge-ghost badge-sm">Live: updates as knocks are logged</span>
-        </div>
-        <button type="button" class="link link-primary text-sm" (click)="selectTab('report')">
-          Full field report →
-        </button>
-      </div>
-
-      @if (today(); as t) {
-      <div class="flex flex-wrap items-center gap-6">
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.doorsKnocked }}</div>
-          <div class="text-xs text-base-content/60">doors knocked</div>
-        </div>
-        <div>
-          <div class="text-3xl font-semibold text-base-content">{{ t.conversations }}</div>
-          <div class="text-xs text-base-content/60">conversations</div>
-        </div>
-        <div class="min-w-48 flex-1">
-          @if (todayTotal() > 0) {
-          <div class="flex h-3 w-full overflow-hidden rounded-full">
-            @for (seg of todaySegments(); track seg.key) {
-            <div
-              class="h-full {{ seg.cls }}"
-              [style.width.%]="barPct(seg.value, todayTotal())"
-              [title]="seg.label + ': ' + seg.value"
-            ></div>
-            }
-          </div>
-          <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-            @for (seg of todaySegments(); track seg.key) {
-            <span class="flex items-center gap-1">
-              <span class="inline-block h-2 w-2 rounded-full {{ seg.cls }}"></span>
-              {{ seg.label }} {{ seg.value }}
-            </span>
-            }
-          </div>
-          } @else {
-          <p class="text-sm text-base-content/50">No knocks logged yet today. Outcomes appear as companions sync.</p>
-          }
-        </div>
-      </div>
-      }
-    </div>
-  </section>
-
-  <!-- Turf map strip -->
-  <section class="card mb-4 border border-base-300 bg-base-100">
-    <div class="card-body p-4">
-      @if (hasMap()) {
-      <pc-map class="block h-56 w-full rounded-lg" [markers]="mapMarkers()" ariaLabel="Turf map"></pc-map>
+    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
+    <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+      @if (chip.kind === 'advanced') {
+      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
       } @else {
-      <div
-        class="flex h-32 items-center justify-center rounded-lg border border-dashed border-base-300 text-sm text-base-content/50"
-      >
-        Turfs appear here on the ward map once they are cut.
-      </div>
+      <span>{{ chip.label }}</span>
       }
-      <p class="mt-2 text-xs text-base-content/50">Auto-cut keeps turfs contiguous and off Route 9 and the river.</p>
-    </div>
-  </section>
+      <button
+        type="button"
+        class="opacity-70 hover:opacity-100"
+        [attr.aria-label]="'Remove filter: ' + chip.label"
+        (click)="removeFilterChip(chip)"
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </span>
+    } @if (filterChips().length) {
+    <button
+      type="button"
+      class="link text-primary hover:no-underline"
+      (click)="clearAllFilters()"
+      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
+    >
+      Clear all
+    </button>
+    }
 
-  <!-- Turf table -->
-  <section class="card border border-base-300 bg-base-100">
-    <div class="overflow-x-auto">
-      <table class="table pc-table">
-        <thead>
-          <tr class="text-xs uppercase text-base-content/50">
-            <th>Turf</th>
-            <th>Size</th>
-            <th>Team</th>
-            <th>Progress</th>
-            <th>Last activity</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (t of turfs(); track t.id) {
-          <tr>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="font-medium text-base-content">{{ t.name }}</span>
-                <span class="badge badge-sm {{ statusBadge[t.status] }}">{{ statusLabel[t.status] }}</span>
-              </div>
-              @if (t.list_name) {
-              <div class="text-xs text-base-content/50">{{ t.list_name }}</div>
-              }
-            </td>
-            <td class="whitespace-nowrap">{{ t.door_count }} doors</td>
-            <td>
-              @if (t.team_name) {
-              <span>{{ t.team_name }}</span>
-              } @else {
-              <button type="button" class="btn btn-ghost btn-xs border-dashed" (click)="assign(t)">Assign</button>
-              }
-            </td>
-            <td class="min-w-40">
-              <div class="flex items-center gap-2">
-                <progress class="progress progress-primary w-24" [value]="progressPct(t)" max="100"></progress>
-                <span class="text-xs text-base-content/60">{{ t.attempted }} of {{ t.door_count }}</span>
-                @if (t.status === 'in_field') {
-                <span
-                  class="inline-block h-2 w-2 animate-pulse rounded-full bg-success"
-                  title="In the field now"
-                ></span>
-                }
-              </div>
-              @if (t.conversations > 0) {
-              <div class="text-xs text-base-content/50">{{ t.conversations }} conversations</div>
-              }
-            </td>
-            <td class="whitespace-nowrap text-xs text-base-content/60">
-              {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
-            </td>
-            <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+    <!-- + Add filter: quick single field → operator → value chip entry -->
+    @if (allowFilter()) {
+    <details class="dropdown" #addFilterDd>
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        <span i18n="Datagrid|Add-filter pill label@@datagrid.pills.addFilter">Add filter</span>
+      </summary>
+      <div
+        tabindex="0"
+        class="dropdown-content z-[60] mt-1 flex w-64 flex-col gap-2 rounded-box border border-base-200 bg-base-100 p-3 shadow-lg"
+      >
+        <select
+          class="select select-bordered select-xs w-full"
+          (change)="addFilterField.set($any($event.target).value)"
+        >
+          <option
+            value=""
+            disabled
+            [selected]="!addFilterField()"
+            i18n="Datagrid|Add-filter field placeholder@@datagrid.pills.addFilter.field"
+          >
+            Choose field…
+          </option>
+          @for (f of addFilterFields(); track f.field) {
+          <option [value]="f.field" [selected]="f.field === addFilterField()">{{ f.label }}</option>
+          }
+        </select>
+        <select class="select select-bordered select-xs w-full" (change)="addFilterOp.set($any($event.target).value)">
+          @for (op of addFilterOperators; track op.value) {
+          <option [value]="op.value" [selected]="op.value === addFilterOp()">{{ op.label }}</option>
+          }
+        </select>
+        @if (addFilterNeedsValue()) {
+        <input
+          type="text"
+          class="input input-bordered input-xs w-full"
+          placeholder="Value"
+          i18n-placeholder="Datagrid|Add-filter value placeholder@@datagrid.pills.addFilter.value"
+          [value]="addFilterValue()"
+          (input)="addFilterValue.set($any($event.target).value)"
+          (keydown.enter)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+        />
+        }
+        <div class="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            class="btn btn-outline btn-accent btn-xs"
+            (click)="addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="!addFilterField() || (addFilterNeedsValue() && !addFilterValue().trim())"
+            (click)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Apply add-filter@@datagrid.pills.addFilter.apply"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </details>
+    }
+
+    <!-- Tags dashed pill — opens the OR checkbox picker -->
+    @if (showTagFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedTags().length > 0"
+        [class.!text-primary]="selectedTags().length > 0"
+      >
+        <pc-icon name="label" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Tags filter pill label@@datagrid.pills.tags">Tags</span>
+        @if (selectedTags().length) {
+        <span class="tabular-nums">({{ selectedTags().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Tags'"
+        [active]="selectedTags().length > 0"
+        (clear)="clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="filteredAvailableTags()"
+          [selected]="selectedTags()"
+          [searchQuery]="tagSearchQuery()"
+          (searchQueryChange)="tagSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllTags()"
+          (clearVisible)="clearAllTagsVisible()"
+          (toggle)="toggleTagFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+        >
+          Checked tags combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Issues dashed pill -->
+    @if (showIssueFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedIssues().length > 0"
+        [class.!text-primary]="selectedIssues().length > 0"
+      >
+        <pc-icon name="shield-exclamation" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Issues filter pill label@@datagrid.pills.issues">Issues</span>
+        @if (selectedIssues().length) {
+        <span class="tabular-nums">({{ selectedIssues().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Issues'"
+        [active]="selectedIssues().length > 0"
+        (clear)="clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="filteredAvailableIssues()"
+          [selected]="selectedIssues()"
+          [searchQuery]="issueSearchQuery()"
+          (searchQueryChange)="issueSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllIssues()"
+          (clearVisible)="clearAllIssuesVisible()"
+          (toggle)="toggleIssueFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+        >
+          Checked issues combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Lists dashed pill — apply a saved list as a chip -->
+    @if (showListFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedListId() !== null"
+        [class.!text-primary]="selectedListId() !== null"
+      >
+        <pc-icon name="queue-list" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Lists filter pill label@@datagrid.pills.lists">Lists</span>
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by List'"
+        [active]="selectedListId() !== null"
+        (clear)="clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="selectedListId()"
+          [radioName]="'selectedListPill'"
+          [maxHeight]="14"
+          (select)="selectListFilter($event)"
+        />
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+  </div>
+  }
+  <!-- Count sentence: below the filter row in grain layout (owner screenshot). -->
+  @if (grainLayout() && countSentence()) {
+  <p class="mb-3 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ countSentence() }}</p>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  } @if (hasSelectionState()) {
+  <!-- Bulk action bar: appears on any selection (§2) -->
+  <div class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral bg-base-100 px-3 py-2 text-sm">
+    <span class="font-semibold tabular-nums"
+      >{{ getCountRowSelected() }}
+      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
+    >
+    <span class="mx-1 h-4 w-px bg-base-300"></span>
+
+    @if (bulkTagOpen()) {
+    <input
+      type="text"
+      class="input input-bordered input-xs w-40"
+      placeholder="Tag name"
+      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
+      [value]="bulkTagValue()"
+      (input)="bulkTagValue.set($any($event.target).value)"
+      (keydown.enter)="applyBulkTag()"
+      (keydown.escape)="cancelBulkTag()"
+      autofocus
+    />
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
+    </button>
+    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
+      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
+    </button>
+    } @else {
+    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="openBulkTag()">
+      <pc-icon name="label" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
+    </button>
+    @if (!disableExport()) {
+    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="doConfirmExport()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
+    </button>
+    } @if (!disableMerge()) {
+    <button
+      class="btn btn-sm gap-1.5 bg-base-100"
+      [disabled]="getCountRowSelected() !== 2"
+      [title]="
+        getCountRowSelected() === 2
+          ? 'Merge 2 ' + entityNounPlural
+          : 'Select exactly 2 ' + entityNounPlural + ' to merge. ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doConfirmMerge()"
+    >
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
+    </button>
+    } @if (!!addRoute()) {
+    <button
+      class="btn btn-sm gap-1.5 bg-base-100"
+      [disabled]="!hasSingleSelection()"
+      [title]="
+        hasSingleSelection()
+          ? 'Clone this ' + entityNoun
+          : 'Select exactly 1 ' + entityNoun + ' to clone. ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doClone()"
+    >
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
+    </button>
+    }
+    <span class="flex-1"></span>
+    @if (!disableDelete()) {
+    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
+      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
+    </button>
+    } }
+  </div>
+  }
+  <div
+    #scroller
+    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
+    (scroll)="onScroll($event)"
+  >
+    <table #gridTable class="table pc-table w-full">
+      <thead>
+        <tr class="bg-base-100 text-xs">
+          @if (enableSelection()) {
+          <th
+            class="pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
+          <th
+            role="columnheader"
+            class="group cursor-grab pl-2 relative"
+            [class.pl-4]="hIdx === 0 && !enableSelection()"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="fixedWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              @if (showColumnMenus()) {
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  [class.!opacity-100]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      }
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
                   </li>
                 </ul>
               </div>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-10 text-center text-sm text-base-content/60">
-              No turfs yet. Choose a smart-list universe and
-              <button type="button" class="link link-primary" (click)="openCut()">cut your first turfs</button>.
-            </td>
-          </tr>
+              }
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
           }
-        </tbody>
-      </table>
-    </div>
-    <div class="border-t border-base-300 p-3 text-xs text-base-content/60">
-      Assigning a turf sends it to every member of its team's Canvass Companion. The Companion is a web app, so a copied
-      link does the same job for walk-up volunteers. Progress and conversations sync back live. Knocks land on the
-      person, the household, and the Activity log.
-    </div>
-  </section>
-  } @else {
-  <!-- Field report -->
-  <section>
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div role="tablist" class="tabs tabs-boxed tabs-sm">
-        @for (r of ranges; track r.key) {
-        <button role="tab" class="tab" [class.tab-active]="reportRange() === r.key" (click)="setRange(r.key)">
-          {{ r.label }}
-        </button>
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-base-content/40"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+              <button
+                type="button"
+                class="btn btn-outline btn-secondary btn-sm mt-1"
+                (click)="clearAllFilters()"
+                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-base-content/40"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Create your first record with the New button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300/40"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
+          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
+          && ec.id === toId(r.original) && ec.field === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col, $event)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            [class]="cellClassFor(col, r.original)"
+            class="min-w-0 px-2 relative"
+            [class.pl-4]="cellIdx === 0 && !enableSelection()"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="fixedWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [value]="tagSearch()"
+                  (input)="tagSearch.set($any($event.target).value)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              (change)="onMultiSelectEditorChange($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value" [selected]="isEditorOptionMultiSelected(opt.value)">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              (change)="onSelectChange(r.original, col, $any($event.target).value)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value" [selected]="isEditorOptionSelected(opt.value)">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [value]="editingValueText()"
+              (input)="editingValue.set($any($event.target).value)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [value]="editingValueText()"
+              (input)="editingValue.set($any($event.target).value)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) { @let doorSubtitle =
+            callDoorSubtitle(r.original, col);
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            <div class="flex flex-col gap-0.5">
+              @if (rawValue) {
+              <span
+                class="cursor-pointer font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+                >{{ rawValue }}</span
+              >
+              } @else {
+              <span
+                class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+                i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+                >Unnamed person</span
+              >
+              } @if (doorSubtitle) {
+              <span class="text-xs text-base-content/55">{{ doorSubtitle }}</span>
+              }
+            </div>
+            } @else if (col.field === 'address') {
+            <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
+            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
+            <div class="py-1" [attr.title]="rawValue">
+              <div
+                class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
+                [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
+              >
+                {{ rawValue || '—' }}
+              </div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        } @if (visibleTableRows().length && !canNext()) {
+        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
+             would otherwise read as data that failed to load. -->
+        <tr class="hover:bg-transparent">
+          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
+            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
+              <span class="h-px flex-1 bg-base-300"></span>
+              <span
+                class="whitespace-nowrap tabular-nums"
+                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
+                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
+              >
+              <span class="h-px flex-1 bg-base-300"></span>
+            </div>
+          </td>
+        </tr>
         }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-between mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
+    <div class="min-w-0"><ng-content select="[pcGridFooterStart]"></ng-content></div>
+    <div class="flex items-center gap-3 flex-nowrap">
+      <div class="flex items-center gap-2 whitespace-nowrap">
+        <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+          >Page Size:</span
+        >
+        <select class="select select-bordered select-xs" (change)="onPageSizeChange($any($event.target).value)">
+          @if (![25,50,100].includes(pageSize())) {
+          <option [value]="pageSize()" [selected]="true">{{ pageSize() }}</option>
+          } @for (opt of pageSizeChoices(); track opt) {
+          <option [value]="opt" [selected]="opt === pageSize()">{{ opt }}</option>
+          }
+        </select>
       </div>
-      <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReport()">
-        <pc-icon name="arrow-down-tray" [size]="4" />
-        Export CSV
+      <div
+        class="whitespace-nowrap tabular-nums"
+        i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+      >
+        <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+          >{{ displayEndIndex() }}</span
+        >
+        of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+        <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
+      </div>
+      <div class="join whitespace-nowrap">
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="firstPage()"
+        >
+          <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
+          [disabled]="!canPrev()"
+          (click)="prevPage()"
+        >
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? nextPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="nextPage()"
+        >
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-sm font-light join-item btn-ghost"
+          [title]="canNext() ? lastPageTitle : onLastPageTitle"
+          [disabled]="!canNext()"
+          (click)="lastPage()"
+        >
+          <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<pc-modal-shell
+  [open]="true"
+  (closed)="showAdvancedFilterBuilder.set(false)"
+  title="Advanced filter builder"
+  i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+  icon="adjustments-horizontal"
+  [boxClass]="'w-11/12 max-w-3xl'"
+>
+  <p
+    class="text-xs text-neutral-400 -mt-4 mb-4"
+    i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+  >
+    Build complex matching rules with custom operators and conjunction logic.
+  </p>
+
+  <pc-query-builder
+    [group]="advFilterRoot()"
+    [fields]="advancedFilterFields()"
+    [tagSvc]="tagsSvc ?? undefined"
+    [showSummary]="true"
+    (changed)="onAdvancedFilterChanged()"
+  ></pc-query-builder>
+
+  <div pc-modal-footer class="flex w-full justify-between items-center">
+    <button
+      class="btn btn-outline btn-error btn-sm"
+      (click)="clearAdvancedFilter()"
+      i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+    >
+      Clear Filters
+    </button>
+    <div class="flex gap-2">
+      <button
+        class="btn btn-outline btn-accent btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+      >
+        Cancel
+      </button>
+      <button
+        class="btn btn-primary btn-sm px-6"
+        (click)="applyAdvancedFilter()"
+        i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+      >
+        Apply
       </button>
     </div>
+  </div>
+</pc-modal-shell>
+}
+```
 
-    @if (report(); as r) {
-    <!-- Stat tiles -->
-    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.doors }}</div>
-        <div class="text-xs text-base-content/60">doors</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.conversations }}</div>
-        <div class="text-xs text-base-content/60">conversations</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.contactRatePct }}%</div>
-        <div class="text-xs text-base-content/60">contact rate</div>
-      </div>
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <div class="text-2xl font-semibold">{{ r.supportIds }}</div>
-        <div class="text-xs text-base-content/60">support IDs</div>
-      </div>
-    </div>
+## File: apps/frontend/src/styles.css
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
 
-    <!-- Coverage — where we've walked (§13.3) -->
-    @if (coverage(); as cov) { @if (cov.doors.length > 0) {
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="flex flex-wrap items-center justify-between gap-2 p-4 pb-2">
-        <h3 class="text-sm font-semibold">Coverage</h3>
-        <div role="tablist" class="tabs tabs-boxed tabs-xs">
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'map'"
-            (click)="coverageView.set('map')"
-          >
-            Street map
-          </button>
-          <button
-            role="tab"
-            class="tab"
-            [class.tab-active]="coverageView() === 'ward'"
-            (click)="coverageView.set('ward')"
-          >
-            By ward
-          </button>
-        </div>
-      </div>
-      <div class="p-4 pt-0">
-        @if (coverageView() === 'map') {
-        <pc-map
-          class="block h-72 w-full rounded-lg"
-          [markers]="coverageMarkers()"
-          [polygons]="coveragePolygons()"
-          ariaLabel="Coverage map"
-        ></pc-map>
-        <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-          @for (l of coverageLegend; track l.status) {
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-2 rounded-full {{ l.dot }}"></span>{{ l.label }}
-          </span>
-          }
-          <span class="flex items-center gap-1">
-            <span class="inline-block h-2 w-3 rounded-sm border border-dashed border-base-content/40"></span>
-            Turf boundary
-          </span>
-        </div>
-        } @else {
-        <div class="overflow-x-auto">
-          <table class="table pc-table">
-            <thead>
-              <tr class="text-xs uppercase text-base-content/50">
-                <th>Ward</th>
-                <th>Doors</th>
-                <th class="w-1/2">Coverage</th>
-                <th class="text-right">Talked</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (w of cov.byWard; track w.ward) {
-              <tr>
-                <td class="font-medium">{{ w.ward }}</td>
-                <td class="whitespace-nowrap">{{ w.doors }}</td>
-                <td>
-                  <div class="flex h-2.5 w-full overflow-hidden rounded-full bg-base-200">
-                    <div class="h-full bg-success" [style.width.%]="barPct(w.conversation, w.doors)"></div>
-                    <div class="h-full bg-warning" [style.width.%]="barPct(w.attempted, w.doors)"></div>
-                  </div>
-                  <div class="mt-1 text-[10px] text-base-content/50">
-                    {{ barPct(w.conversation + w.attempted, w.doors) }}% knocked · {{ w.not_yet }} not yet
-                  </div>
-                </td>
-                <td class="text-right">{{ w.conversation }}</td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        }
-      </div>
-    </div>
-    } } @if (r.doors === 0) {
-    <div class="card border border-dashed border-base-300 p-10 text-center text-sm text-base-content/60">
-      No knocks in this range yet. Every number here flows in from synced Canvass Companions. Nothing is entered by
-      hand.
-    </div>
-    } @else {
-    <!-- What voters said -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-2 text-sm font-semibold">What voters said at the door</h3>
-      <div class="flex h-3 w-full overflow-hidden rounded-full">
-        <div class="h-full bg-success" [style.width.%]="barPct(r.responseMix.supporter, r.doors)"></div>
-        <div class="h-full bg-warning" [style.width.%]="barPct(r.responseMix.undecided, r.doors)"></div>
-        <div class="h-full bg-error" [style.width.%]="barPct(r.responseMix.non_supporter, r.doors)"></div>
-        <div class="h-full bg-base-content/30" [style.width.%]="barPct(r.responseMix.not_voting, r.doors)"></div>
-        <div class="h-full bg-info" [style.width.%]="barPct(r.responseMix.already_voted, r.doors)"></div>
-        <div class="h-full bg-base-300" [style.width.%]="barPct(r.responseMix.no_answer, r.doors)"></div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-3 text-xs text-base-content/70">
-        <span>Supporters {{ r.responseMix.supporter }}</span>
-        <span>Undecided {{ r.responseMix.undecided }}</span>
-        <span>Non-supporters {{ r.responseMix.non_supporter }}</span>
-        <span>Not voting {{ r.responseMix.not_voting }}</span>
-        <span>Already voted {{ r.responseMix.already_voted }}</span>
-        <span>No answer {{ r.responseMix.no_answer }}</span>
-      </div>
-    </div>
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
 
-    <!-- Doors knocked per day -->
-    <div class="card mb-4 border border-base-300 bg-base-100 p-4">
-      <h3 class="mb-3 text-sm font-semibold">Doors knocked</h3>
-      <div class="flex items-end gap-2" style="height: 120px">
-        @for (d of r.perDay; track d.day) {
-        <div class="flex flex-1 flex-col items-center justify-end gap-1">
-          <div class="flex w-6 flex-col justify-end" style="height: 90px">
-            <div class="w-full rounded-t bg-base-300" [style.height.%]="barPct(d.no_answer, maxPerDay())"></div>
-            <div class="w-full rounded-t bg-primary" [style.height.%]="barPct(d.conversations, maxPerDay())"></div>
-          </div>
-          <div class="text-[10px] text-base-content/50">{{ d.day | date: 'M/d' }}</div>
-        </div>
-        }
-      </div>
-      <div class="mt-2 flex gap-3 text-xs text-base-content/60">
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-primary"></span> Conversation</span>
-        <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full bg-base-300"></span> No answer</span>
-      </div>
-    </div>
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
 
-    <!-- Performance by team -->
-    <div class="card mb-4 border border-base-300 bg-base-100">
-      <div class="p-4 pb-2 text-sm font-semibold">Performance by team</div>
-      <div class="overflow-x-auto">
-        <table class="table pc-table">
-          <thead>
-            <tr class="text-xs uppercase text-base-content/50">
-              <th>Team</th>
-              <th>Doors</th>
-              <th>Conversations</th>
-              <th>Support IDs</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (t of r.byTeam; track t.team_name) {
-            <tr>
-              <td>{{ t.team_name }}</td>
-              <td>{{ t.doors }}</td>
-              <td>{{ t.conversations }}</td>
-              <td>{{ t.supportIds }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
+/* Theme tokens (light + dark, incl. the base-50 card wash + pc-icon size
+   safelist) are shared with the companion app — single source of truth in
+   libs/uxcommon. */
+@import '../../../libs/uxcommon/src/styles/themes.css';
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <!-- When doors answer -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">When doors answer</h3>
-        @if (r.byHour.length > 0) {
-        <div class="flex items-end gap-1" style="height: 100px">
-          @for (h of r.byHour; track h.hour) {
-          <div class="flex flex-1 flex-col items-center justify-end gap-1">
-            <div
-              class="w-full rounded-t bg-info"
-              [style.height.%]="barPct(h.attempts, maxByHour())"
-              [title]="hourLabel(h.hour) + ': ' + h.attempts"
-            ></div>
-            <div class="text-[9px] text-base-content/50">{{ hourLabel(h.hour) }}</div>
-          </div>
-          }
-        </div>
-        <p class="mt-2 text-xs text-base-content/60">Evenings answer best. Schedule shifts 4–8 pm when you can.</p>
-        } @else {
-        <p class="text-sm text-base-content/60">Not enough knocks to show a pattern yet.</p>
-        }
-      </div>
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
 
-      <!-- Top canvassers -->
-      <div class="card border border-base-300 bg-base-100 p-4">
-        <h3 class="mb-3 text-sm font-semibold">Top canvassers</h3>
-        @if (r.topCanvassers.length > 0) {
-        <ol class="space-y-1">
-          @for (c of r.topCanvassers; track c.name) {
-          <li class="flex justify-between text-sm">
-            <span>{{ c.name }}</span>
-            <span class="text-base-content/60">{{ c.doors }} doors</span>
-          </li>
-          }
-        </ol>
-        } @else {
-        <p class="text-sm text-base-content/60">Canvasser names appear here once volunteers sign their knocks.</p>
-        }
-      </div>
-    </div>
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
 
-    <p class="mt-4 text-xs text-base-content/50">
-      Every number here flows in from synced Canvass Companions. Nothing is entered by hand. Contact rate counts
-      conversations per door attempted; support IDs are strong + lean support. Totals include retired turfs.
-    </p>
-    } }
-  </section>
-  } @if (cutOpen()) {
-  <pc-cut-turfs-dialog (done)="onCutDone($event)" />
-  } @if (assignTarget(); as target) {
-  <pc-assign-turf-dialog
-    [turfId]="target.id"
-    [turfName]="target.name"
-    (cancelled)="assignTarget.set(null)"
-    (assigned)="onAssigned($event)"
-  />
-  } @if (settingsOpen()) {
-  <pc-companion-settings-dialog (closed)="settingsOpen.set(false)" />
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+  /* App-wide default type is text-xs (UX-GUIDELINES §8). Without this, any
+     element missing an explicit text-* class silently falls back to the
+     browser's 16px — larger sizes must always be opted into. */
+  font-size: 0.75rem;
+  line-height: calc(1 / 0.75);
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
   }
-</div>
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* ── Shared table visual contract ──────────────────────────────────────────
+   The single source of truth for how EVERY tabular surface looks — the house
+   DataGrid (`pc-datagrid`) and the lighter presentational `pc-table` (uxcommon)
+   both consume these. Change a value here and every table moves together; that
+   is the whole point (design §4 "one idiom per job", §8 typography).
+
+   Why global (not component-scoped): `pc-table` projects each page's bespoke
+   `<tr>`/`<td>` into its own `<tbody>`, and Angular's emulated encapsulation
+   would not let a component stylesheet reach projected rows. Global component
+   classes reach both projected content and the datagrid's own markup.
+
+   Tokens are theme-agnostic sizes; colors resolve through DaisyUI `--color-*`
+   so both themes stay correct for free (design §5). */
+:root {
+  --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
+  --pc-table-header-tracking: 0.07em;
+  --pc-table-body-size: 0.75rem; /* text-xs — the default for ALL table body cells */
+  --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
+  --pc-table-radius: 0.75rem; /* rounded-xl */
+}
+
+@layer components {
+  /* The bordered, rounded container every table sits inside. */
+  .pc-table-shell {
+    overflow-x: auto;
+    border: 1px solid var(--color-base-300);
+    border-radius: var(--pc-table-radius);
+    background-color: var(--color-base-100);
+  }
+
+  /* Applied alongside DaisyUI `.table`. Overrides land in the same @layer as
+     DaisyUI's `.table` rules but at higher specificity, so they win — while
+     Tailwind *utilities* (a later layer) still override per-instance when a
+     page needs to. */
+  .pc-table thead th {
+    font-size: var(--pc-table-header-size);
+    letter-spacing: var(--pc-table-header-tracking);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
+  }
+  .pc-table :where(th, td) {
+    padding-block: var(--pc-table-cell-py);
+  }
+  /* Body cells are text-xs by default — DaisyUI's `.table` would otherwise
+     leave them at text-sm. Don't re-add `text-sm` on data cells; prose empty
+     states may still opt up per-instance from the utilities layer. */
+  .pc-table tbody {
+    font-size: var(--pc-table-body-size);
+  }
+  /* Subtle row hover (design §8: hover is a quiet secondary signal). The
+     datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
+     which win from the utilities layer — a deliberate scale adaptation for
+     long data tables (base-300 stays visible over the base-200 zebra stripes;
+     40% keeps it a wash), documented in the pplcrm-datagrid skill. */
+  .pc-table tbody tr:hover {
+    background-color: color-mix(in oklch, var(--color-base-200) 60%, transparent);
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
+
+/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
+   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
+   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
+   just apply on the touch surface). Keep the control's own flex centering. */
+@utility touch-target {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+
+/* Micro-caps "eyebrow" — THE one kicker/section-label style (UX-GUIDELINES §8:
+   10–11.5px / 500–600 / uppercase / .04–.09em / base-content 45–55%). Pinned
+   here so the ~40 hand-rolled tracking/opacity/size variants collapse to one
+   class; pair with a margin utility only (`class="pc-eyebrow mb-2"`). */
+@utility pc-eyebrow {
+  font-size: 0.6875rem; /* 11px */
+  line-height: 1.35;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
+/* The one panel/card shell — THE house container recipe (rounded-xl, hairline
+   base-200 border, base-100 surface, soft shadow). Pinned so the ~59 inlined
+   `rounded-* border border-base-* bg-base-100 shadow-*` copies collapse to one
+   class; pair with padding/spacing utilities only (`class="pc-panel p-5"`). */
+@utility pc-panel {
+  border-radius: 0.75rem; /* rounded-xl */
+  border: 1px solid var(--color-base-200);
+  background-color: var(--color-base-100);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-sm */
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
+   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
+   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
+   (layered) suppression can't win against the unlayered rule above. */
+.input :where(input, textarea, select):focus,
+.input :where(input, textarea, select):focus-visible {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+## File: apps/website/src/app/ui/site-footer.ts
+```typescript
+import { Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { SiteLogo } from './site-logo';
+import { SIGNUP_URL } from './site-nav';
+
+interface FooterLink {
+  readonly label: string;
+  /** Internal router path. */
+  readonly path?: string;
+  /** External / mailto URL. */
+  readonly href?: string;
+  /** Query params (used with the /soon stub). */
+  readonly qp?: Record<string, string>;
+}
+
+interface FooterColumn {
+  readonly heading: string;
+  readonly links: readonly FooterLink[];
+}
+
+const CONTACT_EMAIL = 'hello@pplcrm.com';
+
+/**
+ * Site footer — the one multi-column footer used on every page. Links to pages
+ * that don't exist yet point at the /soon stub (carrying their label as the
+ * heading).
+ */
+@Component({
+  selector: 'pc-site-footer',
+  imports: [RouterLink, SiteLogo],
+  template: `
+    <footer class="border-t border-line bg-base-100 px-5 pt-12 sm:px-8">
+      <div class="site-wrap">
+        <div class="grid grid-cols-2 gap-x-7 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+          <div class="col-span-2 sm:col-span-3 lg:col-span-1">
+            <pc-site-logo />
+            <p class="mt-3 max-w-[200px] text-[12.5px] leading-relaxed text-base-content/50">
+              One list for constituents, voters, donors and volunteers. Your people are not our product.
+            </p>
+            <a class="mt-3.5 block text-[12.5px] text-base-content/60 hover:text-primary" [href]="mailto">{{
+              email
+            }}</a>
+          </div>
+
+          @for (col of columns; track col.heading) {
+            <div class="flex flex-col gap-2.5 text-[13px]">
+              <div class="eyebrow mb-1">{{ col.heading }}</div>
+              @for (link of col.links; track link.label) {
+                @if (link.href) {
+                  <a class="text-base-content/65 hover:text-primary" [href]="link.href">{{ link.label }}</a>
+                } @else {
+                  <a
+                    class="text-base-content/65 hover:text-primary"
+                    [routerLink]="link.path"
+                    [queryParams]="link.qp ?? null"
+                    >{{ link.label }}</a
+                  >
+                }
+              }
+            </div>
+          }
+        </div>
+
+        <div
+          class="mt-12 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line py-5 text-xs text-base-content/45"
+        >
+          <span>© 2026 pplCRM · pplcrm.com</span>
+          <span
+            >Your data is stored in Canada, or the region you choose on Movement. Export everything anytime. Delete
+            means deleted.</span
+          >
+        </div>
+      </div>
+    </footer>
+  `,
+})
+export class SiteFooter {
+  protected readonly email = CONTACT_EMAIL;
+  protected readonly mailto = `mailto:${CONTACT_EMAIL}`;
+
+  protected readonly columns: readonly FooterColumn[] = [
+    {
+      heading: 'Product',
+      links: [
+        { label: 'Pricing', path: '/pricing' },
+        { label: 'Compare', path: '/compare' },
+        { label: 'FAQ', path: '/faq' },
+        { label: 'Start free', href: SIGNUP_URL },
+      ],
+    },
+    {
+      heading: 'Industries',
+      links: [
+        { label: 'Constituency offices', path: '/for/offices' },
+        { label: 'Campaigns', path: '/for/campaigns' },
+        { label: 'Non-profits', path: '/for/nonprofits' },
+      ],
+    },
+    {
+      heading: 'Resources',
+      links: [
+        { label: 'Help center', path: '/docs' },
+        { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
+      ],
+    },
+    {
+      heading: 'Company',
+      links: [
+        { label: 'About us', path: '/soon', qp: { pageTitle: 'About us' } },
+        { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
+        { label: 'Careers', path: '/soon', qp: { pageTitle: 'Careers' } },
+      ],
+    },
+    {
+      heading: 'Legal',
+      links: [
+        { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
+        { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
+        { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
+      ],
+    },
+  ];
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-route-detail.ts
@@ -71468,6 +72654,307 @@ export class FormsPageComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/profile/profile-page.html
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <!-- Loading State -->
+  @if (error() && !detail()) {
+  <div class="alert alert-error m-4 shadow-sm rounded-xl">
+    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!detail()) {
+  <div
+    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
+  >
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg text-primary"></span>
+      <p class="font-medium text-sm">Loading your profile…</p>
+    </div>
+  </div>
+  } @else {
+
+  <div class="space-y-6">
+    <!-- Identity header card -->
+    <div class="pc-panel p-6">
+      <div class="flex items-center gap-5">
+        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
+        <div class="relative shrink-0">
+          <input
+            id="avatar-file-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="sr-only"
+            (change)="onAvatarFileChange($event)"
+          />
+          <label
+            for="avatar-file-input"
+            class="block cursor-pointer"
+            [class.pointer-events-none]="uploadingAvatar()"
+            title="Change profile photo"
+          >
+            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
+            @if (uploadingAvatar()) {
+            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+              <span class="loading loading-spinner loading-sm text-white"></span>
+            </span>
+            } @else {
+            <span
+              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
+              aria-hidden="true"
+            >
+              <pc-icon name="pencil-square" [size]="3"></pc-icon>
+            </span>
+            }
+          </label>
+          @if (avatarUrl() && !uploadingAvatar()) {
+          <button
+            type="button"
+            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
+            (click)="removeAvatar()"
+          >
+            Remove photo
+          </button>
+          }
+        </div>
+
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
+            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
+            @if (detail()?.verified) {
+            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
+              <pc-icon name="check-circle" [size]="3"></pc-icon>
+              Verified
+            </span>
+            }
+          </div>
+          <p class="mt-0.5 truncate text-sm text-base-content/60">
+            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
+            'mediumDate' }} }
+          </p>
+        </div>
+      </div>
+    </div>
+
+    @if (detail()?.previous_email) {
+    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <div>
+          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
+          <div i18n class="text-xs text-warning-content/80">
+            A verification link was sent to your new email. You will not be able to make changes until verified.
+          </div>
+        </div>
+      </div>
+      <button
+        i18n
+        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
+        (click)="cancelEmailChange()"
+      >
+        Undo change
+      </button>
+    </div>
+    } @if (error()) {
+    <div class="alert alert-error shadow-sm rounded-xl">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <div class="grid items-start gap-6 lg:grid-cols-3">
+      <!-- Left column: profile form + notifications -->
+      <div class="space-y-6 lg:col-span-2">
+        <!-- Profile card (explicit save) -->
+        <div class="pc-panel p-6">
+          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
+
+          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
+            <div class="grid gap-4 md:grid-cols-2">
+              <pc-input
+                label="First name"
+                placeholder="Your first name"
+                [formField]="form.first_name"
+                autocomplete="given-name"
+              ></pc-input>
+
+              <pc-input
+                label="Last name"
+                placeholder="Your last name"
+                [formField]="form.last_name"
+                autocomplete="family-name"
+              ></pc-input>
+
+              <div class="md:col-span-2">
+                <pc-input
+                  label="Email address"
+                  type="email"
+                  placeholder="you@example.com"
+                  [formField]="form.email"
+                  autocomplete="email"
+                ></pc-input>
+                <p class="mt-1 text-xs text-base-content/50">
+                  Email is how you sign in. Changing it sends a confirmation to the new address first.
+                </p>
+              </div>
+            </div>
+
+            <!-- Dirty state narrated, not implied (§2) -->
+            <div class="flex items-center justify-between gap-3 pt-2">
+              <p class="text-xs text-base-content/50">
+                @if (dirtyFieldCount() > 0) {
+                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
+                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
+                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
+                </span>
+                } @else {
+                <span>No unsaved changes</span>
+                }
+              </p>
+              <div class="flex items-center gap-2">
+                <button
+                  class="btn btn-outline btn-accent btn-sm"
+                  type="button"
+                  (click)="resetForm()"
+                  [disabled]="saving() || !form().dirty()"
+                >
+                  Reset
+                </button>
+                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
+                <button
+                  class="btn btn-primary btn-sm"
+                  type="submit"
+                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
+                >
+                  @if (saving()) {
+                  <span class="loading loading-spinner loading-xs mr-2"></span>
+                  } Save changes
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Right column: account facts + activity -->
+      <div class="space-y-6">
+        <div class="pc-panel p-6">
+          <h2 class="pc-eyebrow">Account</h2>
+          <div class="mt-2">
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Role</span>
+              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">User ID</span>
+              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
+              <span class="text-base-content/60">Member since</span>
+              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
+            </div>
+            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
+              <span class="text-base-content/60">Last update</span>
+              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
+            </div>
+          </div>
+          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
+          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
+            You can't demote yourself. Roles are managed in
+            <a routerLink="/users" class="link link-hover text-primary">Users</a>.
+          </p>
+        </div>
+
+        @if (stats()) {
+        <div class="pc-panel p-6">
+          <h2 class="pc-eyebrow">Your activity</h2>
+          <div class="mt-1">
+            @for (row of activityRows(); track row.key) {
+            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
+              </span>
+              <p class="leading-relaxed">
+                @if (row.link) {
+                <a
+                  [routerLink]="row.link"
+                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
+                  >{{ row.count }}</a
+                >
+                } @else {
+                <span class="font-semibold">{{ row.count }}</span>
+                } {{ row.rest }}
+              </p>
+            </div>
+            }
+          </div>
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- Cropping Modal -->
+  @if (cropImageSrc()) {
+  <pc-modal-shell
+    [open]="true"
+    (closed)="cancelCrop()"
+    title="Crop profile picture"
+    icon="user-circle"
+    [boxClass]="'max-w-md'"
+    [dismissible]="false"
+  >
+    <div class="flex flex-col items-center">
+      <!-- Drag & Crop Container -->
+      <div
+        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
+        (mousedown)="onCropDragStart($event)"
+        (mousemove)="onCropDragMove($event)"
+        (mouseup)="onCropDragEnd()"
+        (mouseleave)="onCropDragEnd()"
+      >
+        <!-- The user drags this image around inside the container -->
+        <img
+          [src]="cropImageSrc()!"
+          [style.transform]="getCropTransformStyle()"
+          [style.width.px]="displayWidth()"
+          [style.height.px]="displayHeight()"
+          class="absolute top-1/2 left-1/2 max-w-none"
+          draggable="false"
+        />
+      </div>
+
+      <!-- Zoom Slider -->
+      <div class="form-control w-full max-w-xs mt-6">
+        <div class="flex justify-between items-center px-1 mb-1">
+          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
+          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.05"
+          [value]="cropZoom()"
+          (input)="onCropZoomInput($event)"
+          class="range range-primary range-sm"
+        />
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div pc-modal-footer class="flex gap-2">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
+      <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
+    </div>
+  </pc-modal-shell>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.html
 ```html
 @if (!details()) {
@@ -72741,6 +74228,108 @@ export class FormsPageComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
+```typescript
+import { Component, computed, inject, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { ConfirmDialogService } from '../../services/shared-dialog.service';
+import { DemoService } from './services/demo.service';
+
+/**
+ * Demo-mode callout on the dashboard: explains what was seeded and hosts the
+ * one place to exit demo mode. Demo mode is the pre-plan test drive — the
+ * backend refuses to exit until the tenant has an active subscription, and it
+ * blocks outward-facing configuration (senders, domains, mailbox sync,
+ * newsletter sending, teammate invites) while the flag is set. Exiting deletes the seeded data
+ * (the six draft forms, the built-in tags, and anything the user created are
+ * kept) and refreshes the session so the shell banner disappears immediately.
+ */
+@Component({
+  selector: 'pc-demo-mode-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-info/40 bg-info/5 shadow-lg mb-5">
+        <div class="card-body gap-3 p-5">
+          <div class="pc-eyebrow flex items-center gap-2 text-info">
+            <pc-icon name="information-circle" [size]="4"></pc-icon>
+            Demo mode
+          </div>
+
+          <p class="text-sm text-base-content/80">
+            You’re exploring pplCRM with realistic sample data: people and households across Ottawa, companies, tags,
+            issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a full
+            report. Everything here is safe to open, edit, and delete.
+          </p>
+          <p class="text-sm text-base-content/60">
+            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
+            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
+            the built-in tags, and anything you created yourself will be kept.
+          </p>
+
+          <div class="card-actions items-center gap-3">
+            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
+            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
+              @if (loading()) {
+                <span class="loading loading-spinner loading-xs"></span>
+              }
+              Exit demo mode
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+})
+export class DemoModeCard {
+  private readonly auth = inject(AuthService);
+  private readonly demoSvc = inject(DemoService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+
+  private readonly user = this.auth.getUserSignal();
+
+  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly loading = this._loading.visible;
+
+  /** Fires after the demo data is gone so the dashboard can reload its stats. */
+  public readonly exited = output<void>();
+
+  protected async exitDemo(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove all demo data?',
+      message:
+        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
+        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
+        'yourself will be kept.',
+      variant: 'danger',
+      confirmText: 'Remove demo data',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.demoSvc.exitDemo();
+      await this.auth.getCurrentUser();
+      this.alerts.showSuccess('Demo data removed. Your workspace is ready for real contacts.');
+      this.exited.emit();
+    } catch (err) {
+      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
+      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
 ```html
 <pc-detail-layout
@@ -73232,1105 +74821,6 @@ export class FormsPageComponent implements OnInit {
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-```html
-<!-- pb-2, not p-6 all around: the pagination row is pinned as the page's last element, so a
-     full 24px below it would just steal height from the grid. -->
-<div
-  class="flex h-full w-full flex-col"
-  [class.px-6]="displayTitle() || grainLayout()"
-  [class.pt-6]="displayTitle() || grainLayout()"
-  [class.pb-2]="displayTitle() || grainLayout()"
->
-  @if (grainLayout()) {
-  <!-- Grain layout (People/Households/Companies, owner screenshot): grain tabs (left) + toolbar
-       (right) share one band. No in-grid title/ⓘ — redundant with the sidebar + breadcrumb. -->
-  <div class="mb-3 flex items-center justify-between gap-4">
-    <div class="min-w-0"><ng-content select="[pcGridBelowHeader]"></ng-content></div>
-    @if (showToolbar()) {
-    <div class="shrink-0"><pc-dg-toolbar /></div>
-    }
-  </div>
-  } @else { @if (displayTitle()) {
-  <pc-grid-header
-    [title]="displayTitle()!"
-    [open]="showDescription()"
-    [description]="description() || ''"
-    [totalCount]="hasLoaded() ? totalCountAll() : null"
-    [filtered]="anyFilterActive()"
-    [totalSentence]="totalSentence()"
-  ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } } @if (showNarrowTypeFilter()) {
-  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
-  <div class="mb-2 flex flex-wrap items-center gap-2">
-    <div class="join border border-base-300 rounded-lg">
-      @for (opt of narrowTypeOptions(); track opt.label) {
-      <button
-        type="button"
-        class="btn btn-sm join-item border-0 font-normal gap-1.5"
-        [class.btn-primary]="selectedNarrowType() === opt.value"
-        [class.btn-ghost]="selectedNarrowType() !== opt.value"
-        (click)="selectNarrowType(opt.value)"
-      >
-        {{ opt.label }} @if (opt.count != null) {
-        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
-        }
-      </button>
-      }
-    </div>
-  </div>
-  } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (showToolbar() && (allowFilter() || showTagFilter() || showIssueFilter() || showListFilter())) {
-  <!-- Filter chip row (spec §5): muted funnel marker · active chips · Clear all · dashed entry pills.
-       No surrounding box — sits directly on the page. -->
-  <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
-    <pc-icon name="funnel" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
-
-    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
-    <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
-      @if (chip.kind === 'advanced') {
-      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
-      } @else {
-      <span>{{ chip.label }}</span>
-      }
-      <button
-        type="button"
-        class="opacity-70 hover:opacity-100"
-        [attr.aria-label]="'Remove filter: ' + chip.label"
-        (click)="removeFilterChip(chip)"
-      >
-        <pc-icon name="x-mark" [size]="3"></pc-icon>
-      </button>
-    </span>
-    } @if (filterChips().length) {
-    <button
-      type="button"
-      class="link text-primary hover:no-underline"
-      (click)="clearAllFilters()"
-      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
-    >
-      Clear all
-    </button>
-    }
-
-    <!-- + Add filter: quick single field → operator → value chip entry -->
-    @if (allowFilter()) {
-    <details class="dropdown" #addFilterDd>
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        <span i18n="Datagrid|Add-filter pill label@@datagrid.pills.addFilter">Add filter</span>
-      </summary>
-      <div
-        tabindex="0"
-        class="dropdown-content z-[60] mt-1 flex w-64 flex-col gap-2 rounded-box border border-base-200 bg-base-100 p-3 shadow-lg"
-      >
-        <select
-          class="select select-bordered select-xs w-full"
-          (change)="addFilterField.set($any($event.target).value)"
-        >
-          <option
-            value=""
-            disabled
-            [selected]="!addFilterField()"
-            i18n="Datagrid|Add-filter field placeholder@@datagrid.pills.addFilter.field"
-          >
-            Choose field…
-          </option>
-          @for (f of addFilterFields(); track f.field) {
-          <option [value]="f.field" [selected]="f.field === addFilterField()">{{ f.label }}</option>
-          }
-        </select>
-        <select class="select select-bordered select-xs w-full" (change)="addFilterOp.set($any($event.target).value)">
-          @for (op of addFilterOperators; track op.value) {
-          <option [value]="op.value" [selected]="op.value === addFilterOp()">{{ op.label }}</option>
-          }
-        </select>
-        @if (addFilterNeedsValue()) {
-        <input
-          type="text"
-          class="input input-bordered input-xs w-full"
-          placeholder="Value"
-          i18n-placeholder="Datagrid|Add-filter value placeholder@@datagrid.pills.addFilter.value"
-          [value]="addFilterValue()"
-          (input)="addFilterValue.set($any($event.target).value)"
-          (keydown.enter)="applyAddFilter(); addFilterDd.removeAttribute('open')"
-        />
-        }
-        <div class="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            class="btn btn-outline btn-accent btn-xs"
-            (click)="addFilterDd.removeAttribute('open')"
-            i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            class="btn btn-primary btn-xs"
-            [disabled]="!addFilterField() || (addFilterNeedsValue() && !addFilterValue().trim())"
-            (click)="applyAddFilter(); addFilterDd.removeAttribute('open')"
-            i18n="Datagrid|Apply add-filter@@datagrid.pills.addFilter.apply"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-    </details>
-    }
-
-    <!-- Tags dashed pill — opens the OR checkbox picker -->
-    @if (showTagFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedTags().length > 0"
-        [class.!text-primary]="selectedTags().length > 0"
-      >
-        <pc-icon name="label" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Tags filter pill label@@datagrid.pills.tags">Tags</span>
-        @if (selectedTags().length) {
-        <span class="tabular-nums">({{ selectedTags().length }})</span>
-        }
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by Tags'"
-        [active]="selectedTags().length > 0"
-        (clear)="clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="filteredAvailableTags()"
-          [selected]="selectedTags()"
-          [searchQuery]="tagSearchQuery()"
-          (searchQueryChange)="tagSearchQuery.set($event)"
-          [maxHeight]="14"
-          (selectAll)="selectAllTags()"
-          (clearVisible)="clearAllTagsVisible()"
-          (toggle)="toggleTagFilter($event.value, $event.checked)"
-        />
-        <p
-          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-          i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
-        >
-          Checked tags combine with OR and land as one chip.
-        </p>
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-
-    <!-- Issues dashed pill -->
-    @if (showIssueFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedIssues().length > 0"
-        [class.!text-primary]="selectedIssues().length > 0"
-      >
-        <pc-icon name="shield-exclamation" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Issues filter pill label@@datagrid.pills.issues">Issues</span>
-        @if (selectedIssues().length) {
-        <span class="tabular-nums">({{ selectedIssues().length }})</span>
-        }
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by Issues'"
-        [active]="selectedIssues().length > 0"
-        (clear)="clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="filteredAvailableIssues()"
-          [selected]="selectedIssues()"
-          [searchQuery]="issueSearchQuery()"
-          (searchQueryChange)="issueSearchQuery.set($event)"
-          [maxHeight]="14"
-          (selectAll)="selectAllIssues()"
-          (clearVisible)="clearAllIssuesVisible()"
-          (toggle)="toggleIssueFilter($event.value, $event.checked)"
-        />
-        <p
-          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-          i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
-        >
-          Checked issues combine with OR and land as one chip.
-        </p>
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-
-    <!-- Lists dashed pill — apply a saved list as a chip -->
-    @if (showListFilter()) {
-    <details class="dropdown">
-      <summary
-        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
-        [class.!border-primary]="selectedListId() !== null"
-        [class.!text-primary]="selectedListId() !== null"
-      >
-        <pc-icon name="queue-list" [size]="4"></pc-icon>
-        <span i18n="Datagrid|Lists filter pill label@@datagrid.pills.lists">Lists</span>
-      </summary>
-      <pc-dg-filter-dropdown
-        [title]="'Filter by List'"
-        [active]="selectedListId() !== null"
-        (clear)="clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="selectedListId()"
-          [radioName]="'selectedListPill'"
-          [maxHeight]="14"
-          (select)="selectListFilter($event)"
-        />
-      </pc-dg-filter-dropdown>
-    </details>
-    }
-  </div>
-  }
-  <!-- Count sentence: below the filter row in grain layout (owner screenshot). -->
-  @if (grainLayout() && countSentence()) {
-  <p class="mb-3 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ countSentence() }}</p>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  } @if (hasSelectionState()) {
-  <!-- Bulk action bar: appears on any selection (§2) -->
-  <div class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral bg-base-100 px-3 py-2 text-sm">
-    <span class="font-semibold tabular-nums"
-      >{{ getCountRowSelected() }}
-      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
-    >
-    <span class="mx-1 h-4 w-px bg-base-300"></span>
-
-    @if (bulkTagOpen()) {
-    <input
-      type="text"
-      class="input input-bordered input-xs w-40"
-      placeholder="Tag name"
-      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
-      [value]="bulkTagValue()"
-      (input)="bulkTagValue.set($any($event.target).value)"
-      (keydown.enter)="applyBulkTag()"
-      (keydown.escape)="cancelBulkTag()"
-      autofocus
-    />
-    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
-      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
-    </button>
-    <button class="btn btn-outline btn-accent btn-xs" (click)="cancelBulkTag()">
-      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
-    </button>
-    } @else {
-    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="openBulkTag()">
-      <pc-icon name="label" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
-    </button>
-    @if (!disableExport()) {
-    <button class="btn btn-sm gap-1.5 bg-base-100" (click)="doConfirmExport()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
-    </button>
-    } @if (!disableMerge()) {
-    <button
-      class="btn btn-sm gap-1.5 bg-base-100"
-      [disabled]="getCountRowSelected() !== 2"
-      [title]="
-        getCountRowSelected() === 2
-          ? 'Merge 2 ' + entityNounPlural
-          : 'Select exactly 2 ' + entityNounPlural + ' to merge. ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doConfirmMerge()"
-    >
-      <pc-icon name="merge" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
-    </button>
-    } @if (!!addRoute()) {
-    <button
-      class="btn btn-sm gap-1.5 bg-base-100"
-      [disabled]="!hasSingleSelection()"
-      [title]="
-        hasSingleSelection()
-          ? 'Clone this ' + entityNoun
-          : 'Select exactly 1 ' + entityNoun + ' to clone. ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doClone()"
-    >
-      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
-    </button>
-    }
-    <span class="flex-1"></span>
-    @if (!disableDelete()) {
-    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
-      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
-    </button>
-    } }
-  </div>
-  }
-  <div
-    #scroller
-    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
-    (scroll)="onScroll($event)"
-  >
-    <table #gridTable class="table pc-table w-full">
-      <thead>
-        <tr class="bg-base-100 text-xs">
-          @if (enableSelection()) {
-          <th
-            class="pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id; let hIdx = $index) {
-          <th
-            role="columnheader"
-            class="group cursor-grab pl-2 relative"
-            [class.pl-4]="hIdx === 0 && !enableSelection()"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="fixedWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              @if (showColumnMenus()) {
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  [class.!opacity-100]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (!col?.noHide) {
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      }
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              }
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-base-content/40"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-              <button
-                type="button"
-                class="btn btn-outline btn-secondary btn-sm mt-1"
-                (click)="clearAllFilters()"
-                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
-              >
-                Clear all filters
-              </button>
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-base-content/40"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Create your first record with the New button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300/40"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id; let cellIdx = $index) { @let col =
-          getColDefById(cell.column.id); @if (col && isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec
-          && ec.id === toId(r.original) && ec.field === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col, $event)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            [class]="cellClassFor(col, r.original)"
-            class="min-w-0 px-2 relative"
-            [class.pl-4]="cellIdx === 0 && !enableSelection()"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="fixedWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [value]="tagSearch()"
-                  (input)="tagSearch.set($any($event.target).value)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              (change)="onMultiSelectEditorChange($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value" [selected]="isEditorOptionMultiSelected(opt.value)">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              (change)="onSelectChange(r.original, col, $any($event.target).value)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value" [selected]="isEditorOptionSelected(opt.value)">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [value]="editingValueText()"
-              (input)="editingValue.set($any($event.target).value)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [value]="editingValueText()"
-              (input)="editingValue.set($any($event.target).value)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) { @let doorSubtitle =
-            callDoorSubtitle(r.original, col);
-            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
-            <div class="flex flex-col gap-0.5">
-              @if (rawValue) {
-              <span
-                class="cursor-pointer font-semibold underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
-                >{{ rawValue }}</span
-              >
-              } @else {
-              <span
-                class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
-                i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
-                >Unnamed person</span
-              >
-              } @if (doorSubtitle) {
-              <span class="text-xs text-base-content/55">{{ doorSubtitle }}</span>
-              }
-            </div>
-            } @else if (col.field === 'address') {
-            <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
-            <!-- Static (non-absolute) so wrapped 2-line addresses grow the row instead of being clipped. -->
-            <div class="py-1" [attr.title]="rawValue">
-              <div
-                class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
-                [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
-              >
-                {{ rawValue || '—' }}
-              </div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        } @if (visibleTableRows().length && !canNext()) {
-        <!-- End-of-list marker: with the shell stretching to the pinned footer, a short page
-             would otherwise read as data that failed to load. -->
-        <tr class="hover:bg-transparent">
-          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-2">
-            <div class="flex items-center gap-3 py-2 text-[11px] text-base-content/40">
-              <span class="h-px flex-1 bg-base-300"></span>
-              <span
-                class="whitespace-nowrap tabular-nums"
-                i18n="Datagrid|Marker under the last row showing the list is complete@@datagrid.rows.endOfList"
-                >End of list · {{ totalCountAll() }} {{ nounFor(totalCountAll()) }}</span
-              >
-              <span class="h-px flex-1 bg-base-300"></span>
-            </div>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-between mt-2 gap-3 text-xs flex-nowrap text-neutral-500">
-    <div class="min-w-0"><ng-content select="[pcGridFooterStart]"></ng-content></div>
-    <div class="flex items-center gap-3 flex-nowrap">
-      <div class="flex items-center gap-2 whitespace-nowrap">
-        <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-          >Page Size:</span
-        >
-        <select class="select select-bordered select-xs" (change)="onPageSizeChange($any($event.target).value)">
-          @if (![25,50,100].includes(pageSize())) {
-          <option [value]="pageSize()" [selected]="true">{{ pageSize() }}</option>
-          } @for (opt of pageSizeChoices(); track opt) {
-          <option [value]="opt" [selected]="opt === pageSize()">{{ opt }}</option>
-          }
-        </select>
-      </div>
-      <div
-        class="whitespace-nowrap tabular-nums"
-        i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-      >
-        <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
-          >{{ displayEndIndex() }}</span
-        >
-        of <span class="font-normal">{{ totalCountAll() }}</span> · Page
-        <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
-      </div>
-      <div class="join whitespace-nowrap">
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
-          [disabled]="!canPrev()"
-          (click)="firstPage()"
-        >
-          <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
-          [disabled]="!canPrev()"
-          (click)="prevPage()"
-        >
-          <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canNext() ? nextPageTitle : onLastPageTitle"
-          [disabled]="!canNext()"
-          (click)="nextPage()"
-        >
-          <pc-icon name="chevron-right" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-sm font-light join-item btn-ghost"
-          [title]="canNext() ? lastPageTitle : onLastPageTitle"
-          [disabled]="!canNext()"
-          (click)="lastPage()"
-        >
-          <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (closePanel)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<pc-modal-shell
-  [open]="true"
-  (closed)="showAdvancedFilterBuilder.set(false)"
-  title="Advanced filter builder"
-  i18n-title="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-  icon="adjustments-horizontal"
-  [boxClass]="'w-11/12 max-w-3xl'"
->
-  <p
-    class="text-xs text-neutral-400 -mt-4 mb-4"
-    i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-  >
-    Build complex matching rules with custom operators and conjunction logic.
-  </p>
-
-  <pc-query-builder
-    [group]="advFilterRoot()"
-    [fields]="advancedFilterFields()"
-    [tagSvc]="tagsSvc ?? undefined"
-    [showSummary]="true"
-    (changed)="onAdvancedFilterChanged()"
-  ></pc-query-builder>
-
-  <div pc-modal-footer class="flex w-full justify-between items-center">
-    <button
-      class="btn btn-outline btn-error btn-sm"
-      (click)="clearAdvancedFilter()"
-      i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-    >
-      Clear Filters
-    </button>
-    <div class="flex gap-2">
-      <button
-        class="btn btn-outline btn-accent btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-      >
-        Cancel
-      </button>
-      <button
-        class="btn btn-primary btn-sm px-6"
-        (click)="applyAdvancedFilter()"
-        i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-      >
-        Apply
-      </button>
-    </div>
-  </div>
-</pc-modal-shell>
-}
-```
-
-## File: apps/website/src/app/faq/faq-page.ts
-```typescript
-import { Component } from '@angular/core';
-
-import { SiteFooter } from '../ui/site-footer';
-import { SiteHeader } from '../ui/site-header';
-import { SIGNUP_URL } from '../ui/site-nav';
-
-interface Qa {
-  readonly q: string;
-  readonly a: string;
-}
-
-interface Group {
-  readonly label: string;
-  readonly items: readonly Qa[];
-}
-
-@Component({
-  selector: 'pc-faq-page',
-  imports: [SiteHeader, SiteFooter],
-  templateUrl: './faq-page.html',
-})
-export class FaqPage {
-  protected readonly signupUrl = SIGNUP_URL;
-  protected readonly mailto = 'mailto:hello@pplcrm.com';
-
-  protected readonly groups: readonly Group[] = [
-    {
-      label: 'Getting started',
-      items: [
-        {
-          q: 'Is the free plan really free?',
-          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
-        },
-        {
-          q: 'What is the demo workspace?',
-          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
-        },
-        {
-          q: 'Do I need training to get started?',
-          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
-        },
-        {
-          q: 'How do I move from the demo to real work?',
-          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
-        },
-      ],
-    },
-    {
-      label: 'Your data',
-      items: [
-        {
-          q: 'Who owns the data?',
-          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
-        },
-        {
-          q: 'Can I get my data back out?',
-          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
-        },
-        {
-          q: 'Is my workspace shared with other organizations?',
-          a: 'No. Each organization runs in its own isolated workspace.',
-        },
-        {
-          q: 'Where is my data stored?',
-          a: 'By default your data is stored in the US. On the Movement plan you choose your region (US, EU, Canada or UK) when you create your workspace, and it stays there for processing and backups.',
-        },
-        {
-          q: 'What happens when I delete something?',
-          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
-        },
-      ],
-    },
-    {
-      label: 'Field apps',
-      items: [
-        {
-          q: 'What do volunteers see?',
-          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
-        },
-        {
-          q: 'Do the apps work offline?',
-          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
-        },
-        {
-          q: 'Do field volunteers need their own seats?',
-          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
-        },
-      ],
-    },
-    {
-      label: 'Pricing',
-      items: [
-        {
-          q: 'How much does it cost?',
-          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
-        },
-        {
-          q: 'How is pricing metered?',
-          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
-        },
-        {
-          q: 'Can I see prices in euros, pounds or Canadian dollars?',
-          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
-        },
-        {
-          q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
-        },
-        {
-          q: 'Do you have a plan for larger organizations?',
-          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
-        },
-        {
-          q: 'Can I talk to a human before committing?',
-          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
-        },
-      ],
-    },
-  ];
-}
 ```
 
 ## File: apps/website/src/app/pricing/pricing-page.html
@@ -75522,307 +76012,6 @@ export class PricingPage {
 </pc-modal-shell>
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.html
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <!-- Loading State -->
-  @if (error() && !detail()) {
-  <div class="alert alert-error m-4 shadow-sm rounded-xl">
-    <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!detail()) {
-  <div
-    class="flex h-96 items-center justify-center rounded-2xl border border-dashed border-base-300 bg-base-100/50 backdrop-blur-md"
-  >
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="font-medium text-sm">Loading your profile…</p>
-    </div>
-  </div>
-  } @else {
-
-  <div class="space-y-6">
-    <!-- Identity header card -->
-    <div class="pc-panel p-6">
-      <div class="flex items-center gap-5">
-        <!-- Avatar (click to upload; the pencil badge is the always-visible affordance, §2) -->
-        <div class="relative shrink-0">
-          <input
-            id="avatar-file-input"
-            type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
-            class="sr-only"
-            (change)="onAvatarFileChange($event)"
-          />
-          <label
-            for="avatar-file-input"
-            class="block cursor-pointer"
-            [class.pointer-events-none]="uploadingAvatar()"
-            title="Change profile photo"
-          >
-            <pc-user-avatar [name]="displayName()" [avatarUrl]="avatarUrl()" [size]="18" />
-            @if (uploadingAvatar()) {
-            <span class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
-              <span class="loading loading-spinner loading-sm text-white"></span>
-            </span>
-            } @else {
-            <span
-              class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-content ring-2 ring-base-100"
-              aria-hidden="true"
-            >
-              <pc-icon name="pencil-square" [size]="3"></pc-icon>
-            </span>
-            }
-          </label>
-          @if (avatarUrl() && !uploadingAvatar()) {
-          <button
-            type="button"
-            class="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-base-content/50 hover:text-error transition-colors duration-150 leading-none"
-            (click)="removeAvatar()"
-          >
-            Remove photo
-          </button>
-          }
-        </div>
-
-        <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2">
-            <h1 class="text-2xl font-bold tracking-tight">{{ displayName() }}</h1>
-            <span class="badge badge-ghost text-xs font-medium">{{ roleLabel() }}</span>
-            @if (detail()?.verified) {
-            <span class="badge badge-success badge-outline gap-1 text-xs font-medium">
-              <pc-icon name="check-circle" [size]="3"></pc-icon>
-              Verified
-            </span>
-            }
-          </div>
-          <p class="mt-0.5 truncate text-sm text-base-content/60">
-            {{ detail()?.email }} @if (detail()?.created_at) { · Member since {{ detail()?.created_at | date:
-            'mediumDate' }} }
-          </p>
-        </div>
-      </div>
-    </div>
-
-    @if (detail()?.previous_email) {
-    <div class="alert alert-warning shadow-sm rounded-xl flex justify-between items-center">
-      <div class="flex items-center gap-3">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <div>
-          <h3 i18n class="font-bold text-warning-content">Verification pending</h3>
-          <div i18n class="text-xs text-warning-content/80">
-            A verification link was sent to your new email. You will not be able to make changes until verified.
-          </div>
-        </div>
-      </div>
-      <button
-        i18n
-        class="btn btn-sm btn-ghost border border-warning-content/25 text-warning-content hover:bg-warning-content/10 font-bold ml-4"
-        (click)="cancelEmailChange()"
-      >
-        Undo change
-      </button>
-    </div>
-    } @if (error()) {
-    <div class="alert alert-error shadow-sm rounded-xl">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <div class="grid items-start gap-6 lg:grid-cols-3">
-      <!-- Left column: profile form + notifications -->
-      <div class="space-y-6 lg:col-span-2">
-        <!-- Profile card (explicit save) -->
-        <div class="pc-panel p-6">
-          <h2 class="text-lg font-semibold tracking-tight">Profile</h2>
-          <p class="mt-0.5 text-xs text-base-content/60">Your name appears on tasks, notes and the Activity log.</p>
-
-          <form (submit)="save($event)" class="mt-5 space-y-4" novalidate>
-            <div class="grid gap-4 md:grid-cols-2">
-              <pc-input
-                label="First name"
-                placeholder="Your first name"
-                [formField]="form.first_name"
-                autocomplete="given-name"
-              ></pc-input>
-
-              <pc-input
-                label="Last name"
-                placeholder="Your last name"
-                [formField]="form.last_name"
-                autocomplete="family-name"
-              ></pc-input>
-
-              <div class="md:col-span-2">
-                <pc-input
-                  label="Email address"
-                  type="email"
-                  placeholder="you@example.com"
-                  [formField]="form.email"
-                  autocomplete="email"
-                ></pc-input>
-                <p class="mt-1 text-xs text-base-content/50">
-                  Email is how you sign in. Changing it sends a confirmation to the new address first.
-                </p>
-              </div>
-            </div>
-
-            <!-- Dirty state narrated, not implied (§2) -->
-            <div class="flex items-center justify-between gap-3 pt-2">
-              <p class="text-xs text-base-content/50">
-                @if (dirtyFieldCount() > 0) {
-                <span class="inline-flex items-center gap-1.5 font-medium text-warning">
-                  <span class="inline-block h-2 w-2 rounded-full bg-warning"></span>
-                  Unsaved changes · {{ dirtyFieldCount() }} {{ dirtyFieldCount() === 1 ? 'field' : 'fields' }}
-                </span>
-                } @else {
-                <span>No unsaved changes</span>
-                }
-              </p>
-              <div class="flex items-center gap-2">
-                <button
-                  class="btn btn-outline btn-accent btn-sm"
-                  type="button"
-                  (click)="resetForm()"
-                  [disabled]="saving() || !form().dirty()"
-                >
-                  Reset
-                </button>
-                <!-- Save stays enabled on invalid input — submitting coaches the fields instead (§3) -->
-                <button
-                  class="btn btn-primary btn-sm"
-                  type="submit"
-                  [disabled]="saving() || loading() || !form().dirty() || isViewer()"
-                >
-                  @if (saving()) {
-                  <span class="loading loading-spinner loading-xs mr-2"></span>
-                  } Save changes
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- Right column: account facts + activity -->
-      <div class="space-y-6">
-        <div class="pc-panel p-6">
-          <h2 class="pc-eyebrow">Account</h2>
-          <div class="mt-2">
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Role</span>
-              <span class="text-sm font-medium">{{ roleWithAccess() }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">User ID</span>
-              <span class="text-sm font-medium tabular-nums">{{ detail()?.id }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 border-b border-base-200 py-2.5 text-xs">
-              <span class="text-base-content/60">Member since</span>
-              <span class="text-sm font-medium">{{ detail()?.created_at | date: 'mediumDate' }}</span>
-            </div>
-            <div class="grid grid-cols-[110px_1fr] items-baseline gap-3 py-2.5 text-xs">
-              <span class="text-base-content/60">Last update</span>
-              <span class="text-sm font-medium">{{ detail()?.updated_at | date: 'mediumDate' }}</span>
-            </div>
-          </div>
-          <!-- Role is not self-editable here: point to where it's actually managed (§3 guide) -->
-          <p class="mt-3 border-t border-base-200 pt-3 text-[11px] leading-relaxed text-base-content/50">
-            You can't demote yourself. Roles are managed in
-            <a routerLink="/users" class="link link-hover text-primary">Users</a>.
-          </p>
-        </div>
-
-        @if (stats()) {
-        <div class="pc-panel p-6">
-          <h2 class="pc-eyebrow">Your activity</h2>
-          <div class="mt-1">
-            @for (row of activityRows(); track row.key) {
-            <div class="flex items-center gap-3 border-b border-base-200 py-3 text-xs last:border-b-0">
-              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <pc-icon [name]="row.icon" [size]="4"></pc-icon>
-              </span>
-              <p class="leading-relaxed">
-                @if (row.link) {
-                <a
-                  [routerLink]="row.link"
-                  class="font-semibold text-base-content underline decoration-base-content/25 underline-offset-[3px] hover:text-primary"
-                  >{{ row.count }}</a
-                >
-                } @else {
-                <span class="font-semibold">{{ row.count }}</span>
-                } {{ row.rest }}
-              </p>
-            </div>
-            }
-          </div>
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- Cropping Modal -->
-  @if (cropImageSrc()) {
-  <pc-modal-shell
-    [open]="true"
-    (closed)="cancelCrop()"
-    title="Crop profile picture"
-    icon="user-circle"
-    [boxClass]="'max-w-md'"
-    [dismissible]="false"
-  >
-    <div class="flex flex-col items-center">
-      <!-- Drag & Crop Container -->
-      <div
-        class="relative w-64 h-64 bg-base-200 border-2 border-primary rounded-full overflow-hidden cursor-move select-none shadow-inner"
-        (mousedown)="onCropDragStart($event)"
-        (mousemove)="onCropDragMove($event)"
-        (mouseup)="onCropDragEnd()"
-        (mouseleave)="onCropDragEnd()"
-      >
-        <!-- The user drags this image around inside the container -->
-        <img
-          [src]="cropImageSrc()!"
-          [style.transform]="getCropTransformStyle()"
-          [style.width.px]="displayWidth()"
-          [style.height.px]="displayHeight()"
-          class="absolute top-1/2 left-1/2 max-w-none"
-          draggable="false"
-        />
-      </div>
-
-      <!-- Zoom Slider -->
-      <div class="form-control w-full max-w-xs mt-6">
-        <div class="flex justify-between items-center px-1 mb-1">
-          <span class="text-xs font-semibold text-base-content/60">Zoom</span>
-          <span class="text-xs font-bold text-primary">{{ (cropZoom() * 100) | number: '1.0-0' }}%</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="0.05"
-          [value]="cropZoom()"
-          (input)="onCropZoomInput($event)"
-          class="range range-primary range-sm"
-        />
-      </div>
-    </div>
-
-    <!-- Action buttons -->
-    <div pc-modal-footer class="flex gap-2">
-      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="cancelCrop()">Cancel</button>
-      <button type="button" class="btn btn-primary btn-sm" (click)="cropAndUpload()">Save avatar</button>
-    </div>
-  </pc-modal-shell>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -76397,478 +76586,144 @@ export class PricingPage {
 </div>
 ```
 
-## File: apps/frontend/src/styles.css
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
+## File: apps/website/src/app/faq/faq-page.ts
+```typescript
+import { Component } from '@angular/core';
 
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
+import { SiteFooter } from '../ui/site-footer';
+import { SiteHeader } from '../ui/site-header';
+import { SIGNUP_URL } from '../ui/site-nav';
 
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-/* Theme tokens (light + dark, incl. the base-50 card wash + pc-icon size
-   safelist) are shared with the companion app — single source of truth in
-   libs/uxcommon. */
-@import '../../../libs/uxcommon/src/styles/themes.css';
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
+interface Qa {
+  readonly q: string;
+  readonly a: string;
 }
 
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
+interface Group {
+  readonly label: string;
+  readonly items: readonly Qa[];
 }
 
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
+@Component({
+  selector: 'pc-faq-page',
+  imports: [SiteHeader, SiteFooter],
+  templateUrl: './faq-page.html',
+})
+export class FaqPage {
+  protected readonly signupUrl = SIGNUP_URL;
+  protected readonly mailto = 'mailto:hello@pplcrm.com';
 
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-  /* App-wide default type is text-xs (UX-GUIDELINES §8). Without this, any
-     element missing an explicit text-* class silently falls back to the
-     browser's 16px — larger sizes must always be opted into. */
-  font-size: 0.75rem;
-  line-height: calc(1 / 0.75);
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* ── Shared table visual contract ──────────────────────────────────────────
-   The single source of truth for how EVERY tabular surface looks — the house
-   DataGrid (`pc-datagrid`) and the lighter presentational `pc-table` (uxcommon)
-   both consume these. Change a value here and every table moves together; that
-   is the whole point (design §4 "one idiom per job", §8 typography).
-
-   Why global (not component-scoped): `pc-table` projects each page's bespoke
-   `<tr>`/`<td>` into its own `<tbody>`, and Angular's emulated encapsulation
-   would not let a component stylesheet reach projected rows. Global component
-   classes reach both projected content and the datagrid's own markup.
-
-   Tokens are theme-agnostic sizes; colors resolve through DaisyUI `--color-*`
-   so both themes stay correct for free (design §5). */
-:root {
-  --pc-table-header-size: 0.65625rem; /* 10.5px — refined micro-caps eyebrow (§8) */
-  --pc-table-header-tracking: 0.07em;
-  --pc-table-body-size: 0.75rem; /* text-xs — the default for ALL table body cells */
-  --pc-table-cell-py: 0.375rem; /* row density — matches the datagrid's compact rows */
-  --pc-table-radius: 0.75rem; /* rounded-xl */
-}
-
-@layer components {
-  /* The bordered, rounded container every table sits inside. */
-  .pc-table-shell {
-    overflow-x: auto;
-    border: 1px solid var(--color-base-300);
-    border-radius: var(--pc-table-radius);
-    background-color: var(--color-base-100);
-  }
-
-  /* Applied alongside DaisyUI `.table`. Overrides land in the same @layer as
-     DaisyUI's `.table` rules but at higher specificity, so they win — while
-     Tailwind *utilities* (a later layer) still override per-instance when a
-     page needs to. */
-  .pc-table thead th {
-    font-size: var(--pc-table-header-size);
-    letter-spacing: var(--pc-table-header-tracking);
-    text-transform: uppercase;
-    font-weight: 500;
-    color: color-mix(in oklch, var(--color-base-content) 50%, transparent);
-  }
-  .pc-table :where(th, td) {
-    padding-block: var(--pc-table-cell-py);
-  }
-  /* Body cells are text-xs by default — DaisyUI's `.table` would otherwise
-     leave them at text-sm. Don't re-add `text-sm` on data cells; prose empty
-     states may still opt up per-instance from the utilities layer. */
-  .pc-table tbody {
-    font-size: var(--pc-table-body-size);
-  }
-  /* Subtle row hover (design §8: hover is a quiet secondary signal). The
-     datagrid opts out via its own zebra + `hover:bg-base-300/40` utilities,
-     which win from the utilities layer — a deliberate scale adaptation for
-     long data tables (base-300 stays visible over the base-200 zebra stripes;
-     40% keeps it a wash), documented in the pplcrm-datagrid skill. */
-  .pc-table tbody tr:hover {
-    background-color: color-mix(in oklch, var(--color-base-200) 60%, transparent);
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Minimum comfortable touch target — 44×44px per the mobile guideline (§1.1 /
-   UX-GUIDELINES §8). Registered as a real utility so it survives purge and
-   composes with responsive variants (e.g. `sm:touch-target-none` is not needed —
-   just apply on the touch surface). Keep the control's own flex centering. */
-@utility touch-target {
-  min-height: 2.75rem;
-  min-width: 2.75rem;
-}
-
-/* Micro-caps "eyebrow" — THE one kicker/section-label style (UX-GUIDELINES §8:
-   10–11.5px / 500–600 / uppercase / .04–.09em / base-content 45–55%). Pinned
-   here so the ~40 hand-rolled tracking/opacity/size variants collapse to one
-   class; pair with a margin utility only (`class="pc-eyebrow mb-2"`). */
-@utility pc-eyebrow {
-  font-size: 0.6875rem; /* 11px */
-  line-height: 1.35;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
-}
-
-/* The one panel/card shell — THE house container recipe (rounded-xl, hairline
-   base-200 border, base-100 surface, soft shadow). Pinned so the ~59 inlined
-   `rounded-* border border-base-* bg-base-100 shadow-*` copies collapse to one
-   class; pair with padding/spacing utilities only (`class="pc-panel p-5"`). */
-@utility pc-panel {
-  border-radius: 0.75rem; /* rounded-xl */
-  border: 1px solid var(--color-base-200);
-  background-color: var(--color-base-100);
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* shadow-sm */
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-/* Fields wrapped in a DaisyUI `.input` shell (pc-input, the tags combobox) surface the focus
-   ring on the wrapper via `.input:focus-within`. The unlayered rule above would otherwise also
-   paint a second primary ring on the inner control, so suppress it there — DaisyUI's own
-   (layered) suppression can't win against the unlayered rule above. */
-.input :where(input, textarea, select):focus,
-.input :where(input, textarea, select):focus-visible {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+  protected readonly groups: readonly Group[] = [
+    {
+      label: 'Getting started',
+      items: [
+        {
+          q: 'Is the free plan really free?',
+          a: 'Yes. No card and no time limit. The demo workspace, unlimited contacts and households, and 1,000 email subscribers stay free for as long as you want them.',
+        },
+        {
+          q: 'What is the demo workspace?',
+          a: 'A complete sample workspace for a fictional local campaign: realistic people and households, donors, a live inbox and cut turfs. It exists so you can try every feature, including the destructive ones, without touching real data.',
+        },
+        {
+          q: 'Do I need training to get started?',
+          a: 'Most teams are triaging real cases their first morning. Buttons say what they do in plain language, and anything disabled tells you exactly what it’s waiting for.',
+        },
+        {
+          q: 'How do I move from the demo to real work?',
+          a: 'Import your spreadsheet. Duplicates merge automatically on the way in, and the sample data steps aside.',
+        },
+      ],
+    },
+    {
+      label: 'Your data',
+      items: [
+        {
+          q: 'Who owns the data?',
+          a: 'You do. We never sell, share or rent it. Your donors and constituents are not our product.',
+        },
+        {
+          q: 'Can I get my data back out?',
+          a: 'Always. People, notes, donations and history export to plain CSV whenever you want, on every plan.',
+        },
+        {
+          q: 'Is my workspace shared with other organizations?',
+          a: 'No. Each organization runs in its own isolated workspace.',
+        },
+        {
+          q: 'Where is my data stored?',
+          a: 'In Canada, unless you decide otherwise. On the Movement plan you choose the region your data lives in (Canada, US, EU or UK) when you create your workspace, and it stays there for processing and backups.',
+        },
+        {
+          q: 'What happens when I delete something?',
+          a: 'Delete means deleted. Records are purged, not quietly archived for us to keep.',
+        },
+      ],
+    },
+    {
+      label: 'Newsletters',
+      items: [
+        {
+          q: 'Will my newsletter land in spam?',
+          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. That is the biggest difference from shared email platforms, where thousands of senders pool one reputation.',
+        },
+        {
+          q: 'Why do I verify a domain before sending?',
+          a: 'Verification proves to inbox providers that the mail really comes from you. It is the single most effective thing that keeps a newsletter out of spam, and it means the reputation you build belongs to you.',
+        },
+        {
+          q: 'What about unsubscribes and do-not-contact?',
+          a: 'Honored automatically, everywhere. When someone unsubscribes or is marked do-not-contact, every future send skips them; nobody has to remember.',
+        },
+      ],
+    },
+    {
+      label: 'Field apps',
+      items: [
+        {
+          q: 'What do volunteers see?',
+          a: 'Only what you hand them: the turf they’re walking or the route they’re driving, on iOS, Android or the web. Not the whole list.',
+        },
+        {
+          q: 'Do the apps work offline?',
+          a: 'Yes. Door lists and routes are offline-first, and knocks sync back to the field report when you’re in signal again.',
+        },
+        {
+          q: 'Do field volunteers need their own seats?',
+          a: 'No. Volunteers join by invite to use the companion apps and don’t take up a staff seat. Paid plans include a pool of companion volunteers; the Movement plan makes them unlimited.',
+        },
+      ],
+    },
+    {
+      label: 'Pricing',
+      items: [
+        {
+          q: 'How much does it cost?',
+          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+        },
+        {
+          q: 'How is pricing metered?',
+          a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Can I see prices in euros, pounds or Canadian dollars?',
+          a: 'Yes. We show estimated prices in your local currency at today’s exchange rate, and you can switch currency from the top of any page. Billing is always in US dollars.',
+        },
+        {
+          q: 'What happens when my list grows?',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
+        },
+        {
+          q: 'Do you have a plan for larger organizations?',
+          a: 'Yes. Enterprise is for federations, parties and multi-office operations: more than 200,000 subscribers, SSO, data residency and a dedicated IP. Write to hello@pplcrm.com and we’ll tailor it.',
+        },
+        {
+          q: 'Can I talk to a human before committing?',
+          a: 'Yes. Book a 15-minute walkthrough and we’ll set up the demo together, or write to hello@pplcrm.com.',
+        },
+      ],
+    },
+  ];
 }
 ```
 
@@ -77457,8 +77312,40 @@ body {
   </div>
 </section>
 
-<!-- ========================= HOW IT WORKS ========================= -->
+<!-- ========================== WHY PPLCRM ========================== -->
 <section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">Why pplCRM</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Built for relationships, not pipelines.
+      </h2>
+      <p class="mt-3 text-[15px] leading-relaxed text-base-content/60">
+        Most CRMs exist to move deals to “closed”. Your work never closes: the same people, the same streets, year after
+        year. That one difference shapes everything below.
+      </p>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-3">
+      @for (pillar of whyPillars; track pillar.title) {
+      <div class="rounded-xl border border-line bg-base-50 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="pillar.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ pillar.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ pillar.body }}</p>
+      </div>
+      }
+    </div>
+    <div class="mt-6 text-center">
+      <a routerLink="/compare" class="text-[13.5px] font-semibold text-primary hover:text-secondary"
+        >How we compare to the tools you use now →</a
+      >
+    </div>
+  </div>
+</section>
+
+<!-- ========================= HOW IT WORKS ========================= -->
+<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <div class="mx-auto max-w-[620px] text-center">
       <div class="eyebrow">How it works</div>
@@ -77466,7 +77353,7 @@ body {
     </div>
     <div class="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       @for (step of steps; track step.n) {
-      <div class="rounded-xl border border-line bg-base-50 p-6">
+      <div class="rounded-xl border border-line bg-base-100 p-6">
         <div class="text-[13px] font-bold tabular-nums text-primary">{{ step.n }}</div>
         <div class="mt-2.5 text-[15px] font-semibold">{{ step.title }}</div>
         <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ step.body }}</p>
@@ -77477,7 +77364,7 @@ body {
 </section>
 
 <!-- ========================= WHAT IT DOES ========================= -->
-<section class="border-b border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+<section class="border-b border-line bg-base-100 px-5 py-14 sm:px-8 sm:py-16">
   <div class="site-wrap">
     <div class="mx-auto max-w-[620px] text-center">
       <div class="eyebrow">What it does</div>
@@ -77488,7 +77375,7 @@ body {
     </div>
     <div class="mx-auto mt-9 grid max-w-[880px] gap-3.5 sm:grid-cols-2">
       @for (feature of features; track feature.title) {
-      <div class="flex gap-4 rounded-xl border border-line bg-base-100 p-5">
+      <div class="flex gap-4 rounded-xl border border-line bg-base-50 p-5">
         <span class="grid h-10 w-10 flex-none place-items-center rounded-[10px] bg-primary/12 text-primary">
           <pc-site-icon [name]="feature.icon" [size]="20" />
         </span>
@@ -77661,15 +77548,14 @@ body {
   </div>
 </section>
 
-<!-- =========================== TRUST BAND =========================== -->
+<!-- =========================== CLOSING CTA =========================== -->
 <section class="bg-navy px-5 py-14 text-center sm:px-8 sm:py-16">
   <h2 class="text-[clamp(1.5rem,4vw,1.75rem)] font-bold tracking-[-0.01em] text-white">
-    Your people are not our product.
+    Try everything before you trust us with a single name.
   </h2>
   <p class="mx-auto mt-3.5 max-w-[560px] text-[15px] leading-relaxed text-white/75">
-    Export everything anytime. We never sell, share or rent your data. Delete means deleted. Every unsubscribe and
-    do-not-contact is honored automatically, so you stay compliant without thinking about it. And your data stays in
-    your region — Canadian data in Canada, EU data in the EU.
+    Your free workspace opens with sample people, households, turfs and a live inbox already in it. Cut a turf, send a
+    test newsletter, break things. When it clicks, import your real list. No card, no time limit.
   </p>
   <div class="mt-6">
     <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
@@ -77684,7 +77570,7 @@ body {
 ## File: apps/website/src/app/home/home-page.ts
 ```typescript
 import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { PLANS, startingPriceUsd } from '@common';
 import type { PlanDef } from '@common';
 
@@ -77697,7 +77583,12 @@ import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
 
-type Audience = 'office' | 'camp' | 'np';
+const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
+type Audience = (typeof AUDIENCE_IDS)[number];
+
+function isAudience(value: unknown): value is Audience {
+  return AUDIENCE_IDS.some((id) => id === value);
+}
 
 interface Hero {
   readonly h1: string;
@@ -77769,7 +77660,10 @@ const HEROES: Record<Audience, Hero> = {
 export class HomePage {
   protected readonly signupUrl = SIGNUP_URL;
 
-  protected readonly aud = signal<Audience>('office');
+  /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
+  private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
+
+  protected readonly aud = signal<Audience>(isAudience(this.routeAudience) ? this.routeAudience : 'office');
   protected readonly hero = computed<Hero>(() => HEROES[this.aud()]);
 
   protected readonly audiences: readonly AudienceOption[] = [
@@ -77793,6 +77687,25 @@ export class HomePage {
       n: '3',
       title: 'Import your list when it clicks',
       body: 'Bring your spreadsheet. Duplicates merge automatically and the sample data steps aside.',
+    },
+  ];
+
+  /** The three comparative claims in the "Why pplCRM" band — each one names a real alternative and beats it. */
+  protected readonly whyPillars: readonly Feature[] = [
+    {
+      icon: 'clock',
+      title: 'Built for the long game',
+      body: 'A sales pipeline forgets a deal the day it closes. Your work compounds: this year’s case becomes next year’s volunteer becomes next cycle’s donor. pplCRM keeps that whole story on one record, however long you work the same streets.',
+    },
+    {
+      icon: 'lock-closed',
+      title: 'Your list is yours',
+      body: 'A supporter list is the most sensitive thing an organization owns. Yours is never sold, never shared and never mined, and it lives in Canada (or the region you pick on Movement) in a workspace no other organization touches. The exit is never locked either; export everything to plain CSV, on every plan.',
+    },
+    {
+      icon: 'paper-airplane',
+      title: 'Email that lands',
+      body: 'On big email platforms your newsletter shares a sending reputation with thousands of strangers, including the spammers. Here you send from your own verified domain, so the reputation you build is yours alone. Warm-up limits and abuse guardrails keep spammers off the platform entirely.',
     },
   ];
 
@@ -77825,7 +77738,7 @@ export class HomePage {
     {
       icon: 'arrow-up-tray',
       title: 'Your spreadsheet, welcomed',
-      body: 'Import 131 people and duplicates merge automatically. Leave with everything, anytime.',
+      body: 'Bring the whole messy spreadsheet; duplicates merge on the way in. If you ever leave, everything leaves with you: plain-CSV export, on every plan.',
     },
   ];
 
@@ -77922,6 +77835,14 @@ export class HomePage {
     {
       q: 'Who owns the data?',
       a: 'You do. We never sell, share or rent it, and delete means deleted. Each organization runs in its own isolated workspace.',
+    },
+    {
+      q: 'Where does my data live?',
+      a: 'In Canada, isolated from every other organization’s workspace. On the Movement plan you choose the region yourself: Canada, US, EU or UK.',
+    },
+    {
+      q: 'Will my newsletter land in spam?',
+      a: 'You send from your own verified domain, so inbox providers judge you on your record, not a stranger’s. New senders warm up gradually, and unsubscribes are honored automatically.',
     },
     {
       q: 'How does pricing work?',

@@ -32,7 +32,7 @@
         (click)="refreshList()"
       >
         @if (refreshing()) {
-        <pc-icon name="loading" class="animate-spin" [size]="4"></pc-icon>
+        <span class="loading loading-spinner loading-xs"></span>
         Refreshing... } @else {
         <pc-icon name="arrow-path" [size]="4"></pc-icon>
         Refresh Now }
