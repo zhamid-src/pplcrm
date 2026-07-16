@@ -8077,192 +8077,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
-```html
-<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
-  <!-- Top Navigation & Title -->
-  <!-- Top Navigation & Title -->
-  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
-    <div class="flex items-center gap-3">
-      <div>
-        <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
-            {{ listData()?.name }}
-          </h1>
-          @if (listData()?.is_dynamic) {
-          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
-          } @else {
-          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
-          }
-        </div>
-        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
-      </div>
-    </div>
-
-    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
-    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
-      @if (listData()?.is_dynamic) {
-      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
-        <div>Last Refreshed</div>
-        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
-      </div>
-      <button
-        class="btn btn-outline btn-secondary btn-sm gap-2 mr-2"
-        [disabled]="refreshing() || loading()"
-        (click)="refreshList()"
-      >
-        @if (refreshing()) {
-        <span class="loading loading-spinner loading-xs"></span>
-        Refreshing... } @else {
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh Now }
-      </button>
-      }
-      <pc-form-actions
-        [isLoading]="loading()"
-        [btn1Text]="'Edit List'"
-        [btn1Icon]="'pencil-square'"
-        [showDelete]="true"
-        [deleteText]="'Delete List'"
-        (deleteClicked)="deleteList()"
-        (btn1Clicked)="editList()"
-      ></pc-form-actions>
-    </div>
-  </div>
-
-  <!-- Loading State -->
-  @if (loading()) {
-  <div class="flex flex-1 flex-col items-center justify-center py-20">
-    <progress class="progress progress-primary w-56"></progress>
-    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
-  </div>
-  } @else {
-  <!-- KPI Stats Cards -->
-  <!-- KPI Stats Cards -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-    <pc-stat-card
-      [title]="'List Size'"
-      [value]="memberCount()"
-      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
-      [icon]="'users'"
-      [iconBgClass]="'bg-primary/10'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Newsletters Sent'"
-      [value]="stats()?.totalNewsletters || 0"
-      [description]="'Campaign dispatches'"
-      [icon]="'megaphone'"
-      [iconBgClass]="'bg-secondary/10'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Open Rate'"
-      [value]="formatPercent(stats()?.openRate)"
-      [icon]="'envelope'"
-      [iconBgClass]="'bg-accent/10'"
-      [iconColorClass]="'text-accent'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Click Rate'"
-      [value]="formatPercent(stats()?.clickRate)"
-      [icon]="'chart-pie'"
-      [iconBgClass]="'bg-info/10'"
-      [iconColorClass]="'text-info'"
-    >
-      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
-        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
-      </div>
-    </pc-stat-card>
-  </div>
-
-  <!-- Tabs Panel -->
-  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
-    <pc-tab-panel id="members" [activeTab]="activeTab()">
-      @if (isPeople()) {
-      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
-      } @else {
-      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
-      }
-    </pc-tab-panel>
-
-    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
-        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
-          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
-          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
-          <div class="p-12 text-center text-base-content/50">
-            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
-            <p class="font-medium text-base">No campaign emails sent to this list</p>
-            <p class="text-xs mt-1">
-              Sent newsletters targeting this list will appear here with engagement statistics.
-            </p>
-          </div>
-          } @else {
-          <table class="table pc-table w-full">
-            <thead>
-              <tr>
-                <th>Newsletter Name</th>
-                <th>Subject</th>
-                <th>Send Date</th>
-                <th class="text-right">Recipients</th>
-                <th class="text-right">Open Rate</th>
-                <th class="text-right">Click Rate</th>
-                <th class="text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (n of stats().newsletters; track n.id) {
-              <tr class="hover:bg-base-200/40 transition-colors">
-                <td class="font-bold text-base-content">{{ n.name }}</td>
-                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
-                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
-                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-right">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
-                  </div>
-                </td>
-                <td class="text-center">
-                  <a [routerLink]="['/newsletters', n.id]" class="btn btn-outline btn-secondary btn-xs gap-1">
-                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
-                    View Report
-                  </a>
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-          }
-        </div>
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-  } @if (listData() && listData()?.id) {
-  <div class="mt-8 border-t border-base-250 pt-6">
-    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/lists/ui/list-view.ts
 ```typescript
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
@@ -11317,6 +11131,20 @@ export class DashboardService extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/summary/services/demo.service.ts
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from '../../../services/api/trpc-service';
+
+@Service()
+export class DemoService extends TRPCService<any> {
+  /** Deletes all seeded demo data (starter forms are kept) and clears the tenant's demo flag. */
+  public exitDemo() {
+    return this.api.demo.exit.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
 ```typescript
 import { Injectable, computed, inject, signal } from '@angular/core';
@@ -13530,6 +13358,54 @@ export class CommandPalette {
   private runAndClose(run: () => void): void {
     run();
     this.palette.close();
+  }
+}
+```
+
+## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
+import { Icon } from '@icons/icon';
+import { AuthService } from '../../auth/auth-service';
+
+import { Navbar } from '../navbar/navbar';
+import { Sidebar } from '../sidebar/sidebar';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { CommandPalette } from '../command-palette/command-palette';
+import { KeyboardShortcutsHelp } from '../keyboard-shortcuts/keyboard-shortcuts-help';
+import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
+import { BreadcrumbDefaultsService } from '../../services/breadcrumb-defaults.service';
+
+@Component({
+  selector: 'pc-dashboard',
+  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon, KeyboardShortcutsHelp, CommandPalette],
+  templateUrl: './dashboard.html',
+  host: {
+    '(window:keydown)': 'onKeydown($event)',
+  },
+})
+export class Dashboard {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly shortcuts = inject(KeyboardShortcutsService);
+
+  protected readonly userSignal = this.auth.getUserSignal();
+  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
+  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+
+  constructor() {
+    // Route-driven default breadcrumbs for every page the shell hosts.
+    inject(BreadcrumbDefaultsService).start();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected onKeydown(event: KeyboardEvent): void {
+    this.shortcuts.handleKeydown(event);
   }
 }
 ```
@@ -24425,6 +24301,281 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 </pc-duplicate-page-shell>
 ```
 
+## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
+```typescript
+import { Service, computed, debounced, effect, inject, signal, untracked } from '@angular/core';
+import { Router } from '@angular/router';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { EmailStatus } from '../../../../../../../../libs/common/src';
+
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailsService } from '../emails-service';
+import { EmailActionsStore } from './email-actions.store';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+
+@Service()
+export class EmailsStore {
+  // ----------------- Lazy per-email fallback -----------------
+  //  private readonly _checked = new Set<string>();
+  private readonly router = inject(Router);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly actions = inject(EmailActionsStore);
+  private readonly cache = inject(EmailCacheStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  private readonly _isSyncing = signal(false);
+  public readonly isSyncing = this._isSyncing.asReadonly();
+
+  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
+  private readonly _lastSyncedAt = signal<Date | null>(null);
+  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
+
+  /*
+  private readonly ensureHasAttachmentOnOpen = effect(() => {
+    const id = this.currentSelectedEmailId();
+    if (!id) return;
+
+    // Skip if already known or in-flight
+    if (this.state.hasAttachment(id)() !== undefined) return;
+    if (this._checked.has(id)) return;
+    this._checked.add(id);
+
+    // Ask backend for this one email
+    this.emailSvc
+      .hasAttachment(id)
+      .then((has) => {
+        this.state.setHasAttachment(id, !!has);
+      })
+      .catch(() => {
+        // leave as undefined on error; next open can retry
+        this._checked.delete(id);
+      });
+  });
+  */
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+
+  public readonly allFolders = this.folders.allFolders;
+
+  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
+
+  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
+
+  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
+
+  public readonly hasMore = this.folders.hasMore;
+  public readonly isLoadingMore = this.folders.isLoadingMore;
+
+  public readonly emailsInSelectedFolder = computed(() => {
+    const fid = this.folders.currentSelectedFolderId();
+    if (!fid) return [] as EmailType[];
+    return this.state.emailsInFolderWithFlags(fid)();
+  });
+  public readonly emailsLoading = this.folders.isLoading;
+
+  // ----------------- Cache computed factories -----------------
+  public readonly getEmailBodyById = this.cache.getEmailBodyById;
+  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
+  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
+
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
+  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
+
+  constructor() {
+    effect(() => {
+      // The effect tracks this because it's OUTSIDE untracked()
+      const targetId = this.debouncedSelectedEmailId.value();
+
+      if (targetId) {
+        // Run the email lookup and update INSIDE untracked()
+        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
+        untracked(() => {
+          const emailObj = this.state.readEmail(targetId);
+
+          if (emailObj && !emailObj.is_read) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+        });
+      }
+    });
+  }
+
+  // ----------------- Mutations (actions) -----------------
+  public addComment(emailId: EmailId, authorId: string, commentText: string) {
+    return this.actions.addComment(emailId, authorId, commentText);
+  }
+
+  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
+    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
+  }
+
+  public deleteComment(emailId: EmailId, commentId: string | number) {
+    return this.actions.deleteComment(emailId, commentId);
+  }
+
+  public deleteEmail(emailId: EmailId) {
+    return this.actions.deleteEmail(emailId);
+  }
+
+  // ----------------- Loads -----------------
+  public loadAllFolders() {
+    return this.folders.loadAllFolders();
+  }
+
+  public loadAllFoldersWithCounts() {
+    return this.folders.loadAllFoldersWithCounts();
+  }
+
+  public loadEmailBody(emailId: EmailId) {
+    return this.cache.loadEmailBody(emailId);
+  }
+
+  public loadEmailWithHeaders(emailId: EmailId) {
+    return this.cache.loadEmailWithHeaders(emailId);
+  }
+
+  public refreshEmailHeader(emailId: EmailId) {
+    return this.cache.refreshEmailHeader(emailId);
+  }
+
+  public loadEmailActivities(emailId: EmailId) {
+    return this.cache.loadEmailActivities(emailId);
+  }
+
+  public async loadEmailsForFolder(folderId: EmailId) {
+    const rows = await this.folders.loadEmailsForFolder(String(folderId));
+
+    // Prefer IDs from the response; fallback to state if needed
+    const ids =
+      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
+      this.state.emailIdsByFolderId()[String(folderId)] ||
+      [];
+
+    if (!ids.length) return rows;
+
+    try {
+      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
+
+      const merged: Record<string, boolean> = {};
+      for (const id of ids) {
+        const key = String(id); // <- normalize the key
+        merged[key] = !!partial[key];
+      }
+      this.state.setManyHasAttachment(merged);
+    } catch {
+      // ignore failures; UI can lazily resolve per-email elsewhere
+    }
+
+    return rows;
+  }
+
+  public refreshFolderCounts() {
+    return this.folders.refreshFolderCounts();
+  }
+
+  public restoreFromTrash(emailId: EmailId) {
+    return this.actions.restoreFromTrash(emailId);
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.state.selectEmail(email);
+  }
+
+  public selectFolder(folder: EmailFolderType | null): void {
+    this.folders.selectFolder(folder);
+  }
+
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
+  }
+
+  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
+    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
+  }
+
+  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
+    return this.actions.toggleEmailReadStatus(emailId, isRead);
+  }
+
+  public moveToFolder(emailId: EmailId, folderId: string) {
+    return this.actions.moveToFolder(emailId, folderId);
+  }
+
+  public loadNextPage() {
+    return this.folders.loadNextPage();
+  }
+
+  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
+    return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  // ----------------- Syncing -----------------
+  public async syncEmails() {
+    this._isSyncing.set(true);
+    try {
+      const result = await this.emailSvc.syncEmails();
+
+      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
+      let attempts = 0;
+      while (attempts < 100) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const active = await this.emailSvc.isAnySyncing();
+        if (!active) {
+          break;
+        }
+        attempts++;
+      }
+
+      // Reload current folder emails and counts
+      const currentFolderId = this.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      await this.refreshFolderCounts();
+      this._lastSyncedAt.set(new Date());
+      const inserted = result?.inserted ?? 0;
+      this.alerts.showSuccess(
+        inserted > 0
+          ? `Inbox synced. ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced. No new emails',
+      );
+      return result;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (
+        msg.includes('No email accounts connected') ||
+        msg.includes('No Microsoft account connected') ||
+        msg.includes('No Google account connected') ||
+        msg.includes('Token refresh failed')
+      ) {
+        const confirmed = await this.dialogs.confirm({
+          title: 'Email Account Connection Required',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          variant: 'info',
+          confirmText: 'Go to Settings',
+          cancelText: 'Cancel',
+        });
+        if (confirmed) {
+          void this.router.navigate(['/workspace'], { queryParams: { tab: 'email-sync' } });
+        }
+      } else {
+        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
+      }
+      throw e;
+    } finally {
+      this._isSyncing.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
 ```html
 <div class="p-2 space-y-3">
@@ -27308,6 +27459,192 @@ export function buildDeleteConfirmMessage(listName: string, value: unknown): str
 }
 ```
 
+## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
+```html
+<div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
+  <!-- Top Navigation & Title -->
+  <!-- Top Navigation & Title -->
+  <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-base-300 pb-4">
+    <div class="flex items-center gap-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+            <pc-icon name="queue-list" class="text-primary" [size]="6"></pc-icon>
+            {{ listData()?.name }}
+          </h1>
+          @if (listData()?.is_dynamic) {
+          <span class="badge badge-primary font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Dynamic List</span>
+          } @else {
+          <span class="badge badge-neutral font-semibold text-xs py-2 px-3 shadow-sm rounded-md">Static List</span>
+          }
+        </div>
+        <p class="text-sm text-base-content/60 mt-1">{{ listData()?.description || 'No description provided' }}</p>
+      </div>
+    </div>
+
+    <!-- Actions (Refresh for Dynamic lists & Edit/Delete Buttons) -->
+    <div class="flex flex-wrap items-center gap-2 self-start sm:self-center">
+      @if (listData()?.is_dynamic) {
+      <div class="text-xs text-base-content/60 text-right hidden md:block mr-2">
+        <div>Last Refreshed</div>
+        <div class="font-semibold text-base-content">{{ formatDate(listData()?.last_refreshed_at) }}</div>
+      </div>
+      <button
+        class="btn btn-outline btn-secondary btn-sm gap-2 mr-2"
+        [disabled]="refreshing() || loading()"
+        (click)="refreshList()"
+      >
+        @if (refreshing()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        Refreshing... } @else {
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh Now }
+      </button>
+      }
+      <pc-form-actions
+        [isLoading]="loading()"
+        [btn1Text]="'Edit List'"
+        [btn1Icon]="'pencil-square'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        (btn1Clicked)="editList()"
+      ></pc-form-actions>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (loading()) {
+  <div class="flex flex-1 flex-col items-center justify-center py-20">
+    <progress class="progress progress-primary w-56"></progress>
+    <p class="text-sm text-base-content/60 mt-4 animate-pulse">Loading list insights...</p>
+  </div>
+  } @else {
+  <!-- KPI Stats Cards -->
+  <!-- KPI Stats Cards -->
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+    <pc-stat-card
+      [title]="'List Size'"
+      [value]="memberCount()"
+      [description]="'Targeting ' + (isPeople() ? 'People' : 'Households')"
+      [icon]="'users'"
+      [iconBgClass]="'bg-primary/10'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Newsletters Sent'"
+      [value]="stats()?.totalNewsletters || 0"
+      [description]="'Campaign dispatches'"
+      [icon]="'megaphone'"
+      [iconBgClass]="'bg-secondary/10'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Open Rate'"
+      [value]="formatPercent(stats()?.openRate)"
+      [icon]="'envelope'"
+      [iconBgClass]="'bg-accent/10'"
+      [iconColorClass]="'text-accent'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-accent h-1.5 rounded-full" [style.width]="(stats()?.avgOpenRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Click Rate'"
+      [value]="formatPercent(stats()?.clickRate)"
+      [icon]="'chart-pie'"
+      [iconBgClass]="'bg-info/10'"
+      [iconColorClass]="'text-info'"
+    >
+      <div pc-stat-desc class="w-full bg-base-200 rounded-full h-1.5 mt-2">
+        <div class="bg-info h-1.5 rounded-full" [style.width]="(stats()?.avgClickRate || 0) + '%'"></div>
+      </div>
+    </pc-stat-card>
+  </div>
+
+  <!-- Tabs Panel -->
+  <pc-tabs [tabs]="listTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="members" [activeTab]="activeTab()">
+      @if (isPeople()) {
+      <pc-persons-grid [listId]="id()" [inline]="true"></pc-persons-grid>
+      } @else {
+      <pc-households-grid [listId]="id()" [inline]="true"></pc-households-grid>
+      }
+    </pc-tab-panel>
+
+    <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+      <div class="card bg-base-100 border border-base-200/50 shadow-md overflow-hidden">
+        <div class="px-6 py-4 border-b border-base-200 flex justify-between items-center bg-base-100/50">
+          <h2 class="text-lg font-bold text-base-content">Newsletter Campaigns History</h2>
+          <span class="text-xs text-base-content/50">Sent newsletters targeting this list</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          @if (!stats()?.newsletters || stats()?.newsletters?.length === 0) {
+          <div class="p-12 text-center text-base-content/50">
+            <pc-icon name="megaphone" [size]="12" class="mx-auto mb-3 opacity-30"></pc-icon>
+            <p class="font-medium text-base">No campaign emails sent to this list</p>
+            <p class="text-xs mt-1">
+              Sent newsletters targeting this list will appear here with engagement statistics.
+            </p>
+          </div>
+          } @else {
+          <table class="table pc-table w-full">
+            <thead>
+              <tr>
+                <th>Newsletter Name</th>
+                <th>Subject</th>
+                <th>Send Date</th>
+                <th class="text-right">Recipients</th>
+                <th class="text-right">Open Rate</th>
+                <th class="text-right">Click Rate</th>
+                <th class="text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (n of stats().newsletters; track n.id) {
+              <tr class="hover:bg-base-200/40 transition-colors">
+                <td class="font-bold text-base-content">{{ n.name }}</td>
+                <td class="text-base-content/80 italic">"{{ n.subject }}"</td>
+                <td class="text-xs text-base-content/70">{{ formatDate(n.send_date) }}</td>
+                <td class="text-right font-medium text-base-content/85">{{ n.total_recipients || 0 }}</td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-accent">{{ formatPercent(n.open_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <span class="font-semibold text-info">{{ formatPercent(n.click_rate) }}</span>
+                  </div>
+                </td>
+                <td class="text-center">
+                  <a [routerLink]="['/newsletters', n.id]" class="btn btn-outline btn-secondary btn-xs gap-1">
+                    <pc-icon name="presentation-chart-line" [size]="4"></pc-icon>
+                    View Report
+                  </a>
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+          }
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+  } @if (listData() && listData()?.id) {
+  <div class="mt-8 border-t border-base-250 pt-6">
+    <pc-record-activities [entity]="'lists'" [entityId]="listData()!.id"></pc-record-activities>
+  </div>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
 ```typescript
 import { Component, OnInit, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
@@ -29143,20 +29480,6 @@ export class ShiftViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/services/demo.service.ts
-```typescript
-import { Service } from '@angular/core';
-import { TRPCService } from '../../../services/api/trpc-service';
-
-@Service()
-export class DemoService extends TRPCService<any> {
-  /** Deletes all seeded demo data (starter forms are kept) and clears the tenant's demo flag. */
-  public exitDemo() {
-    return this.api.demo.exit.mutate();
-  }
 }
 ```
 
@@ -31571,52 +31894,55 @@ function relativeTime(date: Date): string {
 }
 ```
 
-## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { Icon } from '@icons/icon';
-import { AuthService } from '../../auth/auth-service';
+## File: apps/frontend/src/app/layout/dashboards/dashboard.html
+```html
+<!-- Dashboard layout template combining sidebar, navbar, and routed content -->
+<!-- Sidebar -->
+<div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
+  <input class="drawer-toggle" />
+  <div class="drawer-side">
+    <pc-sidebar></pc-sidebar>
+  </div>
 
-import { Navbar } from '../navbar/navbar';
-import { Sidebar } from '../sidebar/sidebar';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { CommandPalette } from '../command-palette/command-palette';
-import { KeyboardShortcutsHelp } from '../keyboard-shortcuts/keyboard-shortcuts-help';
-import { KeyboardShortcutsService } from '../../services/keyboard-shortcuts.service';
-import { BreadcrumbDefaultsService } from '../../services/breadcrumb-defaults.service';
+  <!-- Add the Navbar and router-outlet for the body -->
 
-@Component({
-  selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon, KeyboardShortcutsHelp, CommandPalette],
-  templateUrl: './dashboard.html',
-  host: {
-    '(window:keydown)': 'onKeydown($event)',
-  },
-})
-export class Dashboard {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly shortcuts = inject(KeyboardShortcutsService);
+  <div class="drawer-content flex flex-col h-screen overflow-hidden">
+    <pc-navbar></pc-navbar>
+    @if (isViewer()) {
+    <div
+      class="alert alert-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
+      </div>
+      <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
+    </div>
+    } @if (isDemo()) {
+    <div
+      class="alert alert-info border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon name="information-circle" [size]="5"></pc-icon>
+        <span>You’re exploring <strong>demo data</strong>. Everything is safe to change or delete.</span>
+      </div>
+      <a routerLink="/dashboard" class="underline transition-colors text-xs font-semibold whitespace-nowrap"
+        >Exit from the dashboard</a
+      >
+    </div>
+    }
+    <pc-alerts></pc-alerts>
+    <div class="flex-1 border-l-2 border-l-base-300 overflow-y-auto min-h-0" [class.hidden]="isMobileOpen()">
+      <router-outlet></router-outlet>
+    </div>
+  </div>
+</div>
 
-  protected readonly userSignal = this.auth.getUserSignal();
-  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
-  protected readonly isDemo = computed(() => !!this.userSignal()?.tenant_demo_mode_at);
+<!-- Global keyboard shortcuts overlay (opened with ?) -->
+<pc-keyboard-shortcuts-help></pc-keyboard-shortcuts-help>
 
-  constructor() {
-    // Route-driven default breadcrumbs for every page the shell hosts.
-    inject(BreadcrumbDefaultsService).start();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onKeydown(event: KeyboardEvent): void {
-    this.shortcuts.handleKeydown(event);
-  }
-}
+<!-- Command palette overlay (opened with ⌘⇧K) -->
+<pc-command-palette></pc-command-palette>
 ```
 
 ## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
@@ -41037,281 +41363,6 @@ export class DeliveriesRequests implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
-```typescript
-import { Service, computed, debounced, effect, inject, signal, untracked } from '@angular/core';
-import { Router } from '@angular/router';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { EmailStatus } from '../../../../../../../../libs/common/src';
-
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { EmailsService } from '../emails-service';
-import { EmailActionsStore } from './email-actions.store';
-import { EmailCacheStore } from './email-cache.store';
-import { EmailFoldersStore } from './email-folders.store';
-import { type EmailId, EmailStateStore } from './email-state.store';
-
-@Service()
-export class EmailsStore {
-  // ----------------- Lazy per-email fallback -----------------
-  //  private readonly _checked = new Set<string>();
-  private readonly router = inject(Router);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly actions = inject(EmailActionsStore);
-  private readonly cache = inject(EmailCacheStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  private readonly _isSyncing = signal(false);
-  public readonly isSyncing = this._isSyncing.asReadonly();
-
-  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
-  private readonly _lastSyncedAt = signal<Date | null>(null);
-  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
-
-  /*
-  private readonly ensureHasAttachmentOnOpen = effect(() => {
-    const id = this.currentSelectedEmailId();
-    if (!id) return;
-
-    // Skip if already known or in-flight
-    if (this.state.hasAttachment(id)() !== undefined) return;
-    if (this._checked.has(id)) return;
-    this._checked.add(id);
-
-    // Ask backend for this one email
-    this.emailSvc
-      .hasAttachment(id)
-      .then((has) => {
-        this.state.setHasAttachment(id, !!has);
-      })
-      .catch(() => {
-        // leave as undefined on error; next open can retry
-        this._checked.delete(id);
-      });
-  });
-  */
-  private readonly folders = inject(EmailFoldersStore);
-  private readonly state = inject(EmailStateStore);
-
-  public readonly allFolders = this.folders.allFolders;
-
-  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
-
-  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
-
-  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
-
-  public readonly hasMore = this.folders.hasMore;
-  public readonly isLoadingMore = this.folders.isLoadingMore;
-
-  public readonly emailsInSelectedFolder = computed(() => {
-    const fid = this.folders.currentSelectedFolderId();
-    if (!fid) return [] as EmailType[];
-    return this.state.emailsInFolderWithFlags(fid)();
-  });
-  public readonly emailsLoading = this.folders.isLoading;
-
-  // ----------------- Cache computed factories -----------------
-  public readonly getEmailBodyById = this.cache.getEmailBodyById;
-  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
-  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
-
-  public readonly isBodyExpanded = this.state.isBodyExpanded;
-
-  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
-
-  constructor() {
-    effect(() => {
-      // The effect tracks this because it's OUTSIDE untracked()
-      const targetId = this.debouncedSelectedEmailId.value();
-
-      if (targetId) {
-        // Run the email lookup and update INSIDE untracked()
-        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
-        untracked(() => {
-          const emailObj = this.state.readEmail(targetId);
-
-          if (emailObj && !emailObj.is_read) {
-            void this.actions.toggleEmailReadStatus(targetId, true);
-          }
-        });
-      }
-    });
-  }
-
-  // ----------------- Mutations (actions) -----------------
-  public addComment(emailId: EmailId, authorId: string, commentText: string) {
-    return this.actions.addComment(emailId, authorId, commentText);
-  }
-
-  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
-    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
-  }
-
-  public deleteComment(emailId: EmailId, commentId: string | number) {
-    return this.actions.deleteComment(emailId, commentId);
-  }
-
-  public deleteEmail(emailId: EmailId) {
-    return this.actions.deleteEmail(emailId);
-  }
-
-  // ----------------- Loads -----------------
-  public loadAllFolders() {
-    return this.folders.loadAllFolders();
-  }
-
-  public loadAllFoldersWithCounts() {
-    return this.folders.loadAllFoldersWithCounts();
-  }
-
-  public loadEmailBody(emailId: EmailId) {
-    return this.cache.loadEmailBody(emailId);
-  }
-
-  public loadEmailWithHeaders(emailId: EmailId) {
-    return this.cache.loadEmailWithHeaders(emailId);
-  }
-
-  public refreshEmailHeader(emailId: EmailId) {
-    return this.cache.refreshEmailHeader(emailId);
-  }
-
-  public loadEmailActivities(emailId: EmailId) {
-    return this.cache.loadEmailActivities(emailId);
-  }
-
-  public async loadEmailsForFolder(folderId: EmailId) {
-    const rows = await this.folders.loadEmailsForFolder(String(folderId));
-
-    // Prefer IDs from the response; fallback to state if needed
-    const ids =
-      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
-      this.state.emailIdsByFolderId()[String(folderId)] ||
-      [];
-
-    if (!ids.length) return rows;
-
-    try {
-      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
-
-      const merged: Record<string, boolean> = {};
-      for (const id of ids) {
-        const key = String(id); // <- normalize the key
-        merged[key] = !!partial[key];
-      }
-      this.state.setManyHasAttachment(merged);
-    } catch {
-      // ignore failures; UI can lazily resolve per-email elsewhere
-    }
-
-    return rows;
-  }
-
-  public refreshFolderCounts() {
-    return this.folders.refreshFolderCounts();
-  }
-
-  public restoreFromTrash(emailId: EmailId) {
-    return this.actions.restoreFromTrash(emailId);
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.state.selectEmail(email);
-  }
-
-  public selectFolder(folder: EmailFolderType | null): void {
-    this.folders.selectFolder(folder);
-  }
-
-  public toggleBodyExpanded(): void {
-    this.state.toggleBodyExpanded();
-  }
-
-  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
-    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
-  }
-
-  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
-    return this.actions.toggleEmailReadStatus(emailId, isRead);
-  }
-
-  public moveToFolder(emailId: EmailId, folderId: string) {
-    return this.actions.moveToFolder(emailId, folderId);
-  }
-
-  public loadNextPage() {
-    return this.folders.loadNextPage();
-  }
-
-  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
-    return this.actions.updateEmailStatus(emailId, status);
-  }
-
-  // ----------------- Syncing -----------------
-  public async syncEmails() {
-    this._isSyncing.set(true);
-    try {
-      const result = await this.emailSvc.syncEmails();
-
-      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
-      let attempts = 0;
-      while (attempts < 100) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const active = await this.emailSvc.isAnySyncing();
-        if (!active) {
-          break;
-        }
-        attempts++;
-      }
-
-      // Reload current folder emails and counts
-      const currentFolderId = this.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-      await this.refreshFolderCounts();
-      this._lastSyncedAt.set(new Date());
-      const inserted = result?.inserted ?? 0;
-      this.alerts.showSuccess(
-        inserted > 0
-          ? `Inbox synced. ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
-          : 'Inbox synced. No new emails',
-      );
-      return result;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (
-        msg.includes('No email accounts connected') ||
-        msg.includes('No Microsoft account connected') ||
-        msg.includes('No Google account connected') ||
-        msg.includes('Token refresh failed')
-      ) {
-        const confirmed = await this.dialogs.confirm({
-          title: 'Email Account Connection Required',
-          message:
-            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
-          variant: 'info',
-          confirmText: 'Go to Settings',
-          cancelText: 'Cancel',
-        });
-        if (confirmed) {
-          void this.router.navigate(['/workspace'], { queryParams: { tab: 'email-sync' } });
-        }
-      } else {
-        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
-      }
-      throw e;
-    } finally {
-      this._isSyncing.set(false);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
@@ -42099,7 +42150,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
 import { AuthService } from '../../../auth/auth-service';
-import { publicPageUrl } from '../../../shared/public-pages';
+import { donationPageUrl, publicPageUrl } from '../../../shared/public-pages';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -42285,7 +42336,7 @@ ${
     // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
     // /f/:slug SPA page on the tenant subdomain.
     if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
-      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+      return donationPageUrl(tenantSlug, record.slug);
     }
     return publicPageUrl(tenantSlug, `f/${record.slug}`);
   });
@@ -42689,6 +42740,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { environment } from '../../../../environments/environment';
+import { donationPageUrl } from '../../../shared/public-pages';
 import { AuthService } from '../../../auth/auth-service';
 
 @Component({
@@ -42830,7 +42882,7 @@ export class FundraisingFormComponent implements OnInit {
     const slug = this.formSlug();
     if (!slug) return '';
     const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}?t=${encodeURIComponent(tenantSlug)}`;
+    return donationPageUrl(tenantSlug, slug);
   });
 
   public ngOnInit(): void {
@@ -49155,6 +49207,889 @@ export class PublicVolunteerListComponent implements OnInit {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/summary/summary.html
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
+
+    <button
+      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats(true)"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
+
+  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
+  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
+
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
+
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="pc-eyebrow">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
+
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="pc-eyebrow">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="pc-eyebrow">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="pc-eyebrow">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
+          }
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
+          }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="pc-eyebrow">{{ formatDate(p.date) }}</div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
+        }
+      </div>
+      } @else {
+      <div class="flex min-h-[200px] flex-col items-center justify-center">
+        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
+          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Import your people</a
+          >
+        </pc-empty-state>
+      </div>
+      }
+    </div>
+
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
+
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            [routerLink]="['/events/shifts', ev.id]"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center">
+        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
+          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
+            >Plan an event</a
+          >
+        </pc-empty-state>
+      </div>
+      }
+
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
+
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table pc-table w-full">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6">
+              <pc-empty-state
+                icon="user-group"
+                [bordered]="false"
+                title="No representative activity yet"
+                hint="Stats build up as your team works emails and tasks."
+              />
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.ts
+```typescript
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { DashboardService } from './services/dashboard.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
+import { GettingStartedCard } from './getting-started-card';
+import { DemoModeCard } from './demo-mode-card';
+import { AuthService } from '../../auth/auth-service';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+interface UpcomingEvent {
+  id: string;
+  name: string;
+  start_time: string;
+  capacity: number | null;
+  location_address: string | null;
+}
+
+interface DraftNewsletter {
+  id: string;
+  name: string;
+  total_recipients: number;
+}
+
+@Component({
+  imports: [EmptyState, Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
+  selector: 'pc-summary',
+  templateUrl: './summary.html',
+})
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
+
+  // Greeting + date line (§1 "where am I": name the person and the day)
+  private readonly currentUser = this.auth.getUserSignal();
+  protected readonly todayLabel = computed(() =>
+    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+  );
+  protected readonly greeting = computed(() => {
+    const hour = new Date().getHours();
+    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const name = this.currentUser()?.first_name?.trim();
+    return name ? `Good ${part}, ${name}` : `Good ${part}`;
+  });
+
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
+
+  // Next-action context (real data from the backend; null when nothing applies)
+  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
+  protected readonly firstResponseDueHours = signal<number | null>(null);
+  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
+  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
+
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<unknown[]>([]);
+  protected readonly breachedTasks = signal<unknown[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  /** One-word email-health phrase for the briefing paragraph. */
+  protected readonly emailHealthWord = computed(() => {
+    switch (this.emailSlaStatus()) {
+      case 'critical':
+        return 'breaching SLA';
+      case 'warning':
+        return 'under pressure';
+      default:
+        return 'healthy';
+    }
+  });
+
+  // SVG line chart data (contacts growth)
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
+
+  protected readonly userStats = signal<
+    Array<{
+      user_id: string;
+      first_name: string;
+      last_name: string;
+      openCount: number;
+      closedCount: number;
+      resolutionRate: number;
+      avgFirstResponse: string;
+      avgTimeToClose: string;
+      emailSlaBreaches: number;
+      taskSlaBreaches: number;
+    }>
+  >([]);
+  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  public ngOnInit() {
+    void this.loadStats();
+  }
+
+  protected async loadStats(announce = false) {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
+
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
+
+      // Next-action context
+      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
+      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
+      this.draftNewsletter.set(stats.draftNewsletter ?? null);
+      this.upcomingEvents.set(stats.upcomingEvents ?? []);
+
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Reset breached lists (loaded on demand when the drill-down opens)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+
+      // Representative stats table
+      const formattedUserStats = (stats.userStats || []).map(
+        (u: {
+          user_id: string;
+          first_name: string;
+          last_name: string;
+          openCount: number;
+          closedCount: number;
+          resolutionRate: number;
+          avgFirstResponseHours: number;
+          avgTimeToCloseHours: number;
+          emailSlaBreaches?: number;
+          taskSlaBreaches?: number;
+        }) => ({
+          user_id: u.user_id,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          openCount: u.openCount,
+          closedCount: u.closedCount,
+          resolutionRate: u.resolutionRate,
+          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+          emailSlaBreaches: u.emailSlaBreaches || 0,
+          taskSlaBreaches: u.taskSlaBreaches || 0,
+        }),
+      );
+      this.userStats.set(formattedUserStats);
+
+      // Line chart: contacts growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
+        (g: { date: string; count: number }, i: number) => {
+          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+          return { x, y, date: g.date, count: g.count };
+        },
+      );
+      this.linePoints.set(points);
+
+      const firstPoint = points[0];
+      const lastPoint = points[points.length - 1];
+      if (firstPoint && lastPoint) {
+        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          if (!pt) continue;
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch {
+            /* keep raw date string on parse failure */
+          }
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+
+      if (announce) {
+        this.alertSvc.showSuccess('Stats reloaded. All figures current as of now');
+      }
+    } catch {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
+      end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
+  }
+
+  /** Short "2h" / "3d" relative label for the next-action cards. */
+  protected roundedHours(hours: number | null): string {
+    if (hours == null) return '—';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours >= 24) return `${Math.round(hours / 24)}d`;
+    return `${Math.round(hours)}h`;
+  }
+
+  protected formatEventTime(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-admin.html
 ```html
 <div class="flex flex-col gap-4 p-4 sm:p-6">
@@ -51635,57 +52570,6 @@ const SHIFT_STATUS_OPTIONS: OptionRow[] = [
 function emptyConditions(): QueryBuilderGroupNode {
   return { kind: 'group', id: newUid(), conjunction: 'AND', rules: [] };
 }
-```
-
-## File: apps/frontend/src/app/layout/dashboards/dashboard.html
-```html
-<!-- Dashboard layout template combining sidebar, navbar, and routed content -->
-<!-- Sidebar -->
-<div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
-  <input class="drawer-toggle" />
-  <div class="drawer-side">
-    <pc-sidebar></pc-sidebar>
-  </div>
-
-  <!-- Add the Navbar and router-outlet for the body -->
-
-  <div class="drawer-content flex flex-col h-screen overflow-hidden">
-    <pc-navbar></pc-navbar>
-    @if (isViewer()) {
-    <div
-      class="alert alert-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
-      </div>
-      <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
-    </div>
-    } @if (isDemo()) {
-    <div
-      class="alert alert-info border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon name="information-circle" [size]="5"></pc-icon>
-        <span>You’re exploring <strong>demo data</strong>. Everything is safe to change or delete.</span>
-      </div>
-      <a routerLink="/dashboard" class="underline transition-colors text-xs font-semibold whitespace-nowrap"
-        >Exit from the dashboard</a
-      >
-    </div>
-    }
-    <pc-alerts></pc-alerts>
-    <div class="flex-1 border-l-2 border-l-base-300 overflow-y-auto min-h-0" [class.hidden]="isMobileOpen()">
-      <router-outlet></router-outlet>
-    </div>
-  </div>
-</div>
-
-<!-- Global keyboard shortcuts overlay (opened with ?) -->
-<pc-keyboard-shortcuts-help></pc-keyboard-shortcuts-help>
-
-<!-- Command palette overlay (opened with ⌘⇧K) -->
-<pc-command-palette></pc-command-palette>
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
@@ -55177,6 +56061,21 @@ export function publicPageUrl(tenantSlug: string | null | undefined, path: strin
     return `https://${tenantSlug}.${base}/${path}`;
   }
   return `${window.location.origin}/${path}`;
+}
+
+/**
+ * Public URL for a donation page. Donation pages are **server-rendered by the backend** (they carry
+ * the Stripe/Helcim checkout), not an SPA route. In production they're served at
+ * `<org>.pplforms.com/d/:slug` — the pplforms edge Worker rewrites `/d/*` → the backend's
+ * `/api/forms/d/*` and injects `?t=<org>` from the subdomain. In dev there's no Worker, so hit the
+ * backend directly with an explicit `?t=`.
+ */
+export function donationPageUrl(tenantSlug: string | null | undefined, slug: string): string {
+  if (environment.production) {
+    return publicPageUrl(tenantSlug, `d/${slug}`);
+  }
+  const t = tenantSlug ? `?t=${encodeURIComponent(tenantSlug)}` : '';
+  return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}${t}`;
 }
 
 /**
@@ -60813,889 +61712,6 @@ export class GettingStartedCard {
   protected dismiss(): void {
     this.svc.dismiss();
     this.alerts.showInfo('Getting started hidden. It won’t appear again.');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.html
-```html
-<div class="mx-auto max-w-7xl space-y-6 p-6">
-  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
-      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
-      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
-        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ unassignedOpenCount() }} unassigned conversations</a
-        >
-        need an owner and
-        <button
-          type="button"
-          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          (click)="toggleSlaDetails('tasks')"
-        >
-          {{ totalTaskSlaBreaches() }} tasks
-        </button>
-        have breached SLA. Email response is {{ emailHealthWord() }},
-        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ activeContactsCount() }} new contacts</a
-        >
-        arrived this month@if (draftNewsletter(); as draft) {, and
-        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
-        >}.
-      </p>
-    </div>
-
-    <button
-      class="btn btn-outline btn-secondary btn-sm shrink-0 gap-2"
-      pcSpinOnClick
-      (click)="loadStats(true)"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload stats
-    </button>
-  </div>
-
-  <!-- Demo mode: what was seeded + the one place to exit (self-hides once exited) -->
-  <pc-demo-mode-card (exited)="loadStats(true)"></pc-demo-mode-card>
-
-  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
-
-  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <!-- Task SLA -->
-    @if (totalTaskSlaBreaches() > 0) {
-    <button
-      type="button"
-      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
-      (click)="toggleSlaDetails('tasks')"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
-        <span class="text-sm font-semibold">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs opacity-70">
-        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
-        View the {{ totalTaskSlaBreaches() }} tasks
-      </div>
-    </button>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="pc-eyebrow">On track</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
-    </div>
-    }
-
-    <!-- Unassigned conversations -->
-    @if (unassignedOpenCount() > 0) {
-    <a
-      routerLink="/inbox"
-      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Waiting for an owner</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
-        <span class="text-sm font-semibold">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/60">
-        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
-        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
-    </a>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="pc-eyebrow">Inbox clear</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
-    </div>
-    }
-
-    <!-- Draft newsletter -->
-    @if (draftNewsletter(); as draft) {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Ready to send</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
-        <span class="text-sm font-semibold">Draft newsletter</span>
-      </div>
-      <div class="mt-1 truncate text-xs text-base-content/60">
-        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
-    </a>
-    } @else {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="pc-eyebrow">Reach your people</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
-        <span class="text-sm font-semibold">Draft newsletters</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
-    </a>
-    }
-  </div>
-
-  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
-  @if (showSlaDetails()) {
-  <pc-sla-details
-    [breachedEmails]="breachedEmails()"
-    [breachedTasks]="breachedTasks()"
-    [emailSlaHours]="emailSlaHours()"
-    [taskSlaHours]="taskSlaHours()"
-    [totalEmailBreaches]="totalEmailSlaBreaches()"
-    [totalTaskBreaches]="totalTaskSlaBreaches()"
-    [hasMoreEmails]="hasMoreEmails()"
-    [hasMoreTasks]="hasMoreTasks()"
-    [isLoadingEmails]="isLoadingEmails()"
-    [isLoadingTasks]="isLoadingTasks()"
-    (loadMoreEmails)="loadMoreEmails()"
-    (loadMoreTasks)="loadMoreTasks()"
-    [(activeTab)]="defaultSlaTab"
-  />
-  }
-
-  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Open emails</div>
-        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Unassigned open</div>
-        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Avg first response</div>
-        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
-        {{ avgFirstResponse() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Avg time to close</div>
-        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="pc-eyebrow">Contacts growth</div>
-        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
-        +{{ activeContactsCount() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
-    </div>
-  </div>
-
-  <!-- Growth chart (2fr) + Coming up (1fr) -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- New contacts line chart -->
-    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
-        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
-      </div>
-
-      @if (isInitialLoading()) {
-      <div class="skeleton h-[200px] w-full rounded-lg"></div>
-      } @else if (linePoints().length > 0) {
-      <div class="relative h-[200px] w-full">
-        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
-              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
-            </linearGradient>
-          </defs>
-
-          @for (label of yAxisLabels(); track label.y) {
-          <line
-            x1="20"
-            [attr.y1]="label.y"
-            x2="580"
-            [attr.y2]="label.y"
-            stroke="currentColor"
-            class="text-base-content/10"
-            stroke-dasharray="4"
-          ></line>
-          <text
-            [attr.x]="12"
-            [attr.y]="label.y + 3"
-            text-anchor="end"
-            class="fill-current text-[9px] tabular-nums text-base-content/40"
-          >
-            {{ label.value }}
-          </text>
-          }
-
-          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
-          <path
-            [attr.d]="linePath()"
-            fill="none"
-            stroke="var(--color-primary)"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-
-          @for (p of linePoints(); track p.date) {
-          <circle
-            [attr.cx]="p.x"
-            [attr.cy]="p.y"
-            r="4"
-            fill="var(--color-base-100)"
-            stroke="var(--color-primary)"
-            stroke-width="2"
-            class="cursor-pointer"
-            (mouseenter)="hoveredPoint.set(p)"
-            (mouseleave)="hoveredPoint.set(null)"
-          ></circle>
-          } @for (label of xAxisLabels(); track label.x) {
-          <text
-            [attr.x]="label.x"
-            [attr.y]="195"
-            text-anchor="middle"
-            class="fill-current text-[9px] text-base-content/40"
-          >
-            {{ label.label }}
-          </text>
-          }
-        </svg>
-
-        @if (hoveredPoint(); as p) {
-        <div
-          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
-          [style.left.%]="(p.x / 600) * 100"
-          [style.top.%]="(p.y / 200) * 100"
-        >
-          <div class="pc-eyebrow">{{ formatDate(p.date) }}</div>
-          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
-            <span class="h-2 w-2 rounded-full bg-primary"></span>
-            +{{ p.count }} contacts
-          </div>
-        </div>
-        }
-      </div>
-      } @else {
-      <div class="flex min-h-[200px] flex-col items-center justify-center">
-        <pc-empty-state icon="user-plus" [bordered]="false" title="No new contacts in the last 30 days yet">
-          <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-            >Import your people</a
-          >
-        </pc-empty-state>
-      </div>
-      }
-    </div>
-
-    <!-- Coming up -->
-    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
-      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
-
-      @if (upcomingEvents().length > 0) {
-      <ul class="flex flex-col gap-1">
-        @for (ev of upcomingEvents(); track ev.id) {
-        <li>
-          <a
-            [routerLink]="['/events/shifts', ev.id]"
-            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
-          >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
-              <span class="block text-xs text-base-content/55">
-                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
-              </span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-      } @else {
-      <div class="flex flex-1 flex-col items-center justify-center">
-        <pc-empty-state icon="file-calendar" [bordered]="false" title="Nothing scheduled yet">
-          <a routerLink="/events/shifts/add" class="text-sm font-semibold text-primary underline underline-offset-2"
-            >Plan an event</a
-          >
-        </pc-empty-state>
-      </div>
-      }
-
-      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
-        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
-        below
-      </div>
-    </div>
-  </div>
-
-  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
-  <div class="rounded-xl border border-line bg-base-100 p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
-      <span class="text-xs text-base-content/50">Real-time</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="table pc-table w-full">
-        <thead>
-          <tr
-            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
-          >
-            <th class="py-2 pr-4 font-medium">Representative</th>
-            <th class="py-2 pr-4 text-right font-medium">Open</th>
-            <th class="py-2 pr-4 text-right font-medium">Closed</th>
-            <th class="py-2 pr-4 font-medium">Resolution</th>
-            <th class="py-2 pr-4 font-medium">Avg first response</th>
-            <th class="py-2 font-medium">SLA breaches</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of userStats(); track user.user_id) {
-          <tr class="border-b border-line last:border-0">
-            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
-            <td class="py-2.5 pr-4">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.resolutionRate >= 75"
-                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                [class.badge-error]="user.resolutionRate < 40"
-                >{{ user.resolutionRate }}%</span
-              >
-            </td>
-            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
-            <td class="py-2.5">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
-                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
-                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
-              >
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6">
-              <pc-empty-state
-                icon="user-group"
-                [bordered]="false"
-                title="No representative activity yet"
-                hint="Stats build up as your team works emails and tasks."
-              />
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.ts
-```typescript
-import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DashboardService } from './services/dashboard.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { SlaDetails } from './sla-details';
-import { GettingStartedCard } from './getting-started-card';
-import { DemoModeCard } from './demo-mode-card';
-import { AuthService } from '../../auth/auth-service';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-interface UpcomingEvent {
-  id: string;
-  name: string;
-  start_time: string;
-  capacity: number | null;
-  location_address: string | null;
-}
-
-interface DraftNewsletter {
-  id: string;
-  name: string;
-  total_recipients: number;
-}
-
-@Component({
-  imports: [EmptyState, Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, DemoModeCard, RouterLink],
-  selector: 'pc-summary',
-  templateUrl: './summary.html',
-})
-export class Summary implements OnInit {
-  private readonly dashboardSvc = inject(DashboardService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
-
-  constructor() {
-    effect(() => {
-      const tab = this.defaultSlaTab();
-      const open = this.showSlaDetails();
-      if (open) {
-        if (tab === 'emails') {
-          if (this.breachedEmails().length === 0) {
-            this.emailPage.set(1);
-            void this.loadMoreEmails();
-          }
-        } else {
-          if (this.breachedTasks().length === 0) {
-            this.taskPage.set(1);
-            void this.loadMoreTasks();
-          }
-        }
-      }
-    });
-  }
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly isRefreshing = signal(false);
-
-  // Greeting + date line (§1 "where am I": name the person and the day)
-  private readonly currentUser = this.auth.getUserSignal();
-  protected readonly todayLabel = computed(() =>
-    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
-  );
-  protected readonly greeting = computed(() => {
-    const hour = new Date().getHours();
-    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-    const name = this.currentUser()?.first_name?.trim();
-    return name ? `Good ${part}, ${name}` : `Good ${part}`;
-  });
-
-  // KPIs
-  protected readonly totalAssignedCount = signal(0);
-  protected readonly unassignedOpenCount = signal(0);
-  protected readonly totalOpenCount = signal(0);
-  protected readonly avgFirstResponse = signal('—');
-  protected readonly avgTimeToClose = signal('—');
-  protected readonly activeContactsCount = signal(0);
-  protected readonly resolutionRate = signal(0);
-
-  // Next-action context (real data from the backend; null when nothing applies)
-  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
-  protected readonly firstResponseDueHours = signal<number | null>(null);
-  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
-  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
-
-  // SLA Signals
-  protected readonly unassignedEmailSlaBreaches = signal(0);
-  protected readonly unassignedTaskSlaBreaches = signal(0);
-  protected readonly totalEmailSlaBreaches = signal(0);
-  protected readonly totalTaskSlaBreaches = signal(0);
-
-  protected readonly breachedEmails = signal<unknown[]>([]);
-  protected readonly breachedTasks = signal<unknown[]>([]);
-  protected readonly emailPage = signal(1);
-  protected readonly taskPage = signal(1);
-  protected readonly hasMoreEmails = signal(false);
-  protected readonly hasMoreTasks = signal(false);
-  protected readonly isLoadingEmails = signal(false);
-  protected readonly isLoadingTasks = signal(false);
-
-  protected readonly emailSlaHours = signal(24);
-  protected readonly taskSlaHours = signal(24);
-  protected readonly emailSlaWarningThreshold = signal(1);
-  protected readonly emailSlaCriticalThreshold = signal(4);
-  protected readonly taskSlaWarningThreshold = signal(1);
-  protected readonly taskSlaCriticalThreshold = signal(4);
-  protected readonly showSlaDetails = signal(false);
-  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
-
-  protected readonly emailSlaStatus = computed(() => {
-    const breaches = this.totalEmailSlaBreaches();
-    const warning = this.emailSlaWarningThreshold();
-    const critical = this.emailSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  /** One-word email-health phrase for the briefing paragraph. */
-  protected readonly emailHealthWord = computed(() => {
-    switch (this.emailSlaStatus()) {
-      case 'critical':
-        return 'breaching SLA';
-      case 'warning':
-        return 'under pressure';
-      default:
-        return 'healthy';
-    }
-  });
-
-  // SVG line chart data (contacts growth)
-  protected readonly linePath = signal('');
-  protected readonly areaPath = signal('');
-  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
-  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
-  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
-  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
-
-  protected readonly userStats = signal<
-    Array<{
-      user_id: string;
-      first_name: string;
-      last_name: string;
-      openCount: number;
-      closedCount: number;
-      resolutionRate: number;
-      avgFirstResponse: string;
-      avgTimeToClose: string;
-      emailSlaBreaches: number;
-      taskSlaBreaches: number;
-    }>
-  >([]);
-  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
-
-  public ngOnInit() {
-    void this.loadStats();
-  }
-
-  protected async loadStats(announce = false) {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    const end = this._loading.begin();
-    try {
-      const stats = await this.dashboardSvc.getStats();
-
-      // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.totalAssignedCount.set(totalAssigned);
-      this.unassignedOpenCount.set(stats.unassignedCount || 0);
-      this.totalOpenCount.set(stats.totalOpenCount || 0);
-
-      const respHours = stats.avgFirstResponseHours;
-      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
-
-      const closeHours = stats.avgTimeToCloseHours;
-      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
-
-      const totalNewContacts = (stats.contactsGrowth || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.activeContactsCount.set(totalNewContacts);
-
-      const totalClosed = (stats.emailsClosed || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      const totalEmails = totalAssigned + totalClosed;
-      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
-      this.resolutionRate.set(Math.round(rate));
-
-      // Next-action context
-      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
-      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
-      this.draftNewsletter.set(stats.draftNewsletter ?? null);
-      this.upcomingEvents.set(stats.upcomingEvents ?? []);
-
-      // Set SLA breaches
-      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
-      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
-      this.unassignedEmailSlaBreaches.set(unassignedEmails);
-      this.unassignedTaskSlaBreaches.set(unassignedTasks);
-
-      const assignedEmailSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
-        0,
-      );
-      const assignedTaskSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
-        0,
-      );
-
-      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
-      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
-
-      // Reset breached lists (loaded on demand when the drill-down opens)
-      if (this.showSlaDetails()) {
-        if (this.defaultSlaTab() === 'emails') {
-          this.breachedEmails.set([]);
-          this.emailPage.set(1);
-        } else {
-          this.breachedTasks.set([]);
-          this.taskPage.set(1);
-        }
-      } else {
-        this.breachedEmails.set([]);
-        this.emailPage.set(1);
-        this.hasMoreEmails.set(false);
-
-        this.breachedTasks.set([]);
-        this.taskPage.set(1);
-        this.hasMoreTasks.set(false);
-      }
-
-      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
-      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
-      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
-      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
-      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
-      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
-
-      // Representative stats table
-      const formattedUserStats = (stats.userStats || []).map(
-        (u: {
-          user_id: string;
-          first_name: string;
-          last_name: string;
-          openCount: number;
-          closedCount: number;
-          resolutionRate: number;
-          avgFirstResponseHours: number;
-          avgTimeToCloseHours: number;
-          emailSlaBreaches?: number;
-          taskSlaBreaches?: number;
-        }) => ({
-          user_id: u.user_id,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          openCount: u.openCount,
-          closedCount: u.closedCount,
-          resolutionRate: u.resolutionRate,
-          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
-          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
-          emailSlaBreaches: u.emailSlaBreaches || 0,
-          taskSlaBreaches: u.taskSlaBreaches || 0,
-        }),
-      );
-      this.userStats.set(formattedUserStats);
-
-      // Line chart: contacts growth (last 30 days)
-      const growth = stats.contactsGrowth || [];
-      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
-      const width = 600;
-      const height = 200;
-      const padding = 20;
-
-      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
-        (g: { date: string; count: number }, i: number) => {
-          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
-          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
-          return { x, y, date: g.date, count: g.count };
-        },
-      );
-      this.linePoints.set(points);
-
-      const firstPoint = points[0];
-      const lastPoint = points[points.length - 1];
-      if (firstPoint && lastPoint) {
-        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        this.linePath.set(lPath);
-        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
-      } else {
-        this.linePath.set('');
-        this.areaPath.set('');
-      }
-
-      const yLabels = [
-        { y: 20, value: maxCount },
-        { y: 60, value: Math.round(maxCount * 0.75) },
-        { y: 100, value: Math.round(maxCount * 0.5) },
-        { y: 140, value: Math.round(maxCount * 0.25) },
-        { y: 180, value: 0 },
-      ];
-      this.yAxisLabels.set(yLabels);
-
-      const xLabels: { x: number; label: string }[] = [];
-      if (points.length > 0) {
-        const indices = [
-          0,
-          Math.floor(points.length * 0.25),
-          Math.floor(points.length * 0.5),
-          Math.floor(points.length * 0.75),
-          points.length - 1,
-        ];
-        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
-        for (const idx of uniqueIndices) {
-          const pt = points[idx];
-          if (!pt) continue;
-          let dateStr = pt.date;
-          try {
-            const dateObj = new Date(pt.date);
-            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch {
-            /* keep raw date string on parse failure */
-          }
-          xLabels.push({ x: pt.x, label: dateStr });
-        }
-      }
-      this.xAxisLabels.set(xLabels);
-
-      if (announce) {
-        this.alertSvc.showSuccess('Stats reloaded. All figures current as of now');
-      }
-    } catch {
-      this.alertSvc.showError('Failed to load dashboard metrics');
-    } finally {
-      end();
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  private formatHours(hours: number): string {
-    if (hours < 1) {
-      const minutes = Math.round(hours * 60);
-      return `${minutes}m`;
-    }
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = Math.round(hours % 24);
-      return `${days}d ${remainingHours}h`;
-    }
-    return `${hours.toFixed(1)}h`;
-  }
-
-  /** Short "2h" / "3d" relative label for the next-action cards. */
-  protected roundedHours(hours: number | null): string {
-    if (hours == null) return '—';
-    if (hours < 1) return `${Math.round(hours * 60)}m`;
-    if (hours >= 24) return `${Math.round(hours / 24)}d`;
-    return `${Math.round(hours)}h`;
-  }
-
-  protected formatEventTime(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
-    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
-      this.showSlaDetails.set(false);
-    } else {
-      this.defaultSlaTab.set(tab);
-      this.showSlaDetails.set(true);
-    }
-  }
-
-  protected async loadMoreEmails() {
-    if (this.isLoadingEmails()) return;
-    this.isLoadingEmails.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
-      if (this.emailPage() === 1) {
-        this.breachedEmails.set(res.items);
-      } else {
-        this.breachedEmails.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreEmails.set(res.hasMore);
-      this.emailPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached emails');
-    } finally {
-      this.isLoadingEmails.set(false);
-    }
-  }
-
-  protected async loadMoreTasks() {
-    if (this.isLoadingTasks()) return;
-    this.isLoadingTasks.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
-      if (this.taskPage() === 1) {
-        this.breachedTasks.set(res.items);
-      } else {
-        this.breachedTasks.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreTasks.set(res.hasMore);
-      this.taskPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached tasks');
-    } finally {
-      this.isLoadingTasks.set(false);
-    }
   }
 }
 ```
@@ -69231,6 +69247,108 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
+```typescript
+import { Component, computed, inject, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { ConfirmDialogService } from '../../services/shared-dialog.service';
+import { DemoService } from './services/demo.service';
+
+/**
+ * Demo-mode callout on the dashboard: explains what was seeded and hosts the
+ * one place to exit demo mode. Demo mode is the pre-plan test drive — the
+ * backend refuses to exit until the tenant has an active subscription, and it
+ * blocks outward-facing configuration (senders, domains, mailbox sync,
+ * newsletter sending, teammate invites) while the flag is set. Exiting deletes the seeded data
+ * (the six draft forms, the built-in tags, and anything the user created are
+ * kept) and refreshes the session so the shell banner disappears immediately.
+ */
+@Component({
+  selector: 'pc-demo-mode-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-info/40 bg-info/5 shadow-lg mb-5">
+        <div class="card-body gap-3 p-5">
+          <div class="pc-eyebrow flex items-center gap-2 text-info">
+            <pc-icon name="information-circle" [size]="4"></pc-icon>
+            Demo mode
+          </div>
+
+          <p class="text-sm text-base-content/80">
+            You’re exploring pplCRM with realistic sample data: people and households across Ottawa, companies, tags,
+            issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a full
+            report. Everything here is safe to open, edit, and delete.
+          </p>
+          <p class="text-sm text-base-content/60">
+            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
+            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
+            the built-in tags, and anything you created yourself will be kept.
+          </p>
+
+          <div class="card-actions items-center gap-3">
+            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
+            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
+              @if (loading()) {
+                <span class="loading loading-spinner loading-xs"></span>
+              }
+              Exit demo mode
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  `,
+})
+export class DemoModeCard {
+  private readonly auth = inject(AuthService);
+  private readonly demoSvc = inject(DemoService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+
+  private readonly user = this.auth.getUserSignal();
+
+  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly loading = this._loading.visible;
+
+  /** Fires after the demo data is gone so the dashboard can reload its stats. */
+  public readonly exited = output<void>();
+
+  protected async exitDemo(): Promise<void> {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove all demo data?',
+      message:
+        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
+        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
+        'yourself will be kept.',
+      variant: 'danger',
+      confirmText: 'Remove demo data',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.demoSvc.exitDemo();
+      await this.auth.getCurrentUser();
+      this.alerts.showSuccess('Demo data removed. Your workspace is ready for real contacts.');
+      this.exited.emit();
+    } catch (err) {
+      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
+      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.html
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
@@ -74226,108 +74344,6 @@ export class FormsPageComponent implements OnInit {
     </div>
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/summary/demo-mode-card.ts
-```typescript
-import { Component, computed, inject, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthService } from '../../auth/auth-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
-import { ConfirmDialogService } from '../../services/shared-dialog.service';
-import { DemoService } from './services/demo.service';
-
-/**
- * Demo-mode callout on the dashboard: explains what was seeded and hosts the
- * one place to exit demo mode. Demo mode is the pre-plan test drive — the
- * backend refuses to exit until the tenant has an active subscription, and it
- * blocks outward-facing configuration (senders, domains, mailbox sync,
- * newsletter sending, teammate invites) while the flag is set. Exiting deletes the seeded data
- * (the six draft forms, the built-in tags, and anything the user created are
- * kept) and refreshes the session so the shell banner disappears immediately.
- */
-@Component({
-  selector: 'pc-demo-mode-card',
-  imports: [Icon, RouterLink],
-  template: `
-    @if (visible()) {
-      <div class="animate-drop card border border-info/40 bg-info/5 shadow-lg mb-5">
-        <div class="card-body gap-3 p-5">
-          <div class="pc-eyebrow flex items-center gap-2 text-info">
-            <pc-icon name="information-circle" [size]="4"></pc-icon>
-            Demo mode
-          </div>
-
-          <p class="text-sm text-base-content/80">
-            You’re exploring pplCRM with realistic sample data: people and households across Ottawa, companies, tags,
-            issues, tasks, lists, volunteer events, an inbox, three demo teammates, and a sent newsletter with a full
-            report. Everything here is safe to open, edit, and delete.
-          </p>
-          <p class="text-sm text-base-content/60">
-            Sending email, inviting teammates, and workspace configuration (sender identities, domains, mailbox sync)
-            stay locked during the demo. When you’re ready, choose a plan, then exit demo mode. Your six draft forms,
-            the built-in tags, and anything you created yourself will be kept.
-          </p>
-
-          <div class="card-actions items-center gap-3">
-            <a routerLink="/workspace/billing" class="btn btn-primary btn-sm">Choose a plan</a>
-            <button type="button" class="btn btn-error btn-outline btn-sm" [disabled]="loading()" (click)="exitDemo()">
-              @if (loading()) {
-                <span class="loading loading-spinner loading-xs"></span>
-              }
-              Exit demo mode
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-  `,
-})
-export class DemoModeCard {
-  private readonly auth = inject(AuthService);
-  private readonly demoSvc = inject(DemoService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-
-  private readonly user = this.auth.getUserSignal();
-
-  protected readonly visible = computed(() => !!this.user()?.tenant_demo_mode_at);
-  protected readonly loading = this._loading.visible;
-
-  /** Fires after the demo data is gone so the dashboard can reload its stats. */
-  public readonly exited = output<void>();
-
-  protected async exitDemo(): Promise<void> {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove all demo data?',
-      message:
-        'The sample people, households, companies, tags, issues, tasks, lists, team, events, emails, newsletters, ' +
-        'and the three demo teammates will be permanently deleted. Your six draft forms and anything you created ' +
-        'yourself will be kept.',
-      variant: 'danger',
-      confirmText: 'Remove demo data',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.demoSvc.exitDemo();
-      await this.auth.getCurrentUser();
-      this.alerts.showSuccess('Demo data removed. Your workspace is ready for real contacts.');
-      this.exited.emit();
-    } catch (err) {
-      // The backend's refusal ("choose a plan first") is user-facing copy — show it.
-      this.alerts.showError(getUserErrorMessage(err, 'Could not remove the demo data. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
