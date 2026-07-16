@@ -1,25 +1,23 @@
 /**
  * pplforms-edge — the reverse proxy for `*.pplforms.com` (public tenant surfaces).
  *
- * Runs at the Cloudflare edge in place of a VM. Two jobs:
+ * Runs at the Cloudflare edge in place of a VM. Three jobs:
  *   1. Serve the built Angular SPA (public form `/f/:slug`, event RSVP `/e/:slug`, volunteer
  *      `/v/:slug`) as static assets, with SPA fallback to index.html.
- *   2. Forward the backend's public REST surface (`/api/*`) to the CRM backend so the browser sees
- *      every call as SAME-ORIGIN.
+ *   2. Forward the backend's public REST surface (`/api/*`) to the CRM backend unchanged.
+ *   3. Serve the server-rendered donation page: rewrite `/d/:slug` → the backend's
+ *      `/api/forms/d/:slug` and inject `?t=<org>` from the subdomain (a direct browser navigation to
+ *      `/d/:slug` carries no `?t=`, unlike the SPA's `/api` calls which append it themselves).
  *
- * NOTE on donations: donation pages are currently linked directly at `api.pplcrm.com/api/forms/d/…`
- * (see form-view.ts / fundraising-form.ts), so they do NOT flow through this proxy today. If they
- * move to `<org>.pplforms.com/d/:slug` for brand consistency, add a `/d/` → `/api/forms/d/` rewrite
- * here AND repoint those URL builders. Until then, `/d` is intentionally not proxied.
+ * All of this makes every public call **same-origin** on `<org>.pplforms.com`, which is why backend
+ * CORS stays locked to the CRM origin (do NOT widen it). See
+ * apps/frontend/src/app/shared/public-pages.ts (`apiBase()` returns '' in production;
+ * `donationPageUrl()` builds `<org>.pplforms.com/d/:slug`) and
+ * apps/backend/src/app/lib/public-tenant.ts (tenant resolves from `?t=` first).
  *
- * Why same-origin matters: backend CORS is deliberately pinned to the single CRM origin
- * (apps/backend/src/fastify.server.ts) with credentials. Public pages never make a cross-origin
- * call precisely because this proxy makes `/api` look local — see
- * apps/frontend/src/app/shared/public-pages.ts (`apiBase()` returns '' in production).
- *
- * Tenant is carried in the `?t=<org>` query the SPA appends from its own subdomain
- * (`tenantQuery()`), so rewriting the Host header on the way to the backend is safe — the backend
- * resolves the tenant from `?t=` first (apps/backend/src/app/lib/public-tenant.ts).
+ * The donation page's own links are relative with `?t=` baked in (form action
+ * `/api/forms/submit/:slug?t=…`, success redirect `/api/forms/success`), so once it's served here
+ * the submit POST and redirect ride the `/api/*` proxy above.
  */
 
 interface Env {
@@ -29,45 +27,70 @@ interface Env {
   BACKEND_ORIGIN: string;
 }
 
-/** Path prefixes that must reach the backend, not the static bundle. */
-const BACKEND_PREFIXES = ['/api/'] as const;
+/** The org for `<org>.pplforms.com`, or null for the apex / an unexpected host shape. */
+function orgFromHost(hostname: string): string | null {
+  const parts = hostname.toLowerCase().split('.');
+  // `<org>.pplforms.com` → 3+ labels; the left-most label is the org.
+  if (parts.length < 3) return null;
+  const label = parts[0];
+  return label && label !== 'www' ? label : null;
+}
 
-function isBackendPath(pathname: string): boolean {
-  return BACKEND_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+/**
+ * Map a public request URL to its backend target, or null when it should be served as a static
+ * asset instead.
+ */
+function backendTarget(url: URL, env: Env): string | null {
+  // Donation page: /d/:slug → /api/forms/d/:slug, with ?t=<org> injected from the subdomain.
+  if (url.pathname.startsWith('/d/')) {
+    const params = new URLSearchParams(url.search);
+    const org = orgFromHost(url.hostname);
+    if (org && !params.has('t')) params.set('t', org);
+    const qs = params.toString();
+    return `${env.BACKEND_ORIGIN}/api/forms/d/${url.pathname.slice('/d/'.length)}${qs ? `?${qs}` : ''}`;
+  }
+  // Everything else under /api/* passes through unchanged (the SPA appends its own ?t=).
+  if (url.pathname.startsWith('/api/')) {
+    return `${env.BACKEND_ORIGIN}${url.pathname}${url.search}`;
+  }
+  return null;
+}
+
+async function proxyToBackend(request: Request, target: string): Promise<Response> {
+  const originalHost = new URL(request.url).host;
+  const headers = new Headers(request.headers);
+  // Drop the inbound Host (`<org>.pplforms.com`) so fetch sets it from the target — the Container
+  // App only routes its own bound hostname.
+  headers.delete('host');
+  headers.set('x-forwarded-host', originalHost); // original public host, for backend logging
+  headers.set('x-forwarded-proto', 'https');
+
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+    // Preserve backend 3xx (e.g. donation redirects to the payment provider) verbatim.
+    redirect: 'manual',
+  };
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+    // Required by the Streams spec when a request body is a ReadableStream.
+    (init as RequestInit & { duplex: 'half' }).duplex = 'half';
+  }
+
+  return fetch(target, init);
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const target = backendTarget(url, env);
 
-    // Everything that isn't the backend surface is the static SPA. `not_found_handling` in
-    // wrangler.toml serves index.html for unmatched client routes.
-    if (!isBackendPath(url.pathname)) {
+    // No backend target → the static SPA. `not_found_handling` in wrangler.toml serves index.html
+    // for unmatched client routes.
+    if (target == null) {
       return env.ASSETS.fetch(request);
     }
 
-    // Same-origin proxy to the backend's public REST surface.
-    const target = `${env.BACKEND_ORIGIN}${url.pathname}${url.search}`;
-    const headers = new Headers(request.headers);
-    // Drop the inbound Host (`<org>.pplforms.com`) so fetch sets it from BACKEND_ORIGIN — the
-    // Container App only routes its own bound hostname.
-    headers.delete('host');
-    // Preserve the original public host for backend logging / auditing.
-    headers.set('x-forwarded-host', url.host);
-    headers.set('x-forwarded-proto', 'https');
-
-    const init: RequestInit = {
-      method: request.method,
-      headers,
-      // Preserve backend 3xx (e.g. donation redirects to the payment provider) verbatim.
-      redirect: 'manual',
-    };
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      init.body = request.body;
-      // Required by the Streams spec when a request body is a ReadableStream.
-      (init as RequestInit & { duplex: 'half' }).duplex = 'half';
-    }
-
-    return fetch(target, init);
+    return proxyToBackend(request, target);
   },
 };

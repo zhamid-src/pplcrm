@@ -15,6 +15,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { environment } from '../../../../environments/environment';
+import { donationPageUrl } from '../../../shared/public-pages';
 import { AuthService } from '../../../auth/auth-service';
 
 @Component({
@@ -156,7 +157,7 @@ export class FundraisingFormComponent implements OnInit {
     const slug = this.formSlug();
     if (!slug) return '';
     const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
-    return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}?t=${encodeURIComponent(tenantSlug)}`;
+    return donationPageUrl(tenantSlug, slug);
   });
 
   public ngOnInit(): void {

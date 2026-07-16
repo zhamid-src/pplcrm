@@ -56,6 +56,21 @@ export function publicPageUrl(tenantSlug: string | null | undefined, path: strin
 }
 
 /**
+ * Public URL for a donation page. Donation pages are **server-rendered by the backend** (they carry
+ * the Stripe/Helcim checkout), not an SPA route. In production they're served at
+ * `<org>.pplforms.com/d/:slug` — the pplforms edge Worker rewrites `/d/*` → the backend's
+ * `/api/forms/d/*` and injects `?t=<org>` from the subdomain. In dev there's no Worker, so hit the
+ * backend directly with an explicit `?t=`.
+ */
+export function donationPageUrl(tenantSlug: string | null | undefined, slug: string): string {
+  if (environment.production) {
+    return publicPageUrl(tenantSlug, `d/${slug}`);
+  }
+  const t = tenantSlug ? `?t=${encodeURIComponent(tenantSlug)}` : '';
+  return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}${t}`;
+}
+
+/**
  * Absolute URL to a volunteer companion surface (canvass `/t/:token`, deliveries `/r/:token`). In
  * production the companion apps are path-routed on the CRM's own domain, so we use the current
  * origin; in dev they run on a separate port, so `environment.companionOrigin` overrides it —

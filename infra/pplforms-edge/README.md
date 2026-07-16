@@ -2,14 +2,11 @@
 
 Cloudflare Worker that serves `*.pplforms.com` — the public tenant surfaces (form `/f/:slug`, event
 RSVP `/e/:slug`, volunteer `/v/:slug`, donation `/d/:slug`). It replaces what would otherwise be an
-nginx VM: it serves the built Angular SPA as static assets **and** reverse-proxies `/api/*` to the
-CRM backend so every public API call is same-origin (which is why backend CORS stays locked to the
-CRM origin). See [`src/index.ts`](src/index.ts) for the reasoning.
-
-> **Donations are not proxied here.** Donation pages are currently linked directly at
-> `api.pplcrm.com/api/forms/d/:slug`, so they don't flow through `*.pplforms.com`. If you want them
-> brand-consistent at `<org>.pplforms.com/d/:slug`, add a `/d/` → `/api/forms/d/` rewrite to the
-> Worker and repoint the URL builders in `form-view.ts` / `fundraising-form.ts`.
+nginx VM: it serves the built Angular SPA as static assets, reverse-proxies `/api/*` to the CRM
+backend, and serves the server-rendered donation page by rewriting `/d/:slug` → the backend's
+`/api/forms/d/:slug` (injecting `?t=<org>` from the subdomain). Every public call is same-origin,
+which is why backend CORS stays locked to the CRM origin. See [`src/index.ts`](src/index.ts) for the
+reasoning.
 
 ## One-time setup
 
@@ -60,6 +57,10 @@ curl -sSI https://riverton.pplforms.com/f/some-slug | head -n1
 # Same-origin API proxy — expect the backend's JSON (404 "Form not found." for a bogus slug on a
 # real org, NOT the SPA index.html). Swap `riverton` for a real org subdomain.
 curl -sS "https://riverton.pplforms.com/api/forms/f/does-not-exist?t=riverton" | head -c 200; echo
+
+# Donation page rewrite — /d/:slug should reach the backend's server-rendered page (donation HTML
+# for a real published slug; 403 for an org that hasn't acknowledged residency; 404 for a bogus one).
+curl -sS "https://riverton.pplforms.com/d/does-not-exist" -o /dev/null -w '%{http_code}\n'
 ```
 
 If `/api/*` returns the SPA HTML instead of the backend's JSON, `run_worker_first` isn't taking

@@ -8,14 +8,14 @@ main = "src/index.ts"
 compatibility_date = "2025-06-01"
 
 # Static SPA bundle. `run_worker_first` is REQUIRED: without it, Cloudflare serves assets before the
-# Worker runs, and SPA `not_found_handling` would return index.html for /api/* instead of proxying
-# it. Listing that prefix forces the Worker to handle it first; every other path falls through to
-# the static bundle, with unmatched client routes served index.html.
+# Worker runs, and SPA `not_found_handling` would return index.html for /api/* and /d/* instead of
+# proxying them. Listing those prefixes forces the Worker to handle them first; every other path
+# falls through to the static bundle, with unmatched client routes served index.html.
 [assets]
 directory = "../../dist/apps/frontend/browser"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+run_worker_first = ["/api/*", "/d/*"]
 
 [vars]
 # Backend origin bound on the Container App. Cloudflare-proxied, so Full (strict) is satisfied by

@@ -19,7 +19,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
 import { AuthService } from '../../../auth/auth-service';
-import { publicPageUrl } from '../../../shared/public-pages';
+import { donationPageUrl, publicPageUrl } from '../../../shared/public-pages';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -205,7 +205,7 @@ ${
     // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
     // /f/:slug SPA page on the tenant subdomain.
     if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
-      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+      return donationPageUrl(tenantSlug, record.slug);
     }
     return publicPageUrl(tenantSlug, `f/${record.slug}`);
   });
