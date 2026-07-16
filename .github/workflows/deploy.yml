@@ -25,6 +25,10 @@ concurrency:
 
 env:
   NODE_VERSION: '26'
+  # Disable Nx Cloud in CI: nx.json carries an unclaimed nxCloudId, and Nx Cloud fails the run once
+  # past its 3-day connect window. Deploys don't need distributed caching. (Claim it at cloud.nx.app
+  # and drop this if you ever want Nx Cloud.)
+  NX_NO_CLOUD: 'true'
 
 jobs:
   build:
