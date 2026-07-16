@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
@@ -10,23 +9,12 @@ import { DonationsRepo } from './repositories/donations.repo';
 import { DonationPeriodsRepo } from './repositories/periods.repo';
 import { DonationPledgesRepo } from './repositories/pledges.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { hashToken } from '../../lib/token-hash';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable, Updateable } from 'kysely';
 import { logger } from '../../logger';
 import { assertTenantMayAcceptDonations, tenantMayAcceptDonations, type SettingsLookup } from './donation-guards';
-import type { CheckoutInit } from './processors/donation-processor';
-import { resolveDonationProcessor, resolveProcessorKind, type ProcessorKind } from './processors/resolver';
-
-// Helcim recurring is out of scope this pass; recurring stays Stripe-only.
-const HELCIM_RECURRING_UNAVAILABLE_MESSAGE =
-  "Monthly (recurring) donations aren't available with Helcim yet — use Stripe for recurring, or switch this donation to one-time.";
-
-// The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
-// shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
-// API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
-const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
+import { StripeDonationProcessor } from './processors/stripe-processor';
 
 // Donation lifecycle statuses. Only 'succeeded' counts toward cumulative/contribution totals,
 // so flipping a reversed gift to one of the terminal states drops it out of those sums.
@@ -43,33 +31,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   private pledgesRepo = new DonationPledgesRepo();
   private campaignsRepo = new CampaignsRepo();
 
-  // Bound settings accessor handed to the fail-closed guards and the processor resolver, so they
-  // stay decoupled from the settings repo while reusing the same lookup the controller already uses.
+  // Bound settings accessor handed to the fail-closed guards, so they stay decoupled from the
+  // settings repo while reusing the same lookup the controller already uses.
   private readonly settingsLookup: SettingsLookup = (tenantId, key) => this.getSettingVal(tenantId, key);
 
   constructor() {
     super(new DonationsRepo());
-  }
-
-  /** Whether a webhook token has been generated for this tenant. The token itself is never
-   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
-  public async getWebhookTokenStatus(tenantId: string): Promise<{ configured: boolean }> {
-    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key: WEBHOOK_TOKEN_KEY });
-    return { configured: !!row?.value };
-  }
-
-  /** Generate a new webhook token, persist ONLY its hash, and return the plaintext once so the
-   * caller can show the user the webhook URL to paste into Stripe. Any previous token is invalidated. */
-  public async regenerateWebhookToken(tenantId: string, userId: string): Promise<{ token: string }> {
-    const token = 'wt_' + crypto.randomBytes(24).toString('hex');
-    // upsertMany JSON.stringifies the value, so the stored column becomes JSON.stringify(hash) —
-    // exactly what the webhook route below looks up by.
-    await this.settingsRepo.upsertMany({
-      tenant_id: tenantId,
-      user_id: userId,
-      entries: [{ key: WEBHOOK_TOKEN_KEY, value: hashToken(token) }],
-    });
-    return { token };
   }
 
   public async getPersonDonationsList(tenantId: string, personId: string) {
@@ -350,13 +317,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   }
 
   /**
-   * Context the donation UI needs to show the right residency disclaimer and processor affordances:
-   * the tenant's country, which processor is active, and whether residency has been acknowledged
-   * (the fail-closed gate). Shape is depended on by the frontend — keep name/fields stable.
+   * Context the donation UI needs to show the right residency disclaimer and Stripe affordances:
+   * the tenant's country, whether residency has been acknowledged (the fail-closed gate), and
+   * Connect readiness. Shape is depended on by the frontend — keep name/fields stable.
    */
   public async getResidencyContext(tenantId: string): Promise<{
     country: string | null;
-    processor: ProcessorKind;
     residencyAcknowledged: boolean;
     stripeConnected: boolean;
   }> {
@@ -367,14 +333,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .select('country')
       .where('id', '=', tenantId)
       .executeTakeFirst();
-    const processor = await resolveProcessorKind(this.settingsLookup, tenantId);
     const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
     // Connect readiness (cached; mock mode reads as connected) — lets the fundraising editor gate
     // "connect Stripe first" without a second round-trip.
     const connectState = await getCachedConnectState(tenantId);
     return {
       country: tenant?.country != null ? String(tenant.country) : null,
-      processor,
       residencyAcknowledged,
       stripeConnected: connectState.chargesEnabled,
     };
@@ -388,7 +352,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     amountCents: number,
     address: { country?: string; state?: string },
     customUrls?: { successUrl?: string; cancelUrl?: string },
-  ): Promise<CheckoutInit> {
+  ): Promise<{ url: string | null }> {
     // Fail-closed residency gate FIRST — an org that hasn't confirmed residency can't take money.
     await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
 
@@ -397,9 +361,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       throw new BadRequestError(eligibility.reason);
     }
 
-    // Stripe (default) returns a hosted-checkout redirect; Helcim returns a HelcimPay checkout token.
-    const resolved = await resolveDonationProcessor(this.settingsLookup, auth.tenant_id);
-    return resolved.adapter.createOneTimeCheckout({
+    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
+    const accountId = await assertStripeConnectReady(auth.tenant_id);
+    const processor = new StripeDonationProcessor({ accountId, feePercent: env.donationsPlatformFeePercent });
+    return processor.createOneTimeCheckout({
       tenantId: auth.tenant_id,
       userId: auth.user_id,
       personId,
@@ -432,12 +397,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   ) {
     // Fail-closed residency gate FIRST (same as one-time).
     await assertTenantMayAcceptDonations(this.settingsLookup, auth.tenant_id);
-
-    // Recurring is Stripe-only this pass — Helcim recurring is cleanly disabled with a clear message.
-    const processorKind = await resolveProcessorKind(this.settingsLookup, auth.tenant_id);
-    if (processorKind === 'helcim') {
-      throw new PreconditionFailedError(HELCIM_RECURRING_UNAVAILABLE_MESSAGE);
-    }
 
     // Determine remaining months for limit enforcement
     const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);

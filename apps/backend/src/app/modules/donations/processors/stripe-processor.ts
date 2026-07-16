@@ -1,19 +1,26 @@
 import { env } from '../../../../env';
 import { getStripe, isMockMode } from '../../../lib/stripe-platform-client';
-import type { CheckoutInit, DonationProcessor, OneTimeCheckoutParams } from './donation-processor';
+
+export interface OneTimeCheckoutParams {
+  tenantId: string;
+  userId: string;
+  personId: string;
+  amountCents: number;
+  address: { country?: string; state?: string };
+  customUrls?: { successUrl?: string; cancelUrl?: string };
+}
 
 /**
- * Stripe one-time checkout adapter — Connect direct charges. The session is created with the
+ * Stripe one-time checkout — Connect direct charges. The session is created with the
  * PLATFORM key against the tenant's connected account (`{ stripeAccount }`), so the campaign is
  * merchant of record and pays Stripe's processing fees itself; the platform takes
  * `payment_intent_data.application_fee_amount` (DONATIONS_PLATFORM_FEE_PERCENT of the gift).
- * Session params/metadata/success+cancel URLs are unchanged from the pre-Connect implementation.
  * Mock mode keys off the platform client (same `MockKey` convention as billing).
  */
-export class StripeDonationProcessor implements DonationProcessor {
+export class StripeDonationProcessor {
   constructor(private readonly config: { accountId: string | undefined; feePercent: number }) {}
 
-  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<CheckoutInit> {
+  public async createOneTimeCheckout(params: OneTimeCheckoutParams): Promise<{ url: string | null }> {
     const { tenantId, userId, personId, amountCents, address, customUrls } = params;
 
     if (isMockMode) {
@@ -27,7 +34,7 @@ export class StripeDonationProcessor implements DonationProcessor {
         redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${tenantId}&user_id=${userId}`;
       }
 
-      return { kind: 'redirect', url: redirectBase };
+      return { url: redirectBase };
     }
 
     const applicationFeeCents = platformFeeCents(amountCents, this.config.feePercent);
@@ -63,7 +70,7 @@ export class StripeDonationProcessor implements DonationProcessor {
       { stripeAccount: this.config.accountId },
     );
 
-    return { kind: 'redirect', url: session.url };
+    return { url: session.url };
   }
 }
 

@@ -10,8 +10,7 @@ import { STRIPE_ACCOUNT_ID_KEY } from '../stripe-connect';
  * Stripe Connect webhook for donations — ONE platform endpoint for every tenant's connected
  * account (Dashboard: "Listen to events on connected accounts", secret =
  * STRIPE_CONNECT_WEBHOOK_SECRET). The tenant is resolved from `event.account`; there is no
- * per-tenant `?token` or webhook secret anymore (the tokened flow lives on for Helcim only,
- * in donations-helcim-webhook.route.ts).
+ * per-tenant `?token` or webhook secret anymore.
  */
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.post('/webhook', async (req, reply) => {

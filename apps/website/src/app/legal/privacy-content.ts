@@ -86,7 +86,7 @@ export const PRIVACY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe or Helcim (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
+      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
     },
     {
       kind: 'h2',
@@ -132,7 +132,6 @@ export const PRIVACY_DOC: LegalDoc = {
         '**Microsoft Azure.** Hosts the application, database and file storage in your workspace’s region (Canada by default).',
         '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
         '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
-        '**Helcim.** Optional donation processing for organizations that choose it, with payment data stored in Canada. Helcim connections use the organization’s own Helcim account.',
         '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
         '**SendGrid.** Delivers newsletters from your organization’s own verified domain and reports delivery and engagement events.',
         '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',

@@ -82,7 +82,7 @@ export const SECURITY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe, and organizations that prefer Canadian payment residency can process donations through their own Helcim account. We store the donation record; the processors store the payment instruments, under their PCI DSS obligations.',
+      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
     },
     {
       kind: 'h2',
@@ -92,7 +92,7 @@ export const SECURITY_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, Helcim events by HMAC with timing-safe comparison, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
+        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
         'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
         'API keys for integrations are generated per workspace and revocable.',
       ],

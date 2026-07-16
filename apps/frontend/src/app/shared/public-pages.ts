@@ -57,7 +57,7 @@ export function publicPageUrl(tenantSlug: string | null | undefined, path: strin
 
 /**
  * Public URL for a donation page. Donation pages are **server-rendered by the backend** (they carry
- * the Stripe/Helcim checkout), not an SPA route. In production they're served at
+ * the Stripe checkout), not an SPA route. In production they're served at
  * `<org>.pplforms.com/d/:slug` — the pplforms edge Worker rewrites `/d/*` → the backend's
  * `/api/forms/d/*` and injects `?t=<org>` from the subdomain. In dev there's no Worker, so hit the
  * backend directly with an explicit `?t=`.

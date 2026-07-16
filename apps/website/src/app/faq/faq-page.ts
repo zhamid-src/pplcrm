@@ -117,7 +117,7 @@ export class FaqPage {
         },
         {
           q: 'Are there fees on donations?',
-          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Organizations that connect their own Helcim account pay Helcim’s rates and we add no platform fee. Subscriptions have no hidden fees.',
+          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Subscriptions have no hidden fees.',
         },
         {
           q: 'Can I see prices in euros, pounds or Canadian dollars?',

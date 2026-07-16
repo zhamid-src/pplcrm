@@ -34,7 +34,7 @@ describe('StripeDonationProcessor.createOneTimeCheckout (Connect direct charge)'
       address: { country: 'CA', state: 'ON' },
     });
 
-    expect(result).toEqual({ kind: 'redirect', url: 'https://stripe.example/session_123' });
+    expect(result).toEqual({ url: 'https://stripe.example/session_123' });
     expect(state.createSession).toHaveBeenCalledTimes(1);
     expect(state.createSession).toHaveBeenCalledWith(
       {
@@ -107,11 +107,8 @@ describe('StripeDonationProcessor.createOneTimeCheckout (Connect direct charge)'
       address: { country: 'CA', state: 'ON' },
     });
     expect(state.createSession).not.toHaveBeenCalled();
-    expect(result.kind).toBe('redirect');
-    if (result.kind === 'redirect') {
-      expect(result.url).toContain('/people/99?mock_donation_success=true');
-      expect(result.url).toContain('session_id=cs_mock_');
-    }
+    expect(result.url).toContain('/people/99?mock_donation_success=true');
+    expect(result.url).toContain('session_id=cs_mock_');
   });
 });
 

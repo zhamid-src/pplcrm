@@ -133,7 +133,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     slug: string,
     payload: Record<string, string>,
     clientIp: string,
-  ): Promise<{ redirect_url?: string | null; helcimCheckoutToken?: string }> {
+  ): Promise<{ redirect_url?: string | null }> {
     // 1. Rate limiting check
     const now = Date.now();
     let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
@@ -699,7 +699,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
 
       if (form.form_type === 'donation') {
-        // One-time may resolve to a Stripe redirect OR a HelcimPay checkout token (client-side modal).
         const checkoutInit = await donationsController.createCheckoutSession(
           { tenant_id: tenantId, user_id: resolvedCreatorId },
           resolvedPersonId,
@@ -707,11 +706,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           { country, state },
           { successUrl, cancelUrl },
         );
-        return checkoutInit.kind === 'helcim_pay'
-          ? { helcimCheckoutToken: checkoutInit.checkoutToken }
-          : { redirect_url: checkoutInit.url };
+        return { redirect_url: checkoutInit.url };
       } else {
-        // Recurring is Stripe-only (Helcim recurring throws upstream), so this is always a redirect.
         const checkoutSession = await donationsController.createRecurringCheckoutSession(
           { tenant_id: tenantId, user_id: resolvedCreatorId },
           resolvedPersonId,

@@ -157,7 +157,6 @@ All webhook/redirect URLs are on **`api.pplcrm.com`**:
 - [ ] Stripe billing webhook → `POST /api/billing/webhook` (secret = `STRIPE_WEBHOOK_SECRET`).
 - [ ] Stripe donations **Connect** webhook → `POST /api/donations/webhook` (one platform endpoint, no
       per-tenant token; secret = `STRIPE_CONNECT_WEBHOOK_SECRET`) — see "Stripe Connect (donations)".
-- [ ] Helcim donations webhook (per tenant) → `POST /api/donations/helcim-webhook?token=<tenant-token>`.
 - [ ] Postmark bounce/complaint webhook → `POST /api/postmark/webhook` (header `X-Postmark-Webhook-Token`).
 - [ ] SendGrid signed-event webhook → `POST /api/newsletters/webhook`.
 - [ ] Google OAuth: add redirect `https://api.pplcrm.com/auth/google/callback` in Google Cloud console.
@@ -208,10 +207,10 @@ live separately):
 
 ## 7. App-level / per-tenant config
 
-- [ ] Decide & document the **data-residency** posture (Canada-only v1 recommended — matches Helcim=CAD).
-- [ ] Per-tenant donation setup happens in-app: Stripe = Connect onboarding (no keys); Helcim = API
-      token + webhook verifier token; plus `donations.residency_acknowledged` (donations are
-      **fail-closed** until acknowledged).
+- [ ] Decide & document the **data-residency** posture (Canada-only v1 recommended; donations are
+      Stripe-only and Stripe stores payment data in the US — disclosed in the privacy policy).
+- [ ] Per-tenant donation setup happens in-app: Stripe Connect onboarding (no keys); plus
+      `donations.residency_acknowledged` (donations are **fail-closed** until acknowledged).
 - [ ] Per-tenant sending: `communications.sendgrid_api_key` + verified domains (in-app).
 
 ## 8. Verification (smoke test after deploy)

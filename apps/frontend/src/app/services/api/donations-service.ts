@@ -121,19 +121,9 @@ export class DonationsService extends TRPCService<'donations'> {
     return this.api.donations.deleteDonationPeriod.mutate({ id });
   }
 
-  // ── Webhook token (stored hashed, shown once) — Helcim-only now ──────────────
-
-  public getWebhookTokenStatus() {
-    return this.api.donations.getWebhookTokenStatus.query();
-  }
-
-  /** Country / processor / residency-acknowledged context that drives the donation settings disclaimers. */
+  /** Country / residency-acknowledged / Connect-readiness context that drives the donation settings disclaimers. */
   public getResidencyContext() {
     return this.api.donations.getResidencyContext.query();
-  }
-
-  public regenerateWebhookToken() {
-    return this.api.donations.regenerateWebhookToken.mutate();
   }
 
   // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────

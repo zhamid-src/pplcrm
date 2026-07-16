@@ -146,7 +146,7 @@ export const EULA_DOC: LegalDoc = {
     {
       kind: 'list',
       items: [
-        'Donation payments are processed by Stripe or, where you connect your own account, Helcim. We are not a payment processor, and card details never touch our servers.',
+        'Donation payments are processed by Stripe. We are not a payment processor, and card details never touch our servers.',
         'Card donations processed through Stripe carry a 1% platform fee in addition to Stripe’s own processing fees, as shown in the product.',
         'You are responsible for your eligibility to accept donations, for issuing any receipts the law requires, and for compliance with contribution limits and disclosure rules.',
         'Refunds and chargebacks are handled through the payment processor; the product reflects them against the donation record automatically.',

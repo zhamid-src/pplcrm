@@ -65,16 +65,11 @@ export const DonationsRouter = router({
         }),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const init = await controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address);
-      // Preserve the existing `{ url }` shape for the Stripe redirect path; add the HelcimPay token
-      // for tenants on Helcim (the client launches the modal from it instead of redirecting).
-      return init.kind === 'redirect'
-        ? { url: init.url, helcimCheckoutToken: null }
-        : { url: null, helcimCheckoutToken: init.checkoutToken };
-    }),
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
 
-  /** Country + active processor + residency-acknowledged flag for the donation UI disclaimer. */
+  /** Country + residency-acknowledged flag + Connect readiness for the donation UI disclaimer. */
   getResidencyContext: authProcedure.query(({ ctx }) => controller.getResidencyContext(ctx.auth.tenant_id)),
 
   confirmDonation: authProcedure
@@ -188,15 +183,6 @@ export const DonationsRouter = router({
   deleteDonationPeriod: authProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
-
-  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4). Helcim-only now: the
-  // Stripe path uses the platform Connect webhook, which routes by event.account instead. ────────
-
-  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
-
-  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
-    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
-  ),
 
   // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────
 

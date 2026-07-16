@@ -174,8 +174,7 @@ export class FundraisingFormComponent implements OnInit {
     try {
       const ctx = await this.donationsSvc.getResidencyContext();
       this.residencyAcknowledged.set(ctx.residencyAcknowledged);
-      // Helcim tenants don't need Stripe; the gate only bites on the Stripe path.
-      this.stripeConnected.set(ctx.processor !== 'stripe' || ctx.stripeConnected);
+      this.stripeConnected.set(ctx.stripeConnected);
     } catch {
       // non-fatal — leave the banners hidden if the context can't be read
     }
