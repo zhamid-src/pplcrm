@@ -19,11 +19,30 @@ export const PRESENCE_COOKIE = 'pc_signed_in';
 // Secure cookies on local http dev and every login would silently fail to persist.
 const isSecure = env.apiUrl.startsWith('https://');
 
-// Parent domain the presence cookie is scoped to, so app.<domain> and the marketing site at <domain>
-// both see it (e.g. `.pplcrm.com`). Omitted in local dev (host-only) — a `localhost` cookie domain is
-// invalid and cross-subdomain sharing isn't needed there.
-const presenceDomain =
-  env.publicBaseDomain && env.publicBaseDomain !== 'localhost' ? `.${env.publicBaseDomain}` : undefined;
+/**
+ * Longest common dot-suffix of two URL hostnames, as a cookie Domain attribute (`.pplcrm.com`), or
+ * undefined when they share fewer than two labels — a bare TLD is never a valid cookie domain, and
+ * in local dev both hosts are `localhost` (host-only cookie, matching the old behavior).
+ */
+export function sharedParentDomain(urlA: string, urlB: string): string | undefined {
+  const labelsOf = (u: string): string[] => new URL(u).hostname.toLowerCase().split('.').reverse();
+  const a = labelsOf(urlA);
+  const b = labelsOf(urlB);
+  const shared: string[] = [];
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    const label = a[i];
+    if (label === undefined || label !== b[i]) break;
+    shared.push(label);
+  }
+  return shared.length >= 2 ? `.${shared.reverse().join('.')}` : undefined;
+}
+
+// Parent domain the presence cookie is scoped to, so the app (app.pplcrm.com) and the marketing site
+// at the apex both see the hint the API (api.pplcrm.com) sets — the common parent of the API and app
+// hosts (`.pplcrm.com`). Deliberately NOT publicBaseDomain: that is the tenant-forms domain
+// (pplforms.com), and browsers reject a Set-Cookie whose Domain doesn't cover the responding host,
+// which silently broke the hint in production.
+const presenceDomain = sharedParentDomain(env.apiUrl, env.appUrl);
 
 export function getRefreshTokenFromCookie(req: FastifyRequest): string | undefined {
   const value = req.cookies?.[REFRESH_COOKIE];

@@ -1,6 +1,6 @@
 # pplCRM Production Go-Live Checklist
 
-Target stack: **Azure** (Container Apps + Postgres + Blob, Canada Central) + **Cloudflare** (DNS, TLS, Pages).
+Target stack: **Azure** (Container Apps API + edge VM + Postgres + Blob, Canada Central) + **Cloudflare** (DNS, TLS, Pages).
 Full rationale in `~/.claude/plans/deployment-plan-we-had-indexed-fox.md`. Work top to bottom.
 
 Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` (backend) ·
@@ -12,7 +12,8 @@ Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` 
 
 - [ ] Azure subscription with permission to create resources in **Canada Central**.
 - [ ] Cloudflare account (Free is fine) managing DNS for `pplcrm.com` **and** `pplforms.com` (register `pplforms.com` if not owned).
-- [ ] Decide how `*.pplforms.com` TLS is served (see §1 — Azure Front Door or a VM-hosted edge with DNS-01; NOT a Cloudflare proxied wildcard, which is Enterprise-only).
+- [x] Decide the `*.pplforms.com` origin — **DECIDED 2026-07-15: Option B, consolidated** — one small VM runs the
+      edge Caddy for all three edge hosts and the `pplcrm-edge` Container App is not created (see §1/§3).
 - [ ] GitHub repo admin (to set Actions secrets/variables and GHCR package visibility).
 - [ ] Local tooling: `az` CLI, `docker`, `git`. (Decide: GitHub-runner deploy vs. hand-run.)
 - [ ] Decide the companion subdomain name — plan uses `go.pplcrm.com` (rename in `environment.prod.ts` if different).
@@ -27,22 +28,36 @@ The three single subdomains are normal proxied records (Universal SSL covers the
 
 - [ ] `pplcrm.com` (apex + `www`) → Cloudflare Pages (marketing).
 - [ ] `api.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-api` Container App FQDN.
-- [ ] `app.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-edge` Container App FQDN.
-- [ ] `go.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-edge` Container App FQDN.
-- [ ] For the proxied records above, set SSL/TLS mode to **Full (strict)** (Cloudflare validates the Azure origin cert).
+- [ ] `app.pplcrm.com` → **proxied** (orange) A record to the edge VM's static IP (§3).
+- [ ] `go.pplcrm.com` → **proxied** (orange) A record to the edge VM's static IP.
+- [ ] For the proxied records above, set SSL/TLS mode to **Full (strict)** (Cloudflare validates the origin cert).
 
-**`*.pplforms.com` (per-org tenant subdomains) — the one that needs a real decision.** Cloudflare only
-**proxies wildcard DNS records on Enterprise**; on Free/Pro/Business a `*` record is forced **DNS-only**
-(grey cloud), so Cloudflare won't terminate TLS/CDN it — and Azure Container Apps doesn't support wildcard
-custom domains either. Upgrading to Pro/Business does NOT fix this (proxied wildcards are Enterprise-only).
-Pick one Free-compatible path — the edge terminates its own wildcard TLS:
+**`*.pplforms.com` (per-org tenant subdomains) — the one that needs a real decision.** (Facts re-verified
+2026-07-15 against current Cloudflare/Azure docs.) Cloudflare **proxies wildcard records on ALL plans**
+(since Sept 2021 — "Wildcard proxy for everyone"), and Free's **Universal SSL already covers `*.pplforms.com`**
+(first-level wildcard) — no Advanced Certificate Manager needed. The real constraint is the **origin**:
+Azure Container Apps custom domains are exact-hostname-only (no wildcard bindings; the env "custom DNS suffix"
+routes `<app-name>.suffix` by app name, which doesn't fit tenant slugs), so wildcard traffic can't land on the
+ACA edge directly. **DECIDED 2026-07-15 — Option B, consolidated:** one small VM runs the edge Caddy for
+**all three** edge hosts (`app.` / `go.` / `*.pplforms.com`) and the `pplcrm-edge` Container App is not created.
+Rationale: an always-on min-1-replica Container App bills ~US$10–15/mo — more than the VM — so consolidating is
+both the cheapest workable topology (~US$13–16/mo all-in vs ~$27 split VM+ACA, ~$49 Front Door) and removes a
+runtime. Everything stays on Cloudflare Free.
 
-- [ ] **Option A — Azure Front Door:** point `*.pplforms.com` (Cloudflare **DNS-only** CNAME) at Front Door,
-      which supports wildcard domains + managed wildcard TLS and forwards to the edge/backend.
-- [ ] **Option B — edge Caddy on an Azure VM/VMSS:** `*.pplforms.com` (Cloudflare **DNS-only** A/CNAME) → the VM;
-      Caddy mints a `*.pplforms.com` Let's Encrypt cert via **DNS-01 using a Cloudflare API token** (uncomment the
-      `tls { dns cloudflare … }` block in `deploy/Caddyfile` and drop `auto_https off`). Everything stays on Cloudflare Free.
-- [ ] (Either way) confirm the edge receives the original `Host` so `<org>.pplforms.com` resolves the tenant via `?t=`.
+- [ ] `*.pplforms.com` → **proxied** (orange) A record to the edge VM's static IP.
+- [ ] Caddy presents free **Cloudflare Origin CA** certs (one per zone: `pplcrm.com` + `*.pplcrm.com`, and
+      `pplforms.com` + `*.pplforms.com`; up to 15-yr validity, satisfies Full (strict), no renewal automation).
+      Let's Encrypt via DNS-01 (`tls { dns cloudflare … }`) stays the fallback if a publicly-trusted cert is ever needed.
+- [ ] Confirm the edge receives the original `Host` so `<org>.pplforms.com` resolves the tenant via `?t=`
+      (Cloudflare's proxy passes Host through unchanged, so the Caddyfile site matchers work as-is).
+
+Not chosen (recorded so the decision isn't relitigated from stale facts):
+**Option A — Azure Front Door** (Standard ~US$35/mo base + egress) supports wildcard domains with managed
+wildcard certs (GA June 2025, TXT validation) but layers a second CDN behind Cloudflare and needs Host-header
+surgery for ACA ingress (Caddy would only see the tenant host via `X-Forwarded-Host`). Revisit if the VM
+outgrows its duty. **$0 alternative — Cloudflare Workers static-assets edge** (static requests free; `/api`+`/d`
+proxy invocations within the 100k/day free tier) is the long-term cost floor, but replaces the Caddy edge and
+the deploy pipeline — rejected pre-launch; revisit as a cost cut once live.
 
 ## 2. Azure — data layer
 
@@ -57,13 +72,22 @@ Pick one Free-compatible path — the edge terminates its own wildcard TLS:
 
 ## 3. Azure — compute
 
-- [ ] Create a **Container Apps environment** in Canada Central.
+- [ ] Create a **Container Apps environment** in Canada Central (hosts only `pplcrm-api` — the edge is a VM, per §1).
 - [ ] Create app **`pplcrm-api`** (backend): ingress external, **targetPort 3000**, min 1 / max 1 replica to start.
-- [ ] Create app **`pplcrm-edge`** (Caddy): ingress external, **targetPort 80**.
-- [ ] Point `BACKEND_UPSTREAM` (edge env) at the internal `pplcrm-api` FQDN, e.g. `pplcrm-api:3000`.
-- [ ] Bind custom domains on the Container Apps (or let Cloudflare front them — see the §1 caveat).
+- [ ] Bind the custom domain `api.pplcrm.com` on `pplcrm-api` (managed cert) so Full (strict) validates.
 - [ ] Set liveness probe → `GET /` and readiness probe → `GET /healthz` on `pplcrm-api`.
-- [ ] Grant the Container Apps access to pull from **GHCR** (registry credentials / managed identity).
+- [ ] Grant the Container App access to pull from **GHCR** (registry credentials / managed identity).
+
+Edge VM (replaces the `pplcrm-edge` Container App — §1 decision):
+
+- [ ] Create a small VM (e.g. B2ats v2 / B1s) in Canada Central with a **Standard static public IP**; install Docker.
+- [ ] NSG: allow 443 **only from Cloudflare IP ranges** (<https://www.cloudflare.com/ips/>) + SSH from your own IP.
+- [ ] Create the two **Cloudflare Origin CA** certs (§1) and place them on the VM for the container to mount.
+- [ ] Update `deploy/Caddyfile` for VM duty: serve **:443** with the Origin CA certs (drop `auto_https off`; same
+      three site blocks). `reverse_proxy` upstream becomes the `pplcrm-api` **external** FQDN over HTTPS with
+      `header_up Host {upstream_hostport}` (ACA ingress routes by Host; the tenant host still reaches the backend
+      via `X-Forwarded-Host`, which Fastify honors under `TRUST_PROXY` — verify `/d/<slug>` resolution in §8).
+- [ ] Run the GHCR `edge` image with `--restart unless-stopped`, certs mounted, `BACKEND_UPSTREAM` set.
 
 ## 4. Secrets & config
 
@@ -90,7 +114,9 @@ GitHub Actions (for the CI pipeline in `.github/workflows/deploy.yml`):
 
 - [ ] Secrets: `VITE_GOOGLE_MAPS_API_KEY`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_MIGRATION_USER`,
       `DB_MIGRATION_PASSWORD`, `SHARED_SECRET`, `AZURE_CREDENTIALS`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-- [ ] Variables: `AZURE_RESOURCE_GROUP`, `AZURE_API_APP=pplcrm-api`, `AZURE_EDGE_APP=pplcrm-edge`, `CF_PAGES_PROJECT`.
+- [ ] Variables: `AZURE_RESOURCE_GROUP=pplcrm-cad-prod`, `AZURE_API_APP=pplcrm-api`, `AZURE_EDGE_VM=<vm name>`, `CF_PAGES_PROJECT`.
+- [ ] Update `.github/workflows/deploy.yml` for the §1 decision: the edge step becomes `az vm run-command invoke`
+      (docker pull + restart) on `AZURE_EDGE_VM` instead of `az containerapp update` on a `pplcrm-edge` app.
 - [ ] Ensure the **migrate job's runner can reach Postgres** (public endpoint + firewall allow, or self-hosted runner in the VNet).
 - [ ] `VITE_GOOGLE_MAPS_API_KEY` restricted by HTTP referrer at Google (it ships to the browser).
 
@@ -101,7 +127,7 @@ GitHub Actions (for the CI pipeline in `.github/workflows/deploy.yml`):
   - [ ] `npx nx run-many -t build -p backend frontend companion website --configuration=production` (with `VITE_GOOGLE_MAPS_API_KEY`).
   - [ ] Build & push images: `apps/backend/Dockerfile` → GHCR `backend`; `deploy/Caddy.Dockerfile` → GHCR `edge`.
   - [ ] **Migrate** as owner: `npx tsx apps/backend/src/app/kyselyinit.ts` with `DB_MIGRATION_*` env (from repo root).
-  - [ ] `az containerapp update` both apps to the new image tags.
+  - [ ] `az containerapp update` `pplcrm-api` to the new image tag; edge VM: `az vm run-command invoke` (docker pull + restart).
   - [ ] `wrangler pages deploy dist/apps/website --project-name=<CF_PAGES_PROJECT>`.
 
 ## 6. Register with third-party providers (first launch)
