@@ -67,6 +67,17 @@ export class Alerts {
           : 'bg-info';
   }
 
+  /** Soft tinted background for the icon chip — echoes the accent bar without shouting. */
+  protected chipToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success/10'
+      : type === 'warning'
+        ? 'bg-warning/10'
+        : type === 'error'
+          ? 'bg-error/10'
+          : 'bg-info/10';
+  }
+
   /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
   protected toneClass(type?: ALERTTYPE): string {
     return type === 'success'
