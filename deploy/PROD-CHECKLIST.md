@@ -1,6 +1,8 @@
 # pplCRM Production Go-Live Checklist
 
-Target stack: **Azure** (Container Apps API + edge VM + Postgres + Blob, Canada Central) + **Cloudflare** (DNS, TLS, Pages).
+Target stack: **Azure** (Container Apps API + Postgres + Blob, Canada Central) + **Cloudflare** (DNS, TLS,
+Pages for the marketing site + `app.`, Workers for `go.` and `*.pplforms.com`). No edge VM; `api.pplcrm.com`
+(the `pplcrm-api` Container App) is the only Azure compute.
 Full rationale in `~/.claude/plans/deployment-plan-we-had-indexed-fox.md`. Work top to bottom.
 
 Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` (backend) ·
@@ -13,11 +15,12 @@ Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` 
 - [ ] Azure subscription with permission to create resources in **Canada Central**.
 - [ ] Cloudflare account (Free is fine) managing DNS for `pplcrm.com` **and** `pplforms.com` (register `pplforms.com` if not owned).
 - [x] `*.pplforms.com` origin — **DECIDED 2026-07-15: Cloudflare Worker** (`infra/pplforms-edge`, committed):
-      serves the SPA as static assets + proxies `/api/*` same-origin. No VM, no origin cert, no static IP for the
-      forms zone (see §1).
-- [ ] `app.pplcrm.com` / `go.pplcrm.com` origin — **OPEN.** The Worker decision removed the VM's only hard
-      requirement (wildcard TLS for forms). Both are static SPAs, so they can be Workers/Pages too. Decide whether
-      **any** VM survives before doing §3's "Edge for app./go." steps — if not, the whole VM/Caddy/NSG track drops.
+      serves the SPA as static assets + proxies `/api/*` same-origin (see §1).
+- [x] `app.pplcrm.com` / `go.pplcrm.com` origin — **DECIDED 2026-07-15: fully serverless (Option B).** `app.` → a
+      **Cloudflare Pages** project (static CRM SPA, `dist/apps/frontend`). `go.` → a **Cloudflare Worker** (companion
+      SPA `dist/apps/companion` + `/api/*` proxy, templated off `infra/pplforms-edge`). **No VM, and the
+      `pplcrm-edge` Caddy Container App is retired** — remove its `deploy.yml` step; `deploy/Caddyfile` +
+      `Caddy.Dockerfile` become dead. Build tasks tracked in §1/§3/§5.
 - [ ] GitHub repo admin (to set Actions secrets/variables and GHCR package visibility).
 - [ ] Local tooling: `az` CLI, `docker`, `git`. (Decide: GitHub-runner deploy vs. hand-run.)
 - [ ] Decide the companion subdomain name — plan uses `go.pplcrm.com` (rename in `environment.prod.ts` if different).
@@ -28,14 +31,21 @@ Origins: `pplcrm.com` (marketing) · `app.pplcrm.com` (CRM) · `api.pplcrm.com` 
 hardening (WAF, bot management, rate limiting, advanced DDoS, SLA) — nice later, not required. Free gives
 DNS, Pages, Universal SSL, proxied CDN, and basic DDoS.
 
-The three single subdomains are normal proxied records (Universal SSL covers them on Free):
+The single subdomains under the serverless edge (§0). Universal SSL covers them on Free. Several records are
+created **when their target exists** (noted inline), so this section interleaves with §3 (backend) and §5
+(Pages/Worker deploys) rather than being added all up-front:
 
-- [ ] `pplcrm.com` (apex + `www`) → Cloudflare Pages (marketing).
-- [ ] `api.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-api` Container App FQDN.
-- [ ] `app.pplcrm.com` → **proxied** (orange) — points at the app/go edge origin (§3): a VM static IP, **or** a
-      Worker/Pages route if the VM is dropped (§0 open item).
-- [ ] `go.pplcrm.com` (companion) → **proxied** (orange) — same app/go edge origin as `app.` (§3 / §0).
-- [ ] For the proxied records above, set SSL/TLS mode to **Full (strict)** (Cloudflare validates the origin cert).
+- [ ] **SSL/TLS mode → Full (strict)** on **both** zones (`pplcrm.com` + `pplforms.com`). Can be set now. Only
+      materially matters for `api.pplcrm.com` (validates the ACA managed cert); harmless for the Pages/Worker hosts,
+      which have no external origin.
+- [ ] `pplcrm.com` (apex + `www`) → **Cloudflare Pages** (marketing). Add from the marketing Pages project's
+      **Custom domains** tab — it auto-creates the proxied records (do NOT hand-add). — §5.
+- [ ] `app.pplcrm.com` → **Cloudflare Pages** (CRM SPA, a **second** Pages project serving `dist/apps/frontend`).
+      Add `app.pplcrm.com` under that project's Custom domains tab (auto-creates the proxied CNAME). — §5.
+- [ ] `go.pplcrm.com` → **Worker**. Add a **proxied** placeholder record (`AAAA go` → `100::`) so Cloudflare
+      answers, then bind the `go` Worker to route `go.pplcrm.com/*`. — Worker built at §3, deployed at §5.
+- [ ] `api.pplcrm.com` → **proxied** (orange) CNAME to the `pplcrm-api` Container App FQDN, **and** bind
+      `api.pplcrm.com` as a custom domain on that Container App (managed cert). — once the app exists (§3).
 
 **`*.pplforms.com` (per-org tenant subdomains).** (Facts re-verified 2026-07-15 against current Cloudflare/Azure
 docs.) Cloudflare **proxies wildcard records on ALL plans** (since Sept 2021 — "Wildcard proxy for everyone"), and
@@ -75,25 +85,22 @@ tier is outgrown.
 
 ## 3. Azure — compute
 
-- [ ] Create a **Container Apps environment** in Canada Central (hosts only `pplcrm-api`; the `*.pplforms.com` edge
-      is a Cloudflare Worker per §1, and the `app.`/`go.` edge is TBD per §0 — neither runs here).
-- [ ] Create app **`pplcrm-api`** (backend): ingress external, **targetPort 3000**, min 1 / max 1 replica to start.
-- [ ] Bind the custom domain `api.pplcrm.com` on `pplcrm-api` (managed cert) so Full (strict) validates.
-- [ ] Set liveness probe → `GET /` and readiness probe → `GET /healthz` on `pplcrm-api`.
-- [ ] Grant the Container App access to pull from **GHCR** (registry credentials / managed identity).
+- [ ] Register providers (fresh subscription): `az provider register --namespace Microsoft.App --wait` and
+      `--namespace Microsoft.OperationalInsights --wait`.
+- [ ] Create a **Container Apps environment** in Canada Central (hosts only `pplcrm-api`; the `*.pplforms.com` and
+      `go.` edges are Cloudflare Workers, and `app.` is Cloudflare Pages — none of them run here).
+- [ ] Grant pull access to **GHCR** for the backend image `ghcr.io/pplcrm-org/pplcrm/backend` (registry credential
+      on the app, or make the GHCR package public).
+- [ ] Create app **`pplcrm-api`** — **deferred to §5**: it needs the CI-built image _and_ the §4 env vars, so it's
+      created there in one shot. Target config: ingress **external**, **targetPort 3000**, **min 1 / max 1** replica,
+      liveness probe `GET /`, readiness probe `GET /healthz`.
+- [ ] Bind custom domain `api.pplcrm.com` (managed cert) + add the proxied `api.` CNAME (§1) — **after the app
+      exists (§5)**.
 
-Edge for `app.pplcrm.com` / `go.pplcrm.com` — **ONLY IF you keep a VM** (§0 open decision). The `*.pplforms.com`
-edge is now a Worker and no longer needs a VM; `app.` and `go.` are both static SPAs, so a Cloudflare Worker/Pages
-route can replace this entire block. Decide that first — if you go serverless here too, skip all of the following:
-
-- [ ] Create a small VM (e.g. B2ats v2 / B1s) in Canada Central with a **Standard static public IP**; install Docker.
-- [ ] NSG: allow 443 **only from Cloudflare IP ranges** (<https://www.cloudflare.com/ips/>) + SSH from your own IP.
-- [ ] Create **one Cloudflare Origin CA** cert for the `pplcrm.com` zone (`pplcrm.com` + `*.pplcrm.com`) and place
-      it on the VM. (The `pplforms.com` cert is no longer needed here — that zone belongs to the Worker.)
-- [ ] Update `deploy/Caddyfile` for VM duty: serve **:443** with the Origin CA cert (drop `auto_https off`; **two**
-      site blocks — `app.` and `go.`, **no** `*.pplforms.com` block). The companion `/api` calls reverse-proxy to the
-      `pplcrm-api` **external** FQDN over HTTPS with `header_up Host {upstream_hostport}` (ACA routes by Host).
-- [ ] Run the GHCR `edge` image with `--restart unless-stopped`, cert mounted, `BACKEND_UPSTREAM` set.
+Edge for `app.` / `go.` — **serverless (Option B, §0): NO VM.** `app.pplcrm.com` → a Cloudflare **Pages** project
+serving `dist/apps/frontend`; `go.pplcrm.com` → a Cloudflare **Worker** (companion SPA + `/api/*` proxy). Both are
+built/deployed in §5. The `pplcrm-edge` Caddy Container App is **retired** — don't create it, remove its `deploy.yml`
+step; `deploy/Caddyfile` + `Caddy.Dockerfile` are dead and can be deleted.
 
 ## 4. Secrets & config
 
@@ -148,7 +155,8 @@ GitHub Actions (for the CI pipeline in `.github/workflows/deploy.yml`):
 All webhook/redirect URLs are on **`api.pplcrm.com`**:
 
 - [ ] Stripe billing webhook → `POST /api/billing/webhook` (secret = `STRIPE_WEBHOOK_SECRET`).
-- [ ] Stripe donations webhook (per tenant) → `POST /api/donations/webhook?token=<tenant-token>`.
+- [ ] Stripe donations **Connect** webhook → `POST /api/donations/webhook` (one platform endpoint, no
+      per-tenant token; secret = `STRIPE_CONNECT_WEBHOOK_SECRET`) — see "Stripe Connect (donations)".
 - [ ] Helcim donations webhook (per tenant) → `POST /api/donations/helcim-webhook?token=<tenant-token>`.
 - [ ] Postmark bounce/complaint webhook → `POST /api/postmark/webhook` (header `X-Postmark-Webhook-Token`).
 - [ ] SendGrid signed-event webhook → `POST /api/newsletters/webhook`.
@@ -156,11 +164,54 @@ All webhook/redirect URLs are on **`api.pplcrm.com`**:
 - [ ] Microsoft OAuth: add redirect `https://api.pplcrm.com/auth/ms/callback` in the Azure app registration.
 - [ ] Verify sending domains (SPF/DKIM) in Postmark + SendGrid for your from-addresses.
 
+### Stripe Tax (platform billing — Dashboard setup, no env vars)
+
+Subscription Checkout is created with `automatic_tax` enabled; until Tax is configured in the
+Dashboard, **live checkout-session creation fails**. One-time setup in the platform Stripe account
+(test mode and live mode separately):
+
+- [ ] Enable Stripe Tax (Dashboard → Settings → Tax) and set the **origin/head-office address**.
+- [ ] Set the **preset product tax code** to the SaaS (business-use) code and **default tax
+      behavior = exclusive** (tax is added on top of listed plan prices — decided 2026-07-16).
+- [ ] Set `tax_behavior = exclusive` on both live plan Prices (`STRIPE_PLAN_GRASSROOTS_PRICE_ID`,
+      `STRIPE_PLAN_MOVEMENT_PRICE_ID`).
+- [ ] Add **tax registrations** for every jurisdiction where we're registered to collect.
+      Everywhere else Stripe calculates zero tax and charges no Tax fee — that is correct behavior,
+      not a bug.
+- [ ] Billing Portal configuration: allow customers to **update billing address** (keeps the
+      renewal-invoice tax location current) — Settings → Billing → Customer portal.
+- [ ] Ongoing (operations, not launch): watch Dashboard → Tax → **Thresholds** and add
+      registrations as economic-nexus thresholds are crossed.
+- [ ] Donations are intentionally **excluded** from Stripe Tax — the campaign is merchant of
+      record there. Do not enable tax on the donations path.
+
+### Stripe Connect (donations — Dashboard setup)
+
+Donations run as **Connect direct charges** on each tenant's connected account (Express dashboard,
+Stripe-owned losses, campaign pays Stripe's processing fees; platform takes
+`DONATIONS_PLATFORM_FEE_PERCENT` = 1%). One-time setup in the platform Stripe account (test and
+live separately):
+
+- [ ] Enable Connect and **complete the platform profile** (Dashboard → Connect → Settings).
+- [ ] Set Connect **branding** (name, icon, colors) — it appears in tenants' hosted onboarding and
+      their Express dashboard.
+- [ ] Create a webhook endpoint with **"Listen to events on Connected accounts"** at
+      `https://api.pplcrm.com/api/donations/webhook`, subscribed to: `checkout.session.completed`,
+      `invoice.payment_succeeded`, `invoice.payment_failed`, `customer.subscription.updated`,
+      `customer.subscription.deleted`, `charge.refunded`, `charge.dispute.created`,
+      `charge.dispute.closed`, `account.updated`. Its signing secret is
+      `STRIPE_CONNECT_WEBHOOK_SECRET` (distinct from the billing endpoint's `STRIPE_WEBHOOK_SECRET`).
+- [ ] Cost note: Express-dashboard connected accounts carry Stripe's per-**monthly-active**-account
+      fee (~US$2) — priced into the Express choice (decided 2026-07-16).
+- [ ] Tenants onboard **in-app** (Workspace → Donations → "Connect with Stripe"); nothing to do per
+      tenant in the platform Dashboard.
+
 ## 7. App-level / per-tenant config
 
 - [ ] Decide & document the **data-residency** posture (Canada-only v1 recommended — matches Helcim=CAD).
-- [ ] Per-tenant donation setup happens in-app: processor keys (Stripe/Helcim) + `donations.residency_acknowledged`
-      (donations are **fail-closed** until acknowledged).
+- [ ] Per-tenant donation setup happens in-app: Stripe = Connect onboarding (no keys); Helcim = API
+      token + webhook verifier token; plus `donations.residency_acknowledged` (donations are
+      **fail-closed** until acknowledged).
 - [ ] Per-tenant sending: `communications.sendgrid_api_key` + verified domains (in-app).
 
 ## 8. Verification (smoke test after deploy)
