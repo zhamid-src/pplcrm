@@ -21,7 +21,8 @@ FROM node:26-bookworm-slim AS builder
 WORKDIR /app
 
 # Install ALL deps (incl. dev) for the Nx/esbuild build. Lockfile first for layer caching.
-COPY package.json package-lock.json ./
+# .npmrc carries legacy-peer-deps=true (Nx 23 vs Angular 22 peer conflict) — npm ci needs it here too.
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 # The backend build pulls cross-package types (@common, the tRPC router type) from elsewhere in the
