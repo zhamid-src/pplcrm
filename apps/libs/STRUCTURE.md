@@ -217,125 +217,6 @@ libs/
 
 # Files
 
-## File: libs/common/src/lib/billing/currency.ts
-````typescript
-/**
- * Display-currency helpers for the marketing website.
- *
- * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
- * marketing site *show* those USD prices converted to a handful of local currencies at live
- * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
- * page carries that disclaimer whenever a non-USD currency is shown.
- *
- * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
- * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
- * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
- * the "billed in USD" note.
- */
-
-/** The currencies the marketing site can display prices in. USD is the billing currency. */
-export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
-export type CurrencyCode = (typeof CURRENCY_CODES)[number];
-
-export interface CurrencyDef {
-  readonly code: CurrencyCode;
-  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
-  readonly symbol: string;
-  /** Human label for the switcher menu. */
-  readonly label: string;
-}
-
-/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
- * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
-export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
-  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
-  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
-  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
-  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
-};
-
-/** Locale used for number grouping in formatted prices (fixed for consistent English
- * presentation on the marketing site). */
-const FORMAT_LOCALE = 'en-US';
-
-/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
- * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
- * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
-const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  CAD: 'C$',
-};
-
-/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
-export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
-
-/** Type guard: is a string one of our supported currency codes? */
-export function isCurrencyCode(value: string): value is CurrencyCode {
-  return (CURRENCY_CODES as readonly string[]).includes(value);
-}
-
-/**
- * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
- * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
- */
-export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
-  GB: 'GBP',
-  CA: 'CAD',
-  // Eurozone (the 20 EUR members).
-  AT: 'EUR',
-  BE: 'EUR',
-  HR: 'EUR',
-  CY: 'EUR',
-  EE: 'EUR',
-  FI: 'EUR',
-  FR: 'EUR',
-  DE: 'EUR',
-  GR: 'EUR',
-  IE: 'EUR',
-  IT: 'EUR',
-  LV: 'EUR',
-  LT: 'EUR',
-  LU: 'EUR',
-  MT: 'EUR',
-  NL: 'EUR',
-  PT: 'EUR',
-  SK: 'EUR',
-  SI: 'EUR',
-  ES: 'EUR',
-};
-
-/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
-export function currencyForCountry(country: string | null | undefined): CurrencyCode {
-  if (!country) return 'USD';
-  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
-}
-
-/**
- * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
- * Falls back to the original amount when the rate for `code` is missing (treated as USD).
- */
-export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
-  const rate = code === 'USD' ? 1 : rates[code];
-  if (rate == null) return Math.round(usd);
-  return Math.round(usd * rate);
-}
-
-/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
- * inline — kept consistent with `formatCurrency`'s output. */
-export function currencyPriceSymbol(code: CurrencyCode): string {
-  return PRICE_SYMBOLS[code];
-}
-
-/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
- * (e.g. `$69`, `C$95`, `€65`, `£55`). */
-export function formatCurrency(amount: number, code: CurrencyCode): string {
-  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
-  return `${currencyPriceSymbol(code)}${number}`;
-}
-````
-
 ## File: libs/common/src/lib/schemas/activity.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -652,6 +533,40 @@ export const RecordDonationObj = z.object({
   campaign_id: idSchema.optional(),
 });
 export type RecordDonationType = z.infer<typeof RecordDonationObj>;
+
+/**
+ * Countries a campaign can pick when connecting Stripe for donations (Stripe Connect hosted
+ * onboarding). A curated subset of Stripe-supported countries — extend freely; onboarding handles
+ * country-specific requirements. Shared so the settings UI select and the backend z.enum agree.
+ */
+export const STRIPE_CONNECT_COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+] as const;
+
+export const STRIPE_CONNECT_COUNTRY_CODES = STRIPE_CONNECT_COUNTRIES.map((c) => c.code) as [
+  (typeof STRIPE_CONNECT_COUNTRIES)[number]['code'],
+  ...(typeof STRIPE_CONNECT_COUNTRIES)[number]['code'][],
+];
+export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
+export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
 ````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -937,6 +852,184 @@ export const ImportListItemObj = z.object({
   sourceFileSize: z.number().int().nonnegative().nullable(),
   canDownloadSource: z.boolean(),
   canDownloadSkipped: z.boolean(),
+});
+````
+
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
 });
 ````
 
@@ -1642,6 +1735,155 @@ export const WorkflowRunObj = z.object({
 export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
 ````
 
+## File: libs/common/src/lib/auth.ts
+````typescript
+import { z } from 'zod';
+
+export interface IAuthKeyPayload {
+  name?: string;
+
+  session_id: string;
+
+  tenant_id: string;
+
+  user_id: string;
+
+  role?: string | null;
+
+  source?: string;
+}
+
+export interface IAuthUser {
+  email: string;
+
+  first_name: string;
+
+  last_name?: string;
+
+  id: string;
+
+  role?: string | null;
+
+  avatar_url?: string | null;
+
+  email_verified: boolean;
+
+  passkey_setup_dismissed_at?: Date | null;
+
+  tenant_deletion_scheduled_at?: Date | null;
+
+  tenant_paused_at?: Date | null;
+
+  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
+  tenant_demo_mode_at?: Date | null;
+
+  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
+  tenant_slug?: string | null;
+}
+
+export interface IUserStatsSnapshot {
+  emails_assigned: {
+    total: number;
+    open: number;
+    closed: number;
+  };
+  contacts_added: {
+    total: number;
+    last_created_at: Date | null;
+  };
+  files_imported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+  files_exported: {
+    count: number;
+    total_rows: number;
+    last_activity_at: Date | null;
+  };
+}
+
+export interface IAuthUserRecord extends IAuthUser {
+  last_name: string;
+  role: string | null;
+  verified: boolean;
+  two_factor_enabled: boolean;
+  deletion_scheduled_at: Date | null;
+  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
+  deactivated_at?: Date | null;
+  /** Most recent session activity; null until the user has signed in at least once. */
+  last_active_at?: Date | null;
+  created_at: Date | null;
+  updated_at: Date | null;
+  previous_email?: string | null;
+  previous_role?: string | null;
+  avatar_url?: string | null;
+  notification_preferences?: {
+    mention_in_comment: boolean;
+    mention_in_comment_in_app: boolean;
+    task_assigned: boolean;
+    task_assigned_in_app: boolean;
+    task_due: boolean;
+    task_due_in_app: boolean;
+    person_assigned: boolean;
+    person_assigned_in_app: boolean;
+    export_ready: boolean;
+    export_ready_in_app: boolean;
+    import_summary: boolean;
+    import_summary_in_app: boolean;
+  };
+}
+
+export interface IAuthUserDetail extends IAuthUserRecord {
+  stats: IUserStatsSnapshot;
+}
+
+export interface IToken {
+  auth_token: string | null;
+  refresh_token: string | null;
+}
+
+/**
+ * The one generic message shown for any failed sign-in attempt, regardless of
+ * whether the email or the password was wrong — never reveal which, so that
+ * sign-in cannot be used to probe which emails have accounts. Shared by the
+ * backend error formatter and the frontend so the copy never drifts.
+ */
+export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
+
+/**
+ * Product names for the stored role values — the working role 'user' is shown as
+ * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
+ */
+export const AUTH_ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  user: 'Editor',
+  viewer: 'Viewer',
+};
+
+export function authRoleLabel(role: string | null | undefined): string {
+  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
+}
+
+export type signInInputType = z.infer<typeof signInInputObj>;
+
+export type signUpInputType = z.infer<typeof signUpInputObj>;
+
+export const signInInputObj = z.object({
+  email: z.email(),
+  password: z.string().min(8).max(72),
+  rememberMe: z.boolean().optional(),
+});
+
+export const signUpInputObj = z.object({
+  organization: z.string(),
+  email: z.string().max(100),
+  password: z.string().min(8).max(72),
+  first_name: z.string().max(100),
+});
+````
+
 ## File: libs/common/src/lib/emails.ts
 ````typescript
 // ---------- Public compatibility interface (loose) ----------
@@ -1928,6 +2170,249 @@ export const jsend = {
     throw new Error('Unknown JSend shape');
   },
 };
+````
+
+## File: libs/common/src/lib/models.ts
+````typescript
+import type { z } from 'zod';
+
+import type {
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  AddTeamObj,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  EmailCommentObj,
+  EmailFolderObj,
+  EmailObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  NewsletterReportObj,
+  NewsletterReportBounceObj,
+  NewsletterReportEngagedObj,
+  NewsletterReportLinkObj,
+  NewsletterReportPreviousSendObj,
+  CreateClickersListResultObj,
+  EmailDraftObj,
+  PersonsObj,
+  SettingsEntryObj,
+  SettingsObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  ListsObj,
+  UpdateMarketingEmailObj,
+  UpdateListObj,
+  UpdateTaskObj,
+  UpdateTeamObj,
+  TasksObj,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  sortModelItem,
+  InviteAuthUserObj,
+  ProfilePreferencesObj,
+  UpdateAuthUserObj,
+  Verify2FAObj,
+  ImportListItemObj,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+} from './schema';
+
+export interface INow {
+  now: string;
+}
+
+export type AddTagType = z.infer<typeof AddTagObj>;
+
+export type EmailCommentType = z.infer<typeof EmailCommentObj>;
+
+export type EmailFolderType = z.infer<typeof EmailFolderObj>;
+
+export type EmailType = z.infer<typeof EmailObj>;
+
+export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
+
+export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
+
+export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
+
+export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
+
+export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
+
+export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
+
+export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
+
+export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
+
+export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
+
+export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
+
+export type EmailDraftType = z.infer<typeof EmailDraftObj>;
+
+export type ImportListItem = z.infer<typeof ImportListItemObj>;
+
+export type PERSONINHOUSEHOLDTYPE = {
+  first_name: string;
+  full_name: string;
+  id: string;
+  last_name: string;
+  middle_names: string;
+};
+
+export type PersonsType = z.infer<typeof PersonsObj>;
+
+export type SettingsType = z.infer<typeof SettingsObj>;
+
+export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
+
+export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
+
+export type SortModelType = z.infer<typeof sortModelItem>;
+
+export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
+
+export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
+
+export type UpdateTagType = z.infer<typeof UpdateTagObj>;
+
+export type getAllOptionsType = z.infer<typeof getAllOptions>;
+
+export type AddListType = z.infer<typeof AddListObj>;
+
+export type AddCampaignType = z.infer<typeof AddCampaignObj>;
+
+export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
+
+export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
+
+export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
+
+export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
+
+export type AddTeamType = z.infer<typeof AddTeamObj>;
+
+export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
+
+export type Verify2FAType = z.infer<typeof Verify2FAObj>;
+
+export type ListsType = z.infer<typeof ListsObj>;
+
+export type UpdateListType = z.infer<typeof UpdateListObj>;
+
+export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
+
+export type AddTurfType = z.infer<typeof AddTurfObj>;
+
+export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
+
+export type CutTurfsType = z.infer<typeof CutTurfsObj>;
+
+export type AssignTurfType = z.infer<typeof AssignTurfObj>;
+
+export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
+
+export type LogKnockType = z.infer<typeof LogKnockObj>;
+
+export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
+
+export type AddTaskType = z.infer<typeof AddTaskObj>;
+export type TasksType = z.infer<typeof TasksObj>;
+export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
+export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
+export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
+export type QueueExportInputType = z.infer<typeof queueExportInput>;
+export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
+export type DataExportRecordType = z.infer<typeof dataExportRecord>;
+
+export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
+export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
+export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
+
+export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
+export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
+export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
+
+export type AddWebFormType = z.infer<typeof AddWebFormObj>;
+export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
+export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
+
+export type WorkflowsType = z.infer<typeof WorkflowObj>;
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+
+export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ````
 
 ## File: libs/common/src/lib/public-id.ts
@@ -2501,6 +2986,113 @@ export class AddressFormGroup {
 }
 ````
 
+## File: libs/uxcommon/src/components/alerts/alert-service.ts
+````typescript
+import { Injectable, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
+
+export class AlertMessage {
+  public readonly visible = signal(true);
+  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
+  public readonly count = signal(1);
+
+  public duration = 3000;
+  public id: string;
+  public text: string;
+  public timeoutId: NodeJS.Timeout | undefined;
+  public type?: ALERTTYPE;
+
+  constructor(init?: Partial<AlertMessage>) {
+    Object.assign(this, init);
+    this.id = init?.id ?? crypto.randomUUID();
+    this.duration = init?.duration || 3000;
+    this.text = init?.text ?? 'Alert';
+  }
+}
+
+/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
+const MAX_TOAST_STACK = 3;
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AlertService {
+  private readonly alertsSignal = signal<AlertMessage[]>([]);
+
+  public readonly alertList = this.alertsSignal.asReadonly();
+  public readonly alerts$ = toObservable(this.alertsSignal);
+
+  public dismiss(id: string): void {
+    const alert = this.findById(id);
+
+    if (!alert) return;
+
+    // Clear any pending removal timeout
+    clearTimeout(alert.timeoutId);
+    alert.timeoutId = undefined;
+
+    alert.visible.set(false);
+
+    // Have to let the animation do its thing first
+    setTimeout(() => {
+      const next = this.alertsSignal().filter((msg) => msg.id !== id);
+      this.alertsSignal.set(next);
+    }, 300);
+  }
+
+  public getAlerts(): AlertMessage[] {
+    return this.alertsSignal();
+  }
+
+  public show(alert: Partial<AlertMessage>): void {
+    // Coalesce an identical (same text + type) toast into a ×N count with a
+    // refreshed timer instead of stacking duplicates (§2).
+    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
+
+    if (existing) {
+      existing.count.update((c) => c + 1);
+      clearTimeout(existing.timeoutId);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
+      return;
+    }
+
+    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
+    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
+    this.alertsSignal.update((list) => {
+      const next = [messageWithMeta, ...list];
+      const dropped = next.slice(MAX_TOAST_STACK);
+      dropped.forEach((m) => clearTimeout(m.timeoutId));
+      return next.slice(0, MAX_TOAST_STACK);
+    });
+
+    const duration = messageWithMeta.duration || 3000;
+    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
+  }
+
+  public showError(text: string): void {
+    this.show(new AlertMessage({ text, type: 'error' }));
+  }
+
+  public showInfo(text: string): void {
+    this.show(new AlertMessage({ text, type: 'info' }));
+  }
+
+  public showSuccess(text: string): void {
+    this.show(new AlertMessage({ text, type: 'success' }));
+  }
+
+  public showWarn(text: string): void {
+    this.show(new AlertMessage({ text, type: 'warning' }));
+  }
+
+  private findById(id: string) {
+    return this.alertsSignal().find((m) => m.id === id);
+  }
+}
+
+export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
+````
+
 ## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
 ````typescript
 import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
@@ -3013,6 +3605,145 @@ export function autoMapPersonsHeader(header: string): string {
 }
 ````
 
+## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
+````typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { DetailHeader } from '../detail-header/detail-header';
+
+@Component({
+  selector: 'pc-detail-layout',
+  imports: [Icon, DetailHeader],
+  host: {
+    '(document:keydown)': 'handleKeydown($event)',
+  },
+  template: `
+    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
+      <div class="flex w-full max-w-7xl flex-col gap-6">
+        <!-- Header -->
+        <pc-detail-header
+          [title]="title()"
+          [subtitle]="subtitle()"
+          [crumbs]="crumbs()"
+          [eyebrow]="eyebrow()"
+          [statusChip]="statusChip()"
+          [icon]="icon()"
+          [iconSize]="iconSize()"
+          [avatarText]="avatarText()"
+          [isLoading]="isLoading()"
+          [disabled]="disabled()"
+          [showActions]="showActions()"
+          [showDelete]="showDelete()"
+          [showCancel]="showCancel()"
+          [deleteText]="deleteText()"
+          [btn1Text]="btn1Text()"
+          [btn1Icon]="btn1Icon()"
+          [positionLabel]="positionLabel()"
+          [hasPrev]="hasPrev()"
+          [hasNext]="hasNext()"
+          [prevLabel]="prevLabel()"
+          [nextLabel]="nextLabel()"
+          (save)="save.emit($event)"
+          (delete)="delete.emit()"
+          (prevRecord)="prevRecord.emit()"
+          (nextRecord)="nextRecord.emit()"
+        >
+          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
+          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
+          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
+          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
+        </pc-detail-header>
+
+        <!-- Body/Content Area -->
+        @if (isLoading()) {
+          <div class="flex justify-center items-center py-20">
+            <progress class="progress w-56"></progress>
+          </div>
+        } @else if (error()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ error() }}</span>
+          </div>
+        } @else if (!hasRecord()) {
+          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
+            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
+            <span>{{ notFoundText() }}</span>
+          </div>
+        } @else {
+          <!-- Main Content Slot -->
+          <ng-content></ng-content>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailLayout {
+  public title = input.required<string>();
+  public subtitle = input<string | null | undefined>();
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title (§3). */
+  public statusChip = input<string | null>(null);
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(6);
+  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public error = input<string | null | undefined>();
+  public hasRecord = input<boolean>(true);
+  public notFoundText = input<string>('Record not found or failed to load.');
+
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** A read/detail view has no edit to cancel — the header action is a navigation
+   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
+  public showCancel = input<boolean>(false);
+  public deleteText = input<string>('Delete');
+  public btn1Text = input<string>('Edit');
+  public btn1Icon = input<PcIconNameType>('pencil-square');
+  public disabled = input<boolean>(false);
+
+  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  public readonly save = output<any>();
+  public readonly delete = output<void>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  protected handleKeydown(event: KeyboardEvent): void {
+    if (!this.positionLabel()) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isEditableTarget(event.target)) return;
+
+    const key = event.key.toLowerCase();
+    if (key === 'j' && this.hasNext()) {
+      event.preventDefault();
+      this.nextRecord.emit();
+    } else if (key === 'k' && this.hasPrev()) {
+      event.preventDefault();
+      this.prevRecord.emit();
+    }
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.tagName === 'SELECT' ||
+    target.isContentEditable
+  );
+}
+````
+
 ## File: libs/uxcommon/src/components/detail-row/detail-row.ts
 ````typescript
 import { Component, input, output } from '@angular/core';
@@ -3062,6 +3793,47 @@ export class DetailRow {
     event.preventDefault();
     this.actionClick.emit(event);
   }
+}
+````
+
+## File: libs/uxcommon/src/components/empty-state/empty-state.ts
+````typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * The one empty-state idiom (design §3): icon + sentence naming the cause +
+ * ONE projected action button. Never italic grey placeholder text.
+ *
+ * `bordered` (default) draws the dashed full-surface container; turn it off
+ * when the surrounding surface (a table cell, a card body) already frames it.
+ */
+@Component({
+  selector: 'pc-empty-state',
+  imports: [Icon],
+  template: `
+    <div
+      class="flex flex-col items-center gap-3 py-16 text-center"
+      [class.rounded-xl]="bordered()"
+      [class.border]="bordered()"
+      [class.border-dashed]="bordered()"
+      [class.border-base-300]="bordered()"
+    >
+      <pc-icon [name]="icon()" [size]="8" class="opacity-30" />
+      <span class="text-base font-medium">{{ title() }}</span>
+      @if (hint(); as h) {
+        <span class="text-sm opacity-70">{{ h }}</span>
+      }
+      <ng-content />
+    </div>
+  `,
+})
+export class EmptyState {
+  public readonly bordered = input<boolean>(true);
+  public readonly hint = input<string>();
+  public readonly icon = input.required<PcIconNameType>();
+  public readonly title = input.required<string>();
 }
 ````
 
@@ -3888,6 +4660,96 @@ export class PcMap {
 }
 ````
 
+## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
+````typescript
+import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * The one modal chrome for form/tool dialogs: native <dialog> + DaisyUI modal
+ * with the house header (primary icon, bold title, ghost-circle close) and a
+ * `[pc-modal-footer]` slot for actions. Blocking yes/no decisions stay on
+ * ConfirmDialogService — this shell is for dialogs with real content.
+ *
+ * Drive it either declaratively (`[open]="someSignal()"`) or imperatively via
+ * a template ref (`#dlg` → `dlg.show()` / `dlg.close()`). `closed` fires on
+ * every close path (X button, ESC, backdrop, programmatic).
+ */
+@Component({
+  selector: 'pc-modal-shell',
+  imports: [Icon],
+  template: `
+    <dialog #dlg class="modal" (close)="closed.emit()" (cancel)="onCancel($event)">
+      <div class="modal-box" [class]="boxClass()">
+        <div class="mb-5 flex items-center justify-between">
+          <h3 class="flex items-center gap-2 text-lg font-bold">
+            @if (icon(); as ic) {
+              <pc-icon [name]="ic" [size]="5" class="text-primary" />
+            }
+            {{ title() }}
+          </h3>
+          <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
+            <pc-icon name="x-mark" [size]="4" />
+          </button>
+        </div>
+        <ng-content />
+        <div class="modal-action empty:hidden">
+          <ng-content select="[pc-modal-footer]" />
+        </div>
+      </div>
+      @if (dismissible()) {
+        <form method="dialog" class="modal-backdrop">
+          <button type="submit" aria-label="Close">close</button>
+        </form>
+      }
+    </dialog>
+  `,
+})
+export class ModalShell {
+  /** Extra classes for the modal box — width overrides only (e.g. 'max-w-3xl'). */
+  public readonly boxClass = input<string>('');
+  /** Allow ESC / backdrop-click to dismiss. Turn off for dialogs holding unsaved work. */
+  public readonly dismissible = input<boolean>(true);
+  public readonly icon = input<PcIconNameType | null>(null);
+  /** Declarative visibility; leave unset to drive imperatively via show()/close(). */
+  public readonly open = input<boolean | undefined>(undefined);
+  public readonly title = input.required<string>();
+
+  public readonly closed = output<void>();
+
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  constructor() {
+    effect(() => {
+      const open = this.open();
+      if (open === undefined) return;
+      const dlg = this.dlgRef().nativeElement;
+      try {
+        if (open && !dlg.open) dlg.showModal();
+        else if (!open && dlg.open) dlg.close();
+      } catch {
+        /* dialog not connected yet — the next effect run settles it */
+      }
+    });
+  }
+
+  public close(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (dlg.open) dlg.close();
+  }
+
+  public show(): void {
+    const dlg = this.dlgRef().nativeElement;
+    if (!dlg.open) dlg.showModal();
+  }
+
+  protected onCancel(e: Event): void {
+    if (!this.dismissible()) e.preventDefault();
+  }
+}
+````
+
 ## File: libs/uxcommon/src/components/not-found/not-found.ts
 ````typescript
 import { Component } from '@angular/core';
@@ -4590,6 +5452,63 @@ import { FormField } from '@angular/forms/signals';
 export class Toggle {
   public label = input<string>();
   public formField = input.required<any>();
+}
+````
+
+## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+@Component({
+  selector: 'pc-user-avatar',
+  template: `
+    <div class="avatar" [class.placeholder]="!avatarUrl()">
+      @if (avatarUrl()) {
+        <div
+          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
+        >
+          <img
+            [src]="avatarUrl()!"
+            [alt]="name() + ' avatar'"
+            class="w-full h-full object-cover"
+            referrerpolicy="no-referrer"
+          />
+        </div>
+      } @else {
+        <div
+          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1 bg-primary/15 text-primary"
+          [style.width.rem]="sizeRem()"
+          [style.height.rem]="sizeRem()"
+          [style.font-size.rem]="fontSizeRem()"
+        >
+          <span>{{ initials() }}</span>
+        </div>
+      }
+    </div>
+  `,
+  host: { class: 'contents' },
+})
+export class UserAvatarComponent {
+  readonly avatarUrl = input<string | null | undefined>(null);
+
+  readonly name = input.required<string>();
+
+  readonly size = input<number>(8);
+
+  protected readonly sizeRem = computed(() => this.size() * 0.25);
+  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
+
+  protected readonly initials = computed(() => {
+    const n = (this.name() ?? '').trim();
+    if (!n) return '?';
+    const parts = n.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
+    }
+    return n[0]!.toUpperCase();
+  });
 }
 ````
 
@@ -5643,6 +6562,125 @@ export default defineConfig(() => ({
 }));
 ````
 
+## File: libs/common/src/lib/billing/currency.ts
+````typescript
+/**
+ * Display-currency helpers for the marketing website.
+ *
+ * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
+ * marketing site *show* those USD prices converted to a handful of local currencies at live
+ * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
+ * page carries that disclaimer whenever a non-USD currency is shown.
+ *
+ * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
+ * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
+ * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
+ * the "billed in USD" note.
+ */
+
+/** The currencies the marketing site can display prices in. USD is the billing currency. */
+export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
+export type CurrencyCode = (typeof CURRENCY_CODES)[number];
+
+export interface CurrencyDef {
+  readonly code: CurrencyCode;
+  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
+  readonly symbol: string;
+  /** Human label for the switcher menu. */
+  readonly label: string;
+}
+
+/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
+ * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
+export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
+  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
+  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
+  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
+  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
+};
+
+/** Locale used for number grouping in formatted prices (fixed for consistent English
+ * presentation on the marketing site). */
+const FORMAT_LOCALE = 'en-US';
+
+/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
+ * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
+ * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
+const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  CAD: 'C$',
+};
+
+/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
+export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
+
+/** Type guard: is a string one of our supported currency codes? */
+export function isCurrencyCode(value: string): value is CurrencyCode {
+  return (CURRENCY_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
+ * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
+ */
+export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
+  GB: 'GBP',
+  CA: 'CAD',
+  // Eurozone (the 20 EUR members).
+  AT: 'EUR',
+  BE: 'EUR',
+  HR: 'EUR',
+  CY: 'EUR',
+  EE: 'EUR',
+  FI: 'EUR',
+  FR: 'EUR',
+  DE: 'EUR',
+  GR: 'EUR',
+  IE: 'EUR',
+  IT: 'EUR',
+  LV: 'EUR',
+  LT: 'EUR',
+  LU: 'EUR',
+  MT: 'EUR',
+  NL: 'EUR',
+  PT: 'EUR',
+  SK: 'EUR',
+  SI: 'EUR',
+  ES: 'EUR',
+};
+
+/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
+export function currencyForCountry(country: string | null | undefined): CurrencyCode {
+  if (!country) return 'USD';
+  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
+}
+
+/**
+ * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
+ * Falls back to the original amount when the rate for `code` is missing (treated as USD).
+ */
+export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
+  const rate = code === 'USD' ? 1 : rates[code];
+  if (rate == null) return Math.round(usd);
+  return Math.round(usd * rate);
+}
+
+/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
+ * inline — kept consistent with `formatCurrency`'s output. */
+export function currencyPriceSymbol(code: CurrencyCode): string {
+  return PRICE_SYMBOLS[code];
+}
+
+/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
+ * (e.g. `$69`, `C$95`, `€65`, `£55`). */
+export function formatCurrency(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
+````
+
 ## File: libs/common/src/lib/help/articles/contacts.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -6065,346 +7103,6 @@ export const DATA_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Make it a habit',
         text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
       },
     ],
   },
@@ -8276,184 +8974,6 @@ export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
 ````
 
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-````typescript
-import { z } from 'zod';
-
-import { idSchema } from './core.schema';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
-});
-
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
-});
-
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
-});
-
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
-});
-
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
-});
-````
-
 ## File: libs/common/src/lib/schemas/persons.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -8542,249 +9062,6 @@ export const UpdatePersonsObj = z.object({
   volunteer_status: z.enum(VOLUNTEER_STATUSES).nullable().optional(),
   staff_status: z.enum(STAFF_STATUSES).nullable().optional(),
 });
-````
-
-## File: libs/common/src/lib/models.ts
-````typescript
-import type { z } from 'zod';
-
-import type {
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  NewsletterReportObj,
-  NewsletterReportBounceObj,
-  NewsletterReportEngagedObj,
-  NewsletterReportLinkObj,
-  NewsletterReportPreviousSendObj,
-  CreateClickersListResultObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type NewsletterReportType = z.infer<typeof NewsletterReportObj>;
-
-export type NewsletterReportBounceType = z.infer<typeof NewsletterReportBounceObj>;
-
-export type NewsletterReportEngagedType = z.infer<typeof NewsletterReportEngagedObj>;
-
-export type NewsletterReportLinkType = z.infer<typeof NewsletterReportLinkObj>;
-
-export type NewsletterReportPreviousSendType = z.infer<typeof NewsletterReportPreviousSendObj>;
-
-export type CreateClickersListResultType = z.infer<typeof CreateClickersListResultObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddCampaignType = z.infer<typeof AddCampaignObj>;
-
-export type UpdateCampaignType = z.infer<typeof UpdateCampaignObj>;
-
-export type UpsertCampaignPersonFactType = z.infer<typeof UpsertCampaignPersonFactObj>;
-
-export type SetCampaignSubscriptionType = z.infer<typeof SetCampaignSubscriptionObj>;
-
-export type CarryOverCampaignType = z.infer<typeof CarryOverCampaignObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type AddTurfType = z.infer<typeof AddTurfObj>;
-
-export type UpdateTurfType = z.infer<typeof UpdateTurfObj>;
-
-export type CutTurfsType = z.infer<typeof CutTurfsObj>;
-
-export type AssignTurfType = z.infer<typeof AssignTurfObj>;
-
-export type FieldReportRangeType = z.infer<typeof FieldReportRangeObj>;
-
-export type LogKnockType = z.infer<typeof LogKnockObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type LogInstantExportInputType = z.infer<typeof logInstantExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ````
 
 ## File: libs/common/src/lib/schema.ts
@@ -8936,111 +9213,201 @@ export class AddressAutocomplete implements OnInit {
 }
 ````
 
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
+## File: libs/uxcommon/src/components/detail-header/detail-header.ts
 ````typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
 
-export class AlertMessage {
-  public readonly visible = signal(true);
-  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
-  public readonly count = signal(1);
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
+import { FormActions } from '../form-actions/form-actions';
 
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public type?: ALERTTYPE;
+@Component({
+  selector: 'pc-detail-header',
+  imports: [Icon, FormActions],
+  template: `
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 items-center gap-3">
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
+            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
+          }
+          <div class="min-w-0">
+            @if (eyebrow()) {
+              <p class="pc-eyebrow">{{ eyebrow() }}</p>
+            }
+            <div class="flex min-w-0 items-center gap-2">
+              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+              @if (statusChip()) {
+                <span
+                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
+                  >{{ statusChip() }}</span
+                >
+              }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
+            </div>
+            @if (dirtyFieldCount() > 0) {
+              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
+                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
+              </p>
+            } @else if (subtitle()) {
+              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
+            }
+          </div>
+        </div>
 
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
-const MAX_TOAST_STACK = 3;
-
-@Injectable({
-  providedIn: 'root',
+        <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle btn-ghost btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
+          <ng-content select="[pc-actions-prefix]"></ng-content>
+          @if (showActions()) {
+            <pc-form-actions
+              size="sm"
+              [isLoading]="isLoading()"
+              [signalForm]="form()"
+              [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
+              [buttonsToShow]="formActionsButtons()"
+              [btn1Text]="btn1Text()"
+              [btn1Icon]="btn1Icon()"
+              [showDelete]="false"
+              [showCancel]="showCancel()"
+              (btn1Clicked)="save.emit($event)"
+            ></pc-form-actions>
+          }
+          <ng-content select="[pc-actions-suffix]"></ng-content>
+          @if (showDelete()) {
+            <div class="dropdown dropdown-end">
+              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
+                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
+              </button>
+              <ul
+                tabindex="0"
+                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+              >
+                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                <ng-content select="[pc-overflow-extra]"></ng-content>
+                <li>
+                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                    <pc-icon name="trash" [size]="4"></pc-icon>
+                    {{ deleteText() }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  `,
 })
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
+export class DetailHeader {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
 
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
+  public readonly delete = output<void>();
+  public readonly save = output<any>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
 
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
+  public btn1Icon = input<PcIconNameType>('save');
+  public btn1Text = input<string>('Save');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public deleteText = input<string>('Delete');
+  public disabled = input<boolean>(false);
+  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
+  public saveAlwaysEnabled = input<boolean>(false);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
+  public statusChip = input<string | null>(null);
+  public form = input<any>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
+  public subtitle = input<string | null | undefined>();
+  public title = input.required<string>();
 
-    if (!alert) return;
+  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
 
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
+  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
+  public dirtyFieldCount = input<number>(0);
 
-    alert.visible.set(false);
+  // Delete moved to the overflow menu. Suppressing the third button whenever
+  // Delete is offered preserves the layout form-actions previously produced
+  // when it rendered the Delete button inline.
+  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
+    this.showDelete() ? 'two' : this.buttonsToShow(),
+  );
 
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // Coalesce an identical (same text + type) toast into a ×N count with a
-    // refreshed timer instead of stacking duplicates (§2).
-    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
-
-    if (existing) {
-      existing.count.update((c) => c + 1);
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
-      return;
-    }
-
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
-    this.alertsSignal.update((list) => {
-      const next = [messageWithMeta, ...list];
-      const dropped = next.slice(MAX_TOAST_STACK);
-      dropped.forEach((m) => clearTimeout(m.timeoutId));
-      return next.slice(0, MAX_TOAST_STACK);
+  constructor() {
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: this.prevLabel(),
+        nextLabel: this.nextLabel(),
+        onPrev: () => this.prevRecord.emit(),
+        onNext: () => this.nextRecord.emit(),
+      });
     });
 
-    const duration = messageWithMeta.duration || 3000;
-    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
   }
 }
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 ````
 
 ## File: libs/uxcommon/src/components/detail-item/detail-item.ts
@@ -9119,186 +9486,6 @@ export class DetailItem {
         this.alertSvc.showError(`Failed to copy ${this.label()}`);
       });
   }
-}
-````
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
-
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [avatarText]="avatarText()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [showCancel]="showCancel()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
-        >
-          <ng-content select="[pc-title-suffix]" pc-title-suffix></ng-content>
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  /** Optional initials for a circular avatar left of the title (forwarded to the header). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
-
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** A read/detail view has no edit to cancel — the header action is a navigation
-   * "Edit". Off by default; edit forms use pc-detail-header directly and keep it. */
-  public showCancel = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
-    }
-  }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
-````
-
-## File: libs/uxcommon/src/components/empty-state/empty-state.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-/**
- * The one empty-state idiom (design §3): icon + sentence naming the cause +
- * ONE projected action button. Never italic grey placeholder text.
- *
- * `bordered` (default) draws the dashed full-surface container; turn it off
- * when the surrounding surface (a table cell, a card body) already frames it.
- */
-@Component({
-  selector: 'pc-empty-state',
-  imports: [Icon],
-  template: `
-    <div
-      class="flex flex-col items-center gap-3 py-16 text-center"
-      [class.rounded-xl]="bordered()"
-      [class.border]="bordered()"
-      [class.border-dashed]="bordered()"
-      [class.border-base-300]="bordered()"
-    >
-      <pc-icon [name]="icon()" [size]="8" class="opacity-30" />
-      <span class="text-base font-medium">{{ title() }}</span>
-      @if (hint(); as h) {
-        <span class="text-sm opacity-70">{{ h }}</span>
-      }
-      <ng-content />
-    </div>
-  `,
-})
-export class EmptyState {
-  public readonly bordered = input<boolean>(true);
-  public readonly hint = input<string>();
-  public readonly icon = input.required<PcIconNameType>();
-  public readonly title = input.required<string>();
 }
 ````
 
@@ -9407,311 +9594,6 @@ export class FormActions {
       this.cancel();
     }
   };
-}
-````
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-````typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  let cached = _cache.get(name);
-  if (!cached) {
-    cached = resolveIconSvg(name);
-    _cache.set(name, cached);
-  }
-  return cached;
-}
-
-async function resolveIconSvg(name: PcIconNameType): Promise<string> {
-  const svg = await fetchSvg(icons[name]);
-  if (svg != null) return svg;
-  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
-  if (name !== UNKNOWN) {
-    const fallback = await loadIconSvg(UNKNOWN);
-    if (fallback) return fallback;
-  }
-  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
-  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
-  return '';
-}
-
-/** Fetch an icon and return its text only if it is actually an SVG, else null. */
-async function fetchSvg(url: string): Promise<string | null> {
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const text = await r.text();
-    return text.trimStart().startsWith('<svg') ? text : null;
-  } catch {
-    return null;
-  }
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  mailbox: 'assets/icons/mailbox.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  message: 'assets/icons/message.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  route: 'assets/icons/route.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
-````
-
-## File: libs/uxcommon/src/components/modal-shell/modal-shell.ts
-````typescript
-import { Component, ElementRef, effect, input, output, viewChild } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-/**
- * The one modal chrome for form/tool dialogs: native <dialog> + DaisyUI modal
- * with the house header (primary icon, bold title, ghost-circle close) and a
- * `[pc-modal-footer]` slot for actions. Blocking yes/no decisions stay on
- * ConfirmDialogService — this shell is for dialogs with real content.
- *
- * Drive it either declaratively (`[open]="someSignal()"`) or imperatively via
- * a template ref (`#dlg` → `dlg.show()` / `dlg.close()`). `closed` fires on
- * every close path (X button, ESC, backdrop, programmatic).
- */
-@Component({
-  selector: 'pc-modal-shell',
-  imports: [Icon],
-  template: `
-    <dialog #dlg class="modal" (close)="closed.emit()" (cancel)="onCancel($event)">
-      <div class="modal-box" [class]="boxClass()">
-        <div class="mb-5 flex items-center justify-between">
-          <h3 class="flex items-center gap-2 text-lg font-bold">
-            @if (icon(); as ic) {
-              <pc-icon [name]="ic" [size]="5" class="text-primary" />
-            }
-            {{ title() }}
-          </h3>
-          <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
-            <pc-icon name="x-mark" [size]="4" />
-          </button>
-        </div>
-        <ng-content />
-        <div class="modal-action empty:hidden">
-          <ng-content select="[pc-modal-footer]" />
-        </div>
-      </div>
-      @if (dismissible()) {
-        <form method="dialog" class="modal-backdrop">
-          <button type="submit" aria-label="Close">close</button>
-        </form>
-      }
-    </dialog>
-  `,
-})
-export class ModalShell {
-  /** Extra classes for the modal box — width overrides only (e.g. 'max-w-3xl'). */
-  public readonly boxClass = input<string>('');
-  /** Allow ESC / backdrop-click to dismiss. Turn off for dialogs holding unsaved work. */
-  public readonly dismissible = input<boolean>(true);
-  public readonly icon = input<PcIconNameType | null>(null);
-  /** Declarative visibility; leave unset to drive imperatively via show()/close(). */
-  public readonly open = input<boolean | undefined>(undefined);
-  public readonly title = input.required<string>();
-
-  public readonly closed = output<void>();
-
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-
-  constructor() {
-    effect(() => {
-      const open = this.open();
-      if (open === undefined) return;
-      const dlg = this.dlgRef().nativeElement;
-      try {
-        if (open && !dlg.open) dlg.showModal();
-        else if (!open && dlg.open) dlg.close();
-      } catch {
-        /* dialog not connected yet — the next effect run settles it */
-      }
-    });
-  }
-
-  public close(): void {
-    const dlg = this.dlgRef().nativeElement;
-    if (dlg.open) dlg.close();
-  }
-
-  public show(): void {
-    const dlg = this.dlgRef().nativeElement;
-    if (!dlg.open) dlg.showModal();
-  }
-
-  protected onCancel(e: Event): void {
-    if (!this.dismissible()) e.preventDefault();
-  }
 }
 ````
 
@@ -9860,63 +9742,6 @@ export class Swap {
 }
 ````
 
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1 bg-primary/15 text-primary"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
-      }
-    </div>
-  `,
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-}
-````
-
 ## File: libs/uxcommon/src/components/confirm-dialog-host.html
 ````html
 <dialog #dlg class="modal">
@@ -9961,6 +9786,145 @@ export class UserAvatarComponent {
   </form>
   }
 </dialog>
+````
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.ts
+````typescript
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
+
+@Component({
+  selector: 'pc-dialog-host',
+  imports: [Icon],
+  templateUrl: './confirm-dialog-host.html',
+})
+export class ConfirmDialogHost {
+  private readonly svc = inject(ConfirmDialogService);
+
+  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
+
+  private readonly stateSignal = this.svc.stateSignal;
+  private readonly openSignal = this.svc.isOpenSignal;
+  public state = this.stateSignal;
+  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
+  // default to emphasizing the cancel/keep button unless a caller opts out, and
+  // only when a cancel button is actually shown.
+  public readonly effectiveEmphasizeCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    const explicit = st.emphasizeCancel;
+    const wants = explicit ?? st.variant === 'danger';
+    return wants && this.showCancel();
+  });
+  public confirmBtnClass = computed(() => {
+    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
+    if (this.effectiveEmphasizeCancel()) {
+      switch (v) {
+        case 'danger':
+          return 'btn-ghost text-error';
+        case 'warning':
+          return 'btn-ghost text-warning';
+        case 'info':
+          return 'btn-ghost text-info';
+        case 'success':
+          return 'btn-ghost text-success';
+        default:
+          return 'btn-ghost';
+      }
+    }
+    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
+    // affirmative confirms (info/success/neutral) are the surface's main action.
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+      default:
+        return 'btn-primary';
+    }
+  });
+
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
+
+  public choiceBtnClass(v?: DialogVariant): string {
+    if (!v) return '';
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+        return 'btn-primary';
+      default:
+        return '';
+    }
+  }
+
+  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
+  public showCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    if (st.type === 'choose') {
+      return !!st.cancelText;
+    }
+    return !!st.cancelText && st.type !== 'alert';
+  });
+
+  constructor() {
+    effect(() => {
+      const open = this.openSignal();
+      const dlg = this.dlgRef()?.nativeElement;
+      if (!dlg) return;
+
+      if (open) {
+        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
+        if (!dlg.open) {
+          try {
+            dlg.showModal();
+          } catch {}
+        }
+      } else if (dlg.open) {
+        try {
+          dlg.close();
+        } catch {}
+      }
+    });
+  }
+
+  public onPromptInput(event: Event): void {
+    this.promptValue.set((event.target as HTMLInputElement).value);
+  }
+
+  public onBackdrop(): void {
+    const st = this.state();
+    if (st?.allowBackdropClose) this.svc.cancel();
+  }
+
+  public onCancel(): void {
+    this.svc.cancel();
+  }
+
+  public onConfirm(): void {
+    const st = this.state();
+    if (!st) return;
+    if (st.type === 'prompt') this.svc.ok(this.promptValue());
+    else if (st.type === 'alert') this.svc.ok();
+    else this.svc.ok(true);
+  }
+
+  public onChoice(value: unknown): void {
+    this.svc.ok(value);
+  }
+}
 ````
 
 ## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
@@ -10232,257 +10196,366 @@ export function createRequestGuard(): RequestGuard {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/outreach.ts
+## File: libs/common/src/lib/help/articles/engagement.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const OUTREACH_ARTICLES: HelpArticle[] = [
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
   {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
     summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'helcim',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
     blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
       {
         kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
       },
       {
         kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
       },
       {
         kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
       },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
       {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe** or **Helcim**, whichever you pick under [Workspace → Donations](/workspace/donations). You configure one processor at a time, never both. Your choice sets where donor payment data lives: Stripe processes and stores it in the United States, while Helcim processes and stores it in Canada. Stripe is the default and handles both one-time and monthly (recurring) gifts; Helcim processes one-time donations only, so keep Stripe if you rely on monthly pledges. Once a processor is set up, the other is locked. To switch, remove the current processor’s configuration first, then set up the other.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too. Helcim setup is unchanged: paste your Helcim API token and webhook verifier token, and add the webhook URL shown on the card to your Helcim account.',
       },
       {
         kind: 'callout',
         tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
       },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
       {
         kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
       },
     ],
   },
   {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
     summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
     keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
     ],
-    related: ['newsletters', 'settings', 'forms'],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
     blocks: [
       {
         kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
       },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
           },
           {
-            title: 'Verify a mobile number (Free plan)',
+            title: 'Turn fields on and set what’s required',
             detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
           },
         ],
       },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
       {
         kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
       },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
       {
         kind: 'list',
         items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
       },
     ],
   },
   {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
     summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
       },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
           },
           {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
+            title: 'Choose doors per turf',
             detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
           },
         ],
       },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
       {
         kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
       },
     ],
   },
@@ -10711,155 +10784,6 @@ export const phoneSchema = (fieldName: string) =>
 export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 ````
 
-## File: libs/common/src/lib/auth.ts
-````typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name?: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  email_verified: boolean;
-
-  passkey_setup_dismissed_at?: Date | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-
-  /** Set while the tenant still has the seeded demo data (drives the demo-mode banner). */
-  tenant_demo_mode_at?: Date | null;
-
-  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
-  tenant_slug?: string | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  /** Admin deactivation: set = can't sign in until an admin/owner reactivates. */
-  deactivated_at?: Date | null;
-  /** Most recent session activity; null until the user has signed in at least once. */
-  last_active_at?: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-/**
- * The one generic message shown for any failed sign-in attempt, regardless of
- * whether the email or the password was wrong — never reveal which, so that
- * sign-in cannot be used to probe which emails have accounts. Shared by the
- * backend error formatter and the frontend so the copy never drifts.
- */
-export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
-
-/**
- * Product names for the stored role values — the working role 'user' is shown as
- * "Editor" everywhere (Users list, user page, Profile). Shared so the label never drifts.
- */
-export const AUTH_ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  user: 'Editor',
-  viewer: 'Viewer',
-};
-
-export function authRoleLabel(role: string | null | undefined): string {
-  return role ? (AUTH_ROLE_LABELS[role] ?? role) : '—';
-}
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-````
-
 ## File: libs/uxcommon/src/components/alerts/alerts.html
 ````html
 <div
@@ -10871,16 +10795,18 @@ export const signUpInputObj = z.object({
 >
   @for (alert of alerts(); track alert.id) {
   <div
-    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-2 rounded-[10px] border border-base-300 bg-base-100 px-3.5 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
+    class="pointer-events-auto relative flex max-w-[520px] cursor-pointer items-start gap-3 overflow-hidden rounded-[12px] border border-base-300 bg-base-100 py-3 pl-4 pr-3.5 shadow-[0_8px_30px_rgba(0,0,0,.16)]"
     role="alert"
     *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: getExitAnim()"
     (click)="dismiss(alert.id)"
   >
+    <span aria-hidden="true" class="absolute inset-y-0 left-0 w-[5px] {{ barToneClass(alert.type) }}"></span>
     <span
       aria-hidden="true"
-      class="absolute -left-[3px] top-1.5 bottom-1.5 w-[5px] rounded-full {{ barToneClass(alert.type) }}"
-    ></span>
-    <pc-icon [name]="icon(alert.type)" [size]="4" class="mt-px shrink-0 {{ toneClass(alert.type) }}"></pc-icon>
+      class="mt-px flex shrink-0 items-center justify-center rounded-[8px] p-1.5 {{ chipToneClass(alert.type) }}"
+    >
+      <pc-icon [name]="icon(alert.type)" [size]="4" class="{{ toneClass(alert.type) }}"></pc-icon>
+    </span>
     <div class="line-clamp-3 text-[12.5px] leading-[1.45] text-base-content [overflow-wrap:anywhere]">
       {{ alert.text }}
     </div>
@@ -10967,6 +10893,17 @@ export class Alerts {
           : 'bg-info';
   }
 
+  /** Soft tinted background for the icon chip — echoes the accent bar without shouting. */
+  protected chipToneClass(type?: ALERTTYPE): string {
+    return type === 'success'
+      ? 'bg-success/10'
+      : type === 'warning'
+        ? 'bg-warning/10'
+        : type === 'error'
+          ? 'bg-error/10'
+          : 'bg-info/10';
+  }
+
   /** Tone lives on the icon and the left accent bar — the card surface and text stay neutral. */
   protected toneClass(type?: ALERTTYPE): string {
     return type === 'success'
@@ -10980,340 +10917,218 @@ export class Alerts {
 }
 ````
 
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
+## File: libs/uxcommon/src/components/icons/icons.index.ts
 ````typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
+/****************************************************** */
+/*
+/* Look at https://heroicons.com for icons. Most of these
+/* are from the Heroicons set, some are custom.
+/*
+/****************************************************** */
+export type PcIconNameType = keyof typeof icons;
 
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
+export async function loadIconSvg(name: PcIconNameType): Promise<string> {
+  let cached = _cache.get(name);
+  if (!cached) {
+    cached = resolveIconSvg(name);
+    _cache.set(name, cached);
+  }
+  return cached;
+}
 
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (avatarText()) {
-            <span
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
-              aria-hidden="true"
-              >{{ avatarText() }}</span
-            >
-          } @else if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="pc-eyebrow">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
-              <ng-content select="[pc-title-suffix]"></ng-content>
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
+async function resolveIconSvg(name: PcIconNameType): Promise<string> {
+  const svg = await fetchSvg(icons[name]);
+  if (svg != null) return svg;
+  // Fall back to the generic unknown glyph — but only if it itself is a real SVG.
+  if (name !== UNKNOWN) {
+    const fallback = await loadIconSvg(UNKNOWN);
+    if (fallback) return fallback;
+  }
+  // Nothing usable (e.g. the assets aren't being served): render nothing rather than
+  // injecting a dev-server 404 page ("Cannot GET /assets/icons/unknown.svg") as markup.
+  return '';
+}
 
-        <div class="flex items-center gap-2">
-          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
-               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
-          @if (positionLabel()) {
-            <div class="mr-1 flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                class="btn btn-circle btn-ghost btn-xs"
-                [attr.aria-label]="prevLabel()"
-                [disabled]="!hasPrev()"
-                [class.btn-ghost]="!hasPrev()"
-                (click)="prevRecord.emit()"
-              >
-                <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              </button>
-              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
-                positionLabel()
-              }}</span>
-              <button
-                type="button"
-                class="btn btn-circle btn-xs"
-                [attr.aria-label]="nextLabel()"
-                [disabled]="!hasNext()"
-                [class.btn-ghost]="!hasNext()"
-                (click)="nextRecord.emit()"
-              >
-                <pc-icon name="chevron-right" [size]="4"></pc-icon>
-              </button>
-            </div>
-          }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
-   * detail-layout overrides it to false for read views. */
-  public showCancel = input<boolean>(true);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail renders in the navbar; the record pager now lives in
-    // this header card (design source), so publish the trail only and leave the
-    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
-    // empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: null,
-        hasPrev: false,
-        hasNext: false,
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+/** Fetch an icon and return its text only if it is actually an SVG, else null. */
+async function fetchSvg(url: string): Promise<string | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const text = await r.text();
+    return text.trimStart().startsWith('<svg') ? text : null;
+  } catch {
+    return null;
   }
 }
-````
 
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-````typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
+const UNKNOWN: PcIconNameType = 'unknown';
 
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
+/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
+const _cache = new Map<PcIconNameType, Promise<string>>();
 
-  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
-    // affirmative confirms (info/success/neutral) are the surface's main action.
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-      default:
-        return 'btn-primary';
-    }
-  });
-
-  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
-  // (danger variants by default, or any explicit emphasizeCancel), style the safe
-  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
-  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
-  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-        return 'btn-primary';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onPromptInput(event: Event): void {
-    this.promptValue.set((event.target as HTMLInputElement).value);
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
+export const icons = {
+  none: 'none',
+  'add-company': 'assets/icons/add-company.svg',
+  'add-form': 'assets/icons/add-form.svg',
+  'add-group': 'assets/icons/add-group.svg',
+  'add-home': 'assets/icons/add-home.svg',
+  'add-issue': 'assets/icons/add-issue.svg',
+  'add-label': 'assets/icons/add-label.svg',
+  'add-list': 'assets/icons/add-list.svg',
+  'add-newsletter': 'assets/icons/add-newsletter.svg',
+  'add-notes': 'assets/icons/add-notes.svg',
+  'add-schedule': 'assets/icons/add-schedule.svg',
+  'add-task': 'assets/icons/add-task.svg',
+  'add-ticket': 'assets/icons/add-ticket.svg',
+  'add-users': 'assets/icons/add-users.svg',
+  'add-volunteer': 'assets/icons/add-volunteer.svg',
+  'add-fundraising': 'assets/icons/add-fundraising.svg',
+  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
+  'archive-box': 'assets/icons/archive-box.svg',
+  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
+  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
+  'arrow-left': 'assets/icons/arrow-left.svg',
+  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
+  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
+  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
+  'arrow-path': 'assets/icons/arrow-path.svg',
+  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
+  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
+  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
+  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
+  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
+  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
+  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
+  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
+  'arrows-up-down-tray': 'assets/icons/arrows-up-down-tray.svg',
+  'at-symbol': 'assets/icons/at-symbol.svg',
+  'attach-fat': 'assets/icons/attach-fat.svg',
+  'attach-file-off': 'assets/icons/attach-file-off.svg',
+  banknotes: 'assets/icons/banknotes.svg',
+  'bars-3': 'assets/icons/bars-3.svg',
+  'bars-4': 'assets/icons/bars-4.svg',
+  bell: 'assets/icons/bell.svg',
+  bookmark: 'assets/icons/bookmark.svg',
+  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
+  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
+  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
+  briefcase: 'assets/icons/briefcase.svg',
+  calendar: 'assets/icons/calendar.svg',
+  'chart-pie': 'assets/icons/chart-pie.svg',
+  'check-circle': 'assets/icons/check-circle.svg',
+  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
+  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
+  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
+  'chevron-down': 'assets/icons/chevron-down.svg',
+  'chevron-left': 'assets/icons/chevron-left.svg',
+  'chevron-right': 'assets/icons/chevron-right.svg',
+  'chevron-up': 'assets/icons/chevron-up.svg',
+  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
+  clock: 'assets/icons/clock.svg',
+  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
+  cog: 'assets/icons/cog.svg',
+  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
+  'collapse-content': 'assets/icons/collapse-content.svg',
+  'credit-card': 'assets/icons/credit-card.svg',
+  'currency-dollar': 'assets/icons/currency-dollar.svg',
+  document: 'assets/icons/document.svg',
+  'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
+  'document-duplicate': 'assets/icons/document-duplicate.svg',
+  'document-text': 'assets/icons/document-text.svg',
+  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
+  envelope: 'assets/icons/envelope.svg',
+  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
+  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
+  'expand-content': 'assets/icons/expand-content.svg',
+  eye: 'assets/icons/eye.svg',
+  'eye-slash': 'assets/icons/eye-slash.svg',
+  facebook: 'assets/icons/facebook.svg',
+  file: 'assets/icons/file.svg',
+  'file-archive': 'assets/icons/file-archive.svg',
+  'file-audio': 'assets/icons/file-audio.svg',
+  'file-calendar': 'assets/icons/file-calendar.svg',
+  'file-code': 'assets/icons/file-code.svg',
+  'file-contact': 'assets/icons/file-contact.svg',
+  'file-db': 'assets/icons/file-db.svg',
+  'file-design': 'assets/icons/file-design.svg',
+  'file-disk': 'assets/icons/file-disk.svg',
+  'file-doc': 'assets/icons/file-doc.svg',
+  'file-ebook': 'assets/icons/file-ebook.svg',
+  'file-email': 'assets/icons/file-email.svg',
+  'file-exe': 'assets/icons/file-exe.svg',
+  'file-font': 'assets/icons/file-font.svg',
+  'file-image': 'assets/icons/file-image.svg',
+  'file-pdf': 'assets/icons/file-pdf.svg',
+  'file-sheet': 'assets/icons/file-sheet.svg',
+  'file-slides': 'assets/icons/file-slides.svg',
+  'file-text': 'assets/icons/file-text.svg',
+  'file-video': 'assets/icons/file-video.svg',
+  filter: 'assets/icons/funnel.svg',
+  forward: 'assets/icons/forward.svg',
+  funnel: 'assets/icons/funnel.svg',
+  'globe-americas': 'assets/icons/globe-americas.svg',
+  hashtag: 'assets/icons/hashtag.svg',
+  home: 'assets/icons/home.svg',
+  'house-modern': 'assets/icons/house-modern.svg',
+  identification: 'assets/icons/identification.svg',
+  inbox: 'assets/icons/inbox.svg',
+  'inbox-stack': 'assets/icons/inbox-stack.svg',
+  'information-circle': 'assets/icons/information-circle.svg',
+  instagram: 'assets/icons/instagram.svg',
+  label: 'assets/icons/label.svg',
+  linkedin: 'assets/icons/linkedin.svg',
+  'lock-closed': 'assets/icons/lock-closed.svg',
+  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
+  mailbox: 'assets/icons/mailbox.svg',
+  map: 'assets/icons/map.svg',
+  'map-pin': 'assets/icons/map-pin.svg',
+  megaphone: 'assets/icons/megaphone.svg',
+  message: 'assets/icons/message.svg',
+  'menu-open': 'assets/icons/menu-open.svg',
+  merge: 'assets/icons/merge.svg',
+  moon: 'assets/icons/moon.svg',
+  notification: 'assets/icons/notification.svg',
+  'paper-airplane': 'assets/icons/paper-airplane.svg',
+  'paper-clip': 'assets/icons/paper-clip.svg',
+  'pencil-square': 'assets/icons/pencil-square.svg',
+  plus: 'assets/icons/plus.svg',
+  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
+  print: 'assets/icons/print.svg',
+  'queue-list': 'assets/icons/queue-list.svg',
+  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
+  'redo-fat': 'assets/icons/redo-fat.svg',
+  route: 'assets/icons/route.svg',
+  reply: 'assets/icons/reply.svg',
+  'reply-all': 'assets/icons/reply-all.svg',
+  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
+  save: 'assets/icons/save.svg',
+  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
+  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
+  star: 'assets/icons/star.svg',
+  'star-filled': 'assets/icons/star-filled.svg',
+  sun: 'assets/icons/sun.svg',
+  'table-cells': 'assets/icons/table-cells.svg',
+  phone: 'assets/icons/phone.svg',
+  tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
+  ticket: 'assets/icons/ticket.svg',
+  trash: 'assets/icons/trash.svg',
+  'trash-forever': 'assets/icons/trash-forever.svg',
+  'undo-fat': 'assets/icons/undo-fat.svg',
+  unknown: 'assets/icons/unknown.svg',
+  'user-circle': 'assets/icons/user-circle.svg',
+  'user-group': 'assets/icons/user-group.svg',
+  'user-plus': 'assets/icons/user-plus.svg',
+  users: 'assets/icons/users.svg',
+  'view-column': 'assets/icons/view-column.svg',
+  'view-kanban': 'assets/icons/view-kanban.svg',
+  volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
+  'x-circle': 'assets/icons/x-circle.svg',
+  x: 'assets/icons/x.svg',
+  'x-mark': 'assets/icons/x-mark.svg',
+} as const;
 ````
 
 ## File: libs/uxcommon/src/styles/themes.css
@@ -11572,6 +11387,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
       },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
       { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
       {
         kind: 'p',
@@ -11733,513 +11552,257 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
 ];
 ````
 
-## File: libs/common/src/lib/billing/plans.ts
+## File: libs/common/src/lib/help/articles/outreach.ts
 ````typescript
-/**
- * Subscription plans — the single source of truth for tiers, prices and limits.
- *
- * Consumed by:
- *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
- *  - the CRM billing page (experiences/settings/billing)
- *  - the marketing website pricing page + home teaser
- *
- * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
- *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
- *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
- *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
- *    Representative $99) the moment they crossed one subscriber count. `representative` is
- *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
- *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
- *    field reports, route optimization — plus A/B testing and the optional dedicated sending
- *    IP are Movement-only.
- *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
- *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
- *    can actually email. This is the differentiator vs. contact-metered tools.
- *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
- *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
- *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
- *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
- *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
- *    keeps 2×.
- *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
- *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
- *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only.
- *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
- *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
- *  - All prices are USD.
- *
- * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
- * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
- * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
- * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
- * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
- * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
- * "cheapest full-featured option" rather than "suspiciously cheap".
- *
- * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
- * `quantity` = the bracket index from `bracketIndexForSubscribers`):
- *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
- *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
- *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
- *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
- *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
- *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
- *
- * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
- * price IDs. Display names are intentionally allowed to differ from keys, but here they are
- * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
- * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
- * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
- */
+import type { HelpArticle } from '../help-types';
 
-export const GB = 1024 * 1024 * 1024;
-
-/** Every plan key that can appear in `tenants.subscription_plan`. */
-export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
-
-/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
-export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
-export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
-
-/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
- * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
-export interface PriceBracket {
-  /** Emailable-subscriber cap of this bracket (inclusive). */
-  readonly upTo: number;
-  /** USD/month at this bracket. */
-  readonly price: number;
-}
-
-/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
- * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
-export interface TierPricing {
-  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
-   * bracket's `upTo` is the tier's hard subscriber max. */
-  readonly brackets: readonly PriceBracket[];
-  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
-  readonly emailsPerSubscriber: number;
-}
-
-export interface PlanDef {
-  readonly key: PlanKey;
-  /** Customer-facing name (may differ from key). */
-  readonly name: string;
-  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
-  readonly cadence: string;
-  readonly blurb: string;
-  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
-  readonly pricing: TierPricing | null;
-  /** File-storage quota in bytes. null = unlimited / custom. */
-  readonly storageBytes: number | null;
-  /** Included staff seats. null = unlimited. */
-  readonly seats: number | null;
-  /** Included companion volunteers. 0 = none, null = unlimited. */
-  readonly volunteers: number | null;
-  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
-  readonly purchasable: boolean;
-  /** Highlighted as the recommended tier. */
-  readonly featured: boolean;
-  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
-  readonly displayed: boolean;
-  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
-   * the website's comparison-table view of the same feature split — keep both in sync). */
-  readonly features: readonly string[];
-}
-
-/**
- * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
- * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
- * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
- * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
- */
-const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 29 },
-  { upTo: 2_500, price: 49 },
-  { upTo: 5_000, price: 69 },
-  { upTo: 10_000, price: 89 },
-  { upTo: 15_000, price: 109 },
-  { upTo: 20_000, price: 129 },
-  { upTo: 25_000, price: 149 },
-  { upTo: 50_000, price: 219 },
-  { upTo: 75_000, price: 289 },
-  { upTo: 100_000, price: 359 },
-];
-
-/**
- * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
- * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
- * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
- * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
- */
-const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
-  { upTo: 1_000, price: 55 },
-  { upTo: 2_500, price: 90 },
-  { upTo: 5_000, price: 125 },
-  { upTo: 10_000, price: 160 },
-  { upTo: 15_000, price: 195 },
-  { upTo: 20_000, price: 230 },
-  { upTo: 25_000, price: 265 },
-  { upTo: 50_000, price: 365 },
-  { upTo: 75_000, price: 465 },
-  { upTo: 100_000, price: 565 },
-  { upTo: 200_000, price: 665 },
-];
-
-export const PLANS: readonly PlanDef[] = [
+export const OUTREACH_ARTICLES: HelpArticle[] = [
   {
-    key: 'free',
-    name: 'Free',
-    cadence: 'forever',
-    blurb: 'For getting your bearings and running a small list.',
-    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
-    storageBytes: 1 * GB,
-    seats: 2,
-    volunteers: 0,
-    purchasable: false,
-    featured: false,
-    displayed: true,
-    features: [
-      'Unlimited contacts & households',
-      'Demo workspace with sample data',
-      'Up to 1,000 email subscribers',
-      '2,000 emails / month',
-      '2 staff seats · 1 GB storage',
-      'Shared inbox, people CRM & CSV import/export',
-      'Newsletters, templates, scheduling & dynamic content',
-      'Custom reports, role-based access & 300+ integrations',
-      'Community support',
-    ],
-  },
-  {
-    key: 'grassroots',
-    name: 'Grassroots',
-    cadence: 'per month',
-    blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 10 * GB,
-    seats: 5,
-    volunteers: 15,
-    purchasable: true,
-    featured: false,
-    displayed: true,
-    features: [
-      'Everything in Free, plus:',
-      'Scales smoothly from $29/month as your list grows',
-      'Up to 100,000 email subscribers · 12× emails/month',
-      '5 staff seats · 15 volunteers · 10 GB storage',
-      'Forms & donations',
-      'Automations & lists (segments)',
-      'Volunteer management & monitoring',
-      'Email support',
-    ],
-  },
-  {
-    key: 'movement',
-    name: 'Movement',
-    cadence: 'per month',
-    blurb: 'For a large campaign or advocacy operation at full tilt.',
-    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
-    storageBytes: 200 * GB,
-    seats: null,
-    volunteers: null,
-    purchasable: true,
-    featured: true,
-    displayed: true,
-    features: [
-      'Everything in Grassroots, plus:',
-      'Scales smoothly from $55/month as your list grows',
-      'Up to 200,000 email subscribers · 12× emails/month',
-      'Unlimited staff seats & volunteers · 200 GB storage',
-      'Canvassing & deliveries companion apps',
-      'Yard signs & route optimization',
-      'Turf cutting, walk lists & routes, field reports',
-      'A/B testing & optional dedicated sending IP',
-      'Choose your data residency region (US, EU, Canada or UK)',
-      'Priority support & onboarding',
-    ],
-  },
-  {
-    key: 'enterprise',
-    name: 'Enterprise',
-    cadence: 'contact us',
-    blurb: 'For federations, parties and multi-office operations.',
-    pricing: null,
-    storageBytes: null,
-    seats: null,
-    volunteers: null,
-    purchasable: false,
-    featured: false,
-    displayed: false,
-    features: [
-      'Everything in Movement, plus:',
-      'Unlimited subscribers & sends',
-      'Multiple linked workspaces',
-      'Single sign-on (SSO)',
-      'Data residency by region',
-      'Dedicated IP & custom integrations',
-      'SLA support & guided onboarding',
-    ],
-  },
-];
-
-export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
-  (acc, plan) => {
-    acc[plan.key] = plan;
-    return acc;
-  },
-  {} as Record<PlanKey, PlanDef>,
-);
-
-/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
- * `representative` (retired, features split into grassroots/movement — nearest fit is
- * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
-export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
-  representative: 'movement',
-  starter: 'free',
-};
-
-/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
-export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
-  if (!planName) return undefined;
-  const key = planName.toLowerCase();
-  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
-  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
-}
-
-/** Customer-facing display name for a stored plan value (falls back to the raw value). */
-export function planDisplayName(planName: string | null | undefined): string {
-  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
-}
-
-/**
- * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
- * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
- * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
- * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
- */
-export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) return null;
-  const normalizedCount = Math.max(count, 0);
-  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
-  return index === -1 ? null : index + 1;
-}
-
-/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
- * with no pricing ladder (enterprise — no quantity ceiling applies). */
-export function maxQuantity(key: PlanKey): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  return pricing ? pricing.brackets.length : Infinity;
-}
-
-/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
- * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
- * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
- * have at least one bracket. */
-export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  if (!pricing) {
-    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
-  }
-  const max = pricing.brackets.length;
-  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
-  const bracket = pricing.brackets[clampedIndex];
-  if (!bracket) {
-    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
-    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
-  }
-  return bracket;
-}
-
-/** Emailable-subscriber cap for a Stripe quantity on a plan. */
-export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).upTo;
-}
-
-/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
- * `emailsPerSubscriber` multiplier). */
-export function emailCapForQuantity(key: PlanKey, qty: number): number {
-  const pricing = PLANS_BY_KEY[key].pricing;
-  const multiplier = pricing?.emailsPerSubscriber ?? 0;
-  return subscriberCapForQuantity(key, qty) * multiplier;
-}
-
-/** USD/month price for a Stripe quantity on a plan. */
-export function priceForQuantity(key: PlanKey, qty: number): number {
-  return bracketForQuantity(key, qty).price;
-}
-
-/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $55' (movement), 'Custom' (enterprise). */
-export function startingPriceLabel(plan: PlanDef): string {
-  if (!plan.pricing) return 'Custom';
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  return first.price === 0 ? '$0' : `From $${first.price}`;
-}
-
-/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
- * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
- * display currency (the marketing site's home teaser). */
-export function startingPriceUsd(plan: PlanDef): number | null {
-  if (!plan.pricing) return null;
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  return first.price;
-}
-
-/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
- * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
- * website pricing slider and the frontend billing upgrade cards. */
-export function priceLabelAt(plan: PlanDef, subscribers: number): string {
-  if (!plan.pricing) return 'Custom';
-  const index = bracketIndexForSubscribers(plan.key, subscribers);
-  if (index === null) return 'Contact us';
-  return `$${priceForQuantity(plan.key, index)}`;
-}
-
-/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
-const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
-
-/**
- * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
- * two in sync when a feature moves between tiers). The backend's plan-gate middleware
- * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
- * below the feature's minimum plan.
- */
-export const GATED_FEATURES = {
-  forms: { minPlan: 'grassroots', label: 'Forms' },
-  donations: { minPlan: 'grassroots', label: 'Donations' },
-  automations: { minPlan: 'grassroots', label: 'Automations' },
-  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
-  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
-  canvassing: { minPlan: 'movement', label: 'Canvassing' },
-  deliveries: { minPlan: 'movement', label: 'Deliveries' },
-} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
-
-export type GatedFeature = keyof typeof GATED_FEATURES;
-
-/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
-export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
-  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
-  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
-}
-
-/** Regions a Movement customer can choose to store their data in, set when they create their
- * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
- * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
-export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
-export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
-
-/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
-export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
-
-/**
- * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
- * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
- * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
- * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
- * They describe the same feature split from two different plan keys, so keep them in sync by
- * hand when a feature moves between tiers — there is no single source both surfaces read from.
- */
-export interface FeatureMatrixRow {
-  readonly label: string;
-  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
-  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
-}
-
-export interface FeatureMatrixGroup {
-  readonly category: string;
-  readonly rows: readonly FeatureMatrixRow[];
-}
-
-export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
-  {
-    category: 'Usage',
-    rows: [
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
       {
-        label: 'Emailable subscribers',
-        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
       },
       {
-        label: 'Emails / month',
-        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
       },
-      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
-      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
-    ],
-  },
-  {
-    category: 'Everything in every plan',
-    rows: [
-      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
-      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
-      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
-      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
-      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
-    ],
-  },
-  {
-    category: 'Grow & engage',
-    rows: [
-      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
-      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
-        label: 'Volunteer management & monitoring',
-        values: { free: false, grassroots: true, movement: true },
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
       },
     ],
   },
   {
-    category: 'Canvassing',
-    rows: [
-      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
     ],
-  },
-  {
-    category: 'Deliveries',
-    rows: [
-      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
-    ],
-  },
-  {
-    category: 'Movement only',
-    rows: [
-      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
-      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+    related: ['newsletters', 'settings', 'forms'],
+    blocks: [
       {
-        label: 'Data residency',
-        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
       },
       {
-        label: 'Support',
-        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
       },
     ],
   },
@@ -13552,6 +13115,520 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
+## File: libs/common/src/lib/billing/plans.ts
+````typescript
+/**
+ * Subscription plans — the single source of truth for tiers, prices and limits.
+ *
+ * Consumed by:
+ *  - backend enforcement  (modules/billing/usage-limits.ts, controller.ts, trpc.router.ts)
+ *  - the CRM billing page (experiences/settings/billing)
+ *  - the marketing website pricing page + home teaser
+ *
+ * Pricing model (decision log, 2026-07-14 — supersedes the flat-price 5-column model):
+ *  - Three FEATURE tiers (Free / Grassroots / Movement). Which tier you're on is a feature
+ *    decision. Within a tier, PRICE scales smoothly by emailable-subscriber bracket instead of
+ *    stair-stepping between tiers — the old model jumped a customer 3.4× (Starter $29 →
+ *    Representative $99) the moment they crossed one subscriber count. `representative` is
+ *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
+ *    including Free; forms, donations, automations, lists (segments) and volunteer management
+ *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
+ *    field reports, route optimization — plus A/B testing and the optional dedicated sending
+ *    IP are Movement-only.
+ *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
+ *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
+ *    can actually email. This is the differentiator vs. contact-metered tools.
+ *  - Stripe never learns about "subscribers" — each purchasable tier has ONE graduated Stripe
+ *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
+ *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
+ *    data; Stripe just multiplies quantity by its graduated unit amounts.
+ *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
+ *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
+ *    keeps 2×.
+ *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
+ *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
+ *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
+ *    Movement-only.
+ *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
+ *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
+ *  - All prices are USD.
+ *
+ * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
+ * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
+ * Essentials) at 5k, $89 vs $110 at 10k, $129 vs $230 at 20k, $219 vs beehiiv Scale's $199 at
+ * 50k is the one near-miss (beehiiv is newsletter-only). Movement beats Mailchimp Standard at
+ * every count — $125 vs $100 at 5k is the exception early on, but $195 vs $230 at 15k,
+ * $365 vs $450 at 50k, $565 vs $800 at 100k. Roughly 1.8× Grassroots at every bracket —
+ * "cheapest full-featured option" rather than "suspiciously cheap".
+ *
+ * Stripe ops (manual, not code — one graduated recurring price per purchasable tier;
+ * `quantity` = the bracket index from `bracketIndexForSubscribers`):
+ *  - Grassroots: [{ up_to: 1, unit_amount: 2900 }, { up_to: 7, unit_amount: 2000 }, { up_to: 'inf', unit_amount: 7000 }]
+ *    → qty 1 = $29, qty 2–7 add $20/step (→ $149), qty 8–10 add $70/step (→ $359; the
+ *    piecewise step change at the 25,000-subscriber boundary — see GRASSROOTS_BRACKETS below).
+ *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
+ *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
+ *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *
+ * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
+ * price IDs. Display names are intentionally allowed to differ from keys, but here they are
+ * kept aligned (`grassroots`→"Grassroots", `movement`→"Movement", …) except the free key,
+ * which presents as "Free" (renamed from "Starter" in the 2026-07-14 overhaul —
+ * `LEGACY_PLAN_ALIASES` resolves stale `starter` values written before the rename).
+ */
+
+export const GB = 1024 * 1024 * 1024;
+
+/** Every plan key that can appear in `tenants.subscription_plan`. */
+export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
+
+/** Paid plans bought via self-serve Stripe checkout (excludes free and contact-sales enterprise). */
+export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
+export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
+
+/** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
+ * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
+export interface PriceBracket {
+  /** Emailable-subscriber cap of this bracket (inclusive). */
+  readonly upTo: number;
+  /** USD/month at this bracket. */
+  readonly price: number;
+}
+
+/** A purchasable (or free) tier's full price ladder. `null` on `PlanDef.pricing` means the
+ * tier has no ladder at all — currently only `enterprise` (custom, negotiated pricing). */
+export interface TierPricing {
+  /** Ascending by `upTo`. Index + 1 = the Stripe `quantity` for that bracket; the last
+   * bracket's `upTo` is the tier's hard subscriber max. */
+  readonly brackets: readonly PriceBracket[];
+  /** Monthly send cap = this × the current bracket's `upTo` (12 on paid tiers, 2 on Free). */
+  readonly emailsPerSubscriber: number;
+}
+
+export interface PlanDef {
+  readonly key: PlanKey;
+  /** Customer-facing name (may differ from key). */
+  readonly name: string;
+  /** Display cadence, e.g. 'per month' / 'forever' / 'contact us'. */
+  readonly cadence: string;
+  readonly blurb: string;
+  /** Bracket price ladder. `null` = enterprise custom pricing (no ladder, no Stripe quantity). */
+  readonly pricing: TierPricing | null;
+  /** File-storage quota in bytes. null = unlimited / custom. */
+  readonly storageBytes: number | null;
+  /** Included staff seats. null = unlimited. */
+  readonly seats: number | null;
+  /** Included companion volunteers. 0 = none, null = unlimited. */
+  readonly volunteers: number | null;
+  /** Bought via self-serve Stripe checkout (false for free + enterprise). */
+  readonly purchasable: boolean;
+  /** Highlighted as the recommended tier. */
+  readonly featured: boolean;
+  /** Shown as a priced column on pricing surfaces (false = enterprise, footnote-only). */
+  readonly displayed: boolean;
+  /** Marketing feature bullets shown on app-side billing cards (see FEATURE_MATRIX below for
+   * the website's comparison-table view of the same feature split — keep both in sync). */
+  readonly features: readonly string[];
+}
+
+/**
+ * Grassroots ladder (final 2026-07-15 pricing) — $29 ≤1,000, +$20/bracket through 25,000, then
+ * +$70/bracket to the 100,000 tier max (10 brackets). Bracket widths are non-uniform (1k → 2.5k
+ * → 5k-wide steps → 25k-wide steps), so the ladder is spelled out literally rather than
+ * generated. Price deltas stay Stripe-graduatable: +$20 ×6, then +$70 ×3 (see Stripe ops above).
+ */
+const GRASSROOTS_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 29 },
+  { upTo: 2_500, price: 49 },
+  { upTo: 5_000, price: 69 },
+  { upTo: 10_000, price: 89 },
+  { upTo: 15_000, price: 109 },
+  { upTo: 20_000, price: 129 },
+  { upTo: 25_000, price: 149 },
+  { upTo: 50_000, price: 219 },
+  { upTo: 75_000, price: 289 },
+  { upTo: 100_000, price: 359 },
+];
+
+/**
+ * Movement ladder (final 2026-07-15 pricing) — $55 ≤1,000, +$35/bracket through 25,000, then
+ * +$100/bracket to the 200,000 tier max (11 brackets). Same stops as Grassroots plus a final
+ * 200,000 bracket; roughly 1.8× Grassroots at every shared stop. Price deltas stay
+ * Stripe-graduatable: +$35 ×6, then +$100 ×4 (see Stripe ops above).
+ */
+const MOVEMENT_BRACKETS: readonly PriceBracket[] = [
+  { upTo: 1_000, price: 55 },
+  { upTo: 2_500, price: 90 },
+  { upTo: 5_000, price: 125 },
+  { upTo: 10_000, price: 160 },
+  { upTo: 15_000, price: 195 },
+  { upTo: 20_000, price: 230 },
+  { upTo: 25_000, price: 265 },
+  { upTo: 50_000, price: 365 },
+  { upTo: 75_000, price: 465 },
+  { upTo: 100_000, price: 565 },
+  { upTo: 200_000, price: 665 },
+];
+
+export const PLANS: readonly PlanDef[] = [
+  {
+    key: 'free',
+    name: 'Free',
+    cadence: 'forever',
+    blurb: 'For getting your bearings and running a small list.',
+    pricing: { brackets: [{ upTo: 1_000, price: 0 }], emailsPerSubscriber: 2 },
+    storageBytes: 1 * GB,
+    seats: 2,
+    volunteers: 0,
+    purchasable: false,
+    featured: false,
+    displayed: true,
+    features: [
+      'Unlimited contacts & households',
+      'Demo workspace with sample data',
+      'Up to 1,000 email subscribers',
+      '2,000 emails / month',
+      '2 staff seats · 1 GB storage',
+      'Shared inbox, people CRM & CSV import/export',
+      'Newsletters, templates, scheduling & dynamic content',
+      'Custom reports, role-based access & 300+ integrations',
+      'Community support',
+    ],
+  },
+  {
+    key: 'grassroots',
+    name: 'Grassroots',
+    cadence: 'per month',
+    blurb: 'For a local candidate or small campaign getting to work.',
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 10 * GB,
+    seats: 5,
+    volunteers: 15,
+    purchasable: true,
+    featured: false,
+    displayed: true,
+    features: [
+      'Everything in Free, plus:',
+      'Scales smoothly from $29/month as your list grows',
+      'Up to 100,000 email subscribers · 12× emails/month',
+      '5 staff seats · 15 volunteers · 10 GB storage',
+      'Forms & donations',
+      'Automations & lists (segments)',
+      'Volunteer management & monitoring',
+      'Email support',
+    ],
+  },
+  {
+    key: 'movement',
+    name: 'Movement',
+    cadence: 'per month',
+    blurb: 'For a large campaign or advocacy operation at full tilt.',
+    pricing: { brackets: MOVEMENT_BRACKETS, emailsPerSubscriber: 12 },
+    storageBytes: 200 * GB,
+    seats: null,
+    volunteers: null,
+    purchasable: true,
+    featured: true,
+    displayed: true,
+    features: [
+      'Everything in Grassroots, plus:',
+      'Scales smoothly from $55/month as your list grows',
+      'Up to 200,000 email subscribers · 12× emails/month',
+      'Unlimited staff seats & volunteers · 200 GB storage',
+      'Canvassing & deliveries companion apps',
+      'Yard signs & route optimization',
+      'Turf cutting, walk lists & routes, field reports',
+      'A/B testing & optional dedicated sending IP',
+      'Choose your data residency region (US, EU, Canada or UK)',
+      'Priority support & onboarding',
+    ],
+  },
+  {
+    key: 'enterprise',
+    name: 'Enterprise',
+    cadence: 'contact us',
+    blurb: 'For federations, parties and multi-office operations.',
+    pricing: null,
+    storageBytes: null,
+    seats: null,
+    volunteers: null,
+    purchasable: false,
+    featured: false,
+    displayed: false,
+    features: [
+      'Everything in Movement, plus:',
+      'Unlimited subscribers & sends',
+      'Multiple linked workspaces',
+      'Single sign-on (SSO)',
+      'Data residency by region',
+      'Dedicated IP & custom integrations',
+      'SLA support & guided onboarding',
+    ],
+  },
+];
+
+export const PLANS_BY_KEY: Record<PlanKey, PlanDef> = PLANS.reduce(
+  (acc, plan) => {
+    acc[plan.key] = plan;
+    return acc;
+  },
+  {} as Record<PlanKey, PlanDef>,
+);
+
+/** Stale plan values that must still resolve after the 2026-07-14 tier rename/retirement:
+ * `representative` (retired, features split into grassroots/movement — nearest fit is
+ * movement) and `starter` (renamed to `free`). Resolved case-insensitively by `getPlanDef`. */
+export const LEGACY_PLAN_ALIASES: Readonly<Record<string, PlanKey>> = {
+  representative: 'movement',
+  starter: 'free',
+};
+
+/** Resolve a (possibly mixed-case, possibly legacy) stored plan value to its definition. */
+export function getPlanDef(planName: string | null | undefined): PlanDef | undefined {
+  if (!planName) return undefined;
+  const key = planName.toLowerCase();
+  const resolvedKey = LEGACY_PLAN_ALIASES[key] ?? key;
+  return (PLANS_BY_KEY as Record<string, PlanDef | undefined>)[resolvedKey];
+}
+
+/** Customer-facing display name for a stored plan value (falls back to the raw value). */
+export function planDisplayName(planName: string | null | undefined): string {
+  return getPlanDef(planName)?.name ?? (planName ? planName : 'Free');
+}
+
+/**
+ * 1-based Stripe quantity for an emailable-subscriber count on the given plan, or `null` when
+ * the count exceeds the tier's max bracket (caller should treat this as "outgrown the tier").
+ * A count of 0 still bills quantity 1 (every purchasable plan has a non-zero minimum charge).
+ * Plans with no pricing ladder (enterprise) always return `null` — quantity is meaningless there.
+ */
+export function bracketIndexForSubscribers(key: PlanKey, count: number): number | null {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) return null;
+  const normalizedCount = Math.max(count, 0);
+  const index = pricing.brackets.findIndex((bracket) => normalizedCount <= bracket.upTo);
+  return index === -1 ? null : index + 1;
+}
+
+/** The highest valid Stripe quantity (= number of brackets) for a plan. `Infinity` for plans
+ * with no pricing ladder (enterprise — no quantity ceiling applies). */
+export function maxQuantity(key: PlanKey): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  return pricing ? pricing.brackets.length : Infinity;
+}
+
+/** The price bracket for a given Stripe quantity, clamping `qty` into the valid `[1, maxQuantity]`
+ * range. Throws only if called against a plan with no pricing ladder (enterprise) — callers
+ * should guard with `PLANS_BY_KEY[key].pricing !== null` first; purchasable/free plans always
+ * have at least one bracket. */
+export function bracketForQuantity(key: PlanKey, qty: number): PriceBracket {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  if (!pricing) {
+    throw new Error(`plan "${key}" has no pricing ladder (enterprise is custom-priced)`);
+  }
+  const max = pricing.brackets.length;
+  const clampedIndex = Math.min(Math.max(qty, 1), max) - 1;
+  const bracket = pricing.brackets[clampedIndex];
+  if (!bracket) {
+    // Unreachable: clampedIndex is always within [0, brackets.length - 1] above.
+    throw new Error(`unreachable: no bracket at index ${clampedIndex} for plan "${key}"`);
+  }
+  return bracket;
+}
+
+/** Emailable-subscriber cap for a Stripe quantity on a plan. */
+export function subscriberCapForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).upTo;
+}
+
+/** Monthly email-send cap for a Stripe quantity on a plan (= subscriber cap × the plan's
+ * `emailsPerSubscriber` multiplier). */
+export function emailCapForQuantity(key: PlanKey, qty: number): number {
+  const pricing = PLANS_BY_KEY[key].pricing;
+  const multiplier = pricing?.emailsPerSubscriber ?? 0;
+  return subscriberCapForQuantity(key, qty) * multiplier;
+}
+
+/** USD/month price for a Stripe quantity on a plan. */
+export function priceForQuantity(key: PlanKey, qty: number): number {
+  return bracketForQuantity(key, qty).price;
+}
+
+/** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
+ * 'From $55' (movement), 'Custom' (enterprise). */
+export function startingPriceLabel(plan: PlanDef): string {
+  if (!plan.pricing) return 'Custom';
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  return first.price === 0 ? '$0' : `From $${first.price}`;
+}
+
+/** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
+ * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
+ * display currency (the marketing site's home teaser). */
+export function startingPriceUsd(plan: PlanDef): number | null {
+  if (!plan.pricing) return null;
+  const first = plan.pricing.brackets[0];
+  if (!first) {
+    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
+    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
+  }
+  return first.price;
+}
+
+/** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
+ * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
+ * website pricing slider and the frontend billing upgrade cards. */
+export function priceLabelAt(plan: PlanDef, subscribers: number): string {
+  if (!plan.pricing) return 'Custom';
+  const index = bracketIndexForSubscribers(plan.key, subscribers);
+  if (index === null) return 'Contact us';
+  return `$${priceForQuantity(plan.key, index)}`;
+}
+
+/** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */
+const PLAN_RANK: Record<PlanKey, number> = { free: 0, grassroots: 1, movement: 2, enterprise: 3 };
+
+/**
+ * Server-enforced feature gates — the machine-readable core of FEATURE_MATRIX below (keep the
+ * two in sync when a feature moves between tiers). The backend's plan-gate middleware
+ * (apps/backend modules/billing/plan-gate.ts) blocks mutations in a gated module for tenants
+ * below the feature's minimum plan.
+ */
+export const GATED_FEATURES = {
+  forms: { minPlan: 'grassroots', label: 'Forms' },
+  donations: { minPlan: 'grassroots', label: 'Donations' },
+  automations: { minPlan: 'grassroots', label: 'Automations' },
+  lists: { minPlan: 'grassroots', label: 'Lists (segments)' },
+  volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
+  canvassing: { minPlan: 'movement', label: 'Canvassing' },
+  deliveries: { minPlan: 'movement', label: 'Deliveries' },
+} as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
+
+export type GatedFeature = keyof typeof GATED_FEATURES;
+
+/** Whether a (possibly legacy/mixed-case) stored plan value includes a gated feature. */
+export function planAllowsFeature(planName: string | null | undefined, feature: GatedFeature): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
+}
+
+/** Regions a Movement customer can choose to store their data in, set when they create their
+ * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
+ * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
+export const DATA_RESIDENCY_REGIONS = ['US', 'EU', 'Canada', 'UK'] as const;
+export type DataResidencyRegion = (typeof DATA_RESIDENCY_REGIONS)[number];
+
+/** The residency regions as a single comparison-cell / bullet label, e.g. "US · EU · Canada · UK". */
+export const DATA_RESIDENCY_LABEL = DATA_RESIDENCY_REGIONS.join(' · ');
+
+/**
+ * Shared feature-comparison matrix — drives the website's Mailchimp-style comparison table
+ * (plan-header cards + feature rows). This is a SEPARATE data source from each PlanDef's
+ * `features[]` bullet list (which drives the app-side billing cards): `features[]` is a short,
+ * narrative "everything in X, plus Y" list; `FEATURE_MATRIX` is an exhaustive row-by-row grid.
+ * They describe the same feature split from two different plan keys, so keep them in sync by
+ * hand when a feature moves between tiers — there is no single source both surfaces read from.
+ */
+export interface FeatureMatrixRow {
+  readonly label: string;
+  /** true = ✓, false = ✗, string = a text cell (e.g. "Up to 1,000", "2 seats"). */
+  readonly values: Readonly<Record<'free' | 'grassroots' | 'movement', boolean | string>>;
+}
+
+export interface FeatureMatrixGroup {
+  readonly category: string;
+  readonly rows: readonly FeatureMatrixRow[];
+}
+
+export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
+  {
+    category: 'Usage',
+    rows: [
+      {
+        label: 'Emailable subscribers',
+        values: { free: 'Up to 1,000', grassroots: 'Up to 100,000', movement: 'Up to 200,000' },
+      },
+      {
+        label: 'Emails / month',
+        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+      },
+      { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
+      { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
+    ],
+  },
+  {
+    category: 'Everything in every plan',
+    rows: [
+      { label: 'Unlimited contacts & households', values: { free: true, grassroots: true, movement: true } },
+      { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
+      { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
+      { label: '300+ integrations', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Demo workspace', values: { free: true, grassroots: true, movement: true } },
+    ],
+  },
+  {
+    category: 'Grow & engage',
+    rows: [
+      { label: 'Forms', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Donations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
+      { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
+      {
+        label: 'Volunteer management & monitoring',
+        values: { free: false, grassroots: true, movement: true },
+      },
+    ],
+  },
+  {
+    category: 'Canvassing',
+    rows: [
+      { label: 'Canvassing companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Turf cutting', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Walk lists & routes', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Field reports', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Deliveries',
+    rows: [
+      { label: 'Deliveries companion app', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Yard sign requests', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Route optimization', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Delivery monitoring', values: { free: false, grassroots: false, movement: true } },
+    ],
+  },
+  {
+    category: 'Movement only',
+    rows: [
+      { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
+      { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
+      {
+        label: 'Data residency',
+        values: { free: false, grassroots: false, movement: DATA_RESIDENCY_LABEL },
+      },
+      {
+        label: 'Support',
+        values: { free: 'Community', grassroots: 'Email', movement: 'Priority + onboarding' },
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/index.ts
 ````typescript
 export type {
@@ -13857,7 +13934,8 @@ export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schem
 
 export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 
-export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';

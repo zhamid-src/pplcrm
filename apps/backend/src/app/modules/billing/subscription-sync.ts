@@ -1,6 +1,6 @@
 import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { logger } from '../../logger';
-import { getStripe, isMockMode } from './stripe-client';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
 
 const tenantsRepo = new TenantsRepo();
 

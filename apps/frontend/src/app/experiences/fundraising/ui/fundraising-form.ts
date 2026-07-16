@@ -48,10 +48,9 @@ export class FundraisingFormComponent implements OnInit {
     this.payload.update((p) => ({ ...p, form_type: type }));
   }
 
-  protected readonly hasStripeKey = computed(() => {
-    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
-    return !!key.trim();
-  });
+  // Connect readiness comes from the residency context (defaults true to avoid a banner flash
+  // before it loads); tenants no longer hold Stripe keys.
+  protected readonly stripeConnected = signal(true);
 
   // Donations are paused until the tenant confirms residency restrictions in Workspace → Donations.
   // Defaults to true so no false "paused" banner flashes before the context loads.
@@ -175,8 +174,10 @@ export class FundraisingFormComponent implements OnInit {
     try {
       const ctx = await this.donationsSvc.getResidencyContext();
       this.residencyAcknowledged.set(ctx.residencyAcknowledged);
+      // Helcim tenants don't need Stripe; the gate only bites on the Stripe path.
+      this.stripeConnected.set(ctx.processor !== 'stripe' || ctx.stripeConnected);
     } catch {
-      // non-fatal — leave the banner hidden if the context can't be read
+      // non-fatal — leave the banners hidden if the context can't be read
     }
   }
 

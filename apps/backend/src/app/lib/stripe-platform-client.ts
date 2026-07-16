@@ -1,8 +1,9 @@
 import Stripe from 'stripe';
-import { env } from '../../../env';
+import { env } from '../../env';
 
-/** Shared Stripe client + mock-mode flag. Split out of `controller.ts` so `subscription-sync.ts`
- * (imported by both `controller.ts` and `usage-limits.ts`) doesn't create an import cycle. */
+/** The single platform Stripe client + mock-mode flag, shared by billing (platform subscriptions)
+ * and donations (Connect direct charges on tenant connected accounts via `{ stripeAccount }`
+ * request options). Lives in lib/ so neither module imports from the other. */
 const stripeSecretKey = env.stripeSecretKey;
 export const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
 export const isMockMode = stripe === null;

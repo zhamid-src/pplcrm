@@ -301,7 +301,8 @@ export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schem
 
 export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
 
-export type { DonationMethod, RecordDonationType } from './lib/schemas/donations.schema';
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';

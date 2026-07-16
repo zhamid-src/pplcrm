@@ -26,15 +26,15 @@
       <div class="skeleton h-12 w-full"></div>
       <div class="skeleton h-24 w-full"></div>
     </div>
-    } @else { @if (!hasStripeKey()) {
+    } @else { @if (!stripeConnected()) {
     <div class="mx-auto max-w-5xl mb-6">
       <div class="alert alert-warning shadow-sm">
         <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
         <div>
-          <span class="font-bold">Stripe Keys Required</span>
+          <span class="font-bold">Connect Stripe to accept donations</span>
           <p class="text-sm mt-0.5">
-            Donation pages require Stripe to process payments.
-            <a href="/workspace/donations" class="link link-primary font-bold">Configure Stripe</a>
+            Donation pages need a connected Stripe account to process payments.
+            <a href="/workspace/donations" class="link link-primary font-bold">Connect Stripe</a>
           </p>
         </div>
       </div>

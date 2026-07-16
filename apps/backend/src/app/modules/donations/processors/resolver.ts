@@ -1,13 +1,14 @@
 import { env } from '../../../../env';
 import type { SettingsLookup } from '../donation-guards';
+import { assertStripeConnectReady } from '../stripe-connect';
 import { HelcimDonationProcessor } from './helcim-processor';
 import { StripeDonationProcessor } from './stripe-processor';
 
 export type ProcessorKind = 'stripe' | 'helcim';
 
-/** Resolved processor plus the credentials it was built from (exposed for the webhook path). */
+/** Resolved processor plus the credentials/account context it was built from. */
 export type ResolvedDonationProcessor =
-  | { processor: 'stripe'; adapter: StripeDonationProcessor; stripeKey: string | undefined }
+  | { processor: 'stripe'; adapter: StripeDonationProcessor; accountId: string | undefined }
   | { processor: 'helcim'; adapter: HelcimDonationProcessor; apiToken: string };
 
 function asNonEmptyString(value: unknown): string | undefined {
@@ -21,9 +22,11 @@ export async function resolveProcessorKind(settingsLookup: SettingsLookup, tenan
 }
 
 /**
- * Build the one-time donation processor for a tenant from its settings. Stripe is the default; a
- * tenant opts into Helcim via `donations.processor = 'helcim'` and `donations.helcim_api_token`.
- * The Stripe key resolution preserves the original `tenant key || env fallback` behavior exactly.
+ * Build the one-time donation processor for a tenant. Helcim keeps its per-tenant API token; the
+ * Stripe branch is Connect: charges run on the platform key against the tenant's connected account
+ * (direct charges — the campaign stays merchant of record), with the platform application fee from
+ * `DONATIONS_PLATFORM_FEE_PERCENT`. Fails closed (`PreconditionFailedError`) when the tenant hasn't
+ * completed Stripe onboarding — mirroring the residency gate; platform mock mode bypasses the gate.
  */
 export async function resolveDonationProcessor(
   settingsLookup: SettingsLookup,
@@ -36,7 +39,10 @@ export async function resolveDonationProcessor(
     return { processor: 'helcim', adapter: new HelcimDonationProcessor(apiToken, 'CAD'), apiToken };
   }
 
-  const stripeKey =
-    asNonEmptyString(await settingsLookup(tenantId, 'donations.stripe_secret_key')) ?? env.stripeSecretKey;
-  return { processor: 'stripe', adapter: new StripeDonationProcessor(stripeKey), stripeKey };
+  const accountId = await assertStripeConnectReady(tenantId);
+  return {
+    processor: 'stripe',
+    adapter: new StripeDonationProcessor({ accountId, feePercent: env.donationsPlatformFeePercent }),
+    accountId,
+  };
 }

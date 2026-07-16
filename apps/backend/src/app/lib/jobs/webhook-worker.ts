@@ -9,6 +9,8 @@ import {
   HelcimDonationProcessor,
   decodeHelcimInvoiceNumber,
 } from '../../modules/donations/processors/helcim-processor';
+import { updateCachedAccountStatus } from '../../modules/donations/stripe-connect';
+import { getStripe, isMockMode } from '../stripe-platform-client';
 import { logger } from '../../logger';
 
 export class WebhookEventWorker {
@@ -147,21 +149,27 @@ export class WebhookEventWorker {
     this.timer = setTimeout(() => this.poll(), ms);
   }
 
-  private async processNextEvent(): Promise<boolean> {
+  /**
+   * `claimEventId` narrows the claim to one specific row — used only by tests, which run in
+   * parallel spec files sharing one Postgres queue and must never steal each other's pending rows.
+   * Production polling always claims the oldest pending event (no argument).
+   */
+  private async processNextEvent(claimEventId?: string): Promise<boolean> {
     const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
     // Try to find and lock a webhook event using SKIP LOCKED
     const eventRecord = await this.db.transaction().execute(async (trx: Transaction<Models>) => {
-      const pendingEvent = await trx
+      let claimQuery = trx
         .selectFrom('webhook_events')
         .selectAll()
         .where('status', '=', 'pending')
         .where('run_at', '<=', new Date())
         .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
+        .limit(1);
+      if (claimEventId !== undefined) {
+        claimQuery = claimQuery.where('id', '=', claimEventId);
+      }
+      const pendingEvent = await claimQuery.forUpdate().skipLocked().executeTakeFirst();
 
       if (!pendingEvent) return null;
 
@@ -210,6 +218,12 @@ export class WebhookEventWorker {
       // Stripe event shape; the transaction detail is fetched from the Helcim API below.
       const isHelcimTransaction = payload?.source === 'helcim';
 
+      // Stripe Connect events (donations) carry the connected account id; platform-account events
+      // (billing) never do. This is the billing/donations discriminator — a Connect event must
+      // never fall through to the BillingController.
+      const isConnectEvent = typeof payload?.account === 'string' && payload.account.length > 0;
+      const isAccountUpdated = eventType === 'account.updated';
+
       const isOneTimeDonation =
         eventType === 'checkout.session.completed' &&
         stripeObj?.metadata?.personId &&
@@ -226,7 +240,16 @@ export class WebhookEventWorker {
       const isDisputeCreated = eventType === 'charge.dispute.created';
       const isDisputeClosed = eventType === 'charge.dispute.closed';
 
-      if (isHelcimTransaction) {
+      if (isAccountUpdated && eventRecord.tenant_id) {
+        // Connect onboarding progress: cache details_submitted / charges_enabled — this is what
+        // flips the tenant's "charges enabled" gate on after they finish Stripe-hosted onboarding.
+        const tenantId = String(eventRecord.tenant_id);
+        const userId = await resolveUserId(tenantId, null);
+        await updateCachedAccountStatus(tenantId, userId, {
+          detailsSubmitted: stripeObj?.details_submitted === true,
+          chargesEnabled: stripeObj?.charges_enabled === true,
+        });
+      } else if (isHelcimTransaction) {
         // Verified Helcim card transaction — fetch the full transaction, then record the gift.
         // Tenant is known from the event row; person/amount ride in the invoiceNumber we set at init.
         const tenantId = String(eventRecord.tenant_id);
@@ -432,6 +455,21 @@ export class WebhookEventWorker {
             invoiceId: stripeObj.invoice ? String(stripeObj.invoice) : null,
             status: 'refunded',
           });
+
+          // Return our platform fee on a fully refunded gift (decided 2026-07-16) — keeping it
+          // would leave the campaign out of pocket. Application fees live on the PLATFORM account,
+          // so no stripeAccount option. Non-fatal: the donation reversal above must stand even if
+          // the fee refund fails (it can be replayed from the Stripe dashboard).
+          if (!isMockMode && stripeObj.application_fee) {
+            try {
+              await getStripe().applicationFees.createRefund(String(stripeObj.application_fee));
+            } catch (feeErr) {
+              logger.error(
+                { err: feeErr, tenantId, applicationFee: String(stripeObj.application_fee) },
+                'Application fee refund failed after full donation refund',
+              );
+            }
+          }
         } else {
           logger.warn(
             { tenantId, chargeId: stripeObj.id, amount, amountRefunded },
@@ -463,6 +501,13 @@ export class WebhookEventWorker {
             status: 'refunded',
           });
         }
+      } else if (isConnectEvent) {
+        // A connected-account event we don't have a handler for. Never hand it to the billing
+        // controller — its customer-id lookups only make sense for platform-account events.
+        logger.info(
+          { eventType, account: payload.account, tenantId: eventRecord.tenant_id },
+          'Unhandled Connect webhook event; acknowledged without action',
+        );
       } else {
         const billingController = new BillingController();
         await billingController.processWebhookEvent(payload);

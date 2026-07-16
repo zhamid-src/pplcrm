@@ -43,6 +43,14 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
   STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
+  // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
+  // accounts") — routes donation events for every tenant's connected account; tenants no longer
+  // hold webhook secrets of their own.
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
+  // Platform application fee on Stripe card donations, as a percent of the gift (decided
+  // 2026-07-16: 1%; campaign pays Stripe's own processing fees directly on top). Percent-only
+  // because recurring donations support only `application_fee_percent`.
+  DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
   SENDGRID_API_KEY: z.string().optional(),
@@ -162,6 +170,8 @@ export const env = {
   stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
   stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
   stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
+  stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
+  donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
   postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,

@@ -1,5 +1,7 @@
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormField, form, max, min } from '@angular/forms/signals';
+import { STRIPE_CONNECT_COUNTRIES, type StripeConnectCountry } from '@common';
 import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Table } from '@uxcommon/components/table/table';
@@ -24,6 +26,16 @@ export interface ResidencyContext {
   country: string | null;
   processor: DonationProcessor;
   residencyAcknowledged: boolean;
+}
+
+/** Mirror of the backend's `donations.getStripeConnectStatus` result. */
+export interface StripeConnectStatus {
+  connected: boolean;
+  accountId: string | null;
+  detailsSubmitted: boolean;
+  chargesEnabled: boolean;
+  requirementsDue: string[];
+  isMockMode: boolean;
 }
 
 export interface TaxCreditTier {
@@ -52,6 +64,7 @@ export class DonationsSettingsComponent implements OnInit {
   private readonly tokenSvc = inject(TokenService);
   private readonly donationsSvc = inject(DonationsService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly route = inject(ActivatedRoute);
 
   private readonly _loading = createLoadingGate();
 
@@ -60,15 +73,23 @@ export class DonationsSettingsComponent implements OnInit {
   protected readonly helcimApiToken = signal('');
   protected readonly helcimWebhookSecret = signal('');
 
-  // "Configured" reads the SAVED settings snapshot (reactive), not the live-edited fields, so the
-  // mutual-exclusion lock only reflects what is actually persisted. Exactly one may be configured.
-  protected readonly stripeConfigured = computed(
-    () => this.settingsSvc.getValue<string>('donations.stripe_secret_key', '').trim().length > 0,
-  );
+  // Stripe Connect: no tenant-held keys — the tenant onboards on Stripe and we track status only.
+  protected readonly stripeStatus = signal<StripeConnectStatus | null>(null);
+  protected readonly isConnectingStripe = signal(false);
+  protected readonly isOpeningStripeDashboard = signal(false);
+  protected readonly stripeConnectCountries = STRIPE_CONNECT_COUNTRIES;
+  protected readonly stripeCountry = signal<StripeConnectCountry>('US');
+
+  // "Configured" reflects what is actually persisted. Stripe: a connected account exists (mock mode
+  // doesn't count — a dev without keys must still be able to pick Helcim). Helcim: a saved token.
+  protected readonly stripeConfigured = computed(() => {
+    const status = this.stripeStatus();
+    return !!status?.connected && !status.isMockMode;
+  });
   protected readonly helcimConfigured = computed(
     () => this.settingsSvc.getValue<string>('donations.helcim_api_token', '').trim().length > 0,
   );
-  // Lock the OTHER option while one processor is configured — you must remove its keys to switch.
+  // Lock the OTHER option while one processor is configured — you must remove its config to switch.
   protected readonly stripeOptionDisabled = computed(() => this.helcimConfigured() && !this.stripeConfigured());
   protected readonly helcimOptionDisabled = computed(() => this.stripeConfigured() && !this.helcimConfigured());
 
@@ -76,8 +97,6 @@ export class DonationsSettingsComponent implements OnInit {
   protected readonly residencyAcknowledged = signal(false);
   protected readonly residencyContext = signal<ResidencyContext | null>(null);
 
-  protected readonly stripeSecretKey = signal('');
-  protected readonly stripeWebhookSecret = signal('');
   protected readonly donationLimit = signal(1000);
   protected readonly restrictResidency = signal(false);
   protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
@@ -288,11 +307,13 @@ export class DonationsSettingsComponent implements OnInit {
     return '';
   });
 
+  // Helcim webhook URL — the Stripe path routes through the platform Connect webhook and needs no
+  // per-tenant URL anymore; only Helcim still uses the tokened endpoint.
   protected readonly webhookUrl = computed(() => {
     const token = this.webhookToken();
     if (!token) return 'Loading Webhook URL...';
     const base = environment.apiUrl.replace(/\/$/, '');
-    return `${base}/api/donations/webhook?token=${token}`;
+    return `${base}/api/donations/helcim-webhook?token=${token}`;
   });
 
   protected readonly availableCountriesToSelect = computed(() => {
@@ -363,11 +384,32 @@ export class DonationsSettingsComponent implements OnInit {
   }
 
   private async loadOnInit(): Promise<void> {
+    // Handle the Stripe-hosted onboarding return redirect (same pattern as the mailbox connects).
+    const params = this.route.snapshot.queryParamMap;
+    if (params.has('stripe_connected')) {
+      this.alerts.showSuccess('Stripe onboarding complete. Verifying your account status…');
+    } else if (params.has('stripe_refresh')) {
+      this.alerts.showError('Stripe onboarding was interrupted — resume it below when you are ready.');
+    }
+
     await this.settingsSvc.load();
     this.loadValues();
+    await this.loadStripeStatus();
     await this.loadPeriods();
     await this.loadWebhookStatus();
     await this.loadResidencyContext();
+  }
+
+  private async loadStripeStatus(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const status = await this.donationsSvc.getStripeConnectStatus();
+      this.stripeStatus.set(status);
+    } catch {
+      // non-fatal — the card falls back to its "not connected" state
+    } finally {
+      end();
+    }
   }
 
   private async loadResidencyContext(): Promise<void> {
@@ -375,6 +417,11 @@ export class DonationsSettingsComponent implements OnInit {
     try {
       const ctx = await this.donationsSvc.getResidencyContext();
       this.residencyContext.set(ctx);
+      // Default the Connect country select to the org's country when it's one Stripe supports.
+      const match = this.stripeConnectCountries.find((c) => c.code === ctx.country);
+      if (match) {
+        this.stripeCountry.set(match.code);
+      }
     } catch {
       // non-fatal — the disclaimers simply stay in their fail-safe (shown) state
     } finally {
@@ -484,8 +531,6 @@ export class DonationsSettingsComponent implements OnInit {
   }
 
   private loadValues() {
-    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
     this.processor.set(this.settingsSvc.getValue<DonationProcessor>('donations.processor', 'stripe'));
     this.helcimApiToken.set(this.settingsSvc.getValue<string>('donations.helcim_api_token', ''));
     this.helcimWebhookSecret.set(this.settingsSvc.getValue<string>('donations.helcim_webhook_secret', ''));
@@ -616,28 +661,50 @@ export class DonationsSettingsComponent implements OnInit {
     this.processor.set(next);
   }
 
-  /** Clear the saved Stripe keys (and its webhook secret), re-enabling the Helcim option. */
+  /** Start (or resume) Stripe-hosted Connect onboarding — redirect-and-return, like the mailbox
+   * connects. Stripe brings the user back to this page with ?stripe_connected / ?stripe_refresh. */
+  protected async connectStripe() {
+    this.isConnectingStripe.set(true);
+    try {
+      const { url } = await this.donationsSvc.startStripeOnboarding(this.stripeCountry());
+      window.location.href = url;
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to start Stripe onboarding');
+      this.isConnectingStripe.set(false);
+    }
+  }
+
+  /** Open the campaign's Stripe Express dashboard (login links are single-use, so fetch fresh). */
+  protected async openStripeDashboard() {
+    this.isOpeningStripeDashboard.set(true);
+    try {
+      const { url } = await this.donationsSvc.createStripeLoginLink();
+      window.open(url, '_blank', 'noopener');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to open the Stripe dashboard');
+    } finally {
+      this.isOpeningStripeDashboard.set(false);
+    }
+  }
+
+  /** Forget the Stripe connection, re-enabling the Helcim option. The campaign's Stripe account
+   * itself is theirs and is not deleted. */
   protected async removeStripeConfig() {
     const confirmed = await this.dialogs.confirm({
-      title: 'Remove Stripe configuration?',
-      message: 'Donations will stop until you configure a processor. This clears your saved Stripe keys.',
-      confirmText: 'Remove Stripe keys',
+      title: 'Remove Stripe connection?',
+      message:
+        'Donations will stop until you configure a processor. Your Stripe account is not deleted — reconnecting later starts a fresh onboarding.',
+      confirmText: 'Remove connection',
       cancelText: 'Cancel',
       variant: 'danger',
     });
     if (!confirmed) return;
     try {
-      await this.settingsSvc.upsert([
-        { key: 'donations.stripe_secret_key', value: '' },
-        { key: 'donations.stripe_webhook_secret', value: '' },
-      ]);
-      this.stripeSecretKey.set('');
-      this.stripeWebhookSecret.set('');
-      this.alerts.showSuccess('Stripe configuration removed');
+      await this.donationsSvc.disconnectStripe();
+      await this.loadStripeStatus();
+      this.alerts.showSuccess('Stripe connection removed');
     } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to remove Stripe configuration',
-      );
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove Stripe connection');
     }
   }
 
@@ -669,13 +736,12 @@ export class DonationsSettingsComponent implements OnInit {
   protected async save() {
     this.isSaving.set(true);
     try {
-      // Only the SELECTED processor's keys are written; the other's are cleared so exactly one
-      // processor is ever configured (the mutual-exclusion contract the UI enforces).
+      // Only the SELECTED processor's config is written; the other's is cleared so exactly one
+      // processor is ever configured. Stripe holds no keys anymore — its connection is managed by
+      // the Connect onboarding buttons, not this save.
       const isStripe = this.processor() === 'stripe';
       const entries = [
         { key: 'donations.processor', value: this.processor() },
-        { key: 'donations.stripe_secret_key', value: isStripe ? this.stripeSecretKey() : '' },
-        { key: 'donations.stripe_webhook_secret', value: isStripe ? this.stripeWebhookSecret() : '' },
         { key: 'donations.helcim_api_token', value: isStripe ? '' : this.helcimApiToken() },
         { key: 'donations.helcim_webhook_secret', value: isStripe ? '' : this.helcimWebhookSecret() },
         { key: 'donations.limit', value: Number(this.donationLimit()) },
@@ -695,9 +761,6 @@ export class DonationsSettingsComponent implements OnInit {
       if (isStripe) {
         this.helcimApiToken.set('');
         this.helcimWebhookSecret.set('');
-      } else {
-        this.stripeSecretKey.set('');
-        this.stripeWebhookSecret.set('');
       }
       this.residencyAcknowledged.set(true);
       this.residencyContext.update((ctx) => (ctx ? { ...ctx, residencyAcknowledged: true } : ctx));
@@ -723,7 +786,7 @@ export class DonationsSettingsComponent implements OnInit {
       const confirmed = await this.dialogs.confirm({
         title: 'Generate a new webhook token?',
         message:
-          'This invalidates the current token. Any Stripe webhook still using the old URL will stop working until you paste the new URL into Stripe. The new token is shown only once.',
+          'This invalidates the current token. Any Helcim webhook still using the old URL will stop working until you paste the new URL into Helcim. The new token is shown only once.',
         confirmText: 'Generate new token',
         cancelText: 'Cancel',
         variant: 'danger',

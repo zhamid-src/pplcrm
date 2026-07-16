@@ -55,6 +55,11 @@ describe('Billing Webhook Async Processing Integration', () => {
   let controller: BillingController;
   let _worker: WebhookEventWorker;
 
+  // webhook_events is a single shared queue and spec files run in parallel (the Connect worker
+  // spec uses it too), so every query/cleanup here is scoped to THIS spec's event ids — never a
+  // blanket deleteFrom or an unfiltered count.
+  const EVENT_IDS = ['evt_test_123', 'evt_test_dup'];
+
   beforeEach(async () => {
     controller = new BillingController();
     _worker = new WebhookEventWorker();
@@ -62,12 +67,11 @@ describe('Billing Webhook Async Processing Integration', () => {
     stripeSubscriptionsRetrieve.mockReset();
     stripeSubscriptionsUpdate.mockReset();
 
-    // Clean tables before tests
-    await db.deleteFrom('webhook_events').execute();
+    await db.deleteFrom('webhook_events').where('stripe_event_id', 'in', EVENT_IDS).execute();
   });
 
   afterEach(async () => {
-    await db.deleteFrom('webhook_events').execute();
+    await db.deleteFrom('webhook_events').where('stripe_event_id', 'in', EVENT_IDS).execute();
   });
 
   it('should immediately persist Stripe event payload to webhook_events as pending', async () => {
@@ -89,7 +93,11 @@ describe('Billing Webhook Async Processing Integration', () => {
     await controller.handleWebhook(payloadStr, 'sig_header');
 
     // Verify it is saved in the database
-    const events = await db.selectFrom('webhook_events').selectAll().execute();
+    const events = await db
+      .selectFrom('webhook_events')
+      .selectAll()
+      .where('stripe_event_id', '=', 'evt_test_123')
+      .execute();
     expect(events.length).toBe(1);
     expect(events[0].stripe_event_id).toBe('evt_test_123');
     expect(events[0].type).toBe('checkout.session.completed');
@@ -115,7 +123,11 @@ describe('Billing Webhook Async Processing Integration', () => {
     await controller.handleWebhook(payloadStr, 'sig_header');
 
     // Only one row should be present
-    const events = await db.selectFrom('webhook_events').selectAll().execute();
+    const events = await db
+      .selectFrom('webhook_events')
+      .selectAll()
+      .where('stripe_event_id', '=', 'evt_test_dup')
+      .execute();
     expect(events.length).toBe(1);
     expect(events[0].stripe_event_id).toBe('evt_test_dup');
   });

@@ -1,8 +1,9 @@
 import crypto from 'crypto';
-import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { BadRequestError, PreconditionFailedError } from '../../errors/app-errors';
+import { getStripe, isMockMode } from '../../lib/stripe-platform-client';
+import { assertStripeConnectReady, getCachedConnectState, getConnectedAccountId } from './stripe-connect';
 import { BaseController } from '../../lib/base.controller';
 import { CampaignsRepo } from '../campaigns/repositories/campaigns.repo';
 import { DonationsRepo } from './repositories/donations.repo';
@@ -174,14 +175,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
     }
 
-    // Cancel in Stripe if there's a real subscription
+    // Cancel in Stripe if there's a real subscription — on the tenant's connected account.
     if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
-      const tenantStripeKey =
-        (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-      if (tenantStripeKey) {
-        const stripe = new Stripe(tenantStripeKey);
+      const accountId = await getConnectedAccountId(tenantId);
+      if (!isMockMode && accountId) {
         try {
-          await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
+          await getStripe().subscriptions.cancel(pledge.stripe_subscription_id, {}, { stripeAccount: accountId });
         } catch (err) {
           logger.error({ err }, 'Stripe subscription cancel failed');
         }
@@ -355,9 +354,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
    * the tenant's country, which processor is active, and whether residency has been acknowledged
    * (the fail-closed gate). Shape is depended on by the frontend — keep name/fields stable.
    */
-  public async getResidencyContext(
-    tenantId: string,
-  ): Promise<{ country: string | null; processor: ProcessorKind; residencyAcknowledged: boolean }> {
+  public async getResidencyContext(tenantId: string): Promise<{
+    country: string | null;
+    processor: ProcessorKind;
+    residencyAcknowledged: boolean;
+    stripeConnected: boolean;
+  }> {
     // `tenants` is looked up by primary id (it's on the tenant-scope allow-list — scoping the tenant
     // table by tenant_id would be circular).
     const tenant = await this.getRepo()
@@ -367,10 +369,14 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .executeTakeFirst();
     const processor = await resolveProcessorKind(this.settingsLookup, tenantId);
     const residencyAcknowledged = await tenantMayAcceptDonations(this.settingsLookup, tenantId);
+    // Connect readiness (cached; mock mode reads as connected) — lets the fundraising editor gate
+    // "connect Stripe first" without a second round-trip.
+    const connectState = await getCachedConnectState(tenantId);
     return {
       country: tenant?.country != null ? String(tenant.country) : null,
       processor,
       residencyAcknowledged,
+      stripeConnected: connectState.chargesEnabled,
     };
   }
 
@@ -445,11 +451,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       throw new BadRequestError(eligibility.reason);
     }
 
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+    // Connect gate: fails closed unless onboarding is complete (mock mode passes with no account).
+    const accountId = await assertStripeConnectReady(auth.tenant_id);
 
-    if (isMock) {
+    if (isMockMode) {
       const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
       const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
 
@@ -465,28 +470,38 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       return { url: successUrl, mock: true };
     }
 
-    const stripe = new Stripe(tenantStripeKey);
-
-    // Create a one-off price for this amount (monthly)
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Monthly Campaign Donation' },
-            unit_amount: monthlyAmountCents,
-            recurring: { interval: 'month' },
+    // Create a one-off price for this amount (monthly) — a Connect direct charge on the tenant's
+    // account; the platform fee on recurring gifts is percent-only (application_fee_percent).
+    const session = await getStripe().checkout.sessions.create(
+      {
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'cad',
+              product_data: { name: 'Monthly Campaign Donation' },
+              unit_amount: monthlyAmountCents,
+              recurring: { interval: 'month' },
+            },
+            quantity: 1,
           },
-          quantity: 1,
+        ],
+        mode: 'subscription',
+        success_url:
+          customUrls?.successUrl ||
+          `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+        subscription_data: {
+          ...(env.donationsPlatformFeePercent > 0 ? { application_fee_percent: env.donationsPlatformFeePercent } : {}),
+          metadata: {
+            tenantId: auth.tenant_id,
+            personId,
+            monthlyAmount: String(monthlyAmountCents),
+            residencyProvince: address.state || '',
+            residencyCountry: address.country || '',
+            createdBy: auth.user_id,
+          },
         },
-      ],
-      mode: 'subscription',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      subscription_data: {
         metadata: {
           tenantId: auth.tenant_id,
           personId,
@@ -494,18 +509,11 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           residencyProvince: address.state || '',
           residencyCountry: address.country || '',
           createdBy: auth.user_id,
+          isRecurring: 'true',
         },
       },
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        monthlyAmount: String(monthlyAmountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-        isRecurring: 'true',
-      },
-    });
+      { stripeAccount: accountId },
+    );
 
     return { url: session.url };
   }
@@ -531,13 +539,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       });
     }
 
-    const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    if (!tenantStripeKey) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stripe is not configured for this tenant.' });
+    const accountId = await getConnectedAccountId(tenantId);
+    if (isMockMode || !accountId) {
+      throw new PreconditionFailedError('Stripe is not connected for this tenant.');
     }
-    const stripe = new Stripe(tenantStripeKey);
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await getStripe().checkout.sessions.retrieve(sessionId, {}, { stripeAccount: accountId });
     if (session.payment_status !== 'paid') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
     }

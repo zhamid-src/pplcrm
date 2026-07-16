@@ -1,8 +1,12 @@
 import { z } from 'zod';
 import { authProcedure as baseAuthProcedure, router } from '../../../trpc';
-import { RecordDonationObj } from '../../../../../../libs/common/src/lib/schemas/donations.schema';
+import {
+  RecordDonationObj,
+  stripeConnectCountrySchema,
+} from '../../../../../../libs/common/src/lib/schemas/donations.schema';
 import { planFeatureGate } from '../billing/plan-gate';
 import { DonationsController } from './controller';
+import { createDashboardLoginLink, disconnect, getConnectStatus, startOnboarding } from './stripe-connect';
 
 const controller = new DonationsController();
 
@@ -185,11 +189,27 @@ export const DonationsRouter = router({
     .input(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
 
-  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
+  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4). Helcim-only now: the
+  // Stripe path uses the platform Connect webhook, which routes by event.account instead. ────────
 
   getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
 
   regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
     controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
   ),
+
+  // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────
+
+  getStripeConnectStatus: authProcedure.query(({ ctx }) => getConnectStatus(ctx.auth.tenant_id, ctx.auth.user_id)),
+
+  startStripeOnboarding: authProcedure
+    .input(z.object({ country: stripeConnectCountrySchema }))
+    .mutation(({ ctx, input }) => startOnboarding(ctx.auth.tenant_id, ctx.auth.user_id, input.country)),
+
+  createStripeLoginLink: authProcedure.mutation(({ ctx }) => createDashboardLoginLink(ctx.auth.tenant_id)),
+
+  disconnectStripe: authProcedure.mutation(async ({ ctx }) => {
+    await disconnect(ctx.auth.tenant_id);
+    return { success: true };
+  }),
 });

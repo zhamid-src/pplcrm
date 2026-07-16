@@ -1,4 +1,5 @@
 import { Service } from '@angular/core';
+import type { StripeConnectCountry } from '@common';
 import { TRPCService } from './trpc-service';
 
 @Service()
@@ -120,7 +121,7 @@ export class DonationsService extends TRPCService<'donations'> {
     return this.api.donations.deleteDonationPeriod.mutate({ id });
   }
 
-  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
+  // ── Webhook token (stored hashed, shown once) — Helcim-only now ──────────────
 
   public getWebhookTokenStatus() {
     return this.api.donations.getWebhookTokenStatus.query();
@@ -133,5 +134,25 @@ export class DonationsService extends TRPCService<'donations'> {
 
   public regenerateWebhookToken() {
     return this.api.donations.regenerateWebhookToken.mutate();
+  }
+
+  // ── Stripe Connect (hosted onboarding; no tenant-held secrets) ────────────────
+
+  public getStripeConnectStatus() {
+    return this.api.donations.getStripeConnectStatus.query();
+  }
+
+  /** Create the connected account (first call) and return the Stripe-hosted onboarding URL. */
+  public startStripeOnboarding(country: StripeConnectCountry) {
+    return this.api.donations.startStripeOnboarding.mutate({ country });
+  }
+
+  /** Express-dashboard login link for the "Open Stripe dashboard" button. */
+  public createStripeLoginLink() {
+    return this.api.donations.createStripeLoginLink.mutate();
+  }
+
+  public disconnectStripe() {
+    return this.api.donations.disconnectStripe.mutate();
   }
 }

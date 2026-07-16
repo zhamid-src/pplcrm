@@ -44,7 +44,11 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
       {
         kind: 'p',
-        text: 'Online gifts are processed by **Stripe** or **Helcim**, whichever you pick under [Workspace → Donations](/workspace/donations). You configure one processor at a time, never both. Your choice sets where donor payment data lives: Stripe processes and stores it in the United States, while Helcim processes and stores it in Canada. Stripe is the default and handles both one-time and monthly (recurring) gifts; Helcim processes one-time donations only, so keep Stripe if you rely on monthly pledges. Once a processor is set up, the other is locked. To switch, remove the current processor’s keys first, then set up the other.',
+        text: 'Online gifts are processed by **Stripe** or **Helcim**, whichever you pick under [Workspace → Donations](/workspace/donations). You configure one processor at a time, never both. Your choice sets where donor payment data lives: Stripe processes and stores it in the United States, while Helcim processes and stores it in Canada. Stripe is the default and handles both one-time and monthly (recurring) gifts; Helcim processes one-time donations only, so keep Stripe if you rely on monthly pledges. Once a processor is set up, the other is locked. To switch, remove the current processor’s configuration first, then set up the other.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too. Helcim setup is unchanged: paste your Helcim API token and webhook verifier token, and add the webhook URL shown on the card to your Helcim account.',
       },
       {
         kind: 'callout',
@@ -206,7 +210,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         kind: 'callout',
         tone: 'info',
         title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through Stripe, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
       },
     ],
   },

@@ -16,7 +16,7 @@ import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 import { WorkflowsController } from '../workflows/controller';
 import { WebhookEventsRepo } from './repositories/webhook-events.repo';
-import { getStripe, isMockMode, stripe } from './stripe-client';
+import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client';
 import { syncSubscriptionQuantity } from './subscription-sync';
 import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
 
