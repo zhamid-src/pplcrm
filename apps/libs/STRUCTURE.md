@@ -504,71 +504,6 @@ export const AddConnectionObj = z.object({
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 ````
 
-## File: libs/common/src/lib/schemas/donations.schema.ts
-````typescript
-import { z } from 'zod';
-import { idSchema } from './core.schema';
-
-/**
- * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
- * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
- * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
- */
-export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
-export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
-  card: 'Card',
-  check: 'Check',
-  cash: 'Cash',
-  bank_transfer: 'Bank transfer',
-};
-
-export const donationMethodSchema = z.enum(DONATION_METHODS);
-export type DonationMethod = z.infer<typeof donationMethodSchema>;
-
-export const RecordDonationObj = z.object({
-  personId: idSchema,
-  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
-  method: donationMethodSchema,
-  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-});
-export type RecordDonationType = z.infer<typeof RecordDonationObj>;
-
-/**
- * Countries a campaign can pick when connecting Stripe for donations (Stripe Connect hosted
- * onboarding). A curated subset of Stripe-supported countries — extend freely; onboarding handles
- * country-specific requirements. Shared so the settings UI select and the backend z.enum agree.
- */
-export const STRIPE_CONNECT_COUNTRIES = [
-  { code: 'US', name: 'United States' },
-  { code: 'CA', name: 'Canada' },
-  { code: 'GB', name: 'United Kingdom' },
-  { code: 'IE', name: 'Ireland' },
-  { code: 'AU', name: 'Australia' },
-  { code: 'NZ', name: 'New Zealand' },
-  { code: 'DE', name: 'Germany' },
-  { code: 'FR', name: 'France' },
-  { code: 'NL', name: 'Netherlands' },
-  { code: 'BE', name: 'Belgium' },
-  { code: 'ES', name: 'Spain' },
-  { code: 'IT', name: 'Italy' },
-  { code: 'PT', name: 'Portugal' },
-  { code: 'AT', name: 'Austria' },
-  { code: 'CH', name: 'Switzerland' },
-  { code: 'SE', name: 'Sweden' },
-  { code: 'NO', name: 'Norway' },
-  { code: 'DK', name: 'Denmark' },
-  { code: 'FI', name: 'Finland' },
-] as const;
-
-export const STRIPE_CONNECT_COUNTRY_CODES = STRIPE_CONNECT_COUNTRIES.map((c) => c.code) as [
-  (typeof STRIPE_CONNECT_COUNTRIES)[number]['code'],
-  ...(typeof STRIPE_CONNECT_COUNTRIES)[number]['code'][],
-];
-export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
-export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
-````
-
 ## File: libs/common/src/lib/schemas/emails.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -2870,6 +2805,129 @@ export default defineConfig(() => ({
 }));
 ````
 
+## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
+````typescript
+import { Component, ElementRef, OnInit, effect, inject, input, output, viewChild } from '@angular/core';
+import { Loader } from '@googlemaps/js-api-loader';
+import { AddressType } from '../../../../common/src/lib/kysely.models';
+import { parseAddress } from './googlePlacesAddressMapper';
+
+/**
+ * `<pc-address-autocomplete>` — a text input that upgrades into a Google Places
+ * Autocomplete field (§6 / §13 / §14 maps ruling: Google Maps Platform only).
+ *
+ * Two shapes of consumer:
+ * - **Search box** (household form): ignore `value`/`textChange`, listen to
+ *   `addressSelected` to fan a structured `AddressType` into other fields.
+ * - **Field of record** (plan-routes start address): seed with `value`, keep a
+ *   signal in sync via `textChange` (freeform typing) *and* `addressSelected`
+ *   (picking a suggestion).
+ *
+ * The `Loader` is injected **optionally** — mirroring `<pc-map>` — so unit tests
+ * and any host without an API key keep a plain, fully-functional text input and
+ * never touch the network.
+ */
+@Component({
+  selector: 'pc-address-autocomplete',
+  standalone: true,
+  template: `
+    <div class="relative w-full">
+      <input
+        #inputEl
+        type="text"
+        class="input w-full"
+        [placeholder]="placeholder()"
+        [disabled]="disabled()"
+        [value]="value()"
+        (input)="onInput($event)"
+        autocomplete="one-time-code"
+      />
+    </div>
+  `,
+})
+export class AddressAutocomplete implements OnInit {
+  /** Optional so unit tests (and any host without the SDK key) keep a plain text input. */
+  private readonly loader = inject(Loader, { optional: true });
+
+  public readonly disabled = input<boolean>(false);
+  public readonly placeholder = input<string>('Start typing an address…');
+  public readonly regionCodes = input<string[]>(['ca']);
+  /** Seeds the field and reflects programmatic changes (for field-of-record use). */
+  public readonly value = input<string>('');
+
+  public readonly addressSelected = output<AddressType>();
+  /** Raw text on every keystroke — for consumers that treat this as the field of record. */
+  public readonly textChange = output<string>();
+
+  private inputElement: HTMLInputElement | null = null;
+  private isLibraryLoaded = false;
+  private isAutocompleteInitialized = false;
+
+  private readonly inputEl = viewChild<ElementRef<HTMLInputElement>>('inputEl');
+
+  constructor() {
+    effect(() => {
+      const elRef = this.inputEl();
+      if (elRef) {
+        this.inputElement = elRef.nativeElement;
+        this.tryInitAutocomplete();
+      }
+    });
+  }
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  protected onInput(event: Event): void {
+    this.textChange.emit((event.target as HTMLInputElement).value);
+  }
+
+  private async initialize() {
+    if (!this.loader) return;
+    try {
+      await this.loader.importLibrary('places');
+      this.isLibraryLoaded = true;
+      this.tryInitAutocomplete();
+    } catch (err) {
+      // Bad key / offline / blocked — stay on the honest plain input.
+      console.error('Failed to load Google Maps Places library', err);
+    }
+  }
+
+  private tryInitAutocomplete() {
+    if (
+      this.isAutocompleteInitialized ||
+      !this.inputElement ||
+      !this.isLibraryLoaded ||
+      typeof google === 'undefined' ||
+      !google.maps ||
+      !google.maps.places
+    ) {
+      return;
+    }
+
+    const options: google.maps.places.AutocompleteOptions = {
+      componentRestrictions: { country: this.regionCodes() },
+      types: ['geocode'],
+    };
+
+    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
+    this.isAutocompleteInitialized = true;
+
+    autocomplete.addListener('place_changed', () => {
+      const place = autocomplete.getPlace();
+      if (place) {
+        const address = parseAddress(place);
+        // Keep field-of-record consumers in sync with the picked formatted address.
+        if (place.formatted_address) this.textChange.emit(place.formatted_address);
+        this.addressSelected.emit(address);
+      }
+    });
+  }
+}
+````
+
 ## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
 ````typescript
 import type { AddressType } from '../../../../common/src/lib/kysely.models';
@@ -3602,6 +3660,282 @@ export function autoMapPersonsHeader(header: string): string {
   const raw = (header || '').toLowerCase().trim();
   const key = raw.replace(/[^a-z0-9]/g, '');
   return HEADER_TO_FIELD[key] || '';
+}
+````
+
+## File: libs/uxcommon/src/components/detail-header/detail-header.ts
+````typescript
+import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
+import { FormActions } from '../form-actions/form-actions';
+
+@Component({
+  selector: 'pc-detail-header',
+  imports: [Icon, FormActions],
+  template: `
+    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex min-w-0 items-center gap-3">
+          @if (avatarText()) {
+            <span
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              aria-hidden="true"
+              >{{ avatarText() }}</span
+            >
+          } @else if (icon()) {
+            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
+          }
+          <div class="min-w-0">
+            @if (eyebrow()) {
+              <p class="pc-eyebrow">{{ eyebrow() }}</p>
+            }
+            <div class="flex min-w-0 items-center gap-2">
+              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+              @if (statusChip()) {
+                <span
+                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
+                  >{{ statusChip() }}</span
+                >
+              }
+              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
+              <ng-content select="[pc-title-suffix]"></ng-content>
+            </div>
+            @if (dirtyFieldCount() > 0) {
+              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
+                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
+              </p>
+            } @else if (subtitle()) {
+              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
+            }
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
+               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
+          @if (positionLabel()) {
+            <div class="mr-1 flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                class="btn btn-circle btn-ghost btn-xs"
+                [attr.aria-label]="prevLabel()"
+                [disabled]="!hasPrev()"
+                [class.btn-ghost]="!hasPrev()"
+                (click)="prevRecord.emit()"
+              >
+                <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              </button>
+              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
+                positionLabel()
+              }}</span>
+              <button
+                type="button"
+                class="btn btn-circle btn-xs"
+                [attr.aria-label]="nextLabel()"
+                [disabled]="!hasNext()"
+                [class.btn-ghost]="!hasNext()"
+                (click)="nextRecord.emit()"
+              >
+                <pc-icon name="chevron-right" [size]="4"></pc-icon>
+              </button>
+            </div>
+          }
+          <ng-content select="[pc-actions-prefix]"></ng-content>
+          @if (showActions()) {
+            <pc-form-actions
+              size="sm"
+              [isLoading]="isLoading()"
+              [signalForm]="form()"
+              [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
+              [buttonsToShow]="formActionsButtons()"
+              [btn1Text]="btn1Text()"
+              [btn1Icon]="btn1Icon()"
+              [showDelete]="false"
+              [showCancel]="showCancel()"
+              (btn1Clicked)="save.emit($event)"
+            ></pc-form-actions>
+          }
+          <ng-content select="[pc-actions-suffix]"></ng-content>
+          @if (showDelete()) {
+            <div class="dropdown dropdown-end">
+              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
+                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
+              </button>
+              <ul
+                tabindex="0"
+                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+              >
+                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                <ng-content select="[pc-overflow-extra]"></ng-content>
+                <li>
+                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
+                    <pc-icon name="trash" [size]="4"></pc-icon>
+                    {{ deleteText() }}
+                  </button>
+                </li>
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class DetailHeader {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  public readonly delete = output<void>();
+  public readonly save = output<any>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+  public btn1Text = input<string>('Save');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public deleteText = input<string>('Delete');
+  public disabled = input<boolean>(false);
+  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
+  public saveAlwaysEnabled = input<boolean>(false);
+  public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
+  public statusChip = input<string | null>(null);
+  public form = input<any>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public iconSize = input<number>(5);
+  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
+  public avatarText = input<string | null>(null);
+  public isLoading = input.required<boolean>();
+  public showActions = input<boolean>(true);
+  public showDelete = input<boolean>(false);
+  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
+   * detail-layout overrides it to false for read views. */
+  public showCancel = input<boolean>(true);
+  public subtitle = input<string | null | undefined>();
+  public title = input.required<string>();
+
+  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
+
+  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
+  public dirtyFieldCount = input<number>(0);
+
+  // Delete moved to the overflow menu. Suppressing the third button whenever
+  // Delete is offered preserves the layout form-actions previously produced
+  // when it rendered the Delete button inline.
+  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
+    this.showDelete() ? 'two' : this.buttonsToShow(),
+  );
+
+  constructor() {
+    // The breadcrumb trail renders in the navbar; the record pager now lives in
+    // this header card (design source), so publish the trail only and leave the
+    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
+    // empties when navigating to a page (e.g. a grid) that owns no trail.
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: this.prevLabel(),
+        nextLabel: this.nextLabel(),
+        onPrev: () => this.prevRecord.emit(),
+        onNext: () => this.nextRecord.emit(),
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+  }
+}
+````
+
+## File: libs/uxcommon/src/components/detail-item/detail-item.ts
+````typescript
+import { Component, inject, input, output } from '@angular/core';
+import { AlertService } from '../alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-detail-item',
+  imports: [Icon],
+  template: `
+    <div class="flex flex-col gap-1 mb-4">
+      <span class="pc-eyebrow">
+        {{ label() }}
+      </span>
+      <div class="flex items-center gap-2">
+        @if (icon()) {
+          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
+        }
+        @if (value() && link()) {
+          <button
+            type="button"
+            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            (click)="linkClicked.emit()"
+          >
+            {{ value() }}
+          </button>
+        } @else {
+          <span class="text-sm font-medium text-base-content break-words">
+            @if (value()) {
+              {{ value() }}
+            } @else {
+              <span class="italic text-base-content/30">Not provided</span>
+            }
+          </span>
+        }
+        @if (value() && copyable()) {
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
+            [attr.data-tip]="'Copy ' + label()"
+            (click)="copyToClipboard($event)"
+          >
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+          </button>
+        }
+      </div>
+    </div>
+  `,
+})
+export class DetailItem {
+  public label = input.required<string>();
+  public value = input<string | null | undefined>();
+  public icon = input<PcIconNameType | null | undefined>();
+  public copyable = input<boolean>(false);
+  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
+  public link = input<boolean>(false);
+  public readonly linkClicked = output<void>();
+
+  private readonly alertSvc = inject(AlertService);
+
+  protected copyToClipboard(event: MouseEvent): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const val = this.value();
+    if (!val) return;
+
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${this.label()}`);
+      });
+  }
 }
 ````
 
@@ -4969,6 +5303,65 @@ export class SideDrawer {
 }
 ````
 
+## File: libs/uxcommon/src/components/stat-card/stat-card.ts
+````typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-stat-card',
+  imports: [Icon],
+  template: `
+    <div
+      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
+    >
+      <div class="stat p-0 leading-normal">
+        @if (title()) {
+          <div class="stat-title pc-eyebrow">
+            {{ title() }}
+          </div>
+        }
+        @if (loading()) {
+          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
+          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
+        } @else {
+          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
+            {{ value() }}
+          </div>
+        }
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
+          @if (description()) {
+            <span>{{ description() }}</span>
+          }
+          <ng-content select="[pc-stat-desc]"></ng-content>
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 flex items-center justify-center gap-2">
+        @if (icon()) {
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
+            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
+          </div>
+        }
+        <ng-content select="[pc-stat-extra]"></ng-content>
+      </div>
+    </div>
+  `,
+})
+export class StatCard {
+  public title = input<string>();
+  public value = input<string | number>();
+  /** When true, the value renders as a skeleton block instead of a number/spinner. */
+  public loading = input<boolean>(false);
+  public description = input<string>();
+  public icon = input<PcIconNameType>();
+  public valueColorClass = input<string>('text-base-content');
+  public iconBgClass = input<string>('bg-base-200/50');
+  public iconColorClass = input<string>('text-base-content/70');
+}
+````
+
 ## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
 ````typescript
 import { Component, input } from '@angular/core';
@@ -5789,6 +6182,49 @@ export class AnimateIfDirective {
 }
 ````
 
+## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
+````typescript
+import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
+
+@Directive({
+  selector: 'button[pcSpinOnClick]',
+  exportAs: 'pcSpinOnClick',
+  host: { '(click)': 'onButtonClick()' },
+})
+export class SpinOnClickDirective {
+  private readonly el = inject(ElementRef<HTMLButtonElement>);
+  private readonly destroyRef = inject(DestroyRef);
+
+  readonly minMs = input(700);
+
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => this.clearTimer());
+  }
+
+  protected onButtonClick(): void {
+    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
+    if (!icon) return;
+
+    icon.classList.add('animate-spin', 'inline-block');
+    this.clearTimer();
+
+    this.timer = setTimeout(() => {
+      icon.classList.remove('animate-spin', 'inline-block');
+      this.timer = null;
+    }, this.minMs());
+  }
+
+  private clearTimer(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+  }
+}
+````
+
 ## File: libs/uxcommon/src/mentions/mention-controller.ts
 ````typescript
 import { computed, signal } from '@angular/core';
@@ -6240,6 +6676,194 @@ export class BypassHtmlSanitizerPipe implements PipeTransform {
 }
 ````
 
+## File: libs/uxcommon/src/pipes/timeago.pipe.ts
+````typescript
+import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
+
+export interface TimeAgoOptions {
+  thresholdDays?: number;
+  style?: 'long' | 'short' | 'compact' | string;
+  compact?: boolean;
+  hideSuffix?: boolean;
+  // Index signature ensures any other existing options in your codebase are accepted
+  [key: string]: any;
+}
+
+@Pipe({
+  name: 'timeAgo', // Matched to your template casing
+  pure: false, // Must be false to update the UI over time
+})
+export class TimeAgoPipe implements PipeTransform, OnDestroy {
+  private timerId: ReturnType<typeof setTimeout> | null = null;
+  private lastValue?: string | number | Date | null;
+  private lastOptsJson?: string;
+  private lastResult = '';
+
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
+    // Stringify options to avoid pure:false memory reference loops
+    const optsJson = opts ? JSON.stringify(opts) : '';
+
+    // Only recalculate if the date OR the options have actually changed
+    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
+      return this.lastResult;
+    }
+
+    this.lastValue = value;
+    this.lastOptsJson = optsJson;
+    this.clearTimer();
+
+    if (!value) {
+      this.lastResult = '';
+      return this.lastResult;
+    }
+
+    const date = new Date(value);
+    if (isNaN(date.getTime())) {
+      this.lastResult = String(value);
+      return this.lastResult;
+    }
+
+    const diffMs = new Date().getTime() - date.getTime();
+
+    // Calculate and cache the result
+    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
+    this.setupTimer(diffMs);
+
+    return this.lastResult;
+  }
+
+  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    // If a threshold is set and exceeded, fallback to a standard date string
+    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
+      return date.toLocaleDateString(undefined, {
+        month: opts.style === 'short' ? 'short' : 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    }
+
+    const suffix = opts?.hideSuffix ? '' : ' ago';
+
+    // Handle compact/short styles
+    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
+      if (seconds < 60) return 'now';
+      if (minutes < 60) return `${minutes}m`;
+      if (hours < 24) return `${hours}h`;
+      return `${days}d`;
+    }
+
+    // Default long style
+    if (seconds < 60) return 'just now';
+    if (minutes === 1) return `a minute${suffix}`;
+    if (minutes < 60) return `${minutes} minutes${suffix}`;
+    if (hours === 1) return `an hour${suffix}`;
+    if (hours < 24) return `${hours} hours${suffix}`;
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days} days${suffix}`;
+
+    const months = Math.floor(days / 30);
+    if (months === 1) return `a month${suffix}`;
+    if (months < 12) return `${months} months${suffix}`;
+
+    const years = Math.floor(days / 365);
+    if (years === 1) return `a year${suffix}`;
+    return `${years} years${suffix}`;
+  }
+
+  private setupTimer(diffMs: number): void {
+    const seconds = Math.floor(Math.abs(diffMs) / 1000);
+    const minutes = Math.floor(seconds / 60);
+
+    let timeoutMs = 60000;
+
+    // Scale update frequency based on age to save CPU
+    if (seconds < 60) {
+      timeoutMs = 10000; // 10 seconds
+    } else if (minutes < 60) {
+      timeoutMs = 60000; // 1 minute
+    } else if (minutes < 1440) {
+      timeoutMs = 3600000; // 1 hour
+    } else {
+      timeoutMs = 86400000; // 1 day
+    }
+
+    // Native setTimeout triggers Angular's zoneless scheduler internally
+    // when markForCheck is called inside it.
+    this.timerId = setTimeout(() => {
+      this.cdr.markForCheck();
+    }, timeoutMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
+    }
+  }
+
+  public ngOnDestroy(): void {
+    this.clearTimer();
+  }
+}
+````
+
+## File: libs/uxcommon/src/index.ts
+````typescript
+export * from './loading-gate';
+export * from './request-guard';
+
+// Components
+export * from './components/alerts/alert-service';
+export * from './components/alerts/alerts';
+export * from './components/icons/icon';
+export * from './components/icons/icons.index';
+export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
+export * from './components/user-avatar/user-avatar';
+export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/table/table';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
+export * from './components/detail-item/detail-item';
+export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
+
+// Directives
+export * from './directives/animate-if.directive';
+export * from './directives/spin-on-click.directive';
+
+// Pipes
+export * from './pipes/file-icon.pipe';
+export * from './pipes/filesize.pipe';
+export * from './pipes/sanitize-html.pipe';
+export * from './pipes/svg-html-pipe';
+export * from './pipes/timeago.pipe';
+````
+
 ## File: libs/uxcommon/src/loading-gate.ts
 ````typescript
 // _loading-gate.ts
@@ -6334,6 +6958,44 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
   }
 
   return { begin, visible, loaded };
+}
+````
+
+## File: libs/uxcommon/src/request-guard.ts
+````typescript
+export type RequestGuard = {
+  /**
+   * Marks the start of a new request and returns a checker for it. After each
+   * `await`, bail out unless the checker still returns true — a newer request
+   * has superseded this one and its (stale) response must not land.
+   */
+  begin(): () => boolean;
+};
+
+/**
+ * Guards a reloadable async data source against out-of-order responses: when a
+ * component reloads on an input change (e.g. prev/next record navigation), a
+ * slow earlier response must not overwrite the newer record.
+ *
+ * ```ts
+ * private readonly guard = createRequestGuard();
+ *
+ * async load(id: string) {
+ *   const isCurrent = this.guard.begin();
+ *   const data = await this.svc.getById(id);
+ *   if (!isCurrent()) return;
+ *   this.detail.set(data);
+ * }
+ * ```
+ */
+export function createRequestGuard(): RequestGuard {
+  let sequence = 0;
+  return {
+    begin(): () => boolean {
+      const requestId = ++sequence;
+      return () => requestId === sequence;
+    },
+  };
 }
 ````
 
@@ -8974,6 +9636,71 @@ export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
 ````
 
+## File: libs/common/src/lib/schemas/donations.schema.ts
+````typescript
+import { z } from 'zod';
+import { idSchema } from './core.schema';
+
+/**
+ * Offline gift entry (spec §12, Fig. 15 "Record donation" dialog). Distinct from the Stripe
+ * checkout path (`createCheckout`/`confirmDonation`) — this is for gifts collected outside the
+ * public donation form (cash at a fundraiser, a mailed check, a bank transfer).
+ */
+export const DONATION_METHODS = ['card', 'check', 'cash', 'bank_transfer'] as const;
+export const DONATION_METHOD_LABELS: Record<(typeof DONATION_METHODS)[number], string> = {
+  card: 'Card',
+  check: 'Check',
+  cash: 'Cash',
+  bank_transfer: 'Bank transfer',
+};
+
+export const donationMethodSchema = z.enum(DONATION_METHODS);
+export type DonationMethod = z.infer<typeof donationMethodSchema>;
+
+export const RecordDonationObj = z.object({
+  personId: idSchema,
+  amountCents: z.number().int().positive('Enter an amount above zero, like 50'),
+  method: donationMethodSchema,
+  /** Campaigns §15 — which fund this gift belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+});
+export type RecordDonationType = z.infer<typeof RecordDonationObj>;
+
+/**
+ * Countries a campaign can pick when connecting Stripe for donations (Stripe Connect hosted
+ * onboarding). A curated subset of Stripe-supported countries — extend freely; onboarding handles
+ * country-specific requirements. Shared so the settings UI select and the backend z.enum agree.
+ */
+export const STRIPE_CONNECT_COUNTRIES = [
+  { code: 'US', name: 'United States' },
+  { code: 'CA', name: 'Canada' },
+  { code: 'GB', name: 'United Kingdom' },
+  { code: 'IE', name: 'Ireland' },
+  { code: 'AU', name: 'Australia' },
+  { code: 'NZ', name: 'New Zealand' },
+  { code: 'DE', name: 'Germany' },
+  { code: 'FR', name: 'France' },
+  { code: 'NL', name: 'Netherlands' },
+  { code: 'BE', name: 'Belgium' },
+  { code: 'ES', name: 'Spain' },
+  { code: 'IT', name: 'Italy' },
+  { code: 'PT', name: 'Portugal' },
+  { code: 'AT', name: 'Austria' },
+  { code: 'CH', name: 'Switzerland' },
+  { code: 'SE', name: 'Sweden' },
+  { code: 'NO', name: 'Norway' },
+  { code: 'DK', name: 'Denmark' },
+  { code: 'FI', name: 'Finland' },
+] as const;
+
+export const STRIPE_CONNECT_COUNTRY_CODES = STRIPE_CONNECT_COUNTRIES.map((c) => c.code) as [
+  (typeof STRIPE_CONNECT_COUNTRIES)[number]['code'],
+  ...(typeof STRIPE_CONNECT_COUNTRIES)[number]['code'][],
+];
+export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
+export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
+````
+
 ## File: libs/common/src/lib/schemas/persons.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -9090,405 +9817,6 @@ export * from './schemas/donations.schema';
 export * from './schemas/companion-access.schema';
 ````
 
-## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
-````typescript
-import { Component, ElementRef, OnInit, effect, inject, input, output, viewChild } from '@angular/core';
-import { Loader } from '@googlemaps/js-api-loader';
-import { AddressType } from '../../../../common/src/lib/kysely.models';
-import { parseAddress } from './googlePlacesAddressMapper';
-
-/**
- * `<pc-address-autocomplete>` — a text input that upgrades into a Google Places
- * Autocomplete field (§6 / §13 / §14 maps ruling: Google Maps Platform only).
- *
- * Two shapes of consumer:
- * - **Search box** (household form): ignore `value`/`textChange`, listen to
- *   `addressSelected` to fan a structured `AddressType` into other fields.
- * - **Field of record** (plan-routes start address): seed with `value`, keep a
- *   signal in sync via `textChange` (freeform typing) *and* `addressSelected`
- *   (picking a suggestion).
- *
- * The `Loader` is injected **optionally** — mirroring `<pc-map>` — so unit tests
- * and any host without an API key keep a plain, fully-functional text input and
- * never touch the network.
- */
-@Component({
-  selector: 'pc-address-autocomplete',
-  standalone: true,
-  template: `
-    <div class="relative w-full">
-      <input
-        #inputEl
-        type="text"
-        class="input w-full"
-        [placeholder]="placeholder()"
-        [disabled]="disabled()"
-        [value]="value()"
-        (input)="onInput($event)"
-        autocomplete="one-time-code"
-      />
-    </div>
-  `,
-})
-export class AddressAutocomplete implements OnInit {
-  /** Optional so unit tests (and any host without the SDK key) keep a plain text input. */
-  private readonly loader = inject(Loader, { optional: true });
-
-  public readonly disabled = input<boolean>(false);
-  public readonly placeholder = input<string>('Start typing an address…');
-  public readonly regionCodes = input<string[]>(['ca']);
-  /** Seeds the field and reflects programmatic changes (for field-of-record use). */
-  public readonly value = input<string>('');
-
-  public readonly addressSelected = output<AddressType>();
-  /** Raw text on every keystroke — for consumers that treat this as the field of record. */
-  public readonly textChange = output<string>();
-
-  private inputElement: HTMLInputElement | null = null;
-  private isLibraryLoaded = false;
-  private isAutocompleteInitialized = false;
-
-  private readonly inputEl = viewChild<ElementRef<HTMLInputElement>>('inputEl');
-
-  constructor() {
-    effect(() => {
-      const elRef = this.inputEl();
-      if (elRef) {
-        this.inputElement = elRef.nativeElement;
-        this.tryInitAutocomplete();
-      }
-    });
-  }
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  protected onInput(event: Event): void {
-    this.textChange.emit((event.target as HTMLInputElement).value);
-  }
-
-  private async initialize() {
-    if (!this.loader) return;
-    try {
-      await this.loader.importLibrary('places');
-      this.isLibraryLoaded = true;
-      this.tryInitAutocomplete();
-    } catch (err) {
-      // Bad key / offline / blocked — stay on the honest plain input.
-      console.error('Failed to load Google Maps Places library', err);
-    }
-  }
-
-  private tryInitAutocomplete() {
-    if (
-      this.isAutocompleteInitialized ||
-      !this.inputElement ||
-      !this.isLibraryLoaded ||
-      typeof google === 'undefined' ||
-      !google.maps ||
-      !google.maps.places
-    ) {
-      return;
-    }
-
-    const options: google.maps.places.AutocompleteOptions = {
-      componentRestrictions: { country: this.regionCodes() },
-      types: ['geocode'],
-    };
-
-    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
-    this.isAutocompleteInitialized = true;
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place) {
-        const address = parseAddress(place);
-        // Keep field-of-record consumers in sync with the picked formatted address.
-        if (place.formatted_address) this.textChange.emit(place.formatted_address);
-        this.addressSelected.emit(address);
-      }
-    });
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-````typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (avatarText()) {
-            <span
-              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
-              aria-hidden="true"
-              >{{ avatarText() }}</span
-            >
-          } @else if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="pc-eyebrow">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-              <!-- Tone-colored badges the fixed success statusChip can't express (e.g. pc-status-badge) -->
-              <ng-content select="[pc-title-suffix]"></ng-content>
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <!-- "N of M filtered" walk-the-list pager — lives in the header card (design source),
-               so J/K navigation is visible next to the actions. Self-hides with no grid context. -->
-          @if (positionLabel()) {
-            <div class="mr-1 flex shrink-0 items-center gap-0.5">
-              <button
-                type="button"
-                class="btn btn-circle btn-ghost btn-xs"
-                [attr.aria-label]="prevLabel()"
-                [disabled]="!hasPrev()"
-                [class.btn-ghost]="!hasPrev()"
-                (click)="prevRecord.emit()"
-              >
-                <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              </button>
-              <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{
-                positionLabel()
-              }}</span>
-              <button
-                type="button"
-                class="btn btn-circle btn-xs"
-                [attr.aria-label]="nextLabel()"
-                [disabled]="!hasNext()"
-                [class.btn-ghost]="!hasNext()"
-                (click)="nextRecord.emit()"
-              >
-                <pc-icon name="chevron-right" [size]="4"></pc-icon>
-              </button>
-            </div>
-          }
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              size="sm"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              [showCancel]="showCancel()"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  /** Optional initials shown in a circular avatar left of the title (e.g. "JB"). Takes precedence over icon(). */
-  public avatarText = input<string | null>(null);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  /** Forwarded to form-actions. Defaults on for edit forms (used directly);
-   * detail-layout overrides it to false for read views. */
-  public showCancel = input<boolean>(true);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail renders in the navbar; the record pager now lives in
-    // this header card (design source), so publish the trail only and leave the
-    // navbar pager empty to avoid a duplicate. Clear on destroy so the strip
-    // empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: null,
-        hasPrev: false,
-        hasNext: false,
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-````typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="pc-eyebrow">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="cursor-pointer text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-````
-
 ## File: libs/uxcommon/src/components/form-actions/form-actions.ts
 ````typescript
 import { Component, inject, input, output } from '@angular/core';
@@ -9594,65 +9922,6 @@ export class FormActions {
       this.cancel();
     }
   };
-}
-````
-
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title pc-eyebrow">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
 }
 ````
 
@@ -9925,641 +10194,6 @@ export class ConfirmDialogHost {
     this.svc.ok(value);
   }
 }
-````
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-````typescript
-import { Directive, DestroyRef, ElementRef, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-  host: { '(click)': 'onButtonClick()' },
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
-````typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform, inject } from '@angular/core';
-
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
-
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
-
-  private readonly cdr = inject(ChangeDetectorRef);
-
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
-
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
-    }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
-    }
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
-  }
-
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
-  }
-
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
-    }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
-  }
-
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
-}
-````
-
-## File: libs/uxcommon/src/index.ts
-````typescript
-export * from './loading-gate';
-export * from './request-guard';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/table/table';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-export * from './components/map/map';
-export * from './components/map/map-types';
-export * from './components/geocode-chip/geocode-chip';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-````
-
-## File: libs/uxcommon/src/request-guard.ts
-````typescript
-export type RequestGuard = {
-  /**
-   * Marks the start of a new request and returns a checker for it. After each
-   * `await`, bail out unless the checker still returns true — a newer request
-   * has superseded this one and its (stale) response must not land.
-   */
-  begin(): () => boolean;
-};
-
-/**
- * Guards a reloadable async data source against out-of-order responses: when a
- * component reloads on an input change (e.g. prev/next record navigation), a
- * slow earlier response must not overwrite the newer record.
- *
- * ```ts
- * private readonly guard = createRequestGuard();
- *
- * async load(id: string) {
- *   const isCurrent = this.guard.begin();
- *   const data = await this.svc.getById(id);
- *   if (!isCurrent()) return;
- *   this.detail.set(data);
- * }
- * ```
- */
-export function createRequestGuard(): RequestGuard {
-  let sequence = 0;
-  return {
-    begin(): () => boolean {
-      const requestId = ++sequence;
-      return () => requestId === sequence;
-    },
-  };
-}
-````
-
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'helcim',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe** or **Helcim**, whichever you pick under [Workspace → Donations](/workspace/donations). You configure one processor at a time, never both. Your choice sets where donor payment data lives: Stripe processes and stores it in the United States, while Helcim processes and stores it in Canada. Stripe is the default and handles both one-time and monthly (recurring) gifts; Helcim processes one-time donations only, so keep Stripe if you rely on monthly pledges. Once a processor is set up, the other is locked. To switch, remove the current processor’s configuration first, then set up the other.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too. Helcim setup is unchanged: paste your Helcim API token and webhook verifier token, and add the webhook URL shown on the card to your Helcim account.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
 ````
 
 ## File: libs/common/src/lib/schemas/core.schema.ts
@@ -11229,323 +10863,365 @@ export const icons = {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/administration.ts
+## File: libs/common/src/lib/help/articles/engagement.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const ADMIN_ARTICLES: HelpArticle[] = [
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
   {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
     summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
     keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
     ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
     blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
       {
         kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management.',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
       },
       {
         kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
       },
       {
         kind: 'p',
-        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
       },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
       {
         kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
       },
       {
         kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
       },
     ],
   },
   {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
     summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
     keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
       'archive',
-      'workspace',
-      'constituency',
+      'responses',
     ],
-    related: ['users-roles', 'activity-log'],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
     blocks: [
       {
         kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
       },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
       {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
+        kind: 'steps',
         items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
       },
     ],
   },
@@ -11703,7 +11379,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
       {
         kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management need **Grassroots** or higher; canvassing and deliveries need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
       },
     ],
   },
@@ -13115,6 +12791,329 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan, live usage, and payment details.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/billing/plans.ts
 ````typescript
 /**
@@ -13132,10 +13131,10 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
  *    Representative $99) the moment they crossed one subscriber count. `representative` is
  *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
  *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
- *    field reports, route optimization — plus A/B testing and the optional dedicated sending
- *    IP are Movement-only.
+ *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
+ *    signs, turf cutting, walk lists & routes, field reports, route optimization — plus A/B
+ *    testing and the optional dedicated sending IP are Movement-only.
  *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
  *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
  *    can actually email. This is the differentiator vs. contact-metered tools.
@@ -13149,7 +13148,11 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
  *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
  *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
  *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only.
+ *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
+ *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
+ *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
+ *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
+ *    Grassroots.)
  *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
  *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
  *  - All prices are USD.
@@ -13304,7 +13307,7 @@ export const PLANS: readonly PlanDef[] = [
     pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
     storageBytes: 10 * GB,
     seats: 5,
-    volunteers: 15,
+    volunteers: 0,
     purchasable: true,
     featured: false,
     displayed: true,
@@ -13312,10 +13315,10 @@ export const PLANS: readonly PlanDef[] = [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
       'Up to 100,000 email subscribers · 12× emails/month',
-      '5 staff seats · 15 volunteers · 10 GB storage',
+      '5 staff seats · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
-      'Volunteer management & monitoring',
+      'Volunteer management (teams & events)',
       'Email support',
     ],
   },
@@ -13337,6 +13340,7 @@ export const PLANS: readonly PlanDef[] = [
       'Up to 200,000 email subscribers · 12× emails/month',
       'Unlimited staff seats & volunteers · 200 GB storage',
       'Canvassing & deliveries companion apps',
+      'Companion volunteer access & field monitoring',
       'Yard signs & route optimization',
       'Turf cutting, walk lists & routes, field reports',
       'A/B testing & optional dedicated sending IP',
@@ -13507,6 +13511,7 @@ export const GATED_FEATURES = {
   volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
   canvassing: { minPlan: 'movement', label: 'Canvassing' },
   deliveries: { minPlan: 'movement', label: 'Deliveries' },
+  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
 } as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
 
 export type GatedFeature = keyof typeof GATED_FEATURES;
@@ -13559,7 +13564,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       },
       { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
       { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
     ],
   },
   {
@@ -13588,7 +13593,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
       { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
       {
-        label: 'Volunteer management & monitoring',
+        label: 'Volunteer management (teams & events)',
         values: { free: false, grassroots: true, movement: true },
       },
     ],
@@ -13614,6 +13619,10 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
   {
     category: 'Movement only',
     rows: [
+      {
+        label: 'Companion volunteer access & monitoring',
+        values: { free: false, grassroots: false, movement: true },
+      },
       { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
       { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
       {
