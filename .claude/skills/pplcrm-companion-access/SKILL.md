@@ -53,7 +53,11 @@ client — the gate needs them to render the right state; keep uniform 404 for d
 tokens.
 
 Admin tRPC (`companionAccess` router): `getAll`, `pendingCount`, `approve(id)`,
-`revoke(id)` (admin/owner only; revoke cascades to every session).
+`revoke(id)` (admin/owner only; revoke cascades to every session). Mutations are
+plan-gated via `planFeatureGate('companions')` — Movement-only, matching the two
+companion surfaces (turf assignments and delivery routes are both Movement-gated, so
+approvals below Movement would be a dead end); reads stay open. Staff-side volunteer
+management (teams, volunteer-events) is a separate `volunteers` gate at Grassroots.
 
 ## SMS (`apps/backend/src/app/lib/sms/`)
 

@@ -76,8 +76,9 @@ complaints into `email_suppressions`.
 ## Plan gates — `apps/backend/src/app/modules/billing/plan-gate.ts`
 
 `GATED_FEATURES` in `libs/common/src/lib/billing/plans.ts` is the machine-readable core of
-FEATURE_MATRIX (keep both in sync): forms/donations/automations/lists/volunteers →
-`grassroots`+; canvassing/deliveries → `movement`+. `planFeatureGate(feature)` is a tRPC
+FEATURE_MATRIX (keep both in sync): forms/donations/automations/lists/volunteers (staff-side
+management: teams, volunteer-events) → `grassroots`+; canvassing/deliveries/companions
+(companion-access) → `movement`+. `planFeatureGate(feature)` is a tRPC
 middleware that blocks **mutations only** (reads stay open — disclosure over suppression);
 gated routers rebind locally:
 

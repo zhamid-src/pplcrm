@@ -7,9 +7,11 @@ import { CompanionAccessController } from './controller';
 
 const controller = new CompanionAccessController();
 
-// FEATURE_MATRIX plan gate: companion volunteers are Grassroots-and-up (Free includes none), so
-// approving/revoking volunteer access is blocked on Free.
-const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('volunteers'));
+// FEATURE_MATRIX plan gate: companion volunteer access is Movement-only — the surfaces that
+// mint volunteer links (turf assignments, delivery routes) are Movement-gated, so approvals
+// below Movement would be a dead end. Staff-side volunteer management (teams, volunteer
+// events) stays on the Grassroots 'volunteers' gate.
+const adminOrOwnerProcedure = baseAdminOrOwnerProcedure.use(planFeatureGate('companions'));
 
 /** Staff surface for the companion access layer: the Volunteer access page. */
 export const CompanionAccessRouter = router({

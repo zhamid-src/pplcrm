@@ -13,10 +13,10 @@
  *    Representative $99) the moment they crossed one subscriber count. `representative` is
  *    retired. Feature split (revised 2026-07-14): newsletters are table stakes on EVERY plan
  *    including Free; forms, donations, automations, lists (segments) and volunteer management
- *    & monitoring are the paid step-up (Grassroots and up); the field-ops surface — both
- *    companion apps (canvassing & deliveries), yard signs, turf cutting, walk lists & routes,
- *    field reports, route optimization — plus A/B testing and the optional dedicated sending
- *    IP are Movement-only.
+ *    (teams & events) are the paid step-up (Grassroots and up); the field-ops surface — both
+ *    companion apps (canvassing & deliveries), companion volunteer access & monitoring, yard
+ *    signs, turf cutting, walk lists & routes, field reports, route optimization — plus A/B
+ *    testing and the optional dedicated sending IP are Movement-only.
  *  - Meter the EMAILABLE-SUBSCRIBER count, NOT total contacts. A campaign can store its
  *    whole voter / canvassing universe for free (storage is cheap) and only pays for who it
  *    can actually email. This is the differentiator vs. contact-metered tools.
@@ -30,7 +30,11 @@
  *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
  *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
  *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
- *    Movement-only.
+ *    Movement-only. (Revised 2026-07-16: companion volunteer access itself moved to
+ *    Movement-only. On Grassroots it was a dead grant — volunteer links are minted only by
+ *    turf assignments and delivery routes, both Movement-gated — so the old "15 volunteers"
+ *    could never be used. Staff-side volunteer management — teams & volunteer events — stays
+ *    Grassroots.)
  *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
  *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
  *  - All prices are USD.
@@ -185,7 +189,7 @@ export const PLANS: readonly PlanDef[] = [
     pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
     storageBytes: 10 * GB,
     seats: 5,
-    volunteers: 15,
+    volunteers: 0,
     purchasable: true,
     featured: false,
     displayed: true,
@@ -193,10 +197,10 @@ export const PLANS: readonly PlanDef[] = [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
       'Up to 100,000 email subscribers · 12× emails/month',
-      '5 staff seats · 15 volunteers · 10 GB storage',
+      '5 staff seats · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
-      'Volunteer management & monitoring',
+      'Volunteer management (teams & events)',
       'Email support',
     ],
   },
@@ -218,6 +222,7 @@ export const PLANS: readonly PlanDef[] = [
       'Up to 200,000 email subscribers · 12× emails/month',
       'Unlimited staff seats & volunteers · 200 GB storage',
       'Canvassing & deliveries companion apps',
+      'Companion volunteer access & field monitoring',
       'Yard signs & route optimization',
       'Turf cutting, walk lists & routes, field reports',
       'A/B testing & optional dedicated sending IP',
@@ -388,6 +393,7 @@ export const GATED_FEATURES = {
   volunteers: { minPlan: 'grassroots', label: 'Volunteer management' },
   canvassing: { minPlan: 'movement', label: 'Canvassing' },
   deliveries: { minPlan: 'movement', label: 'Deliveries' },
+  companions: { minPlan: 'movement', label: 'Companion volunteer access' },
 } as const satisfies Record<string, { minPlan: PlanKey; label: string }>;
 
 export type GatedFeature = keyof typeof GATED_FEATURES;
@@ -440,7 +446,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       },
       { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
       { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },
-      { label: 'Companion volunteers', values: { free: '0', grassroots: '15', movement: 'Unlimited' } },
+      { label: 'Companion volunteers', values: { free: '0', grassroots: '0', movement: 'Unlimited' } },
     ],
   },
   {
@@ -469,7 +475,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       { label: 'Automations', values: { free: false, grassroots: true, movement: true } },
       { label: 'Lists (segments)', values: { free: false, grassroots: true, movement: true } },
       {
-        label: 'Volunteer management & monitoring',
+        label: 'Volunteer management (teams & events)',
         values: { free: false, grassroots: true, movement: true },
       },
     ],
@@ -495,6 +501,10 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
   {
     category: 'Movement only',
     rows: [
+      {
+        label: 'Companion volunteer access & monitoring',
+        values: { free: false, grassroots: false, movement: true },
+      },
       { label: 'A/B testing', values: { free: false, grassroots: false, movement: true } },
       { label: 'Dedicated sending IP (optional)', values: { free: false, grassroots: false, movement: true } },
       {

@@ -36,7 +36,8 @@ function isAllTrueRow(row: FeatureMatrixRow): boolean {
 const STEP_UP_LABELS: Readonly<Record<string, string>> = {
   free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
   grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
-  movement: 'Everything in Grassroots, plus the field: canvassing, deliveries, A/B testing and data residency.',
+  movement:
+    'Everything in Grassroots, plus the field: canvassing, deliveries, companion volunteers, A/B testing and data residency.',
 };
 
 @Component({
@@ -106,7 +107,7 @@ export class PricingPage {
   }
 
   /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
-   * (e.g. "Up to 100,000 subscribers · 5 seats · 15 volunteers · 10 GB"). */
+   * (e.g. "Up to 100,000 subscribers · 5 seats · 10 GB"). */
   protected capsLine(plan: PlanDef): string {
     const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
     if (plan.seats === null && plan.volunteers === null) {
