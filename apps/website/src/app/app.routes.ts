@@ -62,6 +62,36 @@ export const appRoutes: Route[] = [
     loadComponent: () => import('./docs/docs-article').then((m) => m.DocsArticle),
   },
   {
+    path: 'about',
+    title: 'About us — pplCRM',
+    loadComponent: () => import('./company/about-page').then((m) => m.AboutPage),
+  },
+  {
+    path: 'careers',
+    title: 'Careers — pplCRM',
+    loadComponent: () => import('./company/careers-page').then((m) => m.CareersPage),
+  },
+  {
+    path: 'data-ownership',
+    title: 'Data ownership — pplCRM',
+    loadComponent: () => import('./company/data-ownership-page').then((m) => m.DataOwnershipPage),
+  },
+  {
+    path: 'privacy',
+    title: 'Privacy policy — pplCRM',
+    loadComponent: () => import('./legal/privacy-page').then((m) => m.PrivacyPage),
+  },
+  {
+    path: 'eula',
+    title: 'End user license agreement — pplCRM',
+    loadComponent: () => import('./legal/eula-page').then((m) => m.EulaPage),
+  },
+  {
+    path: 'security',
+    title: 'Security — pplCRM',
+    loadComponent: () => import('./legal/security-page').then((m) => m.SecurityPage),
+  },
+  {
     // Generic stub for footer links whose real page doesn't exist yet; the
     // heading comes from a ?pageTitle= query param (bound via component input).
     path: 'soon',

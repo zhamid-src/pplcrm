@@ -109,11 +109,15 @@ export class FaqPage {
       items: [
         {
           q: 'How much does it cost?',
-          a: 'Grassroots is $29/month up to 2,500 emailable subscribers; Movement is $75/month up to 5,000. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
+          a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
         },
         {
           q: 'How is pricing metered?',
           a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
+        },
+        {
+          q: 'Are there fees on donations?',
+          a: 'Donations processed through Stripe carry a 1% platform fee on top of Stripe’s own processing fees, shown transparently in the product. Organizations that connect their own Helcim account pay Helcim’s rates and we add no platform fee. Subscriptions have no hidden fees.',
         },
         {
           q: 'Can I see prices in euros, pounds or Canadian dollars?',

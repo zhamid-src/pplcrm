@@ -175,7 +175,7 @@ export class HomePage {
     {
       icon: 'clipboard-document-list',
       title: 'Web forms & automations',
-      body: 'Publish a signup or pledge page in minutes — every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
+      body: 'Publish a signup or pledge page in minutes; every response becomes a person on your list. Then automations send the welcome, add the tag and open the task while you sleep.',
     },
     {
       icon: 'calendar',
@@ -185,12 +185,12 @@ export class HomePage {
     {
       icon: 'credit-card',
       title: 'Online giving pages',
-      body: 'Share a donation page and gifts land straight on the donor’s record — receipted, thanked and counted. No third spreadsheet to reconcile.',
+      body: 'Share a donation page and gifts land straight on the donor’s record: receipted, thanked and counted. No third spreadsheet to reconcile.',
     },
     {
       icon: 'rectangle-stack',
       title: 'One list, every campaign',
-      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf — switch context and the whole workspace follows.',
+      body: 'Run this race and the next from one shared rolodex. Each campaign keeps its own supporters, mail and turf; switch context and the whole workspace follows.',
     },
   ];
 

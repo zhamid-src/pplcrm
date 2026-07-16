@@ -1,0 +1,60 @@
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">Careers</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">Do consequential work.</h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      We build the tool that constituency offices, campaigns and non-profits run on. Small team, high standards, users
+      whose work actually matters.
+    </p>
+  </div>
+</section>
+
+<!-- Current openings -->
+<section class="px-5 py-14 sm:px-8">
+  <div class="mx-auto max-w-[720px]">
+    <div class="eyebrow">Open roles</div>
+    <h2 class="mt-2.5 text-[clamp(1.5rem,4vw,1.875rem)] font-bold tracking-[-0.01em]">No posted openings right now.</h2>
+    <div class="mt-5 space-y-4 text-[15px] leading-[1.75] text-base-content/70">
+      <p>
+        We are a small team and we hire rarely and deliberately. When a role opens, it will be listed on this page
+        first.
+      </p>
+      <p>
+        That said, we read every note. If the product resonates with you and you think you would make it better, write
+        to us: a couple of paragraphs about who you are, what you have built or done, and why this problem interests
+        you. No formal resume needed. If a role opens that fits, you will be the first person we contact.
+      </p>
+    </div>
+    <a [href]="mailto" class="btn btn-primary mt-6 rounded-field px-6 text-[14px] font-semibold">Introduce yourself</a>
+  </div>
+</section>
+
+<!-- How we work -->
+<section class="border-t border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">How we work</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">What to expect if you join.</h2>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[860px] gap-4 sm:grid-cols-2">
+      @for (trait of traits; track trait.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="trait.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ trait.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ trait.body }}</p>
+      </div>
+      }
+    </div>
+    <p class="mx-auto mt-8 max-w-[620px] text-center text-[13.5px] text-base-content/60">
+      Curious what we are building and why?
+      <a routerLink="/about" class="font-semibold text-primary hover:text-secondary">Read about us</a>.
+    </p>
+  </div>
+</section>
+
+<pc-site-footer />

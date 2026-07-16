@@ -38,7 +38,21 @@ const SITE_URL: string = (process.env['WEBSITE_SITE_URL'] ?? 'https://pplcrm.com
  * the `soon` stub and the `**` wildcard. `/docs` and `/docs/<id>` are added
  * separately from the article list.
  */
-const MARKETING_PATHS: readonly string[] = ['', 'faq', 'for/offices', 'for/campaigns', 'for/nonprofits', 'pricing'];
+const MARKETING_PATHS: readonly string[] = [
+  '',
+  'faq',
+  'for/offices',
+  'for/campaigns',
+  'for/nonprofits',
+  'compare',
+  'pricing',
+  'about',
+  'careers',
+  'data-ownership',
+  'privacy',
+  'eula',
+  'security',
+];
 
 const scriptDir: string = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR: string = resolve(scriptDir, '../src/generated');

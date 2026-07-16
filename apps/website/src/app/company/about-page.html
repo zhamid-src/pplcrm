@@ -1,0 +1,111 @@
+<pc-site-header variant="solid" />
+
+<!-- Hero -->
+<section class="border-b border-line bg-base-200 px-5 py-16 sm:px-8">
+  <div class="mx-auto max-w-[760px] text-center">
+    <div class="eyebrow">About us</div>
+    <h1 class="mt-3 text-[clamp(2rem,6vw,2.625rem)] font-bold tracking-[-0.02em]">
+      Software for the people who show up.
+    </h1>
+    <p class="mx-auto mt-3.5 max-w-[560px] text-[16px] leading-relaxed text-base-content/60">
+      pplCRM is one list for constituents, voters, donors and volunteers, built for the offices, campaigns and
+      non-profits that hold communities together.
+    </p>
+  </div>
+</section>
+
+<!-- Story -->
+<section class="px-5 py-14 sm:px-8">
+  <div class="mx-auto max-w-[720px]">
+    <div class="eyebrow">Why we built it</div>
+    <h2 class="mt-2.5 text-[clamp(1.5rem,4vw,1.875rem)] font-bold tracking-[-0.01em]">
+      The gap between a spreadsheet and an enterprise contract.
+    </h2>
+    <div class="mt-5 space-y-4 text-[15px] leading-[1.75] text-base-content/70">
+      <p>
+        Walk into a constituency office, a local campaign headquarters or a small non-profit and you will usually find
+        the same thing: a heroic spreadsheet. Casework in one tab, donors in another, last year’s volunteers in a file
+        somebody’s predecessor emailed around. It works until it doesn’t, and it always stops working in the busiest
+        week of the year.
+      </p>
+      <p>
+        The alternatives were not built for this work. Sales CRMs want to move deals to "closed", but a constituent is
+        never closed. Enterprise political tech is priced for national organizations and takes a consultant to set up.
+        Email platforms charge for every contact you store and quietly own your list on the way through.
+      </p>
+      <p>
+        So we built the tool we kept wishing existed: one shared list where the person who knocked a door, gave twenty
+        dollars and emailed about a pothole is one person, not three rows in three systems. Simple enough that a
+        volunteer is productive their first morning. Priced so a two-person office can afford it. And honest about the
+        one thing that matters most: the list is yours, not ours.
+      </p>
+      <p>
+        pplCRM is built in Canada by a small independent team. Your data lives in Canada unless you choose another
+        region on the Movement plan, everything exports whenever you want, and delete means deleted. We would rather
+        keep those promises than grow fast by breaking them.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Principles -->
+<section class="border-t border-line bg-base-200 px-5 py-14 sm:px-8 sm:py-16">
+  <div class="site-wrap">
+    <div class="mx-auto max-w-[620px] text-center">
+      <div class="eyebrow">What we believe</div>
+      <h2 class="mt-2.5 text-[clamp(1.625rem,4vw,2rem)] font-bold tracking-[-0.01em]">
+        Six principles the product answers to.
+      </h2>
+    </div>
+    <div class="mx-auto mt-9 grid max-w-[980px] gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      @for (principle of principles; track principle.title) {
+      <div class="rounded-xl border border-line bg-base-100 p-6">
+        <span class="grid h-10 w-10 place-items-center rounded-[10px] bg-primary/12 text-primary">
+          <pc-site-icon [name]="principle.icon" [size]="20" />
+        </span>
+        <div class="mt-3.5 text-[15px] font-semibold">{{ principle.title }}</div>
+        <p class="mt-1.5 text-[13.5px] leading-relaxed text-base-content/60">{{ principle.body }}</p>
+      </div>
+      }
+    </div>
+    <p class="mx-auto mt-8 max-w-[620px] text-center text-[13.5px] text-base-content/60">
+      The promises behind these principles are written down, in plain language, on our
+      <a routerLink="/data-ownership" class="font-semibold text-primary hover:text-secondary">data ownership</a>,
+      <a routerLink="/privacy" class="font-semibold text-primary hover:text-secondary">privacy</a> and
+      <a routerLink="/security" class="font-semibold text-primary hover:text-secondary">security</a> pages.
+    </p>
+  </div>
+</section>
+
+<!-- Contact -->
+<section class="px-5 py-14 sm:px-8">
+  <div class="mx-auto max-w-[720px] text-center">
+    <div class="eyebrow">Talk to us</div>
+    <h2 class="mt-2.5 text-[clamp(1.5rem,4vw,1.875rem)] font-bold tracking-[-0.01em]">A human reads every email.</h2>
+    <p class="mx-auto mt-3 max-w-[520px] text-[15px] leading-relaxed text-base-content/60">
+      Questions, feedback, a feature you need before election day: write to
+      <a class="font-semibold text-primary hover:text-secondary" [href]="mailto">hello&#64;pplcrm.com</a> and we will
+      get back to you. If you want to see the product first, the demo workspace is the fastest tour.
+    </p>
+  </div>
+</section>
+
+<!-- CTA band -->
+<section class="bg-navy px-5 py-14 text-center sm:px-8">
+  <h2 class="text-[clamp(1.375rem,4vw,1.625rem)] font-bold tracking-[-0.01em] text-white">
+    Try everything before you trust us with a single name.
+  </h2>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-3.5">
+    <a [href]="signupUrl" class="btn btn-primary rounded-field px-6 text-[14.5px] font-semibold">
+      Start free with sample data
+    </a>
+    <a
+      [href]="mailto"
+      class="rounded-field border border-white/35 px-6 py-2.5 text-[14.5px] font-semibold text-white/85 hover:bg-white/10"
+    >
+      Book a 15-minute walkthrough
+    </a>
+  </div>
+</section>
+
+<pc-site-footer />

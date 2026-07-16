@@ -22,9 +22,9 @@ interface FooterColumn {
 const CONTACT_EMAIL = 'hello@pplcrm.com';
 
 /**
- * Site footer — the one multi-column footer used on every page. Links to pages
- * that don't exist yet point at the /soon stub (carrying their label as the
- * heading).
+ * Site footer — the one multi-column footer used on every page. If a future
+ * link's page doesn't exist yet, point it at the /soon stub with its label as
+ * the `pageTitle` query param.
  */
 @Component({
   selector: 'pc-site-footer',
@@ -102,23 +102,23 @@ export class SiteFooter {
       links: [
         { label: 'Help center', path: '/docs' },
         { label: 'Support', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Data ownership', path: '/soon', qp: { pageTitle: 'Data ownership' } },
+        { label: 'Data ownership', path: '/data-ownership' },
       ],
     },
     {
       heading: 'Company',
       links: [
-        { label: 'About us', path: '/soon', qp: { pageTitle: 'About us' } },
+        { label: 'About us', path: '/about' },
         { label: 'Contact', href: `mailto:${CONTACT_EMAIL}` },
-        { label: 'Careers', path: '/soon', qp: { pageTitle: 'Careers' } },
+        { label: 'Careers', path: '/careers' },
       ],
     },
     {
       heading: 'Legal',
       links: [
-        { label: 'Privacy policy', path: '/soon', qp: { pageTitle: 'Privacy policy' } },
-        { label: 'EULA', path: '/soon', qp: { pageTitle: 'EULA' } },
-        { label: 'Security', path: '/soon', qp: { pageTitle: 'Security' } },
+        { label: 'Privacy policy', path: '/privacy' },
+        { label: 'EULA', path: '/eula' },
+        { label: 'Security', path: '/security' },
       ],
     },
   ];

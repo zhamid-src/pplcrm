@@ -57,6 +57,11 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
 `sending_paused_reason`) or `tenants.suspended_at` in the DB. A paused newsletter is then
 re-sent from the UI and resumes at its `send_offset`.
 
+**Website claims:** the 5% bounce / 1% complaint tripwires, the warm-up cap and the
+verified-domain requirement are quoted verbatim on the marketing site (EULA §8, security page,
+FAQ). If you change a threshold here, update those pages in the same change — see the
+`pplcrm-website-claims` skill for the full registry.
+
 **Reputation isolation:** free-tier sends on the platform SendGrid key default to the
 `SENDGRID_FREE_TIER_SUBUSER` env subuser (tenant whitelabel subuser or tenant-owned API key wins).
 

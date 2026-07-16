@@ -1,11 +1,12 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { bracketIndexForSubscribers, FEATURE_MATRIX, PLANS, priceForQuantity } from '@common';
+import { bracketIndexForSubscribers, FEATURE_MATRIX, GB, PLANS, priceForQuantity } from '@common';
 import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
 
 import { CurrencyService } from '../ui/currency.service';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
+import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
 
 /** Discrete emailable-subscriber counts the slider walks through (slider index = position here). */
@@ -24,9 +25,23 @@ function isMatrixPlanKey(key: string): key is MatrixPlanKey {
   return key === 'free' || key === 'grassroots' || key === 'movement';
 }
 
+/** A matrix row is "table stakes" when every displayed plan simply has it (all-true checks).
+ * Those rows render as the compact included-everywhere strip, not as table rows. */
+function isAllTrueRow(row: FeatureMatrixRow): boolean {
+  return row.values.free === true && row.values.grassroots === true && row.values.movement === true;
+}
+
+/** One-line "what this tier adds" summary per plan card. Mirrors the GATED_FEATURES split in
+ * plans.ts; if a feature moves between tiers, update this wording too (pplcrm-website-claims). */
+const STEP_UP_LABELS: Readonly<Record<string, string>> = {
+  free: 'The full CRM: people, households, shared inbox and newsletters from your own domain.',
+  grassroots: 'Everything in Free, plus forms, donations, automations, lists and volunteer management.',
+  movement: 'Everything in Grassroots, plus the field: canvassing, deliveries, A/B testing and data residency.',
+};
+
 @Component({
   selector: 'pc-pricing-page',
-  imports: [RouterLink, SiteHeader, SiteFooter],
+  imports: [RouterLink, SiteHeader, SiteFooter, SiteIcon],
   templateUrl: './pricing-page.html',
 })
 export class PricingPage {
@@ -39,9 +54,20 @@ export class PricingPage {
   /** The active display currency's price symbol (e.g. `C$`), for the disclaimer copy. */
   protected readonly currencySymbol = this.currency.priceSymbol;
 
-  /** The priced comparison columns (Free / Grassroots / Movement); enterprise is a footnote. */
+  /** The priced plan cards (Free / Grassroots / Movement); enterprise is a footnote. */
   protected readonly tiers: readonly PlanDef[] = PLANS.filter((plan) => plan.displayed);
-  protected readonly matrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX;
+
+  /** Features every plan includes (all-true matrix rows), shown once as a strip instead of
+   * spending a table row on three identical checkmarks. */
+  protected readonly includedEverywhere: readonly string[] = FEATURE_MATRIX.flatMap((group) =>
+    group.rows.filter(isAllTrueRow).map((row) => row.label),
+  );
+
+  /** The comparison table: only groups and rows where plans actually differ. */
+  protected readonly diffMatrix: readonly FeatureMatrixGroup[] = FEATURE_MATRIX.map((group) => ({
+    category: group.category,
+    rows: group.rows.filter((row) => !isAllTrueRow(row)),
+  })).filter((group) => group.rows.length > 0);
 
   protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
   protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
@@ -77,6 +103,26 @@ export class PricingPage {
     const brackets = plan.pricing?.brackets;
     const last = brackets?.[brackets.length - 1];
     return (last?.upTo ?? 0).toLocaleString('en-US');
+  }
+
+  /** One-line caps summary for a plan card, derived from PlanDef so it can never drift
+   * (e.g. "Up to 100,000 subscribers · 5 seats · 15 volunteers · 10 GB"). */
+  protected capsLine(plan: PlanDef): string {
+    const parts: string[] = [`Up to ${this.maxSubscribersLabel(plan)} subscribers`];
+    if (plan.seats === null && plan.volunteers === null) {
+      parts.push('unlimited seats & volunteers');
+    } else {
+      parts.push(plan.seats === null ? 'unlimited seats' : `${plan.seats} seats`);
+      if (plan.volunteers === null) parts.push('unlimited volunteers');
+      else if (plan.volunteers > 0) parts.push(`${plan.volunteers} volunteers`);
+    }
+    if (plan.storageBytes !== null) parts.push(`${Math.round(plan.storageBytes / GB)} GB`);
+    return parts.join(' · ');
+  }
+
+  /** The card's "what this tier adds" one-liner. */
+  protected stepUpLabel(plan: PlanDef): string {
+    return STEP_UP_LABELS[plan.key] ?? plan.blurb;
   }
 
   /** One matrix cell: true = included, false = not included, string = text value. */
