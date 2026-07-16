@@ -244,6 +244,11 @@ export class BillingController {
       throw new Error(`Stripe Price ID is not configured for plan: ${plan}`);
     }
 
+    // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
+    // Customer (we always pass an existing `customer`, so Checkout needs explicit permission to
+    // write it back) — renewal invoices reuse it as the tax location. `name: 'auto'` is required
+    // by Stripe for tax_id_collection with an existing customer. Tax is only charged in
+    // jurisdictions with an active registration in the Dashboard; elsewhere it computes to zero.
     const session = await getStripe().checkout.sessions.create({
       customer: stripeCustomerId,
       payment_method_types: ['card'],
@@ -254,6 +259,10 @@ export class BillingController {
         },
       ],
       mode: 'subscription',
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      customer_update: { address: 'auto', name: 'auto' },
+      tax_id_collection: { enabled: true },
       success_url: `${frontendUrl}/workspace/billing?checkout_success=true`,
       cancel_url: `${frontendUrl}/workspace/billing`,
       subscription_data: {
@@ -489,6 +498,15 @@ export class BillingController {
             const amountPaid = invoice.amount_paid / 100;
             const pdfUrl = invoice.hosted_invoice_url || '';
 
+            // Tax total: on the basil-era API versions stripe-node v22 targets, the invoice tax
+            // total lives in the `total_taxes` array (the legacy top-level `invoice.tax` is gone).
+            // Omitted when absent or zero so a receipt can never fail over a tax field.
+            const totalTax = Array.isArray(invoice.total_taxes)
+              ? invoice.total_taxes.reduce((sum, tax) => sum + (tax?.amount || 0), 0)
+              : 0;
+            const taxLineText = totalTax > 0 ? `\n- Tax: $${(totalTax / 100).toFixed(2)}` : '';
+            const taxLineHtml = totalTax > 0 ? `<li><strong>Tax</strong>: $${(totalTax / 100).toFixed(2)}</li>` : '';
+
             // Build charges summary
             let summaryOfCharges = '';
             let summaryOfChargesHtml = '';
@@ -500,7 +518,8 @@ export class BillingController {
                     const lineAmt = (line.amount || 0) / 100;
                     return `- ${line.description || 'Subscription item'}: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}`;
                   })
-                  .join('\n');
+                  .join('\n') +
+                taxLineText;
 
               summaryOfChargesHtml =
                 '<p><strong>Summary of Charges:</strong></p><ul>' +
@@ -510,6 +529,7 @@ export class BillingController {
                     return `<li><strong>${line.description || 'Subscription item'}</strong>: $${lineAmt.toFixed(2)}${line.quantity ? ` (Qty: ${line.quantity})` : ''}</li>`;
                   })
                   .join('') +
+                taxLineHtml +
                 '</ul>';
             }
 

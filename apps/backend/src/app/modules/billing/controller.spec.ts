@@ -8,6 +8,8 @@ vi.mock('../../../env', async (importOriginal) => {
       ...actual.env,
       stripeSecretKey: 'sk_test_live_key_not_mock',
       stripeWebhookSecret: 'whsec_test_secret',
+      stripePlanGrassrootsPriceId: 'price_test_grassroots',
+      stripePlanMovementPriceId: 'price_test_movement',
     },
   };
 });
@@ -15,10 +17,13 @@ vi.mock('../../../env', async (importOriginal) => {
 // Spy on Stripe constructor and webhooks constructEvent. `vi.mock` factories are hoisted above
 // module-level const declarations, so the mock fns themselves must go through `vi.hoisted` —
 // referencing a plain outer `const` here throws "Cannot access before initialization".
-const { stripeSubscriptionsRetrieve, stripeSubscriptionsUpdate } = vi.hoisted(() => ({
-  stripeSubscriptionsRetrieve: vi.fn(),
-  stripeSubscriptionsUpdate: vi.fn(),
-}));
+const { stripeSubscriptionsRetrieve, stripeSubscriptionsUpdate, stripeCheckoutSessionsCreate, stripeCustomersCreate } =
+  vi.hoisted(() => ({
+    stripeSubscriptionsRetrieve: vi.fn(),
+    stripeSubscriptionsUpdate: vi.fn(),
+    stripeCheckoutSessionsCreate: vi.fn(),
+    stripeCustomersCreate: vi.fn(),
+  }));
 vi.mock('stripe', () => ({
   default: class MockStripe {
     webhooks = {
@@ -28,12 +33,21 @@ vi.mock('stripe', () => ({
       retrieve: stripeSubscriptionsRetrieve,
       update: stripeSubscriptionsUpdate,
     };
+    checkout = {
+      sessions: {
+        create: stripeCheckoutSessionsCreate,
+      },
+    };
+    customers = {
+      create: stripeCustomersCreate,
+    };
   },
 }));
 
 import { BillingController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
 import { WebhookEventWorker } from '../../lib/jobs/webhook-worker';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { syncSubscriptionQuantity } from './subscription-sync';
 
 describe('Billing Webhook Async Processing Integration', () => {
@@ -290,5 +304,122 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
     stripeSubscriptionsRetrieve.mockResolvedValueOnce({ items: { data: [{ id: 'si_1', quantity: 8 }] } });
     await syncSubscriptionQuantity(tenantId, 8);
     expect(stripeSubscriptionsUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('BillingController.createCheckoutSession — Stripe Tax parameters', () => {
+  const db = (BaseRepository as any)._db;
+  let controller: BillingController;
+  let tenantId: string;
+  let customerId: string;
+
+  beforeEach(async () => {
+    controller = new BillingController();
+    vi.restoreAllMocks();
+    stripeCheckoutSessionsCreate.mockReset();
+    stripeCustomersCreate.mockReset();
+    ({ tenantId, customerId } = await seedBillingTenant(db));
+  });
+
+  afterEach(async () => {
+    await cleanBillingTenant(db, tenantId);
+  });
+
+  it('creates the Checkout session with automatic tax, address collection, and tax ID collection', async () => {
+    stripeCheckoutSessionsCreate.mockResolvedValue({ url: 'https://checkout.stripe.example/session' });
+
+    const result = await controller.createCheckoutSession({ tenant_id: tenantId, user_id: tenantId }, 'grassroots');
+
+    expect(result.url).toBe('https://checkout.stripe.example/session');
+    // Tenant already has a Stripe customer, so no new Customer is created.
+    expect(stripeCustomersCreate).not.toHaveBeenCalled();
+    expect(stripeCheckoutSessionsCreate).toHaveBeenCalledTimes(1);
+    expect(stripeCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: customerId,
+        mode: 'subscription',
+        line_items: [{ price: 'price_test_grassroots', quantity: 1 }],
+        automatic_tax: { enabled: true },
+        billing_address_collection: 'required',
+        customer_update: { address: 'auto', name: 'auto' },
+        tax_id_collection: { enabled: true },
+      }),
+    );
+  });
+});
+
+describe('BillingController.processWebhookEvent — receipt email tax line', () => {
+  const db = (BaseRepository as any)._db;
+  let controller: BillingController;
+  let tenantId: string;
+  let customerId: string;
+  let adminId: string;
+
+  beforeEach(async () => {
+    controller = new BillingController();
+    vi.restoreAllMocks();
+    stripeSubscriptionsRetrieve.mockReset();
+    stripeSubscriptionsUpdate.mockReset();
+    ({ tenantId, customerId } = await seedBillingTenant(db));
+    adminId = String(Math.floor(Math.random() * 100000000) + 1000000);
+    await db
+      .insertInto('authusers')
+      .values({
+        id: adminId,
+        tenant_id: tenantId,
+        email: `billing-admin-${adminId}@example.com`,
+        password: 'password',
+        first_name: 'Billing',
+        last_name: 'Admin',
+        verified: true,
+        createdby_id: adminId,
+        updatedby_id: adminId,
+      })
+      .execute();
+    await db.updateTable('tenants').set({ admin_id: adminId }).where('id', '=', tenantId).execute();
+  });
+
+  afterEach(async () => {
+    await db.updateTable('tenants').set({ admin_id: null }).where('id', '=', tenantId).execute();
+    await db.deleteFrom('authusers').where('id', '=', adminId).execute();
+    await cleanBillingTenant(db, tenantId);
+  });
+
+  function invoicePaidEvent(overrides: Record<string, unknown> = {}): any {
+    return {
+      id: `evt_invoice_paid_${Math.random().toString(36).substring(7)}`,
+      type: 'invoice.paid',
+      data: {
+        object: {
+          customer: customerId,
+          amount_paid: 5150,
+          hosted_invoice_url: 'https://stripe.example.com/invoice',
+          lines: { data: [{ description: 'Grassroots plan', amount: 4900, quantity: 1 }] },
+          ...overrides,
+        },
+      },
+    };
+  }
+
+  it('includes a tax line when the invoice carries a non-zero total_taxes amount', async () => {
+    const sendMail = vi.spyOn(TransactionalEmailService.prototype, 'sendMail').mockResolvedValue(undefined as any);
+
+    await controller.processWebhookEvent(invoicePaidEvent({ total_taxes: [{ amount: 250 }] }));
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const msg = sendMail.mock.calls[0][0] as { text: string; html: string };
+    expect(msg.text).toContain('Tax: $2.50');
+    expect(msg.html).toContain('<strong>Tax</strong>: $2.50');
+  });
+
+  it('omits the tax line when the invoice has no tax', async () => {
+    const sendMail = vi.spyOn(TransactionalEmailService.prototype, 'sendMail').mockResolvedValue(undefined as any);
+
+    await controller.processWebhookEvent(invoicePaidEvent({ total_taxes: null }));
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const msg = sendMail.mock.calls[0][0] as { text: string; html: string };
+    expect(msg.text).not.toContain('Tax:');
+    expect(msg.html).not.toContain('<strong>Tax</strong>');
   });
 });

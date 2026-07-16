@@ -154,6 +154,10 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
       },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
       { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
       {
         kind: 'p',
