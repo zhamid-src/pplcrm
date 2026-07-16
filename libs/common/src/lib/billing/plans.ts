@@ -450,6 +450,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       { label: 'People CRM + shared inbox', values: { free: true, grassroots: true, movement: true } },
       { label: 'CSV import/export', values: { free: true, grassroots: true, movement: true } },
       { label: 'Newsletters', values: { free: true, grassroots: true, movement: true } },
+      { label: 'Send from your own verified domain', values: { free: true, grassroots: true, movement: true } },
       { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },

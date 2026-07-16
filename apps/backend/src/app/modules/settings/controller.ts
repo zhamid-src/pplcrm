@@ -14,6 +14,10 @@ interface VerifiedDomainEntry {
   status?: string;
   domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
   linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  /** Platform-key mode only: whether the parent-level records were associated with the
+   * subuser the tenant sends through. Retried on verify until true — subuser sends are
+   * unsigned without it. */
+  subuserAssociated?: boolean;
 }
 
 import { randomInt, timingSafeEqual } from 'crypto';
@@ -492,21 +496,28 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     return { success: true };
   }
 
-  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
-    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
-    const domainVal = domain.toLowerCase().trim();
+  /**
+   * Resolve the SendGrid credentials the domain-whitelabel operations must run under,
+   * mirroring the newsletter send path (lib/jobs/handlers/newsletter.handlers.ts): a
+   * tenant-owned API key always wins, with operations running on-behalf-of the tenant's own
+   * subuser. Without one, operations run on the PLATFORM key at the parent level — so every
+   * tenant, including Free, gets real SendGrid DNS records and real DKIM instead of mock
+   * records that can never authenticate their mail. `associateSubuser` is then the subuser
+   * the tenant's mail actually flows through (their whitelabel subuser, or the shared
+   * free-tier subuser on the Free plan); the created records must be associated with it or
+   * subuser sends stay unsigned.
+   */
+  private async resolveWhitelabelCredentials(tenantId: string): Promise<{
+    apiKey: string | undefined;
+    subuser: string | undefined;
+    associateSubuser: string | undefined;
+  }> {
     const db = this.getRepo().db;
-
-    // Get SendGrid settings
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.verified_domains',
-      ])
+      .where('tenant_id', '=', tenantId)
+      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
       .execute();
 
     const settingsMap: Record<string, unknown> = {};
@@ -514,10 +525,36 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       settingsMap[row.key] = row.value;
     }
 
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
-    const currentList: VerifiedDomainEntry[] = Array.isArray(settingsMap['communications.verified_domains'])
-      ? (settingsMap['communications.verified_domains'] as VerifiedDomainEntry[])
+    const rawKey = settingsMap['communications.sendgrid_api_key'];
+    const rawSubuser = settingsMap['communications.sendgrid_subuser_username'];
+    const ownApiKey = typeof rawKey === 'string' && rawKey.trim() !== '' ? rawKey : undefined;
+    const ownSubuser = typeof rawSubuser === 'string' && rawSubuser.trim() !== '' ? rawSubuser : undefined;
+
+    if (ownApiKey) {
+      return { apiKey: ownApiKey, subuser: ownSubuser, associateSubuser: undefined };
+    }
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['subscription_plan'])
+      .where('id', '=', tenantId)
+      .executeTakeFirst();
+    const planKey = getPlanDef(tenant?.subscription_plan)?.key ?? 'free';
+    const associateSubuser = ownSubuser ?? (planKey === 'free' ? env.sendgridFreeTierSubuser : undefined);
+
+    return { apiKey: env.sendgridApiKey, subuser: undefined, associateSubuser };
+  }
+
+  public async addVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
+    await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
+    const domainVal = domain.toLowerCase().trim();
+
+    const row = await this.getRepo().getByKey({
+      tenant_id: auth.tenant_id,
+      key: 'communications.verified_domains',
+    });
+    const currentList: VerifiedDomainEntry[] = Array.isArray(row?.value)
+      ? (row?.value as unknown as VerifiedDomainEntry[])
       : [];
 
     if (currentList.some((d) => d.domain === domainVal)) {
@@ -527,17 +564,24 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
 
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
     const sendgridSvc = new SendGridWhitelabelService();
-    const domainAuth = await sendgridSvc.createDomainAuthentication(
-      domainVal,
-      apiKey as string | undefined,
-      subuser as string | undefined,
-    );
-    const linkBranding = await sendgridSvc.createLinkBranding(
-      domainVal,
-      apiKey as string | undefined,
-      subuser as string | undefined,
-    );
+    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, creds.apiKey, creds.subuser);
+    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, creds.apiKey, creds.subuser);
+
+    // Platform-key mode: the records live at the parent level but the tenant's mail is sent
+    // on-behalf-of a subuser — associate both with it. Failures are recorded and retried on
+    // every verify, and verification never succeeds until the association holds.
+    let subuserAssociated = false;
+    if (creds.associateSubuser) {
+      const domainOk = await sendgridSvc.associateDomainWithSubuser(
+        domainAuth.id,
+        creds.associateSubuser,
+        creds.apiKey,
+      );
+      const linkOk = await sendgridSvc.associateLinkWithSubuser(linkBranding.id, creds.associateSubuser, creds.apiKey);
+      subuserAssociated = domainOk && linkOk;
+    }
 
     const newEntry = {
       domain: domainVal,
@@ -550,6 +594,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       domainAuthDns: domainAuth.dns,
       linkBrandingDns: linkBranding.dns,
       linkBranded: false,
+      ...(creds.associateSubuser ? { subuserAssociated } : {}),
     };
 
     const updatedList = [...currentList, newEntry];
@@ -589,8 +634,6 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
 
-    const db = this.getRepo().db;
-
     const row = await this.getRepo().getByKey({
       tenant_id: auth.tenant_id,
       key: 'communications.verified_domains',
@@ -618,23 +661,29 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     tenantDomainVerificationTimestamps.set(auth.tenant_id, tenantRequests);
     domainVerificationTimestamps.set(rateLimitKey, now);
 
-    // Get SendGrid credentials
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const settingsRow of settingsRows) {
-      settingsMap[settingsRow.key] = settingsRow.value;
-    }
-
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
+    // Resolve credentials the same way the send path does (tenant key, else platform key).
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
+    const apiKey = creds.apiKey;
+    const subuser = creds.subuser;
+    const hasValidKey = !!apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
 
     const sendgridSvc = new SendGridWhitelabelService();
+
+    // Platform-key mode: if the add-time subuser association failed (SendGrid hiccup), retry
+    // it here — the domain must not verify while subuser sends would go out unsigned.
+    let subuserAssociated = domainEntry.subuserAssociated === true;
+    if (hasValidKey && creds.associateSubuser && !subuserAssociated) {
+      const domainOk = domainEntry.domainAuthId
+        ? await sendgridSvc.associateDomainWithSubuser(Number(domainEntry.domainAuthId), creds.associateSubuser, apiKey)
+        : false;
+      const linkOk = domainEntry.linkBrandingId
+        ? await sendgridSvc.associateLinkWithSubuser(Number(domainEntry.linkBrandingId), creds.associateSubuser, apiKey)
+        : false;
+      subuserAssociated = domainOk && linkOk;
+    }
+    // Association is only load-bearing in platform-key mode with a real key; elsewhere the
+    // records already live where the mail is sent from.
+    const subuserOk = !hasValidKey || !creds.associateSubuser || subuserAssociated;
 
     let spfVerified = false;
     let dkimVerified = false;
@@ -643,21 +692,13 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 
     // Check with SendGrid if IDs are present
     if (domainEntry.domainAuthId) {
-      const authRes = await sendgridSvc.validateDomainAuthentication(
-        Number(domainEntry.domainAuthId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
+      const authRes = await sendgridSvc.validateDomainAuthentication(Number(domainEntry.domainAuthId), apiKey, subuser);
       spfVerified = !!authRes.validationResults?.['mail_cname'];
       dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
     }
 
     if (domainEntry.linkBrandingId) {
-      linkBranded = await sendgridSvc.validateLinkBranding(
-        Number(domainEntry.linkBrandingId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
+      linkBranded = await sendgridSvc.validateLinkBranding(Number(domainEntry.linkBrandingId), apiKey, subuser);
     }
 
     // Check DMARC via live DNS check
@@ -668,7 +709,6 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
     // misconfigured key in a real deploy must not silently mark domains verified and open
     // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
-    const hasValidKey = apiKey && (apiKey as string).trim().startsWith('SG.') && (apiKey as string).trim().length > 20;
     if (!hasValidKey) {
       const realSpf = await sendgridSvc.verifyCname(
         domainEntry.domainAuthDns?.['mail_cname']?.host || '',
@@ -698,14 +738,17 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       if (d.domain === domainVal) {
         // DMARC is recommended but not required for verified status: the sending records
         // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
-        // anti-spoofing policy and must not block their ability to send.
-        const isVerified = spfVerified && dkimVerified && linkBranded;
+        // anti-spoofing policy and must not block their ability to send. The subuser
+        // association IS required (platform-key mode) — without it the DNS can be perfect
+        // and the tenant's mail still goes out unsigned.
+        const isVerified = spfVerified && dkimVerified && linkBranded && subuserOk;
         return {
           ...d,
           spf: spfVerified,
           dkim: dkimVerified,
           dmarc: dmarcVerified,
           linkBranded,
+          ...(creds.associateSubuser ? { subuserAssociated } : {}),
           status: isVerified ? 'verified' : 'pending',
           domainAuthDns: {
             ...d.domainAuthDns,
@@ -736,7 +779,6 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
   public async deleteVerifiedDomain(auth: IAuthKeyPayload, domain: string) {
     await assertNotDemoMode(this.getRepo().db, auth.tenant_id);
     const domainVal = domain.toLowerCase().trim();
-    const db = this.getRepo().db;
 
     const row = await this.getRepo().getByKey({
       tenant_id: auth.tenant_id,
@@ -760,38 +802,18 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
 
-    // Get SendGrid credentials
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
-      .execute();
-
-    const settingsMap: Record<string, unknown> = {};
-    for (const settingsRow of settingsRows) {
-      settingsMap[settingsRow.key] = settingsRow.value;
-    }
-
-    const apiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuser = settingsMap['communications.sendgrid_subuser_username'];
+    // Resolve credentials the same way add/verify do, so the delete reaches the SendGrid
+    // account the records were actually created under.
+    const creds = await this.resolveWhitelabelCredentials(auth.tenant_id);
 
     const sendgridSvc = new SendGridWhitelabelService();
 
     // Delete from SendGrid
     if (domainEntry.domainAuthId) {
-      await sendgridSvc.deleteDomainAuthentication(
-        Number(domainEntry.domainAuthId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
+      await sendgridSvc.deleteDomainAuthentication(Number(domainEntry.domainAuthId), creds.apiKey, creds.subuser);
     }
     if (domainEntry.linkBrandingId) {
-      await sendgridSvc.deleteLinkBranding(
-        Number(domainEntry.linkBrandingId),
-        apiKey as string | undefined,
-        subuser as string | undefined,
-      );
+      await sendgridSvc.deleteLinkBranding(Number(domainEntry.linkBrandingId), creds.apiKey, creds.subuser);
     }
 
     const updatedList = currentList.filter((d) => d.domain !== domainVal);

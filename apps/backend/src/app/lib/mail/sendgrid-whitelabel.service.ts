@@ -292,6 +292,52 @@ export class SendGridWhitelabelService {
     }
   }
 
+  /**
+   * Associate a parent-account authenticated domain with a subuser, so mail sent
+   * on-behalf-of that subuser is DKIM-signed with the domain. Used in platform-key mode,
+   * where the domain auth is created at the parent level but the tenant's mail flows
+   * through a subuser (e.g. the shared free-tier subuser). Returns false on failure so the
+   * caller can record it and retry — never throws.
+   */
+  public async associateDomainWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey) || !username) return false;
+
+    try {
+      await this.request(`/whitelabel/domains/${id}/subuser`, {
+        method: 'POST',
+        apiKey,
+        body: { username },
+      });
+      return true;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Associate domain with subuser failed',
+      );
+      return false;
+    }
+  }
+
+  /** Same as associateDomainWithSubuser, for a parent-account link-branding record. */
+  public async associateLinkWithSubuser(id: number, username: string, apiKey?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey) || !username) return false;
+
+    try {
+      await this.request(`/whitelabel/links/${id}/subuser`, {
+        method: 'POST',
+        apiKey,
+        body: { username },
+      });
+      return true;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Associate link branding with subuser failed',
+      );
+      return false;
+    }
+  }
+
   public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
     if (!this.isValidApiKey(apiKey)) return;
 

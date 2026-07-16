@@ -20,7 +20,18 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
    - No DKIM-verified sending domain → PRECONDITION_FAILED. "Verified" = the
      `communications.default_from_email` setting's domain appears in the
      `communications.verified_domains` setting with `status: 'verified'` (the Settings → Domains
-     whitelabel flow writes that).
+     whitelabel flow writes that). Domain verification is available on EVERY plan including
+     Free — it's what keeps free-tier mail out of spam, and it's deliberately NOT plan-gated.
+     Credential resolution (`settings/controller.ts` `resolveWhitelabelCredentials`) mirrors the
+     send path: a tenant-owned SendGrid key wins; otherwise the domain auth + link branding are
+     created on the PLATFORM key at the parent level and associated (SendGrid
+     `/whitelabel/{domains,links}/{id}/subuser`) with the subuser the tenant sends through (their
+     whitelabel subuser, or `SENDGRID_FREE_TIER_SUBUSER` on Free). In platform-key mode a domain
+     will not reach `status: 'verified'` until that association succeeds (retried on every verify
+     click, tracked as `subuserAssociated` on the entry) — perfect DNS with a failed association
+     would still send unsigned mail. What stays paid-only is unrelated to this: custom WEB
+     domains (serving pages on the org's own domain instead of `*.pplforms.com`) — not
+     implemented yet, and not part of the Domains settings flow.
    - Free plan and `tenants.sending_phone_verified_at` null → PRECONDITION_FAILED. Phone
      verification lives in `settings/controller.ts` (`requestPhoneVerification` /
      `confirmPhoneVerification`, Twilio SMS via `lib/sms`, code hash stored on the tenant row —
@@ -91,7 +102,8 @@ volunteer-events. Unknown/missing plan values fail closed to `free`.
 the pre-existing `TWILIO_*` (SMS codes; dev-mocks when unset).
 
 `ALLOW_MOCK_DOMAIN_VERIFICATION=true` — local-dev-only opt-in that lets Settings → Domains
-auto-pass DNS verification when no valid SendGrid key is configured (set in `.env.test` for the
+auto-pass DNS verification when no valid SendGrid key (tenant-owned or platform
+`SENDGRID_API_KEY`) is configured (set in `.env.test` for the
 backend suite). Without it, domain verification fails closed: a missing/broken SendGrid key or a
 SendGrid API outage leaves records unverified rather than silently opening the sending guards
 (`settings/controller.ts` `verifyVerifiedDomain`, `sendgrid-whitelabel.service.ts` validate
