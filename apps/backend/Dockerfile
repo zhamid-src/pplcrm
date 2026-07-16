@@ -35,7 +35,9 @@ RUN npx nx build backend --configuration=production
 
 # Re-resolve node_modules to production-only for the runtime image. Because esbuild left every
 # dependency external, all *runtime* deps must remain — only devDependencies are dropped.
-RUN npm ci --omit=dev
+# The `prepare` script runs husky (a devDependency); under --omit=dev husky is gone and the script
+# fails with 127. Strip the hook first — dependency install scripts still run (no native-dep risk).
+RUN npm pkg delete scripts.prepare && npm ci --omit=dev
 
 ######################################
 # Stage 2 — slim runtime (serve only)
