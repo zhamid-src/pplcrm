@@ -1,47 +1,47 @@
 <div class="space-y-6">
-  <!-- Add Domain Card -->
+  <!-- Add domain card -->
   <div class="card border border-base-200 bg-base-50/50 p-6 rounded-xl">
-    <h3 class="text-lg font-semibold border-b border-base-200 pb-3 mb-4">Add Sender Domain</h3>
+    <h3 class="text-lg font-semibold border-b border-base-200 pb-3 mb-4">Add a sending domain</h3>
     <form (submit)="addDomain(); $event.preventDefault();" class="flex flex-col sm:flex-row gap-3">
       <div class="flex-1">
-        <label for="new-domain-input" class="sr-only">Domain Name</label>
+        <label for="new-domain-input" class="sr-only">Domain name</label>
         <input
           id="new-domain-input"
           type="text"
           class="input input-bordered focus:input-primary w-full bg-base-100"
-          placeholder="e.g. newsletter.myorganization.org"
+          placeholder="e.g. myorganization.org"
           [value]="newDomain()"
           (input)="newDomain.set($any($event.target).value)"
           [disabled]="addingDomain()"
         />
       </div>
-      <button type="submit" class="btn btn-primary min-w-[130px]" [disabled]="addingDomain() || !newDomain().trim()">
+      <button type="submit" class="btn btn-primary" [disabled]="addingDomain() || !newDomain().trim()">
         @if (addingDomain()) {
         <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Add Domain
+        } Add domain
       </button>
     </form>
     <p class="text-xs text-base-content/50 mt-2">
-      Verify your domain ownership by adding DNS records to your registrar. Once verified, you can send newsletters from
-      addresses under this domain.
+      Enter the domain you send email from (the part after the &#64; in your From address). We'll walk you through a
+      short checklist to prove you own it; once it's verified, your newsletters can send from any address on it.
     </p>
   </div>
 
-  <!-- Domains List -->
+  <!-- Domains list -->
   <div class="space-y-4">
-    <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Configured Domains</h3>
+    <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Your domains</h3>
 
     @if (domainsList().length === 0) {
     <pc-empty-state
       icon="globe-americas"
-      title="No custom domains configured yet"
-      hint="Add a domain above to start verifying."
+      title="No sending domains yet"
+      hint="Add the domain you send email from to get started."
     />
     } @else {
     <div class="space-y-3">
       @for (item of domainsList(); track item.domain) {
       <div class="pc-panel overflow-hidden transition-all duration-200">
-        <!-- Domain Entry Row -->
+        <!-- Domain row -->
         <div class="flex items-center justify-between p-4 flex-wrap gap-3 bg-base-50/30 border-b border-base-200/50">
           <div class="flex items-center gap-3">
             <pc-icon name="globe-americas" class="text-base-content/60" [size]="5"></pc-icon>
@@ -51,217 +51,167 @@
               <pc-icon name="check-circle" [size]="4"></pc-icon> Verified
             </pc-status-badge>
             } @else {
-            <pc-status-badge type="warning">
-              <span class="loading loading-spinner loading-xs scale-75"></span> Pending verification
-            </pc-status-badge>
+            <pc-status-badge type="warning">Setup needed</pc-status-badge>
             }
           </div>
           <div class="flex items-center gap-2">
             <button type="button" class="btn btn-sm btn-ghost hover:bg-base-200" (click)="toggleExpand(item.domain)">
-              {{ expandedDomain() === item.domain ? 'Hide DNS Setup' : 'Show DNS Setup' }}
+              {{ expandedDomain() === item.domain ? 'Hide setup' : 'Show setup' }}
             </button>
             <button
               type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error hover:bg-error/10"
+              class="btn btn-ghost btn-xs btn-circle text-error"
               (click)="deleteDomain(item.domain)"
               title="Remove domain"
             >
-              <pc-icon name="trash" [size]="8"></pc-icon>
+              <pc-icon name="trash" [size]="4"></pc-icon>
             </button>
           </div>
         </div>
 
-        <!-- DNS Records Details (Expanded) -->
+        <!-- Setup checklist (expanded) -->
         @if (expandedDomain() === item.domain) {
-        <div class="p-5 bg-base-100 border-t border-base-100 space-y-5 animate-slide-down">
-          <div class="space-y-1">
-            <h4 class="text-xs font-bold text-base-content/90">DNS Verification Setup</h4>
-            <p class="text-xs text-base-content/60">
-              Please add the following CNAME and TXT records to your DNS provider (e.g. Cloudflare, GoDaddy, Namecheap)
-              to verify domain sending authorization, link branding, and DMARC policy validation.
-            </p>
+        <div class="p-5 bg-base-100 space-y-6 animate-slide-down">
+          @if (item.status === 'verified') {
+          <p class="text-xs text-base-content/70">
+            This domain is verified and ready to send. The records below must stay in place at your DNS provider; if you
+            remove one, sending from this domain will stop working.
+          </p>
+          } @else {
+          <div class="space-y-2">
+            <h4 class="pc-eyebrow">How to connect your domain</h4>
+            <ol class="list-decimal list-inside text-xs text-base-content/70 space-y-1">
+              <li>
+                Sign in to the website where you manage your domain (for example GoDaddy, Namecheap, Cloudflare, or
+                Squarespace) and open its DNS settings.
+              </li>
+              <li>Add each record below exactly as shown. Use the copy buttons so nothing gets mistyped.</li>
+              <li>
+                Come back here and select <strong>Check DNS records</strong>. Changes usually show up within minutes,
+                but they can take up to 48 hours.
+              </li>
+            </ol>
+          </div>
+          }
+
+          <!-- Required records -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="pc-eyebrow">Required records</span>
+              <span class="text-xs text-base-content/60" style="font-variant-numeric: tabular-nums">
+                {{ foundCount(item) }} of 4 found
+              </span>
+            </div>
+
+            @for (rec of requiredRecords(item); track rec.title) {
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-start justify-between gap-3">
+                <div class="space-y-0.5">
+                  <div class="text-xs font-semibold text-base-content/90">{{ rec.title }}</div>
+                  <p class="text-xs text-base-content/60">{{ rec.subtitle }}</p>
+                </div>
+                <pc-status-badge [type]="rec.found ? 'success' : 'ghost'">
+                  {{ rec.found ? 'Found' : 'Not found yet' }}
+                </pc-status-badge>
+              </div>
+              <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs items-center">
+                <strong class="text-base-content/60 font-medium">Type</strong>
+                <span><span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">{{ rec.type }}</span></span>
+                <strong class="text-base-content/60 font-medium">Host</strong>
+                <span class="flex items-center gap-1 min-w-0">
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all">{{ rec.host }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs btn-circle"
+                    title="Copy host"
+                    (click)="copyRecord(rec.host)"
+                  >
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                  </button>
+                </span>
+                <strong class="text-base-content/60 font-medium">Value</strong>
+                <span class="flex items-center gap-1 min-w-0">
+                  @if (rec.value) {
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all">{{ rec.value }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs btn-circle"
+                    title="Copy value"
+                    (click)="copyRecord(rec.value)"
+                  >
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                  </button>
+                  } @else {
+                  <span class="text-base-content/40">—</span>
+                  }
+                </span>
+              </div>
+            </div>
+            }
           </div>
 
-          <div class="space-y-4">
-            <!-- SPF Record -->
+          <!-- Recommended record -->
+          <div class="space-y-3">
+            <span class="pc-eyebrow">Recommended</span>
+            @let dmarc = dmarcRecord(item);
             <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="pc-eyebrow flex items-center gap-1.5">
-                  SPF (Domain Sending Auth)
-                  <span [class]="item.spf ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.spf ? 'check-circle' : 'exclamation-circle'"></pc-icon>
-                  </span>
-                </span>
-                <pc-status-badge [type]="item.spf ? 'success' : 'ghost'">
-                  {{ item.spf ? 'Verified' : 'Pending' }}
+              <div class="flex items-start justify-between gap-3">
+                <div class="space-y-0.5">
+                  <div class="text-xs font-semibold text-base-content/90">{{ dmarc.title }}</div>
+                  <p class="text-xs text-base-content/60">{{ dmarc.subtitle }}</p>
+                </div>
+                <pc-status-badge [type]="dmarc.found ? 'success' : 'ghost'">
+                  {{ dmarc.found ? 'Found' : 'Optional' }}
                 </pc-status-badge>
               </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.mail_cname?.host || 'em.' + item.domain }}</span
+              <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs items-center">
+                <strong class="text-base-content/60 font-medium">Type</strong>
+                <span><span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">{{ dmarc.type }}</span></span>
+                <strong class="text-base-content/60 font-medium">Host</strong>
+                <span class="flex items-center gap-1 min-w-0">
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all">{{ dmarc.host }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs btn-circle"
+                    title="Copy host"
+                    (click)="copyRecord(dmarc.host)"
                   >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.mail_cname?.data || 'u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DKIM CNAME 1 -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="pc-eyebrow flex items-center gap-1.5">
-                  DKIM Signature Record 1
-                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                  </button>
                 </span>
-                <pc-status-badge [type]="item.dkim ? 'success' : 'ghost'">
-                  {{ item.dkim ? 'Verified' : 'Pending' }}
-                </pc-status-badge>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.dkim1?.host || 's1._domainkey.' + item.domain }}</span
+                <strong class="text-base-content/60 font-medium">Value</strong>
+                <span class="flex items-center gap-1 min-w-0">
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all">{{ dmarc.value }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs btn-circle"
+                    title="Copy value"
+                    (click)="copyRecord(dmarc.value)"
                   >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.dkim1?.data || 's1.domainkey.u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DKIM CNAME 2 -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="pc-eyebrow flex items-center gap-1.5">
-                  DKIM Signature Record 2
-                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
+                    <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+                  </button>
                 </span>
-                <pc-status-badge [type]="item.dkim ? 'success' : 'ghost'">
-                  {{ item.dkim ? 'Verified' : 'Pending' }}
-                </pc-status-badge>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.dkim2?.host || 's2._domainkey.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.dkim2?.data || 's2.domainkey.u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- Link Branding CNAME -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="pc-eyebrow flex items-center gap-1.5">
-                  Link Branding (URL Whitelabel)
-                  <span [class]="item.linkBranded ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.linkBranded ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <pc-status-badge [type]="item.linkBranded ? 'success' : 'ghost'">
-                  {{ item.linkBranded ? 'Verified' : 'Pending' }}
-                </pc-status-badge>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.linkBrandingDns?.domain?.host || 'email.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.linkBrandingDns?.domain?.data || 'sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DMARC Record -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="pc-eyebrow flex items-center gap-1.5">
-                  DMARC Policy (Anti-Spoofing)
-                  <span [class]="item.dmarc ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dmarc ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <pc-status-badge [type]="item.dmarc ? 'success' : 'ghost'">
-                  {{ item.dmarc ? 'Verified' : 'Pending' }}
-                </pc-status-badge>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">TXT</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">_dmarc.{{ item.domain }}</span>
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >v=DMARC1; p=none; rua=mailto:dmarc@{{ item.domain }}</span
-                  >
-                </div>
               </div>
             </div>
           </div>
 
-          <div class="flex justify-end pt-2">
+          <div class="flex items-center justify-end gap-3 pt-1">
+            @if (domainCooldownSeconds()[item.domain]) {
+            <span class="text-xs text-base-content/50">
+              You can check once per minute. Try again in {{ domainCooldownSeconds()[item.domain] }}s.
+            </span>
+            }
             <button
               type="button"
-              class="btn btn-primary"
+              class="btn btn-sm btn-primary"
               (click)="verifyDomain(item.domain)"
               [disabled]="verifyingDomain() !== null || isDomainVerifyCooldown(item.domain)"
             >
               @if (verifyingDomain() === item.domain) {
-              <span class="loading loading-spinner loading-xs mr-2"></span>
-              Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
-              <span class="countdown font-mono text-xs"
-                ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
-              >s } @else {
-              <pc-icon name="arrow-path" class="mr-2"></pc-icon>
-              Verify DNS Records }
+              <span class="loading loading-spinner loading-xs"></span>
+              Checking records… } @else {
+              <pc-icon name="arrow-path" [size]="4"></pc-icon>
+              Check DNS records }
             </button>
           </div>
         </div>

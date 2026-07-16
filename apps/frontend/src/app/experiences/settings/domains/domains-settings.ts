@@ -32,6 +32,16 @@ export interface VerifiedDomain {
   linkBranded?: boolean;
 }
 
+/** One row of the DNS setup checklist, in plain language for non-technical users. */
+export interface DnsRecordRow {
+  title: string;
+  subtitle: string;
+  type: 'CNAME' | 'TXT';
+  host: string;
+  value: string;
+  found: boolean;
+}
+
 @Component({
   selector: 'pc-domains-settings',
   imports: [EmptyState, Icon, StatusBadge],
@@ -67,6 +77,73 @@ export class DomainSettingsComponent implements OnInit {
     void this.settingsSvc.load();
   }
 
+  /**
+   * The four records a domain needs before it can send. DKIM is one verified flag on the
+   * backend but two DNS records for the user to add, so it appears twice here.
+   */
+  protected requiredRecords(item: VerifiedDomain): DnsRecordRow[] {
+    return [
+      {
+        title: 'Sending permission (SPF)',
+        subtitle: 'Tells email providers that pplCRM is allowed to send mail for your domain.',
+        type: 'CNAME',
+        host: item.domainAuthDns?.mail_cname?.host || 'em.' + item.domain,
+        value: item.domainAuthDns?.mail_cname?.data || '',
+        found: !!item.spf,
+      },
+      {
+        title: 'Email signature 1 (DKIM)',
+        subtitle: 'Adds a digital signature that proves your emails really came from you.',
+        type: 'CNAME',
+        host: item.domainAuthDns?.dkim1?.host || 's1._domainkey.' + item.domain,
+        value: item.domainAuthDns?.dkim1?.data || '',
+        found: !!item.dkim,
+      },
+      {
+        title: 'Email signature 2 (DKIM)',
+        subtitle: 'A backup signature key. Both signature records are needed.',
+        type: 'CNAME',
+        host: item.domainAuthDns?.dkim2?.host || 's2._domainkey.' + item.domain,
+        value: item.domainAuthDns?.dkim2?.data || '',
+        found: !!item.dkim,
+      },
+      {
+        title: 'Branded links',
+        subtitle: 'Makes the links inside your emails use your own domain instead of ours.',
+        type: 'CNAME',
+        host: item.linkBrandingDns?.domain?.host || 'email.' + item.domain,
+        value: item.linkBrandingDns?.domain?.data || '',
+        found: !!item.linkBranded,
+      },
+    ];
+  }
+
+  /** DMARC is recommended, not required: shown separately so it never blocks setup. */
+  protected dmarcRecord(item: VerifiedDomain): DnsRecordRow {
+    return {
+      title: 'Spoofing protection (DMARC)',
+      subtitle: 'Tells email providers what to do with mail that pretends to be from you. Optional, but recommended.',
+      type: 'TXT',
+      host: '_dmarc.' + item.domain,
+      value: 'v=DMARC1; p=none',
+      found: !!item.dmarc,
+    };
+  }
+
+  protected foundCount(item: VerifiedDomain): number {
+    return this.requiredRecords(item).filter((r) => r.found).length;
+  }
+
+  protected async copyRecord(value: string) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      this.alerts.showSuccess('Copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy. Select the text and copy it manually.');
+    }
+  }
+
   protected toggleExpand(domainName: string) {
     if (this.expandedDomain() === domainName) {
       this.expandedDomain.set(null);
@@ -98,7 +175,7 @@ export class DomainSettingsComponent implements OnInit {
       await this.settingsSvc.addVerifiedDomain(domainVal);
       this.newDomain.set('');
       this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
-      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
+      this.alerts.showSuccess(`${domainVal} added. Next, add the DNS records shown below.`);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
       this.alerts.showError(errMsg);
@@ -148,9 +225,11 @@ export class DomainSettingsComponent implements OnInit {
       const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
 
       if (updatedDomain && updatedDomain.status === 'verified') {
-        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
+        this.alerts.showSuccess(`${domainName} is verified. You can now send from addresses on this domain.`);
       } else {
-        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
+        this.alerts.showWarn(
+          `Checked ${domainName}. Some records haven’t been found yet; DNS changes can take up to 48 hours to appear.`,
+        );
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
@@ -162,10 +241,10 @@ export class DomainSettingsComponent implements OnInit {
 
   protected async deleteDomain(domainName: string) {
     const confirmed = await this.dialogs.confirm({
-      title: 'Remove Domain',
-      message: `Are you sure you want to remove the domain ${domainName}?`,
+      title: 'Remove domain',
+      message: `Removing ${domainName} means you can no longer send newsletters from addresses on it. You can add and verify it again later.`,
       variant: 'danger',
-      confirmText: 'Remove',
+      confirmText: 'Remove domain',
     });
     if (!confirmed) return;
 

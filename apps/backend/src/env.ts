@@ -89,6 +89,14 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((val) => val === 'true'),
+  // Auto-passing domain verification when no valid SendGrid key is configured requires an
+  // EXPLICIT opt-in, never merely "key is missing" — a misconfigured key in a real deploy
+  // must not silently mark sending domains verified and open the send guards. Only ever
+  // set this in local dev.
+  ALLOW_MOCK_DOMAIN_VERIFICATION: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
   // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
   // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
   // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
@@ -138,6 +146,7 @@ export const env = {
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
   dbPoolMax: parsedEnv.DB_POOL_MAX,
   allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,
   oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,

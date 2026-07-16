@@ -663,12 +663,13 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     // Check DMARC via live DNS check
     dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
 
-    // Fallback/Mock behavior in local development mode (no valid API key)
+    // No valid SendGrid key: fall back to live CNAME checks so a correctly configured domain
+    // can still verify against real DNS. Auto-passing every check is a local-dev convenience
+    // behind an EXPLICIT opt-in (ALLOW_MOCK_DOMAIN_VERIFICATION=true) — a missing or
+    // misconfigured key in a real deploy must not silently mark domains verified and open
+    // the send guards (fail closed, same rule as ALLOW_MOCK_PAYMENTS).
     const hasValidKey = apiKey && (apiKey as string).trim().startsWith('SG.') && (apiKey as string).trim().length > 20;
     if (!hasValidKey) {
-      // For local development, if real DNS check fails (e.g. mock domains),
-      // we auto-verify to allow testing success state.
-      // But we still attempt real CNAME / TXT checks first in case they set up local DNS.
       const realSpf = await sendgridSvc.verifyCname(
         domainEntry.domainAuthDns?.['mail_cname']?.host || '',
         domainEntry.domainAuthDns?.['mail_cname']?.data,
@@ -686,15 +687,19 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
         domainEntry.linkBrandingDns?.['domain']?.data,
       );
 
-      spfVerified = realSpf || true;
-      dkimVerified = (realDkim1 && realDkim2) || true;
-      linkBranded = realLink || true;
-      dmarcVerified = dmarcVerified || true;
+      const mockPass = env.allowMockDomainVerification;
+      spfVerified = realSpf || mockPass;
+      dkimVerified = (realDkim1 && realDkim2) || mockPass;
+      linkBranded = realLink || mockPass;
+      dmarcVerified = dmarcVerified || mockPass;
     }
 
     const updatedList = currentList.map((d) => {
       if (d.domain === domainVal) {
-        const isVerified = spfVerified && dkimVerified && dmarcVerified && linkBranded;
+        // DMARC is recommended but not required for verified status: the sending records
+        // (SPF + DKIM + link branding) authenticate the mail; DMARC is the tenant's own
+        // anti-spoofing policy and must not block their ability to send.
+        const isVerified = spfVerified && dkimVerified && linkBranded;
         return {
           ...d,
           spf: spfVerified,

@@ -256,17 +256,15 @@ export class SendGridWhitelabelService {
         validationResults,
       };
     } catch (err) {
+      // Fail closed: an API failure must not mark a domain verified, or the send
+      // guards would open on the strength of an outage or a revoked key.
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
+        '[SendGridWhitelabelService] Validate domain API failed, treating records as unverified',
       );
       return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
+        valid: false,
+        validationResults: {},
       };
     }
   }
@@ -285,11 +283,12 @@ export class SendGridWhitelabelService {
 
       return !!res.valid;
     } catch (err) {
+      // Fail closed (same rule as validateDomainAuthentication).
       logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
+        '[SendGridWhitelabelService] Validate link branding API failed, treating record as unverified',
       );
-      return true;
+      return false;
     }
   }
 

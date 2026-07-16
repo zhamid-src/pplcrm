@@ -116,7 +116,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           {
             title: 'Verify your sending domain',
             detail:
-              'Under **Workspace → Domains**, add the domain you send from and create the DNS records it shows you. Then set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
           },
           {
             title: 'Verify a mobile number (Free plan)',

@@ -89,3 +89,11 @@ volunteer-events. Unknown/missing plan values fail closed to `free`.
 
 `SENDGRID_FREE_TIER_SUBUSER` (free-pool subuser), `POSTMARK_WEBHOOK_TOKEN` (webhook auth), plus
 the pre-existing `TWILIO_*` (SMS codes; dev-mocks when unset).
+
+`ALLOW_MOCK_DOMAIN_VERIFICATION=true` — local-dev-only opt-in that lets Settings → Domains
+auto-pass DNS verification when no valid SendGrid key is configured (set in `.env.test` for the
+backend suite). Without it, domain verification fails closed: a missing/broken SendGrid key or a
+SendGrid API outage leaves records unverified rather than silently opening the sending guards
+(`settings/controller.ts` `verifyVerifiedDomain`, `sendgrid-whitelabel.service.ts` validate
+fallbacks). Note domain `status: 'verified'` requires SPF + both DKIM records + link branding;
+DMARC is recommended but optional and never blocks verification.

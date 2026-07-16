@@ -215,7 +215,7 @@ describe('SettingsController Integration', () => {
     // First add the domain
     await controller.addVerifiedDomain(auth, 'mytestdomain.com');
 
-    // Perform verification (mock mode auto-verifies)
+    // Perform verification (auto-passes only because ALLOW_MOCK_DOMAIN_VERIFICATION=true in .env.test)
     const list = await controller.verifyVerifiedDomain(auth, 'mytestdomain.com');
     expect(list).toBeDefined();
 
@@ -226,6 +226,28 @@ describe('SettingsController Integration', () => {
     expect(entry.dkim).toBe(true);
     expect(entry.dmarc).toBe(true);
     expect(entry.linkBranded).toBe(true);
+  });
+
+  it('should NOT auto-verify a domain without the explicit mock opt-in (fail closed)', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    await controller.addVerifiedDomain(auth, 'failclosed.example');
+
+    // Simulate a deploy with no SendGrid key and no ALLOW_MOCK_DOMAIN_VERIFICATION: the
+    // real DNS checks fail (the domain doesn't exist) and nothing may auto-pass.
+    const original = env.allowMockDomainVerification;
+    (env as { allowMockDomainVerification: boolean }).allowMockDomainVerification = false;
+    try {
+      const list = await controller.verifyVerifiedDomain(auth, 'failclosed.example');
+      const entry = list.find((d) => d.domain === 'failclosed.example');
+      expect(entry).toBeDefined();
+      expect(entry.status).toBe('pending');
+      expect(entry.spf).toBe(false);
+      expect(entry.dkim).toBe(false);
+      expect(entry.linkBranded).toBe(false);
+    } finally {
+      (env as { allowMockDomainVerification: boolean }).allowMockDomainVerification = original;
+    }
   });
 
   it('should remove the domain from verified list on deleteVerifiedDomain', async () => {
