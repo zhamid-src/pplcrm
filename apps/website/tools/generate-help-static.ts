@@ -124,6 +124,23 @@ function buildLlmsTxt(): string {
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
+/** Date this build ran (YYYY-MM-DD), used as the sitemap `<lastmod>`. */
+const BUILD_DATE: string = new Date().toISOString().slice(0, 10);
+
+/** Per-page crawl hints. Home ranks highest; legal/company pages lowest. */
+function sitemapHints(path: string): { changefreq: string; priority: string } {
+  if (path === '') return { changefreq: 'weekly', priority: '1.0' };
+  if (path === 'pricing') return { changefreq: 'weekly', priority: '0.9' };
+  if (path === 'faq' || path === 'compare' || path.startsWith('for/')) {
+    return { changefreq: 'monthly', priority: '0.8' };
+  }
+  if (path === 'docs' || path.startsWith('docs/')) return { changefreq: 'monthly', priority: '0.6' };
+  if (path === 'privacy' || path === 'eula' || path === 'security') {
+    return { changefreq: 'yearly', priority: '0.3' };
+  }
+  return { changefreq: 'monthly', priority: '0.5' };
+}
+
 /** Build a valid urlset sitemap of marketing pages + all docs pages (HTML). */
 function buildSitemap(): string {
   const paths: string[] = [
@@ -134,7 +151,13 @@ function buildSitemap(): string {
   const urls: string = paths
     .map((path: string): string => {
       const loc: string = path === '' ? `${SITE_URL}/` : `${SITE_URL}/${path}`;
-      return `  <url>\n    <loc>${escapeXml(loc)}</loc>\n  </url>`;
+      const { changefreq, priority } = sitemapHints(path);
+      return (
+        `  <url>\n    <loc>${escapeXml(loc)}</loc>\n` +
+        `    <lastmod>${BUILD_DATE}</lastmod>\n` +
+        `    <changefreq>${changefreq}</changefreq>\n` +
+        `    <priority>${priority}</priority>\n  </url>`
+      );
     })
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;

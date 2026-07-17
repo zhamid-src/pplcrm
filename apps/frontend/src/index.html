@@ -5,7 +5,38 @@
     <title>People CRM for your campaigns</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="One list for constituents, voters, donors and volunteers — with a shared inbox, canvassing, donations and field apps built in."
+    />
+    <!-- This shell is the private CRM (app.pplcrm.com) and the per-tenant public
+         form pages (*.pplforms.com) — neither is search content. Keep it out of
+         indexes; the marketing site (pplcrm.com) carries all SEO. Share cards
+         above still work regardless of this. -->
+    <meta name="robots" content="noindex, follow" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <!-- Social preview. This shell serves app.pplcrm.com and the public form
+         pages on *.pplforms.com, so og:url is intentionally omitted (scrapers
+         use the real shared URL) and the card is the generic pplCRM brand card. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="pplCRM" />
+    <meta property="og:title" content="pplCRM — Know your neighbours" />
+    <meta
+      property="og:description"
+      content="One list for constituents, voters, donors and volunteers. Shared inbox, canvassing, donations and field apps."
+    />
+    <meta property="og:image" content="https://pplcrm.com/assets/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="pplCRM — know your neighbours." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="pplCRM — Know your neighbours" />
+    <meta
+      name="twitter:description"
+      content="One list for constituents, voters, donors and volunteers. Shared inbox, canvassing, donations and field apps."
+    />
+    <meta name="twitter:image" content="https://pplcrm.com/assets/og-card.png" />
   </head>
 
   <body class="min-h-full grid">

@@ -11,22 +11,66 @@
       content="A shared inbox, tasks, newsletters, canvassing, donations and yard-sign routes on one people-first list. Start free with sample data — no card. Your people are not our product."
     />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/assets/logo-sq.svg" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/assets/logo-sq-full.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
+    <link rel="manifest" href="/assets/site.webmanifest" />
+    <meta name="theme-color" content="#ffffff" />
 
-    <!-- Open Graph / social preview -->
+    <!-- Open Graph / social preview. Per-page og:title/description/url are set at
+         prerender time by SeoTitleStrategy; these are the site-wide defaults. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="pplCRM" />
-    <meta property="og:title" content="pplCRM — Know your neighbors" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="pplCRM — Know your neighbours" />
     <meta
       property="og:description"
       content="One list for constituents, voters, donors and volunteers. Shared inbox, canvassing, donations and field apps. Start free with sample data."
     />
     <meta property="og:url" content="https://pplcrm.com" />
+    <meta property="og:image" content="https://pplcrm.com/assets/og-card.png" />
+    <meta property="og:image:secure_url" content="https://pplcrm.com/assets/og-card.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="pplCRM — know your neighbours. One list for constituents, voters, donors and volunteers."
+    />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="pplCRM — Know your neighbors" />
+    <meta name="twitter:title" content="pplCRM — Know your neighbours" />
     <meta
       name="twitter:description"
       content="One list for constituents, voters, donors and volunteers. Start free with sample data."
     />
+    <meta name="twitter:image" content="https://pplcrm.com/assets/og-card.png" />
+    <meta name="twitter:image:alt" content="pplCRM — know your neighbours." />
+
+    <!-- Site-wide structured data. Per-page SoftwareApplication/FAQPage blocks
+         are added by their components (see SeoService.setJsonLd). -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://pplcrm.com/#organization",
+            "name": "pplCRM",
+            "url": "https://pplcrm.com",
+            "logo": "https://pplcrm.com/assets/logo-sq-full.png",
+            "email": "hello@pplcrm.com",
+            "description": "A people-first CRM for constituency offices, campaigns and non-profits: one shared list for constituents, voters, donors and volunteers."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://pplcrm.com/#website",
+            "url": "https://pplcrm.com",
+            "name": "pplCRM",
+            "publisher": { "@id": "https://pplcrm.com/#organization" }
+          }
+        ]
+      }
+    </script>
   </head>
 
   <body class="min-h-full bg-base-100 text-base-content">

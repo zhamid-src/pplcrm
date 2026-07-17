@@ -1,5 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 
+import { SeoService } from '../ui/seo';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SIGNUP_URL } from '../ui/site-nav';
@@ -22,6 +23,23 @@ interface Group {
 export class FaqPage {
   protected readonly signupUrl = SIGNUP_URL;
   protected readonly mailto = 'mailto:hello@pplcrm.com';
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // FAQPage rich-result data, built from the same Q&A shown on the page.
+    this.seo.setJsonLd('faq', {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: this.groups.flatMap((group) =>
+        group.items.map((item) => ({
+          '@type': 'Question',
+          name: item.q,
+          acceptedAnswer: { '@type': 'Answer', text: item.a },
+        })),
+      ),
+    });
+  }
 
   protected readonly groups: readonly Group[] = [
     {

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 180px;
+        height: 180px;
+      }
+      .tile {
+        width: 180px;
+        height: 180px;
+        background: #0e182b;
+        display: grid;
+        place-items: center;
+      }
+      /* The existing square logo artwork, on the opaque navy brand field (iOS
+         renders a transparent apple-touch-icon on black). The teal/blue mark and
+         wordmark read brightly on navy. LOGO_SQ_URL is replaced by render.mjs. */
+      img {
+        width: 168px;
+        height: 168px;
+        object-fit: contain;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tile">
+      <img src="LOGO_SQ_URL" alt="pplCRM" />
+    </div>
+  </body>
+</html>

@@ -432,6 +432,14 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Register form URL-encoded parser
   fastify.register(formBody);
 
+  // These are per-tenant, transactional public pages (donation forms, submit
+  // endpoints, success/error confirmations) — thin and not search content, so
+  // keep them all out of search-engine indexes.
+  fastify.addHook('onRequest', (_req, reply, hookDone) => {
+    reply.header('X-Robots-Tag', 'noindex');
+    hookDone();
+  });
+
   fastify.get<{
     Querystring: {
       checkout_session_id?: string;

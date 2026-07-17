@@ -7,10 +7,13 @@ import { AppPreview, type PreviewKind } from '../ui/app-preview';
 import { BrowserFrame } from '../ui/browser-frame';
 import { Constellation } from '../ui/constellation';
 import { CurrencyService } from '../ui/currency.service';
+import { SeoService } from '../ui/seo';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
+
+import { environment } from '../../environments/environment';
 
 const AUDIENCE_IDS = ['office', 'camp', 'np'] as const;
 type Audience = (typeof AUDIENCE_IDS)[number];
@@ -73,7 +76,7 @@ const HEROES: Record<Audience, Hero> = {
     img: 'assets/site-shots/02-shot.png',
   },
   np: {
-    h1: 'Donors, volunteers and neighbors. One list.',
+    h1: 'Donors, volunteers and neighbours. One list.',
     sub: 'Stop reconciling three spreadsheets. Gifts, drives and newsletters live on one person’s record.',
     url: 'app.pplcrm.com/donations',
     kind: 'donations',
@@ -88,6 +91,26 @@ const HEROES: Record<Audience, Hero> = {
 })
 export class HomePage {
   protected readonly signupUrl = SIGNUP_URL;
+
+  private readonly seo = inject(SeoService);
+
+  constructor() {
+    // SoftwareApplication rich-result data for the landing page. The free tier
+    // ($0) is the checkable, drift-safe offer to advertise here.
+    this.seo.setJsonLd('software', {
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'pplCRM',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web, iOS, Android',
+      url: environment.siteUrl,
+      description:
+        'A people-first CRM for constituency offices, campaigns and non-profits: one shared list ' +
+        'for constituents, voters, donors and volunteers, with a shared inbox, canvassing, ' +
+        'donations, newsletters and field apps.',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free plan' },
+    });
+  }
 
   /** The /for/… routes render this page with their audience preselected (see app.routes.ts). */
   private readonly routeAudience: unknown = inject(ActivatedRoute).snapshot.data['audience'];
@@ -204,7 +227,7 @@ export class HomePage {
     {
       icon: 'route',
       title: 'Warm paths beat cold lists',
-      body: 'Reach new people through the neighbor who already knows you. An introduction opens doors a cold call never will.',
+      body: 'Reach new people through the neighbour who already knows you. An introduction opens doors a cold call never will.',
     },
     {
       icon: 'presentation-chart-line',

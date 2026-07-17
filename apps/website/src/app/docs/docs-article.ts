@@ -1,14 +1,13 @@
-import { Component, computed, DOCUMENT, effect, inject, input, Renderer2 } from '@angular/core';
-import { Meta, Title } from '@angular/platform-browser';
+import { Component, computed, effect, inject, input } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 
 import { categoryNeighbors, getHelpArticle, getHelpCategory, readingMinutes, relatedArticles } from '@common';
 
-import { environment } from '../../environments/environment';
 import { SiteFooter } from '../ui/site-footer';
 import { SiteHeader } from '../ui/site-header';
 import { SiteIcon } from '../ui/site-icon';
 import { SIGNUP_URL } from '../ui/site-nav';
+import { SeoService } from '../ui/seo';
 
 import { DocsBlocks } from './docs-blocks';
 
@@ -34,10 +33,7 @@ interface DocsNeighbors {
 })
 export class DocsArticle {
   private readonly router = inject(Router);
-  private readonly title = inject(Title);
-  private readonly meta = inject(Meta);
-  private readonly renderer = inject(Renderer2);
-  private readonly document = inject(DOCUMENT);
+  private readonly seo = inject(SeoService);
 
   public readonly id = input.required<string>();
 
@@ -73,30 +69,16 @@ export class DocsArticle {
       }
     });
 
-    // Keep the document title, description, and canonical URL in sync with the
-    // current article for SEO and prerendered HTML.
+    // Keep the document title, description, canonical URL and per-page social
+    // tags in sync with the current article for SEO and prerendered HTML.
     effect(() => {
       const article = this.article();
       if (!article) return;
-      this.title.setTitle(`${article.title} — pplCRM Docs`);
-      this.meta.updateTag({ name: 'description', content: article.summary });
-      this.setCanonical(`${environment.siteUrl}/docs/${article.id}`);
+      this.seo.applyRoute({
+        title: `${article.title} — pplCRM Docs`,
+        description: article.summary,
+        path: `/docs/${article.id}`,
+      });
     });
-  }
-
-  /**
-   * Point the canonical `<link>` at this article's public URL. Uses `Renderer2`
-   * so it works under prerendering (server DOM) as well as in the browser.
-   */
-  private setCanonical(url: string): void {
-    const head = this.document.head;
-    if (!head) return;
-    let link = head.querySelector('link[rel="canonical"]');
-    if (!link) {
-      link = this.renderer.createElement('link');
-      this.renderer.setAttribute(link, 'rel', 'canonical');
-      this.renderer.appendChild(head, link);
-    }
-    this.renderer.setAttribute(link, 'href', url);
   }
 }
