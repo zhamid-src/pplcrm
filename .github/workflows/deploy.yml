@@ -42,11 +42,23 @@ jobs:
       - run: npm ci
       # Builds backend (esbuild bundle) + the three Angular apps. generate-context (repomix) and
       # generate-docs (tsx) codegen run as build deps — both work on a networked CI runner.
-      # The browser Google Maps key must be present at build time or maps render as grey placeholders.
       - name: Build all deployables
-        env:
-          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         run: npx nx run-many -t build -p backend frontend companion website --configuration=production
+      # The Angular (esbuild) build can't read env vars, so the browser Google Maps key is baked as a
+      # placeholder token via esbuild `define` (project.json) and substituted into the built bundles
+      # here. Without a valid key maps render as grey placeholders (the app still loads — the token is
+      # a harmless string, never a runtime crash).
+      - name: Inject Google Maps browser key
+        env:
+          K: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+        run: |
+          if [ -n "$K" ]; then
+            find dist/apps/frontend/browser dist/apps/companion/browser -name '*.js' -print0 \
+              | xargs -0 perl -pi -e 's/__PPLCRM_MAPS_KEY__/$ENV{K}/g'
+            echo "Injected maps key into $(grep -rl "$K" dist/apps/frontend/browser dist/apps/companion/browser | wc -l | tr -d ' ') file(s)."
+          else
+            echo "::warning::VITE_GOOGLE_MAPS_API_KEY secret is empty — maps will render as grey placeholders."
+          fi
       - name: Upload static bundles
         uses: actions/upload-artifact@v4
         with:

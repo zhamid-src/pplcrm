@@ -25,7 +25,10 @@
         "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
         "styles": ["apps/frontend/src/styles.css"],
         "scripts": [],
-        "polyfills": ["@angular/localize/init"]
+        "polyfills": ["@angular/localize/init"],
+        "define": {
+          "import.meta.env.VITE_GOOGLE_MAPS_API_KEY": "\"__PPLCRM_MAPS_KEY__\""
+        }
       },
       "configurations": {
         "production": {

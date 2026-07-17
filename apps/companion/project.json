@@ -25,7 +25,10 @@
         ],
         "styles": ["apps/companion/src/styles.css"],
         "scripts": [],
-        "polyfills": ["@angular/localize/init"]
+        "polyfills": ["@angular/localize/init"],
+        "define": {
+          "import.meta.env.VITE_GOOGLE_MAPS_API_KEY": "\"__PPLCRM_MAPS_KEY__\""
+        }
       },
       "configurations": {
         "production": {

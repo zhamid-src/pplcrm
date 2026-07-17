@@ -4,7 +4,7 @@ export const environment = {
   // host with the CRM's static SPA. The CRM SPA (app.pplcrm.com) reaches this cross-origin; CORS is
   // locked to APP_URL and the refresh cookie is same-site (both under pplcrm.com).
   apiUrl: 'https://api.pplcrm.com',
-  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? '',
   // The public submission surface (forms, events, volunteer signups, donations) lives on a dedicated
   // domain at '<org>.pplforms.com'; this is the base the tenant subdomain hangs off of.
   publicBaseDomain: 'pplforms.com',
