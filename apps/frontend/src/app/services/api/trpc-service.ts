@@ -36,7 +36,8 @@ export class TRPCService<T> {
   constructor() {
     this.api = createTRPCClient<TRPCRouter>({
       links: [
-        loggerLink(),
+        // Dev-only: logs every tRPC op to the console. Disabled in production builds.
+        loggerLink({ enabled: () => !environment.production }),
         // errorLink must sit OUTSIDE refreshLink: refreshLink transparently refreshes and retries
         // an UNAUTHORIZED call once (e.g. after another tab rotated the session), and errorLink
         // must only see the error — and redirect to /signin — when that retry has already failed.
