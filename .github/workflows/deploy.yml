@@ -17,6 +17,10 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Skip deploys for docs-only pushes (a push touching any non-.md file still deploys).
+    # Use workflow_dispatch to force a deploy regardless.
+    paths-ignore:
+      - '**/*.md'
   workflow_dispatch:
 
 concurrency:
