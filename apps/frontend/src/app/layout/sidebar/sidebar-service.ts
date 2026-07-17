@@ -155,7 +155,8 @@ export class SidebarService {
 
   private getState(): DrawerStates {
     const state = localStorage.getItem(DRAWER_STATE_KEY);
-    return state === 'full' ? 'full' : 'half';
+    // Absent/corrupt storage means first use — start expanded so labels are visible.
+    return state === 'half' ? 'half' : 'full';
   }
 
   private initializeCollapsedDefaults(items: ISidebarItem[]) {

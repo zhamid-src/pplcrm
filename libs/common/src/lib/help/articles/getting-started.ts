@@ -194,7 +194,6 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           'Collapse any section by clicking its heading (useful for areas you rarely use).',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
           'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
           'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
           'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
