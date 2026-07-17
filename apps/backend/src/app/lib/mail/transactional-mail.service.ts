@@ -4,6 +4,7 @@ import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { logger } from '../../logger';
 import { BaseRepository } from '../base.repo';
+import { LOGO_CID, LOGO_PNG_BASE64 } from './logo-asset';
 
 export interface SendMailOptions {
   to: string;
@@ -49,16 +50,19 @@ export class TransactionalEmailService {
       border: 1px solid #e2e8f0;
     }
     .header {
-      background-color: #0ea5e9;
-      padding: 32px;
+      background-color: #ffffff;
+      padding: 28px 32px;
       text-align: center;
+      border-bottom: 1px solid #e2e8f0;
     }
-    .header h1 {
-      color: #ffffff;
-      font-size: 24px;
-      font-weight: 700;
-      margin: 0;
-      letter-spacing: -0.025em;
+    .header img {
+      display: inline-block;
+      width: 160px;
+      max-width: 60%;
+      height: auto;
+      border: 0;
+      outline: none;
+      text-decoration: none;
     }
     .content {
       padding: 40px 32px;
@@ -155,7 +159,7 @@ export class TransactionalEmailService {
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1>pplCRM</h1>
+        <img src="cid:${LOGO_CID}" alt="pplCRM" width="160" />
       </div>
       <div class="content">
         ${contentHtml}
@@ -195,6 +199,16 @@ export class TransactionalEmailService {
           Subject: options.subject,
           TextBody: options.text,
           HtmlBody: wrappedHtml,
+          // Inline logo referenced by the header's `cid:` src. Embedded (not a remote
+          // URL) so it renders even when the client blocks remote images.
+          Attachments: [
+            {
+              Name: 'logo.png',
+              Content: LOGO_PNG_BASE64,
+              ContentType: 'image/png',
+              ContentID: `cid:${LOGO_CID}`,
+            },
+          ],
           // Round-trips to the bounce/complaint webhook so suppressions can be tenant-scoped.
           ...(options.tenant_id ? { Metadata: { tenant_id: String(options.tenant_id) } } : {}),
         }),
