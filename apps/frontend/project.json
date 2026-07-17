@@ -22,11 +22,7 @@
         "index": "apps/frontend/src/index.html",
         "browser": "apps/frontend/src/main.ts",
         "tsConfig": "apps/frontend/tsconfig.app.json",
-        "assets": [
-          "apps/frontend/src/favicon.ico",
-          "apps/frontend/src/assets",
-          { "glob": "_redirects", "input": "apps/frontend/src", "output": "." }
-        ],
+        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
         "styles": ["apps/frontend/src/styles.css"],
         "scripts": [],
         "polyfills": ["@angular/localize/init"]

@@ -123,23 +123,18 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist/apps/website/browser --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
-      # ── Cloudflare Pages: CRM app (app.pplcrm.com) ──
-      - name: Deploy CRM app to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist/apps/frontend/browser --project-name=${{ vars.CF_APP_PAGES_PROJECT }} --branch=main
       # ── Cloudflare Worker: public forms surface (*.pplforms.com) ──
       # Serves the same frontend bundle (public /f,/e,/v routes) + proxies /api and /d to the backend.
+      # SPA fallback here comes from wrangler.toml `not_found_handling`, NOT a _redirects file — the
+      # Workers-assets validator rejects `/* /index.html 200` as an infinite loop, so the frontend
+      # bundle must NOT contain _redirects when a Worker serves it (it's injected for Pages below).
       - name: Deploy forms Worker (*.pplforms.com)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: infra/pplforms-edge
-          # wrangler 4.x: the action's bundled 3.90 ignores `run_worker_first` (so /api/* wouldn't
-          # proxy) and mis-binds static-asset Worker routes (custom domain 522s).
+          # wrangler 4.x: the action's bundled 3.90 ignores `run_worker_first`, so /api/* wouldn't proxy.
           wranglerVersion: '4'
           command: deploy
       # ── Cloudflare Worker: volunteer companion (go.pplcrm.com) ──
@@ -151,3 +146,15 @@ jobs:
           workingDirectory: infra/go-edge
           wranglerVersion: '4'
           command: deploy
+      # ── Cloudflare Pages: CRM app (app.pplcrm.com) ──
+      # LAST, because Pages needs a _redirects for SPA deep-links but the Worker steps above serve the
+      # same bundle and reject that file. Inject it here (Pages accepts `/* /index.html 200`), after
+      # every Worker has already consumed the clean bundle.
+      - name: Inject SPA fallback for app Pages
+        run: printf '/*    /index.html    200\n' > dist/apps/frontend/browser/_redirects
+      - name: Deploy CRM app to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist/apps/frontend/browser --project-name=${{ vars.CF_APP_PAGES_PROJECT }} --branch=main
