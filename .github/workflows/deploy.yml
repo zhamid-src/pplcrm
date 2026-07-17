@@ -120,7 +120,27 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist/apps/website/browser --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
-      # TODO (added after the manual bootstrap in §5 confirms each target exists):
-      #   - Deploy app.pplcrm.com SPA  → Pages project (dist/apps/frontend)
-      #   - Deploy forms Worker        → wrangler deploy (infra/pplforms-edge)
-      #   - Deploy go Worker           → wrangler deploy (infra/go-edge, once created)
+      # ── Cloudflare Pages: CRM app (app.pplcrm.com) ──
+      - name: Deploy CRM app to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist/apps/frontend/browser --project-name=${{ vars.CF_APP_PAGES_PROJECT }} --branch=main
+      # ── Cloudflare Worker: public forms surface (*.pplforms.com) ──
+      # Serves the same frontend bundle (public /f,/e,/v routes) + proxies /api and /d to the backend.
+      - name: Deploy forms Worker (*.pplforms.com)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: infra/pplforms-edge
+          command: deploy
+      # ── Cloudflare Worker: volunteer companion (go.pplcrm.com) ──
+      - name: Deploy companion Worker (go.pplcrm.com)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: infra/go-edge
+          command: deploy

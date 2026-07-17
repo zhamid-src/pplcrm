@@ -1,0 +1,31 @@
+# go-edge — reverse proxy for go.pplcrm.com (the volunteer companion app).
+#
+# Deploy flow:
+#   1. npx nx build companion --configuration=production   # produces ../../dist/apps/companion/browser
+#   2. npx wrangler deploy                                  # from this directory
+#
+# Unlike pplforms-edge this is a SINGLE host (no per-org subdomain) and serves the companion SPA
+# (/t/:token canvass, /r/:token deliveries). The companion calls its backend same-origin via
+# /api/companion|canvass|deliveries/*, so we only serve static assets + proxy /api/* — no /d rewrite.
+name = "go-edge"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# Static SPA bundle. run_worker_first forces the Worker to handle /api/* before the static asset
+# layer (whose single-page-application fallback would otherwise return index.html for /api/*).
+[assets]
+directory = "../../dist/apps/companion/browser"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[vars]
+# Backend origin bound on the Container App (Cloudflare-proxied; Full (strict) satisfied by the
+# api.pplcrm.com managed cert).
+BACKEND_ORIGIN = "https://api.pplcrm.com"
+
+# Route go.pplcrm.com through this Worker. Requires a PROXIED DNS record for `go` in the pplcrm.com
+# zone (see README.md) so Cloudflare answers for the hostname and the route matches.
+routes = [
+  { pattern = "go.pplcrm.com/*", zone_name = "pplcrm.com" },
+]
