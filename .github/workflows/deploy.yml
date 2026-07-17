@@ -111,12 +111,15 @@ jobs:
               echo "::warning::${{ vars.AZURE_API_APP }} does not exist yet — create it manually (PROD-CHECKLIST §5), then re-run."
             fi
       # ── Cloudflare Pages: marketing site ──
+      # Angular emits the static site under a `browser/` subdir; deploy THAT, not its parent.
+      # --branch=main forces the *production* deployment (the custom domain serves production),
+      # regardless of which git branch CI runs on.
       - name: Deploy marketing site to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist/apps/website --project-name=${{ vars.CF_PAGES_PROJECT }}
+          command: pages deploy dist/apps/website/browser --project-name=${{ vars.CF_PAGES_PROJECT }} --branch=main
       # TODO (added after the manual bootstrap in §5 confirms each target exists):
       #   - Deploy app.pplcrm.com SPA  → Pages project (dist/apps/frontend)
       #   - Deploy forms Worker        → wrangler deploy (infra/pplforms-edge)
