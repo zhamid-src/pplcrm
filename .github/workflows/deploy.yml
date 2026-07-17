@@ -88,6 +88,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      # Checkout is required for the Worker deploys below: wrangler needs infra/*-edge (wrangler.toml
+      # + src). The static bundles come from the build artifact, layered into dist/apps afterward.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: static-bundles
