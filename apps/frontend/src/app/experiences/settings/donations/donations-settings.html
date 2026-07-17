@@ -68,9 +68,9 @@
     </div>
 
     <p class="text-xs text-base-content/65 max-w-2xl">
-      Donations are charged directly to your campaign's own Stripe account — your campaign stays the merchant of record.
-      pplCRM deducts a 1% platform fee from card donations; Stripe's own processing fees also apply. There are no API
-      keys to paste: connecting sends you to Stripe to verify your campaign, then brings you back here.
+      Donations are charged directly to your campaign's own Stripe account, so your campaign stays the merchant of
+      record. pplCRM deducts a 1% platform fee from card donations; Stripe's own processing fees also apply. There are
+      no API keys to paste: connecting sends you to Stripe to verify your campaign, then brings you back here.
     </p>
 
     @if (stripeStatus()?.isMockMode) {
@@ -82,6 +82,38 @@
       </span>
     </div>
     } @else if (!stripeConfigured()) {
+    <!-- Pre-connection explainer: answers "why do I need my own Stripe account" before asking for it -->
+    <div class="pc-panel p-4 space-y-3 max-w-2xl">
+      <p class="pc-eyebrow">Why you connect your own Stripe account</p>
+      <ul class="space-y-2.5 text-xs text-base-content/75">
+        <li class="flex items-start gap-2.5">
+          <pc-icon name="banknotes" class="text-primary shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>
+            <strong class="font-semibold text-base-content/90">Donations go straight to your campaign.</strong>
+            Campaign finance rules generally require contributions to be received by the campaign itself. Money moves
+            from the donor's card to your own bank account and never passes through pplCRM.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <pc-icon name="lock-closed" class="text-primary shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>
+            <strong class="font-semibold text-base-content/90">Stripe safeguards every payment.</strong>
+            We leave money handling to Stripe because payment security is its entire business. Stripe is certified to
+            PCI DSS Level 1, the industry's highest payment-security standard, and card details never touch pplCRM's
+            servers.
+          </span>
+        </li>
+        <li class="flex items-start gap-2.5">
+          <pc-icon name="user-circle" class="text-primary shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>
+            <strong class="font-semibold text-base-content/90">You stay in control.</strong>
+            The Stripe account is yours: you manage payouts, refunds, and disputes from your own Stripe dashboard, and
+            your processing history stays with you. Verification happens once and takes about five to ten minutes.
+          </span>
+        </li>
+      </ul>
+    </div>
+
     <!-- Not connected: pick the campaign's country, then hand off to Stripe-hosted onboarding -->
     <div class="flex flex-col sm:flex-row sm:items-end gap-3 pt-1">
       <div class="flex flex-col gap-1.5">

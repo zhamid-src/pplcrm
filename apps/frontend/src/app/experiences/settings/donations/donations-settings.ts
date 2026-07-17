@@ -1,16 +1,16 @@
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormField, form, max, min } from '@angular/forms/signals';
+import { ActivatedRoute } from '@angular/router';
 import { STRIPE_CONNECT_COUNTRIES, type StripeConnectCountry } from '@common';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Table } from '@uxcommon/components/table/table';
 import { Icon } from '@icons/icon';
-import { TokenService } from '../../../services/api/token-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { Table } from '@uxcommon/components/table/table';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { DonationsService } from '../../../services/api/donations-service';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../services/settings-service';
 
 /** Where donations are processed and payment data stored, derived from the Stripe Connect state. */
 export interface ProcessingNotice {
@@ -305,7 +305,7 @@ export class DonationsSettingsComponent implements OnInit {
     }
     return {
       heading: 'Connect Stripe to accept donations',
-      body: 'Donations are processed by Stripe, which stores donor payment data in the United States. Connect your Stripe account below to start accepting donations.',
+      body: 'Donations are processed by Stripe. Connect your Stripe account below to start accepting donations.',
     };
   });
 
