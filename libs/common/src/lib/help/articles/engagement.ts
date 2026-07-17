@@ -50,6 +50,10 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
         text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
       },
       {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
         kind: 'callout',
         tone: 'warning',
         title: 'Donations are paused until you confirm residency',
