@@ -131,7 +131,7 @@ export class BillingController {
   }
 
   private getFrontendUrl(): string {
-    return env.apiUrl.replace(':3000', ':4200'); // standard dev replace, or env.apiUrl in prod
+    return env.appUrl.replace(/\/+$/, '');
   }
 
   public async getBillingDetails(auth: { tenant_id: string }) {
