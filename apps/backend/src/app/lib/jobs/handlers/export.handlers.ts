@@ -209,9 +209,15 @@ export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: K
           if (emailOptedIn && user.email) {
             await mailService.sendMail({
               to: user.email,
-              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
-              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
-              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
+              subject: `Your export is ready: ${payload.file_name || 'export.csv'}`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile name: ${payload.file_name || 'export.csv'}\nDownload it from the Exports page: ${env.appUrl}/exports`,
+              html: `<h2>Your export is ready</h2>
+<p>Hi ${user.first_name || 'there'},</p>
+<p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p>
+<div class="panel"><p><strong>File name:</strong> ${payload.file_name || 'export.csv'}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/exports" class="btn">Go to exports</a>
+</div>`,
             });
           }
         }

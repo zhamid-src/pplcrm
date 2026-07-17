@@ -48,9 +48,15 @@ export async function processMentions(
         if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {
           await mailService.sendMail({
             to: user.email,
-            subject: 'You were mentioned in PplCRM',
-            text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
+            subject: 'You were mentioned in pplCRM',
+            text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView the comment: ${commentLink}`,
+            html: `<h2>You were mentioned</h2>
+<p>Hi ${user.first_name || 'there'},</p>
+<p>You were mentioned in a comment:</p>
+<div class="panel"><p>"${commentText}"</p></div>
+<div class="btn-container">
+  <a href="${commentLink}" class="btn">View comment</a>
+</div>`,
           });
         }
       }

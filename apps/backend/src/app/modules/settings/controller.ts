@@ -319,9 +319,14 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     await this.mailService.enqueueMail({
       to: normalized,
       tenant_id: auth.tenant_id,
-      subject: 'Verify sender email address for your PplCRM campaign',
-      text: `Hi,\n\nPlease verify your email address by clicking this link: ${verificationLink}\n\nThis link will expire in 24 hours.`,
-      html: `<h3>Verify Sender Email</h3><p>Please click the link below to verify your email address for your PplCRM campaign:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link will expire in 24 hours.</p>`,
+      subject: 'Verify your sender email address',
+      text: `Hi,\n\nWe need to verify this email address before your pplCRM campaign can send from it. Verify it using this link: ${verificationLink}\n\nThis link expires in 24 hours.`,
+      html: `<h2>Verify your sender email address</h2>
+<p>We need to verify this email address before your pplCRM campaign can send from it. Click the button below to verify it:</p>
+<div class="btn-container">
+  <a href="${verificationLink}" class="btn">Verify sender email</a>
+</div>
+<p class="warning">For security, this link expires in 24 hours.</p>`,
     });
 
     // Record timestamps if successful
@@ -434,14 +439,14 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       await this.mailService.sendMail({
         to: admin.email,
         tenant_id: auth.tenant_id,
-        subject: 'Security Alert: Organization Scheduled for Deletion',
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, please trigger a cancel restoration request in your dashboard settings.`,
-        html: `<h2>Organization Scheduled for Deletion</h2>
-<p>Hi ${admin.first_name || 'Admin'},</p>
-<p>The organization <strong>${tenant.name}</strong> (Tenant ID: ${auth.tenant_id}) has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All data including campaigns, contacts, lists, workflows, and user accounts under this tenant will be permanently deleted. If you did not make this request or wish to cancel it, please click the button below to cancel the deletion:</p>
+        subject: 'Your organization is scheduled for deletion',
+        text: `Hi ${admin.first_name || 'there'},\n\nYour organization ${tenant.name} has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nTo cancel, open your organization settings: ${env.appUrl}/settings`,
+        html: `<h2>Organization scheduled for deletion</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>The organization <strong>${tenant.name}</strong> has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All data under this organization, including campaigns, contacts, lists, workflows, and user accounts, will be permanently deleted. To cancel the deletion, click the button below:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/settings" class="btn">Manage Organization Settings</a>
+  <a href="${env.appUrl}/settings" class="btn">Open organization settings</a>
 </div>
 <p class="warning">If you did not schedule this deletion, please contact support immediately.</p>`,
       });
@@ -486,10 +491,10 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       await this.mailService.sendMail({
         to: admin.email,
         tenant_id: auth.tenant_id,
-        subject: 'PplCRM - Organization Deletion Canceled',
-        text: `Your request to delete organization ${tenant.name} has been successfully canceled, and your organization is fully restored.`,
-        html: `<h2>Organization Deletion Canceled</h2>
-<p>Your request to delete organization <strong>${tenant.name}</strong> has been successfully canceled. Your organization and all associated campaign data are fully restored.</p>`,
+        subject: 'Your organization deletion was canceled',
+        text: `Your request to delete organization ${tenant.name} has been canceled, and your organization is fully restored.`,
+        html: `<h2>Organization deletion canceled</h2>
+<p>Your request to delete organization <strong>${tenant.name}</strong> has been canceled. Your organization and all associated campaign data are fully restored.</p>`,
       });
     }
 

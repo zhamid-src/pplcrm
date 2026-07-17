@@ -134,7 +134,7 @@ describe('SettingsController Integration', () => {
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
     expect(payload.type).toBe('send-transactional-email');
     expect(payload.to).toBe('verify-me@example.com');
-    expect(payload.subject).toContain('Verify sender email');
+    expect(payload.subject).toContain('Verify your sender email address');
   });
 
   it('should enforce requestEmailVerification rate limit', async () => {

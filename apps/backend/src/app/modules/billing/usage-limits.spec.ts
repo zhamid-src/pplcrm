@@ -224,7 +224,7 @@ describe('Usage Limits System', () => {
     expect(jobs.length).toBeGreaterThan(0);
     const emailJob = jobs.find((j: any) => {
       const p = typeof j.payload === 'string' ? JSON.parse(j.payload) : j.payload;
-      return p.type === 'send-transactional-email' && p.subject.includes('[WARNING]');
+      return p.type === 'send-transactional-email' && p.subject.includes('Action needed: you have reached');
     });
     expect(emailJob).toBeDefined();
 

@@ -123,7 +123,7 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
           to: owner.email,
           subject: 'Your account data has been permanently deleted',
           text: `Hi ${owner.first_name},\n\nAll data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using pplCRM.`,
-          html: `<h2>Account Data Deleted</h2>
+          html: `<h2>Account data deleted</h2>
 <p>Hi ${owner.first_name},</p>
 <p>All data associated with your pplCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
 <p>Thank you for using pplCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,

@@ -522,7 +522,7 @@ export class BillingController {
                 taxLineText;
 
               summaryOfChargesHtml =
-                '<p><strong>Summary of Charges:</strong></p><ul>' +
+                '<div class="panel"><p><strong>Summary of charges:</strong></p><ul>' +
                 invoice.lines.data
                   .map((line) => {
                     const lineAmt = (line.amount || 0) / 100;
@@ -530,14 +530,19 @@ export class BillingController {
                   })
                   .join('') +
                 taxLineHtml +
-                '</ul>';
+                '</ul></div>';
             }
 
             await mailService.sendMail({
               to: admin.email,
-              subject: `Receipt for your PplCRM Subscription`,
-              text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was successfully processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
-              html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was successfully processed.</p>${summaryOfChargesHtml}<p><a href="${pdfUrl}">View/Download Invoice Receipt</a></p>`,
+              subject: `Receipt for your pplCRM subscription`,
+              text: `Hi ${admin.first_name || 'there'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
+              html: `<h2>Payment received</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was processed.</p>${summaryOfChargesHtml}
+<div class="btn-container">
+  <a href="${pdfUrl}" class="btn">View invoice</a>
+</div>`,
             });
           }
         }
@@ -582,12 +587,15 @@ export class BillingController {
             const amountDue = (invoice.amount_due || 0) / 100;
             await mailService.sendMail({
               to: admin.email,
-              subject: `[WARNING] Action Required: Payment Failed for PplCRM`,
-              text: `Hi ${admin.first_name || 'Admin'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\n[WARNING] Please update your payment card immediately to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
-              html: `<p>Hi ${admin.first_name || 'Admin'},</p>
+              subject: `Action needed: your pplCRM subscription payment failed`,
+              text: `Hi ${admin.first_name || 'there'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\nPlease update your payment card to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
+              html: `<h2>Payment failed</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
 <p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
-<p><strong>[WARNING]</strong> Please update your payment card immediately to prevent suspension of your organization's account.</p>
-<p><a href="${billingPageUrl}">Update Billing/Card Information</a></p>`,
+<p>Please update your payment card to prevent suspension of your organization's account.</p>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Update payment method</a>
+</div>`,
             });
           }
         }
@@ -689,21 +697,25 @@ export class BillingController {
       const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');
 
       const mailService = new TransactionalEmailService();
+      const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
       await mailService.sendMail({
         to: admin.email,
-        subject: `${mockPrefix}Subscription Updated: Welcome to the ${planName.toUpperCase()} Plan`,
-        text: `Hi ${admin.first_name || 'Owner'},\n\n${mockPrefix}Your subscription has been successfully updated.\n\nNew Plan: ${planName.toUpperCase()}\nPrice: ${planLimits.price}\n\nPlan Limits:\n- Email Subscribers: ${fmt(planLimits.subscribers)}\n- User Seats: ${fmt(planLimits.seats)}\n- Monthly Emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
-        html: `<p>Hi ${admin.first_name || 'Owner'},</p>
-<p>${mockPrefix}Your subscription has been successfully updated.</p>
-<p><strong>New Plan:</strong> ${planName.toUpperCase()}<br>
-<strong>Price:</strong> ${planLimits.price}</p>
-<p><strong>Active Limits:</strong></p>
+        subject: `${mockPrefix}Welcome to the ${planLabel} plan`,
+        text: `Hi ${admin.first_name || 'there'},\n\n${mockPrefix}Your subscription has been updated.\n\nNew plan: ${planLabel}\nPrice: ${planLimits.price}\n\nPlan limits:\n- Email subscribers: ${fmt(planLimits.subscribers)}\n- User seats: ${fmt(planLimits.seats)}\n- Monthly emails: ${fmt(planLimits.emails)} outbound emails\n\nManage your billing here: ${billingPageUrl}`,
+        html: `<h2>Subscription updated</h2>
+<p>Hi ${admin.first_name || 'there'},</p>
+<p>${mockPrefix}Your subscription has been updated. Welcome to the <strong>${planLabel}</strong> plan.</p>
+<div class="panel">
+<p><strong>Price:</strong> ${planLimits.price}</p>
 <ul>
-  <li><strong>Email Subscribers:</strong> Up to ${fmt(planLimits.subscribers)}</li>
-  <li><strong>User Seats:</strong> Up to ${fmt(planLimits.seats)}</li>
-  <li><strong>Monthly Emails:</strong> Up to ${fmt(planLimits.emails)} outbound emails</li>
+  <li><strong>Email subscribers:</strong> up to ${fmt(planLimits.subscribers)}</li>
+  <li><strong>User seats:</strong> up to ${fmt(planLimits.seats)}</li>
+  <li><strong>Monthly emails:</strong> up to ${fmt(planLimits.emails)} outbound emails</li>
 </ul>
-<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`,
+</div>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Manage billing</a>
+</div>`,
       });
     }
   }

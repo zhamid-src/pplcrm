@@ -49,7 +49,7 @@ export class TransactionalEmailService {
       border: 1px solid #e2e8f0;
     }
     .header {
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      background-color: #0ea5e9;
       padding: 32px;
       text-align: center;
     }
@@ -77,13 +77,30 @@ export class TransactionalEmailService {
       margin-bottom: 24px;
       color: #475569;
     }
+    .content a {
+      color: #0ea5e9;
+    }
+    .panel {
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 24px 0;
+    }
+    .panel p {
+      margin: 4px 0;
+    }
+    .panel ul {
+      margin: 4px 0;
+      padding-left: 20px;
+    }
     .btn-container {
       margin: 32px 0;
       text-align: center;
     }
     .btn {
       display: inline-block;
-      background-color: #4f46e5;
+      background-color: #0ea5e9;
       color: #ffffff !important;
       text-decoration: none;
       padding: 12px 28px;
@@ -101,7 +118,7 @@ export class TransactionalEmailService {
       font-size: 32px;
       font-weight: 700;
       letter-spacing: 6px;
-      color: #4f46e5;
+      color: #0ea5e9;
       background-color: #f1f5f9;
       padding: 12px 24px;
       border-radius: 8px;
@@ -120,7 +137,7 @@ export class TransactionalEmailService {
       color: #64748b;
     }
     .footer a {
-      color: #4f46e5;
+      color: #0ea5e9;
       text-decoration: none;
     }
     .warning {
@@ -138,14 +155,14 @@ export class TransactionalEmailService {
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1>PplCRM</h1>
+        <h1>pplCRM</h1>
       </div>
       <div class="content">
         ${contentHtml}
       </div>
       <div class="footer">
-        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
-        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
+        <p>This is a transactional message about your account or a request made through pplCRM. It is not marketing, so it has no unsubscribe link.</p>
+        <p>&copy; ${new Date().getFullYear()} pplCRM. All rights reserved.</p>
       </div>
     </div>
   </div>

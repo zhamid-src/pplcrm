@@ -277,16 +277,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: authUser.email,
             tenant_id: auth.tenant_id,
-            subject: 'Password Reset Request',
-            text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
-            html: `<h2>Password Reset Request</h2>
+            subject: 'Reset your pplCRM password',
+            text: `Hi ${authUser.first_name},\n\nAn administrator has requested a password reset for your pplCRM account.\n\nReset your password using this link:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
+            html: `<h2>Reset your password</h2>
 <p>Hi ${authUser.first_name},</p>
-<p>An administrator has initiated a password reset for your account.</p>
-<p>Please click the button below to reset your password and select a new one:</p>
+<p>An administrator has requested a password reset for your pplCRM account. Click the button below to choose a new password:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
 </div>
-<p class="warning">For security reasons, this reset link is single-use and will expire in 15 minutes.</p>`,
+<p class="warning">For security, this reset link is single-use and expires in 15 minutes.</p>`,
           },
           trx,
         );
@@ -309,10 +308,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: authUser.email,
             tenant_id: auth.tenant_id,
-            subject: 'Account Deletion Canceled',
-            text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-            html: `<h2>Account Deletion Canceled</h2>
-<p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
+            subject: 'Your account deletion was canceled',
+            text: `Your request to delete your account has been canceled, and your account is fully restored.`,
+            html: `<h2>Account deletion canceled</h2>
+<p>Your request to delete your account has been canceled, and your account is fully restored. Welcome back!</p>`,
           },
           trx,
         );
@@ -388,11 +387,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: ownerEmail.email,
         tenant_id: String(auth.tenant_id),
-        subject: 'Account deletion cancelled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been successfully cancelled. Your account and all data remain intact.`,
-        html: `<h2>Account Deletion Cancelled</h2>
+        subject: 'Your account deletion was canceled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been canceled. Your account and all data remain intact.`,
+        html: `<h2>Account deletion canceled</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion request has been successfully cancelled. Your account and all data remain intact. Welcome back!</p>`,
+<p>Your account deletion request has been canceled. Your account and all data remain intact. Welcome back!</p>`,
       });
     }
 
@@ -432,11 +431,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (ownerEmail?.email) {
       await this.mailService.sendMail({
         to: ownerEmail.email,
-        subject: 'Account deletion cancelled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been successfully cancelled. Your account and all data remain intact. You can sign back in at any time.`,
-        html: `<h2>Account Deletion Cancelled</h2>
+        subject: 'Your account deletion was canceled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been canceled. Your account and all data remain intact. You can sign back in at any time.`,
+        html: `<h2>Account deletion canceled</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
+<p>Your account deletion has been canceled. Your account and all data remain intact.</p>
 <p><a href="${env.appUrl}/signin">Sign back in</a> to continue using pplCRM.</p>`,
       });
     }
@@ -875,10 +874,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: String(auth.tenant_id),
         subject: 'Your account has been paused',
         text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
-        html: `<h2>Account Paused</h2>
+        html: `<h2>Account paused</h2>
 <p>Hi ${ownerEmail.first_name},</p>
 <p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
-<p>You can reactivate your account at any time by logging back in and visiting your account settings.</p>`,
+<p>You can reactivate your account at any time by signing back in and visiting your account settings.</p>`,
       });
     }
 
@@ -1002,14 +1001,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Verify Your Email - PplCRM',
-            text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
-            html: `<h2>Verify Your Email</h2>
-<p>To verify your email address and activate your login, please click the button below:</p>
+            subject: 'Verify your email address',
+            text: `We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
+            html: `<h2>Verify your email address</h2>
+<p>We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
 </div>
-<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
+<p class="warning">For security, this link expires in 24 hours.</p>`,
           },
           trx,
         );
@@ -1064,9 +1063,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: user.email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Security Alert: Password Changed',
-            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your PplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
-            html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your PplCRM account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
+            subject: 'Your pplCRM password was changed',
+            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your pplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
+            html: `<h2>Password changed</h2>
+<p>Hi ${user.first_name},</p>
+<p>This is a confirmation that the password for your pplCRM account was recently changed.</p>
+<p class="warning">If you did not make this change, please contact support immediately.</p>`,
           },
           trx,
         );
@@ -1100,9 +1102,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: String(auth.tenant_id),
         subject: 'Your account has been reactivated',
         text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
-        html: `<h2>Account Reactivated</h2>
+        html: `<h2>Account reactivated</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been successfully reactivated. Everything is back to normal. Welcome back!</p>`,
+<p>Your account has been reactivated. Everything is back to normal. Welcome back!</p>`,
       });
     }
 
@@ -1129,13 +1131,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         {
           to: authUser.email,
           tenant_id: auth.tenant_id,
-          subject: 'Security Alert: Account Scheduled for Deletion',
-          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
-          html: `<h2>Account Scheduled for Deletion</h2>
+          subject: 'Your account is scheduled for deletion',
+          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by signing back in.`,
+          html: `<h2>Account scheduled for deletion</h2>
 <p>Hi ${authUser.first_name},</p>
-<p>As requested, your PplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
-<p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
+<p>As requested, your pplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply signing back in.</p>
+<p class="warning">If you did not make this request, please sign in immediately to cancel the deletion and secure your account.</p>`,
         },
         trx,
       );
@@ -1185,11 +1187,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             tenant_id: String(auth.tenant_id),
             subject: 'Your account is scheduled for deletion in 24 hours',
             text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
-            html: `<h2>Account Scheduled for Deletion</h2>
+            html: `<h2>Account scheduled for deletion</h2>
 <p>Hi ${ownerEmail.first_name},</p>
 <p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account (contacts, emails, campaigns, and everything else) will be permanently and irreversibly removed.</p>
 <p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
-<p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
+<div class="btn-container">
+  <a href="${cancelUrl}" class="btn">Cancel account deletion</a>
+</div>
 <p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
           },
           trx,
@@ -1221,15 +1225,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Reset Your Password',
-            text: `Hey there, please click this link to reset your password: ${env.appUrl}/new-password?code=${code}`,
-            html: `<h2>Reset Your Password</h2>
-<p>We received a request to reset the password for your PplCRM account. Click the button below to choose a new password:</p>
+            subject: 'Reset your pplCRM password',
+            text: `We received a request to reset the password for your pplCRM account. Reset it using this link: ${env.appUrl}/new-password?code=${code}`,
+            html: `<h2>Reset your password</h2>
+<p>We received a request to reset the password for your pplCRM account. Click the button below to choose a new password:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset password</a>
 </div>
 <p>If you did not request a password reset, no further action is required.</p>
-<p class="warning">This reset link is single-use and will expire in 15 minutes.</p>`,
+<p class="warning">This reset link is single-use and expires in 15 minutes.</p>`,
           },
           trx,
         );
@@ -1286,14 +1290,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'Login Verification (2FA) Code',
-        text: `Your login verification code is ${otpCode}. It expires in 5 minutes.`,
-        html: `<h2>Login Verification Code</h2>
-<p>Use the 6-digit one-time passcode (OTP) below to verify your login attempt. This passcode is valid for 5 minutes.</p>
+        subject: 'Your pplCRM sign-in code',
+        text: `Your sign-in verification code is ${otpCode}. It expires in 5 minutes.`,
+        html: `<h2>Your sign-in code</h2>
+<p>Use the 6-digit code below to finish signing in. It is valid for 5 minutes.</p>
 <div class="otp-container">
   <span class="otp-code">${otpCode}</span>
 </div>
-<p class="warning">If you did not attempt to log in, please secure your account immediately.</p>`,
+<p class="warning">If you did not try to sign in, please secure your account immediately.</p>`,
       });
 
       return { requires2FA: true, email: user.email };
@@ -1309,10 +1313,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'PplCRM - Account Restored',
-        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-        html: `<h2>Account Restored</h2>
-<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
+        subject: 'Your account has been restored',
+        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
+        html: `<h2>Account restored</h2>
+<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
       });
     }
 
@@ -1453,14 +1457,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id,
-            subject: 'Welcome to PplCRM - Verify Your Email',
-            text: `Welcome to PplCRM! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
-            html: `<h2>Verify Your Email</h2>
-<p>Welcome to PplCRM! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
+            subject: 'Welcome to pplCRM! Verify your email address',
+            text: `Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
+            html: `<h2>Verify your email address</h2>
+<p>Welcome to pplCRM! We need to verify your email address so you can use your pplCRM account. Click the button below to verify it:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify email address</a>
 </div>
-<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
+<p class="warning">For security, this link expires in 24 hours.</p>`,
           },
           trx,
         );
@@ -1594,14 +1598,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
               {
                 to: nextEmail as string,
                 tenant_id: auth.tenant_id,
-                subject: 'Verify Your New Email Address - PplCRM',
-                text: `Please verify your new email address by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
-                html: `<h2>Verify Your New Email</h2>
-<p>Please verify your new email address to complete the update and activate your login:</p>
+                subject: 'Verify your new email address',
+                text: `We need to verify your new email address so you can keep using your pplCRM account. Verify it using this link: ${env.appUrl}/verify-email?code=${code}`,
+                html: `<h2>Verify your new email address</h2>
+<p>We need to verify your new email address so you can keep using your pplCRM account. Click the button below to verify it:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify email address</a>
 </div>
-<p class="warning">This verification link will expire in 24 hours.</p>`,
+<p class="warning">For security, this link expires in 24 hours.</p>`,
               },
               trx,
             );
@@ -1610,12 +1614,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
               {
                 to: oldEmail,
                 tenant_id: auth.tenant_id,
-                subject: 'Security Alert: Email Address Update Initiated',
-                text: `Hi ${existingUser.first_name},\n\nThe email address for your PplCRM account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
-                html: `<h2>Security Alert: Email Change</h2>
+                subject: 'The email address on your pplCRM account is changing',
+                text: `Hi ${existingUser.first_name},\n\nA request was made to change the email address for your pplCRM account to ${nextEmail}. If you did not make this change, please contact support immediately.`,
+                html: `<h2>Email change requested</h2>
 <p>Hi ${existingUser.first_name},</p>
-<p>The email address for your PplCRM account was recently changed to <strong>${nextEmail}</strong>.</p>
-<p>We have sent a verification link to the new address. Until it is verified, login under that address is inactive.</p>
+<p>A request was made to change the email address for your pplCRM account to <strong>${nextEmail}</strong>.</p>
+<p>We have sent a verification link to the new address. Until it is verified, sign-in under that address is inactive.</p>
 <p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
               },
               trx,
@@ -1821,10 +1825,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'PplCRM - Account Restored',
-        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-        html: `<h2>Account Restored</h2>
-<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
+        subject: 'Your account has been restored',
+        text: `Welcome back! Your request to delete your account has been canceled, and your account is fully restored.`,
+        html: `<h2>Account restored</h2>
+<p>Welcome back! Your request to delete your account has been canceled, and your account is fully restored.</p>`,
       });
     }
 
@@ -2103,14 +2107,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       {
         to: opts.to,
         tenant_id: opts.tenantId,
-        subject: `You've been invited to join ${inviter} on PplCRM`,
+        subject: `You've been invited to join ${inviter} on pplCRM`,
         text: `Hi ${opts.firstName},\n\nYou have been invited to join the campaign team by ${inviter}.\n\nYour temporary password is: ${opts.tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${opts.code}\n\nThis invitation expires in 7 days.`,
-        html: `<h2>You've Been Invited!</h2>
+        html: `<h2>You've been invited</h2>
 <p>Hi ${opts.firstName},</p>
 <p>You have been invited to join the campaign team by <strong>${inviter}</strong>.</p>
 <p>To join the team, activate your account, and set up your password, click the button below:</p>
 <div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${opts.code}" class="btn">Activate Account</a>
+  <a href="${env.appUrl}/new-password?code=${opts.code}" class="btn">Activate account</a>
 </div>
 <p>Your temporary password is: <code>${opts.tempPassword}</code></p>
 <p>This invitation expires in 7 days.</p>

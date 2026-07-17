@@ -128,9 +128,15 @@ export class PersonsService {
               const mailService = new TransactionalEmailService();
               await mailService.sendMail({
                 to: assignee.email,
-                subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                subject: `Contact assigned to you: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you ownership of the contact ${personName}.\n\nContact details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView the contact: ${link}`,
+                html: `<h2>Contact assigned to you</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you ownership of the contact <strong>${personName}</strong>.</p>
+<div class="panel"><p><strong>Email:</strong> ${createdPerson['email'] || 'None'}</p><p><strong>Phone:</strong> ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${link}" class="btn">View contact</a>
+</div>`,
               });
             }
           }
@@ -222,9 +228,15 @@ export class PersonsService {
                 const mailService = new TransactionalEmailService();
                 await mailService.sendMail({
                   to: assignee.email,
-                  subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                  subject: `Contact assigned to you: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you ownership of the contact ${personName}.\n\nContact details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView the contact: ${link}`,
+                  html: `<h2>Contact assigned to you</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you ownership of the contact <strong>${personName}</strong>.</p>
+<div class="panel"><p><strong>Email:</strong> ${updatedPerson['email'] || 'None'}</p><p><strong>Phone:</strong> ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${link}" class="btn">View contact</a>
+</div>`,
                 });
               }
             }

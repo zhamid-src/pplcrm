@@ -120,9 +120,15 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
 
           await mailService.sendMail({
             to: user.email,
-            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+            subject: `Spreadsheet import complete: ${payload.file_name || 'import.csv'}`,
             text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
+            html: `<h2>Spreadsheet import complete</h2>
+<p>Hi ${user.first_name || 'there'},</p>
+<p>Your contact spreadsheet import has completed.</p>
+<div class="panel"><p><strong>Inserted:</strong> ${inserted}</p><p><strong>Errors:</strong> ${errors}</p><p><strong>Skipped:</strong> ${skipped}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/imports/${payload.import_id}" class="btn">View imported rows</a>
+</div>`,
           });
         }
       }

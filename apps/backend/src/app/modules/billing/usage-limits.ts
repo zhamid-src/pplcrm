@@ -329,39 +329,43 @@ async function sendLimitEmail(
   const admins = await getAdmins(tenantId, adminsCache, db);
 
   const billingPageUrl = `${env.appUrl}/workspace/billing`;
-  const planNameUpper = planName.toUpperCase();
-  const alertTag = pct === 100 ? '[WARNING]' : '[ALERT]';
+  const planLabel = planName.charAt(0).toUpperCase() + planName.slice(1);
   const prefix = pct === 100 ? 'reached' : 'approaching';
 
   const upgradeText = upgradePlansText();
   const upgradeHtml = upgradePlansHtml();
 
-  const subject = `${alertTag} Action Required: You have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
+  const subject = `Action needed: you have ${prefix} your ${resource.limit.toLocaleString()} ${resource.unit} limit`;
   const text = `Hi,
 
-Your organization "${tenantName}" has reached ${pct}% of its ${resource.name} capacity limit under the ${planNameUpper} plan.
+Your organization "${tenantName}" has reached ${pct}% of its ${resource.name} capacity limit under the ${planLabel} plan.
 
-Current Usage: ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).
+Current usage: ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).
 
 To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.
 
-Upgrade Options:
+Upgrade options:
 ${upgradeText}
 
 Update your subscription tier here: ${billingPageUrl}
 
 Thank you,
-The PplCRM Team`;
+The pplCRM team`;
 
-  const html = `<p>Hi,</p>
-<p>Your organization <strong>${tenantName}</strong> has reached <strong>${pct}%</strong> of its ${resource.name} capacity limit under the <strong>${planNameUpper}</strong> plan.</p>
-<p><strong>Current Usage:</strong> ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%).</p>
-<p><strong>[${pct === 100 ? 'WARNING' : 'IMPORTANT'}]</strong> To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.</p>
-<p><strong>Upgrade Tiers:</strong></p>
+  const html = `<h2>You have ${prefix} a plan limit</h2>
+<p>Hi,</p>
+<p>Your organization <strong>${tenantName}</strong> has reached <strong>${pct}%</strong> of its ${resource.name} capacity limit under the <strong>${planLabel}</strong> plan.</p>
+<div class="panel">
+<p><strong>Current usage:</strong> ${resource.current.toLocaleString()} / ${resource.limit.toLocaleString()} ${resource.unit} (${pct}%)</p>
+</div>
+<p>To prevent disruption to your workflows and ensure continued access, please upgrade your subscription plan.</p>
+<p><strong>Upgrade options:</strong></p>
 <ul>
 ${upgradeHtml}
 </ul>
-<p><a href="${billingPageUrl}">Upgrade Subscription Plan</a></p>`;
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Upgrade your plan</a>
+</div>`;
 
   await sendToAdmins(admins, subject, text, html, tenantId, db);
 }
@@ -382,7 +386,7 @@ async function sendBracketMaxEmail(
   const cap = subscriberCapForQuantity(planKey, maxQuantity(planKey));
   const billingPageUrl = `${env.appUrl}/workspace/billing`;
 
-  const subject = `[ALERT] Your ${plan.name} plan has outgrown its top bracket`;
+  const subject = `Your ${plan.name} plan has outgrown its top bracket`;
   const text = `Hi,
 
 Your organization "${tenantName}" now has ${currentSubscribers.toLocaleString()} emailable subscribers, which exceeds the ${plan.name} plan's top bracket of ${cap.toLocaleString()}.
@@ -392,12 +396,15 @@ We've capped your billed bracket at the plan maximum for now. Please contact us 
 Manage your subscription here: ${billingPageUrl}
 
 Thank you,
-The PplCRM Team`;
+The pplCRM team`;
 
-  const html = `<p>Hi,</p>
+  const html = `<h2>Your list has outgrown its plan</h2>
+<p>Hi,</p>
 <p>Your organization <strong>${tenantName}</strong> now has <strong>${currentSubscribers.toLocaleString()}</strong> emailable subscribers, which exceeds the <strong>${plan.name}</strong> plan's top bracket of ${cap.toLocaleString()}.</p>
 <p>We've capped your billed bracket at the plan maximum for now. Please contact us so we can talk about a plan that fits your list, or move to a higher tier.</p>
-<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`;
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Manage billing</a>
+</div>`;
 
   await sendToAdmins(admins, subject, text, html, tenantId, db);
 }
@@ -417,19 +424,22 @@ async function sendBracketUpEmail(
   const bracket = bracketForQuantity(planKey, targetQuantity);
   const billingPageUrl = `${env.appUrl}/workspace/billing`;
 
-  const subject = `[ALERT] Your ${plan.name} plan is moving to a new price bracket`;
+  const subject = `Your ${plan.name} plan is moving to a new price bracket`;
   const text = `Hi,
 
-Your organization "${tenantName}" has grown past your current bracket on the ${plan.name} plan. Starting next billing cycle, you'll be billed $${bracket.price}/month for up to ${bracket.upTo.toLocaleString()} emailable subscribers — no charge changes mid-cycle.
+Your organization "${tenantName}" has grown past your current bracket on the ${plan.name} plan. Starting next billing cycle, you'll be billed $${bracket.price}/month for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle.
 
 Manage your subscription here: ${billingPageUrl}
 
 Thank you,
-The PplCRM Team`;
+The pplCRM team`;
 
-  const html = `<p>Hi,</p>
-<p>Your organization <strong>${tenantName}</strong> has grown past your current bracket on the <strong>${plan.name}</strong> plan. Starting next billing cycle, you'll be billed <strong>$${bracket.price}/month</strong> for up to ${bracket.upTo.toLocaleString()} emailable subscribers — no charge changes mid-cycle.</p>
-<p><a href="${billingPageUrl}">Manage Subscription & Billing</a></p>`;
+  const html = `<h2>Your plan is moving to a new price bracket</h2>
+<p>Hi,</p>
+<p>Your organization <strong>${tenantName}</strong> has grown past your current bracket on the <strong>${plan.name}</strong> plan. Starting next billing cycle, you'll be billed <strong>$${bracket.price}/month</strong> for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle.</p>
+<div class="btn-container">
+  <a href="${billingPageUrl}" class="btn">Manage billing</a>
+</div>`;
 
   await sendToAdmins(admins, subject, text, html, tenantId, db);
 }
@@ -497,7 +507,7 @@ function upgradePlansText(): string {
     .map((p) => {
       const cap = p.pricing ? p.pricing.brackets[p.pricing.brackets.length - 1] : undefined;
       const emails = cap ? cap.upTo * (p.pricing?.emailsPerSubscriber ?? 0) : 0;
-      return `- ${p.name} Plan (${startingPriceLabel(p)}/month): Up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.`;
+      return `- ${p.name} plan (${startingPriceLabel(p)}/month): up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.`;
     })
     .join('\n');
 }
@@ -507,7 +517,7 @@ function upgradePlansHtml(): string {
     .map((p) => {
       const cap = p.pricing ? p.pricing.brackets[p.pricing.brackets.length - 1] : undefined;
       const emails = cap ? cap.upTo * (p.pricing?.emailsPerSubscriber ?? 0) : 0;
-      return `  <li><strong>${p.name} Plan (${startingPriceLabel(p)}/month):</strong> Up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.</li>`;
+      return `  <li><strong>${p.name} plan (${startingPriceLabel(p)}/month):</strong> up to ${(cap?.upTo ?? 0).toLocaleString()} subscribers, ${seatsLabel(p.seats)} user seats, and ${emails.toLocaleString()} monthly emails.</li>`;
     })
     .join('\n');
 }

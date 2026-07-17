@@ -323,9 +323,15 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
             const mailService = new TransactionalEmailService();
             await mailService.sendMail({
               to: user.email,
-              subject: `Your Export is Ready: ${response.fileName}`,
-              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
-              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
+              subject: `Your export is ready: ${response.fileName}`,
+              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile name: ${response.fileName}\nDownload it here: ${env.appUrl}/downloads/${response.fileName}`,
+              html: `<h2>Your export is ready</h2>
+<p>Hi ${auth.name},</p>
+<p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p>
+<div class="panel"><p><strong>File name:</strong> ${response.fileName}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/downloads/${response.fileName}" class="btn">Download CSV</a>
+</div>`,
             });
           }
         }

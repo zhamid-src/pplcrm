@@ -76,9 +76,15 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
             if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
-                subject: `New Task Assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
+                subject: `New task assigned: ${payload.name}`,
+                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${payload.name}".\n\nDetails:\n${payload.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${task.id}`,
+                html: `<h2>New task assigned</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you the task <strong>"${payload.name}"</strong>.</p>
+<div class="panel"><p><strong>Details:</strong><br>${payload.details || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/tasks/${task.id}" class="btn">View task</a>
+</div>`,
               });
             }
           }
@@ -193,9 +199,15 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
             if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
-                subject: `Task Assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
+                subject: `New task assigned: ${updated.name}`,
+                text: `Hi ${assignee.first_name},\n\n${auth.name} assigned you the task "${updated.name}".\n\nDetails:\n${updated.details || 'None'}\n\nView the task: ${env.appUrl}/tasks/${id}`,
+                html: `<h2>New task assigned</h2>
+<p>Hi ${assignee.first_name},</p>
+<p>${auth.name} assigned you the task <strong>"${updated.name}"</strong>.</p>
+<div class="panel"><p><strong>Details:</strong><br>${updated.details || 'None'}</p></div>
+<div class="btn-container">
+  <a href="${env.appUrl}/tasks/${id}" class="btn">View task</a>
+</div>`,
               });
             }
           }
