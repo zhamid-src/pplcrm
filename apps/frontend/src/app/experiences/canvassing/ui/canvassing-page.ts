@@ -7,6 +7,7 @@ import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.servic
 import { Icon } from '@icons/icon';
 import { PcMap } from '@uxcommon/components/map/map';
 import type { PcMapMarker, PcMapPolygon, PcMapVariant } from '@uxcommon/components/map/map-types';
+import { RowActions } from '@uxcommon/components/row-actions/row-actions';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 import type { FieldReportRangeType } from '../../../../../../../libs/common/src';
@@ -76,7 +77,7 @@ const RANGES: { key: ReportRange; label: string }[] = [
 
 @Component({
   selector: 'pc-canvassing-page',
-  imports: [DatePipe, Icon, PcMap, TabBar, CutTurfsDialog, AssignTurfDialog, CompanionSettingsDialog],
+  imports: [DatePipe, Icon, PcMap, RowActions, TabBar, CutTurfsDialog, AssignTurfDialog, CompanionSettingsDialog],
   templateUrl: './canvassing-page.html',
 })
 export class CanvassingPage implements OnInit {

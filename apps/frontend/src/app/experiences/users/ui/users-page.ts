@@ -6,6 +6,7 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import type { PcStatusType } from '@uxcommon/components/status-badge/status-badge';
+import { RowActions } from '@uxcommon/components/row-actions/row-actions';
 import { Table } from '@uxcommon/components/table/table';
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -54,6 +55,7 @@ export interface UserRow {
     Icon,
     StatusBadge,
     Table,
+    RowActions,
     UserAvatarComponent,
     InviteUserDialog,
     GridHeaderComponent,

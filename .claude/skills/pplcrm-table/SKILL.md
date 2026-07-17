@@ -119,6 +119,34 @@ Inputs: `columns` (required — colspan for skeleton rows), `loading` (default f
 Rule of thumb: **has its own border → `<pc-table>`; lives inside a bordered card → `.pc-table`
 class.** Either way the header/density/typography come from the one contract.
 
+## Per-row ⋯ actions — always `pc-row-actions`, never a hand-rolled dropdown
+
+For the trailing row-actions menu (rename/merge/delete, assign, copy link…), use
+`pc-row-actions` (`libs/uxcommon/src/components/row-actions/row-actions.ts`). Project the
+`<li>` items and pass `[label]` (name the record: `[label]="'Actions for ' + row.name"`);
+keep destructive items last with `class="text-error"`:
+
+```html
+<td class="text-right">
+  <pc-row-actions [label]="'Actions for ' + row.name">
+    <li><button type="button" (click)="rename(row)">Rename</button></li>
+    <li><button type="button" class="text-error" (click)="delete(row)">Delete</button></li>
+  </pc-row-actions>
+</td>
+```
+
+**Why it exists / why not a bare `dropdown`:** `.pc-table-shell` sets `overflow-x: auto`, which
+per the CSS spec forces `overflow-y: auto` too — so the shell is a scroll container and a normal
+absolutely-positioned `.dropdown-content` is **clipped** at the shell's edge (this is the exact
+bug that motivated the component; no `z-index` fixes ancestor clipping). `pc-row-actions` renders
+the menu as a native **`popover`** (top layer) anchored to its trigger via CSS anchor positioning
+
+- `position-try-fallbacks: flip-block`, so it escapes every `overflow` ancestor and flips above
+  the trigger near the viewport bottom. Five pages had each hand-rolled the same DaisyUI dropdown
+  and drifted on width/z-index/trigger element before this was unified (2026-07-17). The same
+  applies to the `.pc-table`-class-only / card-embedded case (canvassing) — the card is also an
+  `overflow` context, so use `pc-row-actions` there too.
+
 ## Consumers today
 
 Component (`<pc-table>`): Tags, Issues, Donations, Pledges, Users (`users/ui/users-page.html` —

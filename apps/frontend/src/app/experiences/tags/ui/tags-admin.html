@@ -80,28 +80,20 @@
       <td class="text-xs text-base-content/70">{{ relativeLastApplied(row) }}</td>
       <td class="text-xs text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
       <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
-          >
-            <li>
-              <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
-            </li>
-            <li>
-              <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
-            </li>
-            <li><hr class="my-1 border-base-300" /></li>
-            <li>
-              <a (click)="delete(row)" class="text-error">
-                <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
-              </a>
-            </li>
-          </ul>
-        </div>
+        <pc-row-actions [label]="'Actions for ' + row.name">
+          <li>
+            <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
+          </li>
+          <li>
+            <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
+          </li>
+          <li><hr class="my-1 border-base-300" /></li>
+          <li>
+            <a (click)="delete(row)" class="text-error">
+              <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
+            </a>
+          </li>
+        </pc-row-actions>
       </td>
     </tr>
     } }

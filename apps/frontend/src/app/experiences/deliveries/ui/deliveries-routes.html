@@ -62,23 +62,18 @@
         {{ row.created_at ? (row.created_at | date: 'mediumDate') : '' }}
       </td>
       <td class="text-right">
-        <div class="dropdown dropdown-end">
-          <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Route actions">
-            <pc-icon name="ellipsis-vertical" [size]="4" />
-          </button>
-          <ul tabindex="0" class="menu dropdown-content z-10 w-56 rounded-box bg-base-100 p-2 shadow">
-            @if (row.volunteer_person_id) {
-            <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
-            <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
-            } @else {
-            <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
-            } @if (canCancel(row.status)) {
-            <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
-            } @if (canDelete(row.status)) {
-            <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
-            }
-          </ul>
-        </div>
+        <pc-row-actions [label]="'Actions for ' + row.name">
+          @if (row.volunteer_person_id) {
+          <li><button type="button" (click)="openAssign(row)">Change volunteer</button></li>
+          <li><button type="button" (click)="copyLink(row)">Copy volunteer link</button></li>
+          } @else {
+          <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
+          } @if (canCancel(row.status)) {
+          <li><button type="button" class="text-error" (click)="cancelRoute(row)">Cancel route…</button></li>
+          } @if (canDelete(row.status)) {
+          <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
+          }
+        </pc-row-actions>
       </td>
     </tr>
     } }

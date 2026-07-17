@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
+import { RowActions } from '@uxcommon/components/row-actions/row-actions';
 import { Table } from '@uxcommon/components/table/table';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -21,7 +22,7 @@ import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
  */
 @Component({
   selector: 'pc-issues-admin',
-  imports: [EmptyState, Icon, RouterLink, TagItem, AddIssueDialog, Table, GridHeaderComponent],
+  imports: [EmptyState, Icon, RouterLink, TagItem, AddIssueDialog, Table, RowActions, GridHeaderComponent],
   templateUrl: './issues-admin.html',
 })
 export class IssuesAdmin implements OnInit {

@@ -88,24 +88,16 @@
       </td>
       <td class="whitespace-nowrap tabular-nums text-base-content/60">{{ lastActiveText(row) }}</td>
       <td>
-        <div class="dropdown dropdown-end dropdown-bottom">
-          <label tabindex="0" class="btn btn-ghost btn-xs px-1" [attr.aria-label]="'Actions for ' + displayName(row)">
-            <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
-          </label>
-          <ul
-            tabindex="0"
-            class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-56 z-30 border border-base-300"
-          >
-            <li>
-              <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
-            </li>
-            <li>
-              <a (click)="sendPasswordReset(row)">
-                <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
-              </a>
-            </li>
-          </ul>
-        </div>
+        <pc-row-actions [label]="'Actions for ' + displayName(row)">
+          <li>
+            <a [routerLink]="['/users', row.id]"><pc-icon name="eye" [size]="4"></pc-icon> View profile</a>
+          </li>
+          <li>
+            <a (click)="sendPasswordReset(row)">
+              <pc-icon name="lock-closed" [size]="4"></pc-icon> Send password reset
+            </a>
+          </li>
+        </pc-row-actions>
       </td>
     </tr>
     } }

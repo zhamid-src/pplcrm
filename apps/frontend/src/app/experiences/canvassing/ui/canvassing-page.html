@@ -146,19 +146,14 @@
               {{ t.last_activity_at ? (t.last_activity_at | date: 'MMM d, h:mm a') : '—' }}
             </td>
             <td class="text-right">
-              <div class="dropdown dropdown-end">
-                <button type="button" tabindex="0" class="btn btn-ghost btn-xs" aria-label="Turf actions">
-                  <pc-icon name="ellipsis-vertical" [size]="4" />
-                </button>
-                <ul tabindex="0" class="menu dropdown-content z-10 w-52 rounded-box bg-base-100 p-2 shadow">
-                  <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
-                  <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
-                  <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
-                  <li>
-                    <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
-                  </li>
-                </ul>
-              </div>
+              <pc-row-actions [label]="'Actions for ' + t.name">
+                <li><button type="button" (click)="assign(t)">Send to a team's Companion</button></li>
+                <li><button type="button" (click)="copyLink(t)">Copy app link</button></li>
+                <li><button type="button" (click)="refresh(t)">Refresh from list</button></li>
+                <li>
+                  <button type="button" class="text-error" (click)="retire(t)">Retire turf</button>
+                </li>
+              </pc-row-actions>
             </td>
           </tr>
           } @empty {
