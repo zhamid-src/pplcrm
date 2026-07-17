@@ -138,6 +138,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: infra/pplforms-edge
+          # wrangler 4.x: the action's bundled 3.90 ignores `run_worker_first` (so /api/* wouldn't
+          # proxy) and mis-binds static-asset Worker routes (custom domain 522s).
+          wranglerVersion: '4'
           command: deploy
       # ── Cloudflare Worker: volunteer companion (go.pplcrm.com) ──
       - name: Deploy companion Worker (go.pplcrm.com)
@@ -146,4 +149,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: infra/go-edge
+          wranglerVersion: '4'
           command: deploy
