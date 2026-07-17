@@ -32,7 +32,13 @@ export class EmailActionsStore {
       { assigned_to: userId ?? undefined },
       () => this.svc.assign(key, userId, assigneeName),
       {
-        refreshFolder: true,
+        // Do NOT force a folder reload: in a filtered virtual folder (Mine/Unassigned)
+        // the just-assigned email would drop out of the list, and email-list's
+        // auto-select effect would then yank the selection away — the user perceives
+        // the assignment "reverting to Noone". The optimistic patch already reflects
+        // the new owner; counts refresh so the sidebar updates. Folder membership
+        // reconciles naturally on the next visit to the folder.
+        refreshFolder: false,
         refreshCounts: true,
       },
     );
