@@ -7,6 +7,14 @@ name = "pplforms-edge"
 main = "src/index.ts"
 compatibility_date = "2025-06-01"
 
+# Route the wildcard public domain through this Worker. Requires a PROXIED wildcard DNS record for
+# *.pplforms.com in the pplforms.com zone (see README.md) so Cloudflare answers for the hostnames.
+# NOTE: `routes` is a TOP-LEVEL key — it MUST appear before any [table] header, or TOML folds it into
+# the preceding table (e.g. vars.routes) and no route is ever created.
+routes = [
+  { pattern = "*.pplforms.com/*", zone_name = "pplforms.com" },
+]
+
 # Static SPA bundle. `run_worker_first` is REQUIRED: without it, Cloudflare serves assets before the
 # Worker runs, and SPA `not_found_handling` would return index.html for /api/* and /d/* instead of
 # proxying them. Listing those prefixes forces the Worker to handle them first; every other path
@@ -21,9 +29,3 @@ run_worker_first = ["/api/*", "/d/*"]
 # Backend origin bound on the Container App. Cloudflare-proxied, so Full (strict) is satisfied by
 # the Container App's managed cert for api.pplcrm.com.
 BACKEND_ORIGIN = "https://api.pplcrm.com"
-
-# Route the wildcard public domain through this Worker. Requires a PROXIED wildcard DNS record for
-# *.pplforms.com in the pplforms.com zone (see README.md) so Cloudflare answers for the hostnames.
-routes = [
-  { pattern = "*.pplforms.com/*", zone_name = "pplforms.com" },
-]
