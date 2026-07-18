@@ -1,4 +1,6 @@
 import type { FastifyPluginCallback } from 'fastify';
+import { TRPCError } from '@trpc/server';
+import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { WebFormsController } from '../controller';
 import { DonationsController } from '../../donations/controller';
 import formBody from '@fastify/formbody';
@@ -10,6 +12,19 @@ const donationsController = new DonationsController();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * HTTP status for an error thrown behind a public REST route. The controller layer throws
+ * TRPCError (it also backs the tRPC router), whose string `code` carries no numeric status —
+ * without the explicit mapping every BAD_REQUEST/TOO_MANY_REQUESTS surfaced as a 500 and the
+ * visitor lost the actionable message. AppError `.status` and Fastify `.statusCode` still win.
+ */
+function httpStatusOf(err: unknown): number | undefined {
+  if (isRecord(err) && typeof err['status'] === 'number') return err['status'];
+  if (isRecord(err) && typeof err['statusCode'] === 'number') return err['statusCode'];
+  if (err instanceof TRPCError) return getHTTPStatusCodeFromError(err);
+  return undefined;
 }
 
 function escapeHtml(s: string): string {
@@ -493,7 +508,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       const result = await webFormsController.getPublicFormBySlug(String(slug), tenant.id);
       return reply.status(200).send(result);
     } catch (err) {
-      const statusCode = isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : 404;
+      const statusCode = httpStatusOf(err) ?? 404;
       return reply.status(statusCode).send({ error: 'Form not found.' });
     }
   });
@@ -573,12 +588,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       return reply.redirect('/api/forms/success');
     } catch (err) {
       fastify.log.error(err);
-      // Honor an AppError's `.status` as well as a Fastify error's `.statusCode`, so a 4xx AppError
-      // (e.g. the residency/eligibility gates) reaches the donor with its actionable message.
-      const statusCode =
-        (isRecord(err) && typeof err['status'] === 'number' ? err['status'] : undefined) ??
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) ??
-        500;
+      const statusCode = httpStatusOf(err) ?? 500;
       // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
       // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
       const message =
