@@ -51,7 +51,11 @@ export class EditingController {
         const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
         changed = !!didSet;
       } catch {
-        changed = false;
+        // A throwing valueSetter is a failed edit, not "no change" — restore the
+        // row and surface it instead of closing the editor as if it saved.
+        Object.assign(row, { [key]: before[key] });
+        this.alertSvc.showError('Update failed');
+        return false;
       }
     } else {
       const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));

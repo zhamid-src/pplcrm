@@ -28,6 +28,13 @@ export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
       return event;
     }),
     catchError((error: unknown) => {
+      // JSend errors minted by the map() above land back here; they were already
+      // routed to ErrorService there (or deliberately not, for fails — those are
+      // the caller's validation problem). Re-throw untouched so nothing is
+      // reported twice.
+      if (error instanceof JSendFailError || error instanceof JSendServerError) {
+        return throwError(() => error);
+      }
       if (error instanceof HttpErrorResponse) {
         const body = error.error;
         if (jsend.isFail(body)) {

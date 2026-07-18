@@ -68,7 +68,9 @@ export class ErrorService {
     if (isCurrentRoutePublic(this.router.url)) return false;
 
     const now = Date.now();
-    if (now - this.lastRedirect < 3000) return false;
+    // A sign-out redirect is already in flight from a 401 moments ago — report the
+    // duplicate as handled so it stays silent instead of falling through to a toast.
+    if (now - this.lastRedirect < 3000) return true;
     this.lastRedirect = now;
 
     this.tokenSvc.clearAll();
