@@ -5278,6 +5278,110 @@ export class PeopleInCompany {
 }
 `````
 
+## File: apps/frontend/src/app/experiences/deliveries/services/deliveries-requests-service.ts
+`````typescript
+import { Service } from '@angular/core';
+
+import type {
+  AddDeliveryRequestType,
+  CommitDeliveriesType,
+  DeliveryRequestStatus,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PlanDeliveriesType,
+  UpdateDeliveryRequestType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterOutputs } from '../../../services/api/trpc-types';
+
+export type DeliveryRequestRow = RouterOutputs['deliveries']['getAllRequests']['rows'][number];
+export type DeliveryPlanPreview = RouterOutputs['deliveries']['previewPlan'];
+
+/**
+ * Deliveries requests + planning service (spec §14). Backs the requests grid and the plan page.
+ * Route CRUD lives in DeliveriesRoutesService; both point at the same `deliveries` tRPC router.
+ */
+@Service()
+export class DeliveriesRequestsService extends AbstractAPIService<'delivery_requests', UpdateDeliveryRequestType> {
+  protected override readonly endpointName = 'deliveries';
+
+  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['deliveries']['getAllRequests']> {
+    return this.api.deliveries.getAllRequests.query(options, { signal: this.ac.signal });
+  }
+
+  public getStatusCounts(): Promise<RouterOutputs['deliveries']['getRequestCounts']> {
+    return this.api.deliveries.getRequestCounts.query(undefined, { signal: this.ac.signal });
+  }
+
+  public getReadyCount(): Promise<number> {
+    return this.api.deliveries.getReadyCount.query(undefined, { signal: this.ac.signal });
+  }
+
+  public add(row: AddDeliveryRequestType): Promise<{ id: string }> {
+    return this.api.deliveries.addRequest.mutate(row);
+  }
+
+  public update(id: string, data: UpdateDeliveryRequestType): Promise<{ id: string }> {
+    return this.api.deliveries.updateRequestNotes.mutate({ id, data });
+  }
+
+  public setStatus(ids: string[], status: DeliveryRequestStatus): Promise<{ updated: number }> {
+    return this.api.deliveries.setRequestStatus.mutate({ ids, status });
+  }
+
+  /** Yard-sign standing for one household in one campaign (household/person "Yard sign" control). */
+  public getSignStatus(householdId: string, campaignId: string): Promise<RouterOutputs['deliveries']['getSignStatus']> {
+    return this.api.deliveries.getSignStatus.query(
+      { household_id: householdId, campaign_id: campaignId },
+      { signal: this.ac.signal },
+    );
+  }
+
+  public getRouteDefaults(): Promise<RouterOutputs['deliveries']['getRouteDefaults']> {
+    return this.api.deliveries.getRouteDefaults.query(undefined, { signal: this.ac.signal });
+  }
+
+  public previewPlan(input: PlanDeliveriesType): Promise<DeliveryPlanPreview> {
+    return this.api.deliveries.previewPlan.mutate(input);
+  }
+
+  public commitPlan(input: CommitDeliveriesType): Promise<RouterOutputs['deliveries']['commitPlan']> {
+    return this.api.deliveries.commitPlan.mutate(input);
+  }
+
+  public count(): Promise<number> {
+    return this.api.deliveries.getAllRequests
+      .query({ startRow: 0, endRow: 1 })
+      .then((res: RouterOutputs['deliveries']['getAllRequests']) => res.count ?? 0);
+  }
+
+  // --- Unused AbstractAPIService surface (grid toolbar disables these) ---
+  public addMany(_rows: AddDeliveryRequestType[]) {
+    return Promise.resolve([]);
+  }
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+  public getById(_id: string): Promise<unknown> {
+    return Promise.resolve(null);
+  }
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('Delivery request export is not available'));
+  }
+}
+`````
+
 ## File: apps/frontend/src/app/experiences/deliveries/services/deliveries-routes-service.ts
 `````typescript
 import { Service } from '@angular/core';
@@ -6008,6 +6112,132 @@ export class DeliveriesRequests implements OnInit {
     } finally {
       end();
     }
+  }
+}
+`````
+
+## File: apps/frontend/src/app/experiences/deliveries/ui/yard-sign-standing.ts
+`````typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { DELIVERY_REQUEST_STATUSES, DELIVERY_REQUEST_STATUS_LABELS } from '../../../../../../../libs/common/src';
+import type { DeliveryRequestStatus } from '../../../../../../../libs/common/src';
+
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { RouterOutputs } from '../../../services/api/trpc-types';
+import { DeliveriesRequestsService } from '../services/deliveries-requests-service';
+
+export type YardSignRequest = NonNullable<RouterOutputs['deliveries']['getSignStatus']['request']>;
+
+/**
+ * The yard-sign standing control (Deliveries §14): one select that reads and flips the
+ * household's delivery-request status in the ACTIVE campaign context. The truth stays in
+ * `delivery_requests` — "None requested" = no row, and the route line is derived from the
+ * active (pending) stop, never a stored flag. Embedded in the person Campaign standing card
+ * and the household view; flipping to Delivered covers signs installed without the app.
+ */
+@Component({
+  selector: 'pc-yard-sign-standing',
+  imports: [RouterLink],
+  templateUrl: './yard-sign-standing.html',
+  host: { class: 'block min-w-0' },
+})
+export class YardSignStanding {
+  /** The household the sign belongs to; null = person without an address (muted guidance state). */
+  readonly householdId = input.required<string | null>();
+  /** When set (person view), a request created here is attributed to this person as requester. */
+  readonly personId = input<string | null>(null);
+  /** Off when the host surface already titles the section (the household card's eyebrow). */
+  readonly showLabel = input<boolean>(true);
+
+  protected readonly context = inject(CampaignContextService);
+  private readonly svc = inject(DeliveriesRequestsService);
+  private readonly alerts = inject(AlertService);
+
+  protected readonly statuses = DELIVERY_REQUEST_STATUSES;
+  protected readonly labels = DELIVERY_REQUEST_STATUS_LABELS;
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly request = signal<YardSignRequest | null>(null);
+
+  protected readonly readonlyContext = this.context.isArchivedContext;
+
+  /** "Requested by Jane · web form · Jun 12" — parts drop out honestly when absent. */
+  protected readonly metaLine = computed(() => {
+    const r = this.request();
+    if (!r) return '';
+    const parts: string[] = [];
+    if (r.person_name) parts.push(`Requested by ${r.person_name}`);
+    parts.push(r.source === 'web_form' ? 'web form' : 'manual');
+    const date = this.formatDate(r.updated_at);
+    if (date) parts.push(date);
+    return parts.join(' · ');
+  });
+
+  constructor() {
+    effect(() => {
+      const householdId = this.householdId();
+      const campaignId = this.context.activeCampaignId();
+      void untracked(() => this.load(householdId, campaignId));
+    });
+    // Degrade quietly if the context can't load — the control shows "None requested".
+    this.context.ensureLoaded().catch(() => void 0);
+  }
+
+  protected async onStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value as DeliveryRequestStatus | '';
+    const householdId = this.householdId();
+    if (!value || !householdId) return;
+    this.saving.set(true);
+    try {
+      const existing = this.request();
+      if (existing) {
+        await this.svc.setStatus([existing.id], value);
+        this.alerts.showSuccess('Yard sign updated');
+      } else {
+        const created = await this.svc.add({
+          household_id: householdId,
+          person_id: this.personId(),
+          campaign_id: this.context.activeCampaignId() ?? undefined,
+        });
+        if (value !== 'new') await this.svc.setStatus([created.id], value);
+        this.alerts.showSuccess('Yard sign recorded');
+      }
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the yard sign. Please try again.'));
+    } finally {
+      this.saving.set(false);
+      await this.load(householdId, this.context.activeCampaignId());
+    }
+  }
+
+  private async load(householdId: string | null, campaignId: string | null): Promise<void> {
+    if (!householdId || !campaignId) {
+      this.request.set(null);
+      return;
+    }
+    const end = this._loading.begin();
+    try {
+      const res = await this.svc.getSignStatus(householdId, campaignId);
+      this.request.set(res.request);
+    } catch {
+      // Degrade to "None requested" rather than blocking the page.
+      this.request.set(null);
+    } finally {
+      end();
+    }
+  }
+
+  private formatDate(value: Date | string | null): string {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 }
 `````
@@ -13508,6 +13738,285 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 `````
 
+## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+`````typescript
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import type { IAuthUser } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker } from '@uxcommon/components/map/map-types';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { UserService } from '../../../services/user.service';
+import type { Selectable } from 'kysely';
+import { HouseholdsService } from '../services/households-service';
+import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
+
+type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
+
+@Component({
+  selector: 'pc-household-view',
+  imports: [
+    EmptyState,
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    LogInteraction,
+    DetailLayout,
+    PcCard,
+    PcTabs,
+    TabPanel,
+    PcMap,
+    GeocodeChip,
+    DatePipe,
+    YardSignStanding,
+  ],
+  templateUrl: './household-view.html',
+})
+export class HouseholdView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
+  protected readonly activityFeed = viewChild(RecordActivities);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  protected readonly campaignContext = inject(CampaignContextService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly household = signal<Selectable<Households> | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  protected readonly peopleCount = signal(0);
+  protected readonly lastCanvass = signal<LastCanvass>(null);
+
+  /** Real record id for child lookups — the route param may be a slug. */
+  protected readonly householdRecordId = computed(() => {
+    const h = this.household();
+    return h && !h.is_placeholder ? String(h.id) : null;
+  });
+
+  // Tabbed right column (matches person view): Members is the default tab.
+  protected readonly activeTab = signal<string>('members');
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: 'Members', badge: this.peopleCount() || undefined },
+    { id: 'activity', label: 'Activity' },
+  ]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Households', route: '/households' },
+    { label: this.addressString() },
+  ]);
+
+  // Address
+  protected readonly addressString = computed(() => {
+    const raw = this.household();
+    if (!raw) return 'No Address Assigned';
+    if (raw.is_placeholder) return 'People with no addresses';
+    if (raw.formatted_address) return raw.formatted_address;
+
+    const parts: string[] = [];
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ').trim() || 'No Address Assigned';
+  });
+
+  /** Short "City, State" for the map address chip. */
+  protected readonly cityLine = computed(() => {
+    const h = this.household();
+    if (!h) return '';
+    return [h.city, h.state].filter(Boolean).join(', ');
+  });
+
+  protected readonly hasMap = computed(() => {
+    const h = this.household();
+    return !!(h && h.lat && h.lng && !h.is_placeholder);
+  });
+
+  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
+    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
+  });
+
+  /** Header subtitle — "Ward 4 · 3 people · Canvassed May 2" (§6). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const h = this.household();
+    if (!h || h.is_placeholder) return null;
+    const parts: string[] = [];
+    if (h.ward) parts.push(`Ward ${h.ward}`);
+    const n = this.peopleCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    const canvass = this.lastCanvass();
+    if (canvass) {
+      parts.push(`Canvassed ${this.formatCanvassDate(canvass.knocked_at)}`);
+    }
+    return parts.join(' · ');
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users for addedby/updatedby display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load household details
+      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
+      this.household.set(householdData);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
+        this.location.replaceState(`/households/${householdData.slug}`);
+      }
+
+      // 2. Load people count and last-canvass in parallel (both feed the header subtitle).
+      const [count, canvass] = await Promise.all([
+        this.householdsSvc.getPeopleCount(id),
+        this.householdsSvc.getLastCanvass(id).catch(() => null),
+      ]);
+      this.peopleCount.set(count);
+      this.lastCanvass.set((canvass as LastCanvass) ?? null);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  /** Refresh the "Activity at this door" feed after a logged interaction. */
+  protected onInteractionLogged(): void {
+    this.activityFeed()?.loadActivities();
+  }
+
+  protected editHousehold() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id());
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  /** Compact "Canvassed May 2" style date for the header subtitle. */
+  private formatCanvassDate(value: Date | string): string {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+`````
+
 ## File: apps/frontend/src/app/experiences/imports/services/imports-service.ts
 `````typescript
 import { Service } from '@angular/core';
@@ -14580,164 +15089,6 @@ export class ListView implements OnDestroy {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-`````
-
-## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
-`````typescript
-import { Service, inject } from '@angular/core';
-import {
-  AddMarketingEmailType,
-  CreateClickersListResultType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  PreflightResult,
-  RunPreflightType,
-  UpdateMarketingEmailType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-
-@Service()
-export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
-  protected override readonly endpointName = 'newsletters';
-
-  private readonly campaignContext = inject(CampaignContextService);
-
-  public add(row: AddMarketingEmailType) {
-    // A newsletter is created in the context the user is working in (§15);
-    // the backend falls back to the office context when none is known.
-    const campaignId = this.campaignContext.activeCampaignId();
-    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
-  }
-
-  public addMany(_rows: AddMarketingEmailType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.newsletters.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    // Campaigns §15 — the newsletters grid shows the active context's sends.
-    const campaignId = this.campaignContext.activeCampaignId();
-    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
-    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
-    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
-    const count = result?.count != null ? Number(result.count) : rows.length;
-    return { rows, count };
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getById(id: string) {
-    const record = await this.api.newsletters.getById.query(id);
-    return this.normalize(record);
-  }
-
-  public getReport(id: string): Promise<NewsletterReportType> {
-    return this.api.newsletters.getReport.query(id);
-  }
-
-  public createClickersList(id: string): Promise<CreateClickersListResultType> {
-    return this.api.newsletters.createClickersList.mutate(id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateMarketingEmailType) {
-    return this.api.newsletters.update.mutate({ id, data });
-  }
-
-  public send(id: string): Promise<any> {
-    return this.api.newsletters.send.mutate(id);
-  }
-
-  public sendTest(input: {
-    subject: string;
-    html: string;
-    text?: string;
-    to: string;
-    fromName?: string;
-    fromEmail?: string;
-  }): Promise<{ to: string; delivered: number }> {
-    return this.api.newsletters.sendTest.mutate(input);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.newsletters.exportCsv.mutate(input);
-  }
-
-  /** Full deliverability check (lint + SpamAssassin + AI content review), cached server-side. */
-  public runPreflight(input: RunPreflightType): Promise<PreflightResult> {
-    return this.api.newsletters.runPreflight.mutate(input);
-  }
-
-  private normalize(record: any) {
-    if (!record) return record;
-    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
-    const asNumber = (value: unknown) => {
-      if (value === null || value === undefined || value === '') return null;
-      const num = Number(value);
-      return Number.isFinite(num) ? num : null;
-    };
-    const asDate = (value: unknown) => {
-      if (!value) return null;
-      if (value instanceof Date) return value;
-      const date = new Date(value as string);
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    return {
-      ...record,
-      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
-      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
-      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
-      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
-      total_recipients: asNumber(record.total_recipients) ?? 0,
-      delivered_count: asNumber(record.delivered_count) ?? 0,
-      bounce_count: asNumber(record.bounce_count) ?? 0,
-      open_rate: asNumber(record.open_rate) ?? 0,
-      click_rate: asNumber(record.click_rate) ?? 0,
-      unique_opens: asNumber(record.unique_opens) ?? 0,
-      unique_clicks: asNumber(record.unique_clicks) ?? 0,
-      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
-      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
-      reply_count: asNumber(record.reply_count) ?? 0,
-      send_date: asDate(record.send_date),
-      last_engagement_at: asDate(record.last_engagement_at),
-      created_at: asDate(record.created_at) ?? new Date(),
-      updated_at: asDate(record.updated_at) ?? new Date(),
-      top_links,
-    };
-  }
-
-  private parseJsonArray<T>(value: unknown): T[] | null {
-    if (!value) return null;
-    if (Array.isArray(value)) return value as T[];
-    try {
-      const parsed = JSON.parse(String(value));
-      return Array.isArray(parsed) ? (parsed as T[]) : null;
-    } catch {
-      return null;
-    }
-  }
 }
 `````
 
@@ -37153,112 +37504,141 @@ export const AddConnectionObj = z.object({
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 `````
 
-## File: libs/common/src/lib/schemas/content-check.schema.ts
+## File: libs/common/src/lib/schemas/deliveries.schema.ts
 `````typescript
 import { z } from 'zod';
 
-/**
- * Newsletter preflight ("deliverability check") shared contracts.
- *
- * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
- * from explainable per-finding deductions. The band thresholds live here — not in backend
- * send-guards — because the composer gauge and the server-side send gate must agree on where the
- * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
- * is mostly sender reputation + engagement, which no pre-send check can compute.
- */
+import { idSchema, notesSchema } from './core.schema';
 
-/** Scores at or above this are "good — ready to send". */
-export const PREFLIGHT_GOOD = 80;
-/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
-export const PREFLIGHT_BLOCK = 50;
+// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
+// the spec's strings win, including the American spelling "canceled" for route status.
+export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
+export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
+export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
+export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
 
-export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
-export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
+// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
+// reason — it keeps the stop pending and moves it to the end of the route.
+export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
 
-/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
-export function preflightBand(score: number): PreflightBand {
-  if (score < PREFLIGHT_BLOCK) return 'blocked';
-  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
-}
+export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
 
-export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
-export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
+/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
+export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
+  new: 'Requested',
+  approved: 'Approved',
+  declined: 'Declined',
+  delivered: 'Delivered',
+};
+export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
+export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
+export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
+export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
 
-export const PreflightFindingObj = z.object({
-  /** Stable machine code, e.g. "subject-caps", "base64-image". */
-  code: z.string(),
-  severity: z.enum(PREFLIGHT_SEVERITIES),
-  /** What was found, user-facing. */
-  message: z.string(),
-  /** How to fix it, user-facing. */
-  hint: z.string(),
-  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
-  deduction: z.number(),
+// ---- Requests --------------------------------------------------------------
+export const AddDeliveryRequestObj = z.object({
+  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  household_id: idSchema,
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+  notes: notesSchema,
 });
-export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
 
-/**
- * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
- * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
- * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
- */
-export const AI_CONTENT_TYPES = [
-  'newsletter_update',
-  'fundraising_appeal',
-  'event_promotion',
-  'auction_or_sale',
-  'advocacy',
-  'pure_commercial_marketing',
-  'scam_or_phishing',
-  'other',
-] as const;
-export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
-
-/** Structured verdict returned by the Claude content review (also its output-format schema). */
-export const AiPreflightVerdictObj = z.object({
-  contentType: z.enum(AI_CONTENT_TYPES),
-  /** 0 (clean) to 100 (reads like spam). */
-  spamRiskScore: z.number().min(0).max(100),
-  /** Short reasons behind the risk score, user-facing. */
-  reasons: z.array(z.string()),
-  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
-  deceptionFlags: z.array(z.string()),
-  /** Concrete copy rewrites for the worst offenders, user-facing. */
-  suggestions: z.array(z.string()),
-  /** The model's confidence in this verdict, 0–1. */
-  confidence: z.number().min(0).max(1),
+export const UpdateDeliveryRequestObj = z.object({
+  notes: notesSchema,
 });
-export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
 
-/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
-export const RunPreflightObj = z.object({
-  subject: z.string().max(500),
-  html: z.string().max(500_000),
-  plainText: z.string().max(200_000).optional(),
+// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
+// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
+export const SetDeliveryRequestStatusObj = z.object({
+  ids: z.array(idSchema).min(1, 'Select at least one request'),
+  status: z.enum(DELIVERY_REQUEST_STATUSES),
 });
-export type RunPreflightType = z.infer<typeof RunPreflightObj>;
 
-/**
- * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
- * no API key or the API errored — so the score is partial ('unavailable'); or policy didn't call
- * for it ('not_required' — the send-time gate skips the AI re-check for established paid tenants,
- * while user-initiated checks always include it).
- */
-export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
-export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
-
-/** Full preflight outcome: the score, its band, and every finding that shaped it. */
-export const PreflightResultObj = z.object({
-  score: z.number(),
-  band: z.enum(PREFLIGHT_BANDS),
-  findings: z.array(PreflightFindingObj),
-  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
-  spamAssassinScore: z.number().nullable(),
-  ai: AiPreflightVerdictObj.nullable(),
-  aiStatus: z.enum(AI_REVIEW_STATUSES),
-  checkedAt: z.string(),
+// The yard-sign standing lookup for one household in one campaign context.
+export const GetSignStatusObj = z.object({
+  household_id: idSchema,
+  campaign_id: idSchema,
 });
-export type PreflightResult = z.infer<typeof PreflightResultObj>;
+
+// ---- Planning --------------------------------------------------------------
+// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
+// return trip). Preview is pure — it writes nothing.
+export const PlanDeliveriesObj = z.object({
+  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
+  drivers: z.number().int().min(1).max(50).nullable().optional(),
+  service_minutes: z.number().min(0).max(60).nullable().optional(),
+  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
+  include_return_leg: z.boolean().nullable().optional(),
+});
+
+export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
+  routes: z
+    .array(
+      z.object({
+        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
+      }),
+    )
+    .min(1, 'Nothing to commit'),
+});
+
+// ---- Routes ----------------------------------------------------------------
+export const UpdateDeliveryRouteObj = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
+  scheduled_for: z.string().datetime().nullable().optional(),
+});
+
+export const AssignVolunteerObj = z.object({
+  route_id: idSchema,
+  person_id: idSchema.nullable(),
+});
+
+export const SetDeliveryRouteStatusObj = z.object({
+  route_id: idSchema,
+  status: z.enum(['in_progress', 'completed', 'canceled']),
+});
+
+export const ReorderStopObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  direction: z.enum(['up', 'down']),
+});
+
+// Staff act on a stop from the route detail page. Same transitions as the public path.
+export const StopActionObj = z.object({
+  route_id: idSchema,
+  stop_id: idSchema,
+  action: z.enum(['deliver', 'skip', 'remove']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export const RouteIdObj = z.object({ route_id: idSchema });
+
+export const MintShareLinkObj = z.object({
+  route_id: idSchema,
+  regenerate: z.boolean().optional(),
+});
+
+// ---- Public volunteer path (token is the only credential) ------------------
+// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
+export const PublicStopActionObj = z.object({
+  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
+  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
+});
+
+export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
+export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
+export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
+export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
+export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
+export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
+export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
+export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
+export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
+export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type StopActionType = z.infer<typeof StopActionObj>;
+export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
+export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
 `````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -39107,466 +39487,6 @@ export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 `````
 
-## File: libs/common/src/lib/preflight-lint.ts
-`````typescript
-import type { AiPreflightVerdict, PreflightFinding, PreflightSeverity } from './schemas/content-check.schema';
-
-/**
- * Deterministic newsletter lint + scoring. Pure and isomorphic (no Node/browser-only APIs) so the
- * composer runs it live while the backend runs the identical checks authoritatively at send time.
- * Every check yields a PreflightFinding whose deduction is subtracted from a 100-point score; the
- * builders at the bottom convert the SpamAssassin score and the AI verdict into the same finding
- * shape so the UI renders one list and the score stays a single explainable mechanism.
- */
-
-export interface PreflightInput {
-  subject: string;
-  html: string;
-  plainText?: string;
-}
-
-// Point deductions per finding. Sized so any single "block"-severity pattern (phishing-shaped
-// links, base64 payloads) pulls the score below PREFLIGHT_BLOCK on its own or nearly so, while
-// style nits stay advisory. Tuning one of these is deliberately a one-line change.
-const DEDUCT = {
-  subjectEmpty: 30,
-  subjectTooLong: 5,
-  subjectCaps: 10,
-  subjectExclamations: 8,
-  subjectMoneySymbols: 8,
-  subjectFakeReply: 15,
-  htmlOversize: 15,
-  imageOnlyBody: 15,
-  imagesMissingAlt: 3,
-  insecureUrls: 5,
-  base64Image: 25,
-  tooManyLinks: 8,
-  urlShortener: 12,
-  anchorDomainMismatch: 30,
-  rawIpLink: 25,
-  suspiciousProtocol: 25,
-  aiDeceptionFlags: 10,
-  aiDisallowedContent: 90,
-} as const;
-
-const SUBJECT_MAX_CHARS = 70;
-const SUBJECT_CAPS_RATIO = 0.3;
-const SUBJECT_MIN_LETTERS_FOR_CAPS = 8;
-// Gmail clips messages around 102KB of HTML; warn with margin before that.
-const HTML_SIZE_WARN_BYTES = 100_000;
-const IMAGE_ONLY_MIN_TEXT_CHARS = 200;
-const MAX_LINKS = 25;
-// SpamAssassin's conventional spam threshold is 5; we start surfacing at 3.
-const SPAMASSASSIN_INFO_AT = 3;
-const SPAMASSASSIN_WARN_AT = 5;
-const SPAMASSASSIN_DEDUCTION_PER_POINT = 2;
-const SPAMASSASSIN_MAX_DEDUCTION = 30;
-// The AI risk score contributes at most this many points, scaled by its confidence.
-const AI_RISK_MAX_DEDUCTION = 40;
-const AI_RISK_WARN_AT = 60;
-// Below this confidence a disallowed-content verdict is advisory, not score-capping.
-const AI_DISALLOWED_MIN_CONFIDENCE = 0.6;
-
-// Widely-abused URL shorteners. Curated and small on purpose — extend it, don't import a huge list.
-const URL_SHORTENER_HOSTS = new Set([
-  'bit.ly',
-  'tinyurl.com',
-  'goo.gl',
-  't.co',
-  'ow.ly',
-  'is.gd',
-  'buff.ly',
-  'rebrand.ly',
-  'cutt.ly',
-  'shorturl.at',
-  'rb.gy',
-  'tiny.cc',
-  'lnkd.in',
-  's.id',
-  'snip.ly',
-]);
-
-/**
- * Canonical string the content hash is computed over (raw stored fields, never rendered output),
- * so the composer's pre-save check and the send-time row-loaded check hash identically. The server
- * hashes this with sha256; hashing itself is not isomorphic so it stays out of this module.
- */
-export function preflightHashInput(subject: string, html: string, plainText: string | null | undefined): string {
-  return `${subject}\u0000${html}\u0000${plainText ?? ''}`;
-}
-
-function finding(
-  code: string,
-  severity: PreflightSeverity,
-  deduction: number,
-  message: string,
-  hint: string,
-): PreflightFinding {
-  return { code, severity, message, hint, deduction };
-}
-
-/** Strips tags/styles and decodes the common entities — just enough text to measure, not render. */
-function visibleTextOf(html: string): string {
-  return html
-    .replace(/<(style|script|head|title)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function parseUrl(raw: string): URL | null {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
-
-/** True when the two hosts are the same registrable site (one is the other or a subdomain). */
-function sameSite(a: string, b: string): boolean {
-  const ha = a.toLowerCase().replace(/^www\./, '');
-  const hb = b.toLowerCase().replace(/^www\./, '');
-  return ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`);
-}
-
-interface AnchorRef {
-  href: string;
-  text: string;
-}
-
-function extractAnchors(html: string): AnchorRef[] {
-  const anchors: AnchorRef[] = [];
-  const re = /<a\b[^>]*?\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
-  for (const m of html.matchAll(re)) {
-    anchors.push({ href: (m[2] ?? '').trim(), text: (m[3] ?? '').replace(/<[^>]+>/g, ' ').trim() });
-  }
-  return anchors;
-}
-
-interface ImgRef {
-  src: string;
-  hasAlt: boolean;
-}
-
-function extractImages(html: string): ImgRef[] {
-  const imgs: ImgRef[] = [];
-  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
-    const tag = m[0];
-    const src = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
-    const alt = /\balt\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
-    imgs.push({ src: src.trim(), hasAlt: alt.trim().length > 0 });
-  }
-  return imgs;
-}
-
-function lintSubject(subject: string, out: PreflightFinding[]): void {
-  const trimmed = subject.trim();
-  if (!trimmed) {
-    out.push(
-      finding(
-        'subject-empty',
-        'block',
-        DEDUCT.subjectEmpty,
-        'The subject line is empty.',
-        'Write a short, specific subject — it is the single biggest factor in whether people open the email.',
-      ),
-    );
-    return;
-  }
-  if (trimmed.length > SUBJECT_MAX_CHARS) {
-    out.push(
-      finding(
-        'subject-too-long',
-        'info',
-        DEDUCT.subjectTooLong,
-        `The subject is ${trimmed.length} characters — inboxes truncate around ${SUBJECT_MAX_CHARS}.`,
-        'Front-load the message so the part people see carries the meaning.',
-      ),
-    );
-  }
-  const letters = trimmed.replace(/[^a-z]/gi, '');
-  const upper = trimmed.replace(/[^A-Z]/g, '');
-  if (letters.length >= SUBJECT_MIN_LETTERS_FOR_CAPS && upper.length / letters.length > SUBJECT_CAPS_RATIO) {
-    out.push(
-      finding(
-        'subject-caps',
-        'warn',
-        DEDUCT.subjectCaps,
-        'The subject shouts — a large share of it is in capitals.',
-        'Use sentence case. ALL-CAPS subjects correlate strongly with spam complaints.',
-      ),
-    );
-  }
-  if (/!{2,}/.test(trimmed) || (trimmed.match(/!/g) ?? []).length > 2) {
-    out.push(
-      finding(
-        'subject-exclamations',
-        'warn',
-        DEDUCT.subjectExclamations,
-        'The subject leans on exclamation marks.',
-        'One is plenty — stacked "!!" reads as spam to filters and to people.',
-      ),
-    );
-  }
-  if (/[$€£]{2,}/.test(trimmed) || (trimmed.match(/[$€£]/g) ?? []).length >= 3) {
-    out.push(
-      finding(
-        'subject-money-symbols',
-        'warn',
-        DEDUCT.subjectMoneySymbols,
-        'The subject repeats currency symbols.',
-        'Spell amounts out ("Help us raise $5,000") instead of stacking symbols.',
-      ),
-    );
-  }
-  if (/^(re|fwd?)\s*:/i.test(trimmed)) {
-    out.push(
-      finding(
-        'subject-fake-reply',
-        'warn',
-        DEDUCT.subjectFakeReply,
-        'The subject starts with "Re:" or "Fwd:" on a broadcast.',
-        'Faking a reply thread is deceptive (and a CAN-SPAM problem) — drop the prefix.',
-      ),
-    );
-  }
-}
-
-function lintBody(html: string, out: PreflightFinding[]): void {
-  const bytes = new TextEncoder().encode(html).length;
-  if (bytes >= HTML_SIZE_WARN_BYTES) {
-    out.push(
-      finding(
-        'html-oversize',
-        'warn',
-        DEDUCT.htmlOversize,
-        `The email HTML is ${Math.round(bytes / 1024)}KB — Gmail clips messages near 102KB.`,
-        'A clipped message hides your unsubscribe link and footer. Trim content or split into two sends.',
-      ),
-    );
-  }
-
-  const text = visibleTextOf(html);
-  const images = extractImages(html);
-
-  if (images.length > 0 && text.length < IMAGE_ONLY_MIN_TEXT_CHARS) {
-    out.push(
-      finding(
-        'image-only-body',
-        'warn',
-        DEDUCT.imageOnlyBody,
-        'The email is nearly all image with very little text.',
-        'Filters distrust image-only mail, and image-blocking clients show nothing. Add real text.',
-      ),
-    );
-  }
-
-  const missingAlt = images.filter((i) => !i.hasAlt && !i.src.startsWith('data:')).length;
-  if (missingAlt > 0) {
-    out.push(
-      finding(
-        'images-missing-alt',
-        'info',
-        DEDUCT.imagesMissingAlt,
-        `${missingAlt} image${missingAlt === 1 ? '' : 's'} ha${missingAlt === 1 ? 's' : 've'} no alt text.`,
-        'Alt text is what people see while images load (or stay blocked) — describe each image briefly.',
-      ),
-    );
-  }
-
-  const base64Count = images.filter((i) => i.src.startsWith('data:')).length;
-  if (base64Count > 0) {
-    out.push(
-      finding(
-        'base64-image',
-        'block',
-        DEDUCT.base64Image,
-        `${base64Count} image${base64Count === 1 ? ' is' : 's are'} embedded as base64 data.`,
-        'Embedded images balloon the HTML past clipping limits and are a spam signal — host images on an https URL instead.',
-      ),
-    );
-  }
-
-  const anchors = extractAnchors(html);
-  const httpAnchors = anchors
-    .map((a) => ({ ...a, url: parseUrl(a.href) }))
-    .filter((a): a is AnchorRef & { url: URL } => a.url != null);
-
-  if (anchors.length > MAX_LINKS) {
-    out.push(
-      finding(
-        'too-many-links',
-        'warn',
-        DEDUCT.tooManyLinks,
-        `The email contains ${anchors.length} links.`,
-        `Heavily link-stuffed mail scores worse. Keep it under ${MAX_LINKS} and make each link count.`,
-      ),
-    );
-  }
-
-  const shorteners = httpAnchors.filter((a) => URL_SHORTENER_HOSTS.has(a.url.hostname.replace(/^www\./, '')));
-  if (shorteners.length > 0) {
-    out.push(
-      finding(
-        'url-shortener',
-        'warn',
-        DEDUCT.urlShortener,
-        `Links use URL shorteners (${[...new Set(shorteners.map((s) => s.url.hostname))].join(', ')}).`,
-        'Shortener domains are heavily abused by spammers — link the real destination instead.',
-      ),
-    );
-  }
-
-  const insecure = [
-    ...httpAnchors.filter((a) => a.url.protocol === 'http:'),
-    ...images.filter((i) => i.src.toLowerCase().startsWith('http://')),
-  ].length;
-  if (insecure > 0) {
-    out.push(
-      finding(
-        'insecure-urls',
-        'warn',
-        DEDUCT.insecureUrls,
-        `${insecure} link${insecure === 1 ? '' : 's'}/image${insecure === 1 ? '' : 's'} use plain http://.`,
-        'Serve every link and image over https — mixed content looks unsafe to filters and clients.',
-      ),
-    );
-  }
-
-  const rawIp = httpAnchors.filter((a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a.url.hostname));
-  if (rawIp.length > 0) {
-    out.push(
-      finding(
-        'raw-ip-link',
-        'block',
-        DEDUCT.rawIpLink,
-        'A link points at a bare IP address.',
-        'Legitimate mail links to domains, not IPs — this is a classic phishing pattern.',
-      ),
-    );
-  }
-
-  const suspicious = anchors.filter((a) => /^(javascript|data|vbscript):/i.test(a.href));
-  if (suspicious.length > 0) {
-    out.push(
-      finding(
-        'suspicious-protocol',
-        'block',
-        DEDUCT.suspiciousProtocol,
-        'A link uses a script/data protocol.',
-        'Email clients strip these and filters flag them — use https links only.',
-      ),
-    );
-  }
-
-  // Anchor text that names one site while the href goes to another is the signature phishing shape.
-  const DOMAIN_IN_TEXT_RE = /(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i;
-  const mismatched = httpAnchors.filter((a) => {
-    const m = DOMAIN_IN_TEXT_RE.exec(a.text);
-    if (!m?.[1]) return false;
-    const claimed = m[1];
-    // Only treat it as a domain claim when it has a plausible TLD (avoids "e.g" style false hits).
-    if (!/\.[a-z]{2,}$/i.test(claimed)) return false;
-    return !sameSite(claimed, a.url.hostname);
-  });
-  if (mismatched.length > 0) {
-    out.push(
-      finding(
-        'anchor-domain-mismatch',
-        'block',
-        DEDUCT.anchorDomainMismatch,
-        `Link text claims one site but points to another (e.g. "${mismatched[0]?.text.slice(0, 60)}").`,
-        'Make the visible text match the real destination — mismatches are the signature phishing pattern.',
-      ),
-    );
-  }
-}
-
-/** Runs every deterministic check. Pure — same result in the composer and on the server. */
-export function lintNewsletterContent(input: PreflightInput): PreflightFinding[] {
-  const out: PreflightFinding[] = [];
-  lintSubject(input.subject, out);
-  lintBody(input.html, out);
-  return out;
-}
-
-/** Converts a SpamAssassin score (Postmark spamcheck) into a finding, or null when unremarkable. */
-export function buildSpamAssassinFinding(saScore: number): PreflightFinding | null {
-  if (saScore < SPAMASSASSIN_INFO_AT) return null;
-  const deduction = Math.min(
-    SPAMASSASSIN_MAX_DEDUCTION,
-    Math.max(0, Math.round(SPAMASSASSIN_DEDUCTION_PER_POINT * (saScore - SPAMASSASSIN_INFO_AT))),
-  );
-  return finding(
-    'spamassassin-score',
-    saScore >= SPAMASSASSIN_WARN_AT ? 'warn' : 'info',
-    deduction,
-    `SpamAssassin scores this email ${saScore.toFixed(1)} (5+ is typically filtered).`,
-    'Review the flagged wording and structure — small copy changes usually drop this fast.',
-  );
-}
-
-/** Converts the AI verdict into findings (risk contribution, deception flags, disallowed content). */
-export function buildAiFindings(verdict: AiPreflightVerdict): PreflightFinding[] {
-  const out: PreflightFinding[] = [];
-
-  const disallowed = verdict.contentType === 'pure_commercial_marketing' || verdict.contentType === 'scam_or_phishing';
-  if (disallowed && verdict.confidence >= AI_DISALLOWED_MIN_CONFIDENCE) {
-    const isScam = verdict.contentType === 'scam_or_phishing';
-    out.push(
-      finding(
-        isScam ? 'ai-scam-phishing' : 'ai-commercial-marketing',
-        'block',
-        DEDUCT.aiDisallowedContent,
-        isScam
-          ? 'The content review flagged this as a possible scam or phishing message.'
-          : 'The content review reads this as commercial marketing, which pplCRM newsletters do not cover.',
-        isScam
-          ? 'If this is a mistake, adjust the wording that resembles credential or payment bait and re-run the check.'
-          : 'pplCRM sending is for community, political and nonprofit updates — including fundraising and auctions. Product-sales blasts are outside the acceptable-use policy.',
-      ),
-    );
-  }
-
-  const riskDeduction = Math.round((verdict.spamRiskScore / 100) * AI_RISK_MAX_DEDUCTION * verdict.confidence);
-  if (riskDeduction > 0) {
-    const reasons = verdict.reasons.slice(0, 3).join('; ');
-    out.push(
-      finding(
-        'ai-spam-risk',
-        verdict.spamRiskScore >= AI_RISK_WARN_AT ? 'warn' : 'info',
-        riskDeduction,
-        `The content review rates the copy ${verdict.spamRiskScore}/100 for spam-like patterns${reasons ? ` — ${reasons}` : ''}.`,
-        'See the suggestions below for the specific lines to soften.',
-      ),
-    );
-  }
-
-  if (verdict.deceptionFlags.length > 0) {
-    out.push(
-      finding(
-        'ai-deception-flags',
-        'warn',
-        DEDUCT.aiDeceptionFlags,
-        `The copy uses pressure patterns: ${verdict.deceptionFlags.slice(0, 4).join(', ')}.`,
-        'Manufactured urgency and misleading claims drive spam reports — state the real ask plainly.',
-      ),
-    );
-  }
-
-  return out;
-}
-
-/** 100 minus every deduction, clamped to 0–100 and rounded. */
-export function computeScore(findings: PreflightFinding[]): number {
-  const total = findings.reduce((sum, f) => sum + f.deduction, 0);
-  return Math.max(0, Math.min(100, Math.round(100 - total)));
-}
-`````
-
 ## File: libs/common/src/lib/public-id.ts
 `````typescript
 import { slugifyRecordName } from './utils';
@@ -39672,33 +39592,6 @@ export function buildPersonSlug(
   const id = publicId.toLowerCase();
   return `${name}-${id.slice(0, 4)}-${id.slice(4, PUBLIC_ID_LENGTH)}`;
 }
-`````
-
-## File: libs/common/src/lib/schema.ts
-`````typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-export * from './schemas/content-check.schema';
 `````
 
 ## File: libs/common/src/lib/sla.ts
@@ -50306,110 +50199,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 `````
 
-## File: apps/frontend/src/app/experiences/deliveries/services/deliveries-requests-service.ts
-`````typescript
-import { Service } from '@angular/core';
-
-import type {
-  AddDeliveryRequestType,
-  CommitDeliveriesType,
-  DeliveryRequestStatus,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PlanDeliveriesType,
-  UpdateDeliveryRequestType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterOutputs } from '../../../services/api/trpc-types';
-
-export type DeliveryRequestRow = RouterOutputs['deliveries']['getAllRequests']['rows'][number];
-export type DeliveryPlanPreview = RouterOutputs['deliveries']['previewPlan'];
-
-/**
- * Deliveries requests + planning service (spec §14). Backs the requests grid and the plan page.
- * Route CRUD lives in DeliveriesRoutesService; both point at the same `deliveries` tRPC router.
- */
-@Service()
-export class DeliveriesRequestsService extends AbstractAPIService<'delivery_requests', UpdateDeliveryRequestType> {
-  protected override readonly endpointName = 'deliveries';
-
-  public getAll(options?: getAllOptionsType): Promise<RouterOutputs['deliveries']['getAllRequests']> {
-    return this.api.deliveries.getAllRequests.query(options, { signal: this.ac.signal });
-  }
-
-  public getStatusCounts(): Promise<RouterOutputs['deliveries']['getRequestCounts']> {
-    return this.api.deliveries.getRequestCounts.query(undefined, { signal: this.ac.signal });
-  }
-
-  public getReadyCount(): Promise<number> {
-    return this.api.deliveries.getReadyCount.query(undefined, { signal: this.ac.signal });
-  }
-
-  public add(row: AddDeliveryRequestType): Promise<{ id: string }> {
-    return this.api.deliveries.addRequest.mutate(row);
-  }
-
-  public update(id: string, data: UpdateDeliveryRequestType): Promise<{ id: string }> {
-    return this.api.deliveries.updateRequestNotes.mutate({ id, data });
-  }
-
-  public setStatus(ids: string[], status: DeliveryRequestStatus): Promise<{ updated: number }> {
-    return this.api.deliveries.setRequestStatus.mutate({ ids, status });
-  }
-
-  /** Yard-sign standing for one household in one campaign (household/person "Yard sign" control). */
-  public getSignStatus(householdId: string, campaignId: string): Promise<RouterOutputs['deliveries']['getSignStatus']> {
-    return this.api.deliveries.getSignStatus.query(
-      { household_id: householdId, campaign_id: campaignId },
-      { signal: this.ac.signal },
-    );
-  }
-
-  public getRouteDefaults(): Promise<RouterOutputs['deliveries']['getRouteDefaults']> {
-    return this.api.deliveries.getRouteDefaults.query(undefined, { signal: this.ac.signal });
-  }
-
-  public previewPlan(input: PlanDeliveriesType): Promise<DeliveryPlanPreview> {
-    return this.api.deliveries.previewPlan.mutate(input);
-  }
-
-  public commitPlan(input: CommitDeliveriesType): Promise<RouterOutputs['deliveries']['commitPlan']> {
-    return this.api.deliveries.commitPlan.mutate(input);
-  }
-
-  public count(): Promise<number> {
-    return this.api.deliveries.getAllRequests
-      .query({ startRow: 0, endRow: 1 })
-      .then((res: RouterOutputs['deliveries']['getAllRequests']) => res.count ?? 0);
-  }
-
-  // --- Unused AbstractAPIService surface (grid toolbar disables these) ---
-  public addMany(_rows: AddDeliveryRequestType[]) {
-    return Promise.resolve([]);
-  }
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-  public getById(_id: string): Promise<unknown> {
-    return Promise.resolve(null);
-  }
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('Delivery request export is not available'));
-  }
-}
-`````
-
 ## File: apps/frontend/src/app/experiences/deliveries/ui/deliveries-plan.html
 `````html
 <div class="mx-auto flex w-full max-w-[820px] flex-col gap-5 p-4 pb-24">
@@ -50682,130 +50471,43 @@ export class DeliveriesRequestsService extends AbstractAPIService<'delivery_requ
 </div>
 `````
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/yard-sign-standing.ts
-`````typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { DELIVERY_REQUEST_STATUSES, DELIVERY_REQUEST_STATUS_LABELS } from '../../../../../../../libs/common/src';
-import type { DeliveryRequestStatus } from '../../../../../../../libs/common/src';
-
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { RouterOutputs } from '../../../services/api/trpc-types';
-import { DeliveriesRequestsService } from '../services/deliveries-requests-service';
-
-export type YardSignRequest = NonNullable<RouterOutputs['deliveries']['getSignStatus']['request']>;
-
-/**
- * The yard-sign standing control (Deliveries §14): one select that reads and flips the
- * household's delivery-request status in the ACTIVE campaign context. The truth stays in
- * `delivery_requests` — "None requested" = no row, and the route line is derived from the
- * active (pending) stop, never a stored flag. Embedded in the person Campaign standing card
- * and the household view; flipping to Delivered covers signs installed without the app.
- */
-@Component({
-  selector: 'pc-yard-sign-standing',
-  imports: [RouterLink],
-  templateUrl: './yard-sign-standing.html',
-  host: { class: 'block min-w-0' },
-})
-export class YardSignStanding {
-  /** The household the sign belongs to; null = person without an address (muted guidance state). */
-  readonly householdId = input.required<string | null>();
-  /** When set (person view), a request created here is attributed to this person as requester. */
-  readonly personId = input<string | null>(null);
-  /** Off when the host surface already titles the section (the household card's eyebrow). */
-  readonly showLabel = input<boolean>(true);
-
-  protected readonly context = inject(CampaignContextService);
-  private readonly svc = inject(DeliveriesRequestsService);
-  private readonly alerts = inject(AlertService);
-
-  protected readonly statuses = DELIVERY_REQUEST_STATUSES;
-  protected readonly labels = DELIVERY_REQUEST_STATUS_LABELS;
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly request = signal<YardSignRequest | null>(null);
-
-  protected readonly readonlyContext = this.context.isArchivedContext;
-
-  /** "Requested by Jane · web form · Jun 12" — parts drop out honestly when absent. */
-  protected readonly metaLine = computed(() => {
-    const r = this.request();
-    if (!r) return '';
-    const parts: string[] = [];
-    if (r.person_name) parts.push(`Requested by ${r.person_name}`);
-    parts.push(r.source === 'web_form' ? 'web form' : 'manual');
-    const date = this.formatDate(r.updated_at);
-    if (date) parts.push(date);
-    return parts.join(' · ');
-  });
-
-  constructor() {
-    effect(() => {
-      const householdId = this.householdId();
-      const campaignId = this.context.activeCampaignId();
-      void untracked(() => this.load(householdId, campaignId));
-    });
-    // Degrade quietly if the context can't load — the control shows "None requested".
-    this.context.ensureLoaded().catch(() => void 0);
-  }
-
-  protected async onStatusChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value as DeliveryRequestStatus | '';
-    const householdId = this.householdId();
-    if (!value || !householdId) return;
-    this.saving.set(true);
-    try {
-      const existing = this.request();
-      if (existing) {
-        await this.svc.setStatus([existing.id], value);
-        this.alerts.showSuccess('Yard sign updated');
-      } else {
-        const created = await this.svc.add({
-          household_id: householdId,
-          person_id: this.personId(),
-          campaign_id: this.context.activeCampaignId() ?? undefined,
-        });
-        if (value !== 'new') await this.svc.setStatus([created.id], value);
-        this.alerts.showSuccess('Yard sign recorded');
-      }
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update the yard sign. Please try again.'));
-    } finally {
-      this.saving.set(false);
-      await this.load(householdId, this.context.activeCampaignId());
+## File: apps/frontend/src/app/experiences/deliveries/ui/yard-sign-standing.html
+`````html
+<label class="flex flex-col gap-1">
+  @if (showLabel()) {
+  <span class="text-[11px] font-medium text-base-content/60" i18n>Yard sign</span>
+  } @if (householdId()) {
+  <select
+    class="select select-bordered select-sm w-full"
+    [value]="request()?.status ?? ''"
+    [disabled]="saving() || readonlyContext()"
+    (change)="onStatusChange($event)"
+  >
+    @if (!request()) {
+    <option value="" i18n>None requested</option>
+    } @for (status of statuses; track status) {
+    <option [value]="status">{{ labels[status] }}</option>
     }
+  </select>
+  } @else {
+  <!-- No address, no lawn — guide to the fix instead of a dead disabled control. -->
+  <p class="py-1 text-[11px] text-base-content/40" i18n>Needs an address. Assign a household first.</p>
   }
+</label>
 
-  private async load(householdId: string | null, campaignId: string | null): Promise<void> {
-    if (!householdId || !campaignId) {
-      this.request.set(null);
-      return;
-    }
-    const end = this._loading.begin();
-    try {
-      const res = await this.svc.getSignStatus(householdId, campaignId);
-      this.request.set(res.request);
-    } catch {
-      // Degrade to "None requested" rather than blocking the page.
-      this.request.set(null);
-    } finally {
-      end();
-    }
-  }
-
-  private formatDate(value: Date | string | null): string {
-    if (!value) return '';
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-}
+@if (request(); as r) { @if (metaLine()) {
+<p class="mt-1 text-[10px] text-base-content/40">{{ metaLine() }}</p>
+} @if (r.route_id) {
+<p class="mt-1 text-[10px]">
+  <a class="link link-primary" [routerLink]="['/deliveries/routes', r.route_id]">
+    <ng-container i18n>On route:</ng-container> {{ r.route_name }}
+  </a>
+</p>
+} @else if (r.status === 'approved' && r.skip_reason) {
+<p class="mt-1 text-[10px] text-base-content/40">
+  <ng-container i18n>Last attempt skipped:</ng-container> {{ r.skip_reason.toLowerCase() }}
+</p>
+} }
 `````
 
 ## File: apps/frontend/src/app/experiences/donations/ui/record-donation-dialog.html
@@ -54542,283 +54244,174 @@ export class HelpRichText {
 </div>
 `````
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
-`````typescript
-import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import type { IAuthUser } from '@common';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker } from '@uxcommon/components/map/map-types';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { LogInteraction } from '@experiences/activity/ui/log-interaction/log-interaction';
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
-import { UserService } from '../../../services/user.service';
-import type { Selectable } from 'kysely';
-import { HouseholdsService } from '../services/households-service';
-import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs as PcTabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
-
-type LastCanvass = { knocked_at: Date; canvasser_name: string | null; outcome: string } | null;
-
-@Component({
-  selector: 'pc-household-view',
-  imports: [
-    EmptyState,
-    RouterModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    LogInteraction,
-    DetailLayout,
-    PcCard,
-    PcTabs,
-    TabPanel,
-    PcMap,
-    GeocodeChip,
-    DatePipe,
-    YardSignStanding,
-  ],
-  templateUrl: './household-view.html',
-})
-export class HouseholdView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('household', this.id);
-  protected readonly activityFeed = viewChild(RecordActivities);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  protected readonly campaignContext = inject(CampaignContextService);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly household = signal<Selectable<Households> | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
-
-  protected readonly peopleCount = signal(0);
-  protected readonly lastCanvass = signal<LastCanvass>(null);
-
-  /** Real record id for child lookups — the route param may be a slug. */
-  protected readonly householdRecordId = computed(() => {
-    const h = this.household();
-    return h && !h.is_placeholder ? String(h.id) : null;
-  });
-
-  // Tabbed right column (matches person view): Members is the default tab.
-  protected readonly activeTab = signal<string>('members');
-  protected readonly householdTabs = computed<PcTabOption[]>(() => [
-    { id: 'members', label: 'Members', badge: this.peopleCount() || undefined },
-    { id: 'activity', label: 'Activity' },
-  ]);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Households', route: '/households' },
-    { label: this.addressString() },
-  ]);
-
-  // Address
-  protected readonly addressString = computed(() => {
-    const raw = this.household();
-    if (!raw) return 'No Address Assigned';
-    if (raw.is_placeholder) return 'People with no addresses';
-    if (raw.formatted_address) return raw.formatted_address;
-
-    const parts: string[] = [];
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    return parts.join(', ').trim() || 'No Address Assigned';
-  });
-
-  /** Short "City, State" for the map address chip. */
-  protected readonly cityLine = computed(() => {
-    const h = this.household();
-    if (!h) return '';
-    return [h.city, h.state].filter(Boolean).join(', ');
-  });
-
-  protected readonly hasMap = computed(() => {
-    const h = this.household();
-    return !!(h && h.lat && h.lng && !h.is_placeholder);
-  });
-
-  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
-    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
-  });
-
-  /** Header subtitle — "Ward 4 · 3 people · Canvassed May 2" (§6). Parts drop out honestly when absent. */
-  protected readonly subtitle = computed(() => {
-    const h = this.household();
-    if (!h || h.is_placeholder) return null;
-    const parts: string[] = [];
-    if (h.ward) parts.push(`Ward ${h.ward}`);
-    const n = this.peopleCount();
-    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    const canvass = this.lastCanvass();
-    if (canvass) {
-      parts.push(`Canvassed ${this.formatCanvassDate(canvass.knocked_at)}`);
-    }
-    return parts.join(' · ');
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users for addedby/updatedby display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
-      this.household.set(householdData);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
-        this.location.replaceState(`/households/${householdData.slug}`);
-      }
-
-      // 2. Load people count and last-canvass in parallel (both feed the header subtitle).
-      const [count, canvass] = await Promise.all([
-        this.householdsSvc.getPeopleCount(id),
-        this.householdsSvc.getLastCanvass(id).catch(() => null),
-      ]);
-      this.peopleCount.set(count);
-      this.lastCanvass.set((canvass as LastCanvass) ?? null);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  /** Refresh the "Activity at this door" feed after a logged interaction. */
-  protected onInteractionLogged(): void {
-    this.activityFeed()?.loadActivities();
-  }
-
-  protected editHousehold() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteHousehold() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
+## File: apps/frontend/src/app/experiences/households/ui/household-view.html
+`````html
+<pc-detail-layout
+  [title]="addressString()"
+  [subtitle]="subtitle()"
+  [eyebrow]="'Household'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete household'"
+  [btn1Text]="'Edit household'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (household() && !household()?.is_placeholder) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'households'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (household(); as h) { @if (h.is_placeholder) {
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
+      </div>
+    </div>
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
+  </div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Left Column: Map, Details, Door notes -->
+    <div class="flex flex-col gap-6 lg:col-span-1">
+      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
+      <pc-card>
+        <div class="relative h-56 w-full overflow-hidden rounded-lg">
+          @if (hasMap()) {
+          <pc-map
+            class="block h-full w-full"
+            [markers]="mapMarkers()"
+            [interactive]="false"
+            [deepLink]="true"
+            ariaLabel="Household location"
+          ></pc-map>
+          <!-- Ward chip -->
+          @if (h.ward) {
+          <span class="absolute left-2 top-2 badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
           }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
+          <!-- Address + Maps affordance -->
+          <div class="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
+            <span class="badge badge-sm max-w-[70%] truncate bg-base-100/90 font-medium text-base-content shadow">
+              {{ addressString() }}
+            </span>
+            <span class="badge badge-sm gap-1 bg-base-100/90 font-medium text-base-content shadow">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon> Maps
+            </span>
+          </div>
+          } @else {
+          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
+          <div
+            class="flex h-full flex-col items-center justify-center gap-2 bg-base-200 p-6 text-center text-base-content/40 select-none"
+          >
+            <pc-icon name="map-pin" [size]="8" class="mb-1 text-base-content/20"></pc-icon>
+            <h4 class="text-sm font-semibold text-base-content/60">No pin yet</h4>
+            <p class="max-w-[220px] text-xs font-light leading-snug">
+              The map pin appears once the address verifies. It geocodes in the background.
+            </p>
+          </div>
+          }
+        </div>
+        <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
+        <div class="mt-3 flex items-center justify-between text-xs">
+          <span class="text-base-content/60">Geocoding status</span>
+          <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
+        </div>
+      </pc-card>
+
+      <!-- Details card -->
+      <pc-card>
+        <h3 class="mb-3 block pc-eyebrow">Details</h3>
+        <dl class="flex flex-col divide-y divide-base-200 text-sm">
+          <div class="flex items-start justify-between gap-4 py-2 first:pt-0">
+            <dt class="text-base-content/50">City</dt>
+            <dd class="text-right font-medium text-base-content">{{ cityLine() || '—' }}</dd>
+          </div>
+          <div class="flex items-start justify-between gap-4 py-2">
+            <dt class="text-base-content/50">First seen</dt>
+            <dd class="text-right font-medium text-base-content">
+              {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
+            </dd>
+          </div>
+          <div class="flex flex-col gap-1 py-2 last:pb-0">
+            <dt class="text-base-content/50">Grouping</dt>
+            <dd class="text-sm font-light leading-relaxed text-base-content/70">
+              By address: edit a member’s address and the household follows.
+            </dd>
+          </div>
+        </dl>
+      </pc-card>
+
+      <!-- Yard sign standing (Deliveries §14) — the sign lives at this door; scoped to the active campaign -->
+      <pc-card>
+        <h3 class="mb-1 block pc-eyebrow" i18n>Yard sign</h3>
+        @if (campaignContext.activeCampaign(); as campaign) {
+        <p class="mb-3 text-[11px] text-base-content/50">
+          <ng-container i18n>In</ng-container>
+          <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+          @if (campaignContext.isArchivedContext()) {
+          <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+          }
+        </p>
         }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
+        <pc-yard-sign-standing [householdId]="householdRecordId()" [showLabel]="false"></pc-yard-sign-standing>
+      </pc-card>
 
-      await this.householdsSvc.delete(this.id());
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete household';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
+      <!-- Door notes card -->
+      <pc-card>
+        <h3 class="mb-2 block pc-eyebrow">Door notes</h3>
+        @if (h.notes) {
+        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ h.notes }}</p>
+        } @else {
+        <pc-empty-state
+          icon="document-text"
+          [bordered]="false"
+          title="No door notes recorded yet"
+          hint="Use Edit household to jot down what matters at this door."
+        />
+        }
+      </pc-card>
+    </div>
 
-  /** Compact "Canvassed May 2" style date for the header subtitle. */
-  private formatCanvassDate(value: Date | string): string {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
+    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
+    <div class="flex flex-col gap-6 lg:col-span-2">
+      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'households'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
 
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <pc-people-in-household [householdId]="id()"></pc-people-in-household>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  } }
+</pc-detail-layout>
 `````
 
 ## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
@@ -58132,1631 +57725,161 @@ export class ListsGridComponent implements OnInit {
 }
 `````
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
-`````html
-@if (mode() === 'options') {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="close()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletters
-    </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
-      <div>
-        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
-        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
-      </div>
-
-      <button
-        type="button"
-        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
-        (click)="selectRegular()"
-      >
-        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
-        <div class="flex-1">
-          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
-          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
-        </div>
-        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
-      </button>
-
-      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
-        <div class="flex items-center gap-4">
-          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
-            <pc-icon name="arrow-path" [size]="6"></pc-icon>
-          </div>
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
-              <span
-                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
-                >Coming soon</span
-              >
-            </div>
-            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
-          </div>
-        </div>
-        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
-          Create a regular newsletter instead
-        </button>
-      </div>
-    </div>
-  </main>
-</div>
-} @else if (mode() === 'regular') {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="close()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletters
-    </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
-
-    <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
-    <ol class="mt-4 flex flex-wrap gap-2">
-      @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
-      stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
-      <li>
-        <button
-          type="button"
-          class="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
-          [class.bg-primary]="isCurrent"
-          [class.text-primary-content]="isCurrent"
-          [class.bg-primary/10]="isDone"
-          [class.text-primary]="isDone"
-          [class.cursor-pointer]="isDone"
-          [class.hover:bg-primary/20]="isDone"
-          [class.bg-base-200]="isLocked"
-          [class.text-base-content/50]="isLocked"
-          [class.cursor-not-allowed]="isLocked"
-          [class.tooltip]="isLocked"
-          [class.tooltip-bottom]="isLocked"
-          [attr.data-tip]="isLocked ? lockedStepTooltip : null"
-          [attr.aria-disabled]="isLocked"
-          (click)="goToStep(stepNo)"
-        >
-          <span
-            class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
-            [class.bg-primary-content/25]="isCurrent"
-            [class.bg-primary/15]="isDone"
-            [class.bg-base-300]="isLocked"
-          >
-            @if (isDone) { <pc-icon name="check-circle" [size]="3"></pc-icon> } @else { {{ stepNo }} }
-          </span>
-          <span>{{ label }}</span>
-        </button>
-      </li>
-      }
-    </ol>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 py-6">
-    <form
-      class="mx-auto flex w-full flex-col gap-6"
-      [class.max-w-3xl]="currentStep() !== 2"
-      [class.max-w-none]="currentStep() === 2"
-    >
-      @switch (currentStep()) {
-
-      <!-- ============ STEP 1 · TEMPLATE ============ -->
-      @case (1) {
-      <div class="grid gap-5 sm:grid-cols-2">
-        @for (t of templateOptions; track t.id) {
-        <button
-          type="button"
-          class="overflow-hidden rounded-xl border text-left transition-colors"
-          [class.border-primary]="selectedTemplate() === t.id"
-          [class.bg-primary/5]="selectedTemplate() === t.id"
-          [class.border-base-300]="selectedTemplate() !== t.id"
-          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
-          (click)="selectTemplate(t.id)"
-        >
-          <div
-            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
-          >
-            template preview
-          </div>
-          <div class="flex items-start gap-3 p-4">
-            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
-            <div>
-              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
-              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
-            </div>
-          </div>
-        </button>
-        }
-      </div>
-      }
-
-      <!-- ============ STEP 2 · CONTENT ============ -->
-      @case (2) {
-      <div class="space-y-4">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
-        >
-          <p class="max-w-xl text-xs text-base-content/60">
-            Personalize with merge fields like
-            <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[11px] text-base-content/80"
-              >{{ mergeFieldExample }}</code
-            >. The footer disclaimer and unsubscribe link are appended automatically from
-            <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
-          </p>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline btn-secondary"
-              [disabled]="preflightRunning()"
-              (click)="runFullPreflight()"
-            >
-              @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> } @else {
-              <pc-icon name="check-circle" [size]="4"></pc-icon> } Check deliverability
-            </button>
-            <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary"
-                [disabled]="isDemo()"
-                (click)="sendTestEmail()"
-              >
-                <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-                Send test email
-              </button>
-            </span>
-          </div>
-        </div>
-        <pc-visual-newsletter-editor
-          [htmlContent]="regularPayload().htmlContent"
-          [plainTextContent]="regularPayload().plainTextContent"
-          (htmlContentChange)="onEditorHtmlChange($event)"
-          (plainTextContentChange)="onEditorTextChange($event)"
-        ></pc-visual-newsletter-editor>
-      </div>
-      }
-
-      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
-      @case (3) {
-      <div class="grid gap-6 md:grid-cols-2">
-        <!-- Email details -->
-        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
-          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
-            <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="pc-eyebrow">Email details</h3>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">Subject</label>
-            <input
-              #subjectInput
-              class="input input-bordered input-sm w-full"
-              [formField]="regularForm.subject"
-              placeholder="What recipients see first"
-              (input)="onFieldInput()"
-            />
-            <p
-              class="mt-1 text-xs"
-              [class.text-error]="isInvalid('subject')"
-              [class.text-base-content/55]="!isInvalid('subject')"
-            >
-              {{ subjectCoach }}
-            </p>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">Preview text</label>
-            <input
-              class="input input-bordered input-sm w-full"
-              [formField]="regularForm.previewText"
-              placeholder="Optional. Shows after the subject in most inboxes"
-              (input)="onFieldInput()"
-            />
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">From name</label>
-            <input
-              #fromNameInput
-              class="input input-bordered input-sm w-full"
-              [formField]="regularForm.fromName"
-              placeholder="Who is sending"
-              (input)="onFieldInput()"
-            />
-            @if (isInvalid('fromName')) {
-            <p class="mt-1 text-xs text-error">{{ fromNameCoach }}</p>
-            }
-          </div>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium">From address</label>
-            @if (verifiedSenders().length) {
-            <select
-              #fromAddressInput
-              class="select select-bordered select-sm w-full"
-              [formField]="regularForm.fromAddress"
-              (change)="onFieldInput()"
-            >
-              <option value="" disabled>Choose a verified sender</option>
-              @for (sender of verifiedSenders(); track sender) {
-              <option [value]="sender">{{ sender }}</option>
-              }
-            </select>
-            <button type="button" class="link link-primary mt-1 text-xs" (click)="goToVerifySender()">
-              Verify a new sender…
-            </button>
-            } @else {
-            <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
-              <p class="text-xs text-base-content/60">
-                No verified senders yet. A verified address stops your sends from bouncing or spoofing.
-              </p>
-              <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
-                Verify a sender
-              </button>
-            </div>
-            } @if (isInvalid('fromAddress')) {
-            <p class="mt-1 text-xs text-error">{{ fromAddressCoach }}</p>
-            } @if (verifiedSenders().length) {
-            <p class="mt-1 text-xs text-base-content/50">Prefilled from Workspace settings → Communications.</p>
-            }
-          </div>
-        </div>
-
-        <!-- Audience -->
-        <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
-          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
-            <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            <h3 class="pc-eyebrow">Audience</h3>
-          </div>
-
-          <!-- Include lists -->
-          <div>
-            <h4 class="mb-2 pc-eyebrow">Include lists</h4>
-            @if (loadingLists()) {
-            <div class="skeleton h-5 w-2/3"></div>
-            } @else {
-            <div class="flex flex-wrap gap-1.5">
-              @for (id of includeListIds(); track id) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-              >
-                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
-                <button type="button" (click)="removeIncludeList(id)" aria-label="Remove list">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (l of includeListSuggestions(); track l.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary"
-                (click)="addIncludeList(l.id)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
-              </button>
-              } @if (!includeListIds().length && !includeListSuggestions().length) {
-              <span class="text-xs text-base-content/50">No lists yet. Create one to target contacts.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Include tags -->
-          <div>
-            <h4 class="mb-2 pc-eyebrow">Include tags</h4>
-            @if (loadingTags()) {
-            <div class="skeleton h-5 w-2/3"></div>
-            } @else {
-            <div class="flex flex-wrap gap-1.5">
-              @for (name of includeTagsList(); track name) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-medium text-secondary"
-              >
-                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
-                <button type="button" (click)="removeIncludeTag(name)" aria-label="Remove tag">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (t of includeTagSuggestions(); track t.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-secondary hover:text-secondary"
-                (click)="addIncludeTag(t.name)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
-              </button>
-              } @if (!includeTagsList().length && !includeTagSuggestions().length) {
-              <span class="text-xs text-base-content/50">No tags yet.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Exclude lists -->
-          <div>
-            <h4 class="mb-2 pc-eyebrow">Exclude lists</h4>
-            @if (!loadingLists()) {
-            <div class="flex flex-wrap gap-1.5">
-              @for (id of excludeListIds(); track id) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
-              >
-                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
-                <button type="button" (click)="removeExcludeList(id)" aria-label="Remove exclusion">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (l of excludeListSuggestions(); track l.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
-                (click)="addExcludeList(l.id)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
-              </button>
-              } @if (!excludeListIds().length && !excludeListSuggestions().length) {
-              <span class="text-xs text-base-content/50">No lists to exclude.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Exclude tags -->
-          <div>
-            <h4 class="mb-2 pc-eyebrow">Exclude tags</h4>
-            @if (!loadingTags()) {
-            <div class="flex flex-wrap gap-1.5">
-              @for (name of excludeTagsList(); track name) {
-              <span
-                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
-              >
-                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
-                <button type="button" (click)="removeExcludeTag(name)" aria-label="Remove exclusion">
-                  <pc-icon name="x-mark" [size]="3"></pc-icon>
-                </button>
-              </span>
-              } @for (t of excludeTagSuggestions(); track t.id) {
-              <button
-                type="button"
-                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
-                (click)="addExcludeTag(t.name)"
-              >
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
-              </button>
-              } @if (!excludeTagsList().length && !excludeTagSuggestions().length) {
-              <span class="text-xs text-base-content/50">No tags to exclude.</span>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Estimated audience — the math, in public -->
-          <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
-            <div class="mb-3 flex items-center gap-2">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-              <span class="pc-eyebrow">Estimated audience</span>
-            </div>
-            @if (hasAudienceSelection()) {
-            <dl class="space-y-1.5 text-sm">
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">In included lists</dt>
-                <dd class="tabular-nums">+{{ formatCount(includedListsTotal()) }}</dd>
-              </div>
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Matching included tags</dt>
-                <dd class="tabular-nums">+{{ formatCount(includedTagsTotal()) }}</dd>
-              </div>
-              @if (excludedListsTotal()) {
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Excluded by lists</dt>
-                <dd class="tabular-nums">−{{ formatCount(excludedListsTotal()) }}</dd>
-              </div>
-              } @if (excludedTagsTotal()) {
-              <div class="flex items-center justify-between">
-                <dt class="text-base-content/70">Excluded by tags</dt>
-                <dd class="tabular-nums">−{{ formatCount(excludedTagsTotal()) }}</dd>
-              </div>
-              }
-              <div class="flex items-center justify-between border-t border-base-300 pt-2 font-semibold">
-                <dt>Total</dt>
-                <dd class="tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
-              </div>
-            </dl>
-            <p class="mt-2 text-[11px] text-base-content/55">
-              @if (skipBounced()) { Overlap between lists and tags is removed, and previously bounced addresses are
-              skipped, when you send. } @else { Overlap is removed when you send. Bounced addresses are
-              <strong>not</strong> being skipped (Workspace setting). }
-            </p>
-            } @else {
-            <p class="text-sm text-base-content/60">Add a list or tag above to see who this newsletter reaches.</p>
-            }
-          </div>
-        </div>
-      </div>
-      }
-
-      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
-      @case (4) {
-      <div class="grid gap-6 md:grid-cols-2">
-        <!-- Review -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Review</h3>
-          <dl class="divide-y divide-base-200 text-sm">
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Template</dt>
-              <dd class="font-medium">{{ selectedTemplateName() }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Subject</dt>
-              <dd class="truncate text-right font-medium">{{ regularPayload().subject || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">From</dt>
-              <dd class="truncate text-right font-medium">
-                {{ regularPayload().fromName }} &lt;{{ regularPayload().fromAddress || '—' }}&gt;
-              </dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Audience</dt>
-              <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5">
-              <dt class="text-base-content/60">Timing</dt>
-              <dd class="text-right font-medium">
-                @if (regularPayload().timingMode === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send now }
-              </dd>
-            </div>
-          </dl>
-        </div>
-
-        <!-- Send timing -->
-        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
-          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Send timing</h3>
-          <div class="space-y-3">
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-            >
-              <input
-                type="radio"
-                name="timingMode"
-                class="radio radio-sm radio-primary mt-0.5"
-                value="now"
-                [checked]="regularPayload().timingMode === 'now'"
-                (change)="setTimingMode('now')"
-              />
-              <span>
-                <span class="block text-sm font-medium">Send now</span>
-                <span class="block text-xs text-base-content/60">Queued the moment you confirm.</span>
-              </span>
-            </label>
-            <label
-              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
-            >
-              <input
-                type="radio"
-                name="timingMode"
-                class="radio radio-sm radio-primary mt-0.5"
-                value="schedule"
-                [checked]="regularPayload().timingMode === 'schedule'"
-                (change)="setTimingMode('schedule')"
-              />
-              <span>
-                <span class="block text-sm font-medium">Schedule for later</span>
-                <span class="block text-xs text-base-content/60">Delivered automatically at the time you pick.</span>
-              </span>
-            </label>
-          </div>
-
-          @if (regularPayload().timingMode === 'schedule') {
-          <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <div class="relative flex flex-col gap-1">
-              <label class="text-xs font-medium">Send date</label>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-secondary justify-between"
-                (click)="toggleDatePicker()"
-              >
-                <span>{{ scheduledDateDisplay() }}</span>
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
-              </button>
-              @if (showDatePicker()) {
-              <div class="absolute left-0 top-full z-20 mt-2">
-                <calendar-date
-                  class="cally rounded-box border border-base-300 bg-base-100 shadow-lg"
-                  [value]="scheduledDateValue()"
-                  (change)="onScheduledDateChange($event)"
-                >
-                  <calendar-month></calendar-month>
-                </calendar-date>
-              </div>
-              }
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium">Send time</label>
-              <input
-                type="time"
-                class="input input-bordered input-sm w-full"
-                [formField]="regularForm.scheduledTime"
-                (input)="onTimingChange()"
-              />
-            </div>
-            @if (timingNeedsDate() && showFieldErrors()) {
-            <p class="text-xs text-error sm:col-span-2">{{ scheduleCoach }}</p>
-            }
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Deliverability check -->
-      <section class="mt-6 rounded-xl border border-base-200 bg-base-100 p-5">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-base-200 pb-3">
-          <h3 class="pc-eyebrow">Deliverability check</h3>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline btn-secondary"
-            [disabled]="preflightRunning()"
-            (click)="runFullPreflight()"
-          >
-            @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> Checking… } @else {
-            <pc-icon name="arrow-path" [size]="4"></pc-icon>
-            {{ preflightView().kind === 'full' ? 'Re-run full check' : 'Run full check' }} }
-          </button>
-        </div>
-        <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
-          <div class="flex shrink-0 flex-col items-center gap-2">
-            <div
-              class="radial-progress {{ preflightGaugeClass(preflightView().band) }}"
-              [style.--value]="preflightView().score"
-              role="progressbar"
-              [attr.aria-valuenow]="preflightView().score"
-              aria-valuemin="0"
-              aria-valuemax="100"
-            >
-              <span class="text-lg font-semibold tabular-nums">{{ preflightView().score }}</span>
-            </div>
-            <p class="max-w-[10rem] text-center text-xs font-medium">{{ preflightBandCopy(preflightView().band) }}</p>
-          </div>
-          <div class="min-w-0 flex-1 space-y-3">
-            @if (preflightView().kind === 'quick') {
-            <p class="text-xs text-base-content/60">
-              Quick check of the content only. Run the full check to include the spam-filter score and the AI content
-              review.
-            </p>
-            } @else if (preflightView().aiStatus === 'unavailable') {
-            <p class="text-xs text-base-content/60">
-              The AI content review couldn't run this time — the score reflects the other checks.
-            </p>
-            } @else if (preflightView().aiStatus === 'not_required') {
-            <p class="text-xs text-base-content/60">
-              The AI content review wasn't needed for this check — the score reflects the standard checks.
-            </p>
-            } @if (preflightView().findings.length === 0) {
-            <p class="text-sm text-base-content/70">
-              No issues found. Inbox placement still depends mostly on your sender reputation and how recipients engage,
-              so keep sending to people who asked to hear from you.
-            </p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (f of preflightView().findings; track f.code) {
-              <li class="flex items-start gap-3 py-2.5">
-                <span [class]="preflightSeverityClass(f.severity)">
-                  <pc-icon [name]="preflightSeverityIcon(f.severity)" [size]="5"></pc-icon>
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-medium">{{ f.message }}</span>
-                  <span class="block text-xs text-base-content/60">{{ f.hint }}</span>
-                </span>
-                @if (f.deduction > 0) {
-                <span class="shrink-0 text-xs tabular-nums text-base-content/50">−{{ f.deduction }} pts</span>
-                }
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </div>
-      </section>
-      } }
-    </form>
-  </main>
-
-  <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
-  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
-    <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
-      <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      @if (currentStep() === 1) { Back } @else { Back }
-    </button>
-    <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
-      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
-    </button>
-    <div class="flex-1"></div>
-    @if (currentStep() < 4) {
-    <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
-      Next
-      <pc-icon name="chevron-right" [size]="4"></pc-icon>
-    </button>
-    } @else {
-    <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="saving() || isDemo()" (click)="sendRegular()">
-        @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
-        <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularPayload().timingMode === 'schedule') {
-        Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
-        peopleLabel(estimatedAudienceCount()) }} }
-      </button>
-    </span>
-    }
-  </footer>
-</div>
-} @else {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="switchToOptions()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletter types
-    </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
-      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
-      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
-      <p class="mt-2 text-sm text-base-content/60">
-        Until then, create a regular newsletter and send it now or on a schedule.
-      </p>
-      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
-        Create a regular newsletter
-      </button>
-    </div>
-  </main>
-</div>
-}
-`````
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
+## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
 `````typescript
+import { Service, inject } from '@angular/core';
 import {
-  CUSTOM_ELEMENTS_SCHEMA,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { FormField, email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { Icon } from '@icons/icon';
-import type { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import {
-  computeScore,
-  lintNewsletterContent,
-  preflightBand,
-  preflightHashInput,
-  type AiReviewStatus,
-  type PreflightBand,
-  type PreflightFinding,
-  type PreflightResult,
-  type PreflightSeverity,
-} from '@common';
+  AddMarketingEmailType,
+  CreateClickersListResultType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  PreflightResult,
+  RunPreflightType,
+  UpdateMarketingEmailType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
 
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
-import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
-import { NewslettersService } from '../services/newsletters-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { CampaignContextService } from '../../../services/campaign-context.service';
 
-/** Sentence-case, heroicon-backed metadata for the four starting templates. */
-const TEMPLATE_OPTIONS: ReadonlyArray<{
-  id: TemplatePreset;
-  name: string;
-  description: string;
-  icon: PcIconNameType;
-}> = [
-  {
-    id: 'welcome',
-    name: 'Welcome email',
-    description: 'Warm greeting, hero image, social links & footer.',
-    icon: 'envelope',
-  },
-  {
-    id: 'product',
-    name: 'Announcement',
-    description: 'Hero, list of updates, CTA button & footer.',
-    icon: 'megaphone',
-  },
-  {
-    id: 'newsletter',
-    name: 'Weekly digest',
-    description: 'Heading divider, digest content & footer.',
-    icon: 'queue-list',
-  },
-  {
-    id: 'empty',
-    name: 'Empty canvas',
-    description: 'Start from scratch with a single heading block.',
-    icon: 'document',
-  },
-];
+@Service()
+export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
+  protected override readonly endpointName = 'newsletters';
 
-const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
-const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
-const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
-const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
-const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
-const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
-const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
-const COMMS_SETTINGS_LINK = '/settings/communications';
-const VERIFY_SENDER_LINK = '/settings/communications';
+  private readonly campaignContext = inject(CampaignContextService);
 
-const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
-  subject: '',
-  previewText: '',
-  fromName: '',
-  fromAddress: '',
-  htmlContent: '',
-  plainTextContent: '',
-  includeLists: [],
-  includeTags: [],
-  excludeLists: [],
-  excludeTags: [],
-  timingMode: 'now',
-  scheduledDate: '',
-  scheduledTime: '',
-};
-
-@Component({
-  selector: 'pc-newsletter-add',
-  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
-  templateUrl: './newsletter-add.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class NewsletterAddComponent implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authSvc = inject(AuthService);
-  private readonly confirmDlg = inject(ConfirmDialogService);
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  private readonly listsSvc = inject(ListsService);
-  private readonly newslettersSvc = inject(NewslettersService);
-  private readonly numberFormatter = new Intl.NumberFormat();
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly tagsSvc = inject(TagsService);
-  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-
-  private readonly user = this.authSvc.getUserSignal();
-  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
-  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
-  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
-
-  /** Raw wizard payload — the single source of truth the signal-form wraps. */
-  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
-
-  protected readonly regularForm = form(this.regularPayload, (p) => {
-    required(p.subject);
-    required(p.fromName);
-    required(p.fromAddress);
-    email(p.fromAddress);
-  });
-
-  private readonly requiresScheduleDate = computed(() => {
-    const raw = this.regularPayload();
-    if (raw.timingMode !== 'schedule') return false;
-    return !raw.scheduledDate || !raw.scheduledTime;
-  });
-
-  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
-  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
-  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
-  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
-  protected readonly currentStep = signal<StepIndex>(1);
-  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
-  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
-  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
-  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
-  protected readonly loadingLists = signal<boolean>(false);
-  protected readonly loadingTags = signal<boolean>(false);
-  protected readonly mode = signal<CreationMode>('options');
-  protected readonly saving = signal(false);
-  protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
-  protected readonly showDatePicker = signal(false);
-  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
-  protected readonly dirty = signal(false);
-  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
-  protected readonly showFieldErrors = signal(false);
-
-  protected readonly steps = STEP_LABELS;
-  protected readonly templateOptions = TEMPLATE_OPTIONS;
-  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
-  protected readonly subjectCoach = SUBJECT_COACH;
-  protected readonly fromNameCoach = FROM_NAME_COACH;
-  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
-  protected readonly scheduleCoach = SCHEDULE_COACH;
-  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
-  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
-  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
-  protected readonly mergeFieldExample = '{{first_name}}';
-
-  // --- Verified senders / workspace prefill ---------------------------------
-
-  protected readonly verifiedSenders = signal<string[]>([]);
-  protected readonly commsDefaultsApplied = signal(false);
-
-  // --- Audience math (every line is real; the total is the single source) ---
-
-  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
-  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
-  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
-  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
-  protected readonly estimatedAudienceCount = computed(() => {
-    const estimate =
-      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
-    return estimate > 0 ? Math.round(estimate) : 0;
-  });
-  protected readonly hasAudienceSelection = computed(
-    () =>
-      this.includeListIds().length > 0 ||
-      this.includeTagsList().length > 0 ||
-      this.excludeListIds().length > 0 ||
-      this.excludeTagsList().length > 0,
-  );
-  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
-  protected readonly skipBounced = computed(() =>
-    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
-  );
-
-  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
-
-  protected readonly includeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
-  );
-  protected readonly excludeListSuggestions = computed(() =>
-    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
-  );
-  protected readonly includeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
-  );
-  protected readonly excludeTagSuggestions = computed(() =>
-    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
-  );
-
-  public ngOnInit(): void {
-    void this.loadLists();
-    void this.loadTags();
-    void this.loadCommsDefaults();
+  public add(row: AddMarketingEmailType) {
+    // A newsletter is created in the context the user is working in (§15);
+    // the backend falls back to the office context when none is known.
+    const campaignId = this.campaignContext.activeCampaignId();
+    return this.api.newsletters.create.mutate(campaignId ? { ...row, campaign_id: campaignId } : row);
   }
 
-  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
-  public canDeactivate(): Promise<boolean> {
-    if (!this.dirty()) return Promise.resolve(true);
-    return this.confirmDlg.confirm({
-      title: 'Leave without saving?',
-      message:
-        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
-      variant: 'warning',
-      confirmText: 'Discard draft',
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
+  public addMany(_rows: AddMarketingEmailType[]) {
+    return Promise.resolve([]);
   }
 
-  // --- Step navigation ------------------------------------------------------
-
-  protected canReachStep(step: number): boolean {
-    return step <= this.currentStep();
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
   }
 
-  protected goToStep(targetStep: number): void {
-    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
-    if (this.canReachStep(targetStep)) {
-      this.currentStep.set(targetStep as StepIndex);
-    }
+  public count(): Promise<number> {
+    return this.api.newsletters.count.query();
   }
 
-  protected handleBack(): void {
-    const step = this.currentStep();
-    if (step === 1) {
-      this.switchToOptions();
-    } else {
-      this.currentStep.set((step - 1) as StepIndex);
-    }
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
   }
 
-  protected handleNext(): void {
-    const step = this.currentStep();
-
-    if (step === 3 && !this.validateDetails()) return;
-
-    if (step >= STEP_LABELS.length) return;
-    this.showFieldErrors.set(false);
-    this.currentStep.set((step + 1) as StepIndex);
+  public async getAll(options?: getAllOptionsType) {
+    // Campaigns §15 — the newsletters grid shows the active context's sends.
+    const campaignId = this.campaignContext.activeCampaignId();
+    const scoped = campaignId ? { ...(options ?? {}), campaignId } : options;
+    const result = await this.api.newsletters.getAllWithCounts.query(scoped, { signal: this.ac.signal });
+    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
+    const count = result?.count != null ? Number(result.count) : rows.length;
+    return { rows, count };
   }
 
-  // --- Mode / template ------------------------------------------------------
-
-  protected close(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
   }
 
-  protected selectAutomated(): void {
-    this.mode.set('automated');
+  public async getById(id: string) {
+    const record = await this.api.newsletters.getById.query(id);
+    return this.normalize(record);
   }
 
-  protected selectRegular(): void {
-    this.mode.set('regular');
-    this.currentStep.set(1);
-    this.applyTemplate('welcome');
-    // Auto-selecting the default template is not a user edit.
-    this.dirty.set(false);
+  public getReport(id: string): Promise<NewsletterReportType> {
+    return this.api.newsletters.getReport.query(id);
   }
 
-  protected switchToOptions(): void {
-    this.mode.set('options');
-    this.currentStep.set(1);
+  public createClickersList(id: string): Promise<CreateClickersListResultType> {
+    return this.api.newsletters.createClickersList.mutate(id);
   }
 
-  protected selectTemplate(preset: TemplatePreset): void {
-    this.applyTemplate(preset);
-    this.markDirty();
+  public async getTags(_id: string) {
+    return [];
   }
 
-  protected selectedTemplateName(): string {
-    return TEMPLATE_OPTIONS.find((t) => t.id === this.selectedTemplate())?.name ?? 'Template';
+  public update(id: string, data: UpdateMarketingEmailType) {
+    return this.api.newsletters.update.mutate({ id, data });
   }
 
-  // --- Audience: add / remove -----------------------------------------------
-
-  protected addIncludeList(listId: string): void {
-    if (this.includeListIds().includes(listId)) return;
-    // A list can't be both included and excluded.
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
-    this.setIncludeLists([...this.includeListIds(), listId]);
+  public send(id: string): Promise<any> {
+    return this.api.newsletters.send.mutate(id);
   }
 
-  protected removeIncludeList(listId: string): void {
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+  public sendTest(input: {
+    subject: string;
+    html: string;
+    text?: string;
+    to: string;
+    fromName?: string;
+    fromEmail?: string;
+  }): Promise<{ to: string; delivered: number }> {
+    return this.api.newsletters.sendTest.mutate(input);
   }
 
-  protected addExcludeList(listId: string): void {
-    if (this.excludeListIds().includes(listId)) return;
-    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
-    this.setExcludeLists([...this.excludeListIds(), listId]);
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.newsletters.exportCsv.mutate(input);
   }
 
-  protected removeExcludeList(listId: string): void {
-    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+  /** Full deliverability check (lint + SpamAssassin + AI content review), cached server-side. */
+  public runPreflight(input: RunPreflightType): Promise<PreflightResult> {
+    return this.api.newsletters.runPreflight.mutate(input);
   }
 
-  protected addIncludeTag(name: string): void {
-    if (this.includeTagsList().includes(name)) return;
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-    this.setIncludeTags([...this.includeTagsList(), name]);
-  }
-
-  protected removeIncludeTag(name: string): void {
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-  }
-
-  protected addExcludeTag(name: string): void {
-    if (this.excludeTagsList().includes(name)) return;
-    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
-    this.setExcludeTags([...this.excludeTagsList(), name]);
-  }
-
-  protected removeExcludeTag(name: string): void {
-    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
-  }
-
-  protected listName(id: string): string {
-    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
-  }
-
-  protected listSize(id: string): number {
-    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
-  }
-
-  protected tagUsage(name: string): number {
-    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
-  }
-
-  protected formatCount(value: number): string {
-    return this.numberFormatter.format(value);
-  }
-
-  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
-  protected peopleLabel(value: number): string {
-    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
-  }
-
-  // --- Schedule -------------------------------------------------------------
-
-  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
-    const state = this.regularForm[field]();
-    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
-  }
-
-  protected onScheduledDateChange(event: unknown): void {
-    const value = this.normalizeCalendarValue(event) ?? '';
-    const state = this.regularForm.scheduledDate();
-    state.value.set(value);
-    state.markAsDirty();
-    state.markAsTouched();
-    this.markDirty();
-    this.showDatePicker.set(false);
-  }
-
-  protected scheduledDateDisplay(): string {
-    const value = this.scheduledDateValue();
-    if (!value) return 'Select a date';
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
-  }
-
-  protected scheduledDateValue(): string {
-    return this.regularPayload().scheduledDate;
-  }
-
-  protected timingNeedsDate(): boolean {
-    return this.requiresScheduleDate();
-  }
-
-  protected toggleDatePicker(): void {
-    this.showDatePicker.update((open) => !open);
-  }
-
-  protected onFieldInput(): void {
-    this.markDirty();
-  }
-
-  protected setTimingMode(mode: TimingMode): void {
-    this.regularForm.timingMode().value.set(mode);
-    this.markDirty();
-  }
-
-  protected onTimingChange(): void {
-    this.markDirty();
-  }
-
-  protected onEditorHtmlChange(html: string): void {
-    this.regularForm.htmlContent().value.set(html);
-    this.markDirty();
-  }
-
-  protected onEditorTextChange(text: string): void {
-    this.regularForm.plainTextContent().value.set(text);
-  }
-
-  protected goToVerifySender(): void {
-    void this.router.navigateByUrl(this.verifySenderLink);
-  }
-
-  // --- Deliverability preflight --------------------------------------------
-
-  /** Full server check (lint + SpamAssassin + AI review) and the content key it was run for. */
-  private readonly serverPreflight = signal<{ key: string; result: PreflightResult } | null>(null);
-  protected readonly preflightRunning = signal(false);
-
-  /** Canonical key of the current content — a stored server result is stale once this changes. */
-  private readonly preflightContentKey = computed(() => {
-    const raw = this.regularPayload();
-    return preflightHashInput(raw.subject, raw.htmlContent, raw.plainTextContent);
-  });
-
-  /** Instant local lint of the current content — shown until a full server check runs. */
-  private readonly quickPreflight = computed<PreflightView>(() => {
-    const raw = this.regularPayload();
-    const findings = lintNewsletterContent({
-      subject: raw.subject,
-      html: raw.htmlContent,
-      plainText: raw.plainTextContent || undefined,
-    });
-    const score = computeScore(findings);
-    return { score, band: preflightBand(score), findings, kind: 'quick', aiStatus: 'not_required' };
-  });
-
-  /** What the Review card and the confirm dialog show: the full check while it still matches the
-   * content, otherwise the live quick check. */
-  protected readonly preflightView = computed<PreflightView>(() => {
-    const server = this.serverPreflight();
-    if (server && server.key === this.preflightContentKey()) {
-      const r = server.result;
-      return { score: r.score, band: r.band, findings: r.findings, kind: 'full', aiStatus: r.aiStatus };
-    }
-    return this.quickPreflight();
-  });
-
-  protected async runFullPreflight(): Promise<void> {
-    if (this.preflightRunning()) return;
-    const raw = this.regularPayload();
-    const key = this.preflightContentKey();
-    this.preflightRunning.set(true);
-    try {
-      const result = await this.newslettersSvc.runPreflight({
-        subject: raw.subject,
-        html: raw.htmlContent,
-        plainText: raw.plainTextContent || undefined,
-      });
-      this.serverPreflight.set({ key, result });
-      if (this.currentStep() !== 4) {
-        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the Review & send step.`);
-      }
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
-    } finally {
-      this.preflightRunning.set(false);
-    }
-  }
-
-  protected preflightBandCopy(band: PreflightBand): string {
-    switch (band) {
-      case 'good':
-        return 'Looking good — ready to send';
-      case 'fix':
-        return 'Fix these before sending';
-      default:
-        return 'Sending is disabled until you fix the items below';
-    }
-  }
-
-  protected preflightGaugeClass(band: PreflightBand): string {
-    switch (band) {
-      case 'good':
-        return 'text-success';
-      case 'fix':
-        return 'text-warning';
-      default:
-        return 'text-error';
-    }
-  }
-
-  protected preflightSeverityIcon(severity: PreflightSeverity): PcIconNameType {
-    switch (severity) {
-      case 'block':
-        return 'x-circle';
-      case 'warn':
-        return 'exclamation-triangle';
-      default:
-        return 'information-circle';
-    }
-  }
-
-  protected preflightSeverityClass(severity: PreflightSeverity): string {
-    switch (severity) {
-      case 'block':
-        return 'text-error';
-      case 'warn':
-        return 'text-warning';
-      default:
-        return 'text-info';
-    }
-  }
-
-  // --- Test send ------------------------------------------------------------
-
-  protected async sendTestEmail(): Promise<void> {
-    const raw = this.regularPayload();
-    const to = this.authSvc.getUser()?.email;
-    if (!to) {
-      this.alertSvc.showError('We could not find your email address for the test send.');
-      return;
-    }
-    const subject = raw.subject || 'Your newsletter';
-    try {
-      await this.newslettersSvc.sendTest({
-        subject,
-        html: raw.htmlContent,
-        text: raw.plainTextContent,
-        to,
-        fromName: raw.fromName,
-        fromEmail: raw.fromAddress,
-      });
-      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
-    }
-  }
-
-  // --- Save draft -----------------------------------------------------------
-
-  protected async saveDraft(): Promise<void> {
-    if (this.saving()) return;
-    const raw = this.regularPayload();
-    const subject = raw.subject || 'Untitled draft';
-    this.saving.set(true);
-    try {
-      await this.newslettersSvc.add(this.buildPayload('draft'));
-      this.dirty.set(false);
-      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Send / schedule (with preflight) -------------------------------------
-
-  protected async sendRegular(): Promise<void> {
-    if (this.saving()) return;
-    if (!this.validateDetails()) {
-      this.currentStep.set(3);
-      return;
-    }
-    if (this.requiresScheduleDate()) {
-      this.regularForm.scheduledDate().markAsTouched();
-      this.regularForm.scheduledTime().markAsTouched();
-      this.showFieldErrors.set(true);
-      this.alertSvc.showError(this.scheduleCoach);
-      return;
-    }
-
-    // The server enforces this again at send time; catching it here routes the user to the
-    // findings instead of a failed request.
-    const check = this.preflightView();
-    if (check.band === 'blocked') {
-      this.currentStep.set(4);
-      this.alertSvc.showError(
-        `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
-      );
-      return;
-    }
-
-    const raw = this.regularPayload();
-    const scheduled = raw.timingMode === 'schedule';
-    const count = this.estimatedAudienceCount();
-    const subject = raw.subject || 'Untitled newsletter';
-    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
-
-    const confirmed = await this.confirmDlg.confirm({
-      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
-      message: this.preflightMessage(count),
-      variant: 'info',
-      icon: 'paper-airplane',
-      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
-      cancelText: 'Keep editing',
-      emphasizeCancel: true,
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
-      const createdId = this.extractId(created);
-      if (!scheduled && createdId) {
-        await this.newslettersSvc.send(createdId);
-      }
-      this.dirty.set(false);
-      this.alertSvc.showSuccess(
-        scheduled
-          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
-          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
-      );
-      this.close();
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // --- Internals ------------------------------------------------------------
-
-  private applyTemplate(preset: TemplatePreset): void {
-    this.selectedTemplate.set(preset);
-    this.regularPayload.update((p) => ({
-      ...p,
-      htmlContent: compileTemplateHtml(preset),
-      plainTextContent: compileTemplatePlainText(preset),
-    }));
-  }
-
-  private validateDetails(): boolean {
-    this.markDetailsTouched();
-    this.showFieldErrors.set(true);
-    const invalidField = this.firstInvalidDetail();
-    if (invalidField) {
-      this.focusAndCoach(invalidField);
-      return false;
-    }
-    return true;
-  }
-
-  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
-    if (this.regularForm.subject().invalid()) return 'subject';
-    if (this.regularForm.fromName().invalid()) return 'fromName';
-    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
-    return null;
-  }
-
-  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
-    const map = {
-      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
-      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
-      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
-    } as const;
-    const target = map[field];
-    target.ref?.nativeElement.focus();
-    this.alertSvc.showError(target.coach);
-  }
-
-  private preflightMessage(count: number): string {
-    const check = this.preflightView();
-    const flagged = check.findings.length;
-    const scoreLine =
-      check.band === 'good'
-        ? `Deliverability score ${check.score} — looking good.`
-        : `Deliverability score ${check.score} — ${flagged} item${flagged === 1 ? '' : 's'} worth fixing first (see the Review & send step).`;
-    const base = `It will go to ${this.peopleLabel(count)}.`;
-    if (this.skipBounced()) {
-      return `${scoreLine} ${base} Previously bounced addresses are skipped automatically.`;
-    }
-    return `${scoreLine} ${base} Bounced addresses are NOT being skipped (Workspace setting).`;
-  }
-
-  private scheduleWhenLabel(): string {
-    const date = this.scheduledDateValue();
-    const time = this.regularPayload().scheduledTime;
-    if (!date) return 'the scheduled time';
-    const parsed = new Date(`${date}T${time || '00:00'}`);
-    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
-    return time
-      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
-      : this.dateFormatter.format(parsed);
-  }
-
-  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
-    const raw = this.regularPayload();
-    const scheduledAt =
-      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
-        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
-        : null;
-
+  private normalize(record: any) {
+    if (!record) return record;
+    const top_links = this.parseJsonArray<MarketingEmailTopLinkType>(record.top_links);
+    const asNumber = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const asDate = (value: unknown) => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const date = new Date(value as string);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
     return {
-      name: raw.subject || 'Unnamed Newsletter',
-      status,
-      subject: raw.subject,
-      preview_text: raw.previewText,
-      audience_description: this.buildAudienceDescription(),
-      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
-      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
-      html_content: raw.htmlContent,
-      plain_text_content: raw.plainTextContent,
-      send_date: scheduledAt,
-      total_recipients: this.estimatedAudienceCount(),
+      ...record,
+      status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
+      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
+      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
+      total_recipients: asNumber(record.total_recipients) ?? 0,
+      delivered_count: asNumber(record.delivered_count) ?? 0,
+      bounce_count: asNumber(record.bounce_count) ?? 0,
+      open_rate: asNumber(record.open_rate) ?? 0,
+      click_rate: asNumber(record.click_rate) ?? 0,
+      unique_opens: asNumber(record.unique_opens) ?? 0,
+      unique_clicks: asNumber(record.unique_clicks) ?? 0,
+      unsubscribe_count: asNumber(record.unsubscribe_count) ?? 0,
+      spam_complaint_count: asNumber(record.spam_complaint_count) ?? 0,
+      reply_count: asNumber(record.reply_count) ?? 0,
+      send_date: asDate(record.send_date),
+      last_engagement_at: asDate(record.last_engagement_at),
+      created_at: asDate(record.created_at) ?? new Date(),
+      updated_at: asDate(record.updated_at) ?? new Date(),
+      top_links,
     };
   }
 
-  private buildAudienceDescription(): string {
-    const includeLists = this.includeListIds().map((id) => this.listName(id));
-    const includeTags = this.includeTagsList();
-    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
-    const excludeTags = this.excludeTagsList();
-
-    const parts: string[] = [];
-    if (includeLists.length || includeTags.length) {
-      parts.push(
-        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
-      );
-    }
-    if (excludeLists.length || excludeTags.length) {
-      parts.push(
-        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
-      );
-    }
-    return parts.length ? parts.join(' ') : 'No target audience configured.';
-  }
-
-  private markDetailsTouched(): void {
-    this.regularForm.subject().markAsTouched();
-    this.regularForm.fromName().markAsTouched();
-    this.regularForm.fromAddress().markAsTouched();
-  }
-
-  private markDirty(): void {
-    if (!this.dirty()) this.dirty.set(true);
-  }
-
-  private setIncludeLists(next: string[]): void {
-    this.writeAudience('includeLists', next);
-  }
-
-  private setExcludeLists(next: string[]): void {
-    this.writeAudience('excludeLists', next);
-  }
-
-  private setIncludeTags(next: string[]): void {
-    this.writeAudience('includeTags', next);
-  }
-
-  private setExcludeTags(next: string[]): void {
-    this.writeAudience('excludeTags', next);
-  }
-
-  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
-    this.regularPayload.update((p) => ({ ...p, [key]: next }));
-    this.markDirty();
-  }
-
-  private sumListSizes(ids: string[]): number {
-    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
-    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
-  }
-
-  private sumTagUsage(names: string[]): number {
-    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
-    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
-  }
-
-  private async loadLists(): Promise<void> {
-    this.loadingLists.set(true);
+  private parseJsonArray<T>(value: unknown): T[] | null {
+    if (!value) return null;
+    if (Array.isArray(value)) return value as T[];
     try {
-      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows
-          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
-          .map((row: Record<string, unknown>) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            size:
-              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
-              0,
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
-    } finally {
-      this.loadingLists.set(false);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    this.loadingTags.set(true);
-    try {
-      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
-      this.availableTags.set(
-        rows
-          .filter(
-            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
-          )
-          .filter((row) => row['id'] && row['name'])
-          .map((row) => ({
-            id: String(row['id']),
-            name: String(row['name']),
-            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
-          })),
-      );
-    } catch (err) {
-      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
-    } finally {
-      this.loadingTags.set(false);
-    }
-  }
-
-  private async loadCommsDefaults(): Promise<void> {
-    try {
-      await this.settingsSvc.load();
+      const parsed = JSON.parse(String(value));
+      return Array.isArray(parsed) ? (parsed as T[]) : null;
     } catch {
-      // Non-fatal: the sender fields simply won't prefill.
-      return;
+      return null;
     }
-    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
-
-    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
-    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
-    let applied = false;
-    if (defaultName && !this.regularPayload().fromName) {
-      this.regularForm.fromName().value.set(defaultName);
-      applied = true;
-    }
-    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
-      this.regularForm.fromAddress().value.set(defaultEmail);
-      applied = true;
-    }
-    this.commsDefaultsApplied.set(applied);
   }
-
-  private normalizeCalendarValue(event: unknown): string | null {
-    const raw = this.readCalendarRaw(event);
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
-  }
-
-  private readCalendarRaw(event: unknown): string | null {
-    if (typeof event === 'string') return event;
-    if (!event || typeof event !== 'object') return null;
-    const e = event as Record<string, unknown>;
-    const detail = e['detail'];
-    if (typeof detail === 'string') return detail;
-    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
-      return (detail as Record<string, unknown>)['value'] as string;
-    }
-    const target = e['target'];
-    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
-      return (target as Record<string, unknown>)['value'] as string;
-    }
-    if (typeof e['value'] === 'string') return e['value'] as string;
-    return null;
-  }
-
-  private extractId(created: unknown): string | null {
-    if (created && typeof created === 'object' && 'id' in created) {
-      const id = (created as Record<string, unknown>)['id'];
-      return id != null ? String(id) : null;
-    }
-    return null;
-  }
-
-  private errorMessage(err: unknown, fallback: string): string {
-    return err instanceof Error && err.message ? err.message : fallback;
-  }
-}
-
-type CreationMode = 'options' | 'regular' | 'automated';
-
-/** Deliverability-check view model: a full server run, or the instant local quick check. */
-interface PreflightView {
-  score: number;
-  band: PreflightBand;
-  findings: PreflightFinding[];
-  kind: 'full' | 'quick';
-  aiStatus: AiReviewStatus;
-}
-
-type StepIndex = 1 | 2 | 3 | 4;
-
-type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
-
-type TimingMode = 'now' | 'schedule';
-
-interface RegularNewsletterPayload {
-  subject: string;
-  previewText: string;
-  fromName: string;
-  fromAddress: string;
-  htmlContent: string;
-  plainTextContent: string;
-  includeLists: string[];
-  includeTags: string[];
-  excludeLists: string[];
-  excludeTags: string[];
-  timingMode: TimingMode;
-  scheduledDate: string;
-  scheduledTime: string;
 }
 `````
 
@@ -75729,141 +73852,112 @@ export function readingMinutes(article: HelpArticle): number {
 }
 `````
 
-## File: libs/common/src/lib/schemas/deliveries.schema.ts
+## File: libs/common/src/lib/schemas/content-check.schema.ts
 `````typescript
 import { z } from 'zod';
 
-import { idSchema, notesSchema } from './core.schema';
+/**
+ * Newsletter preflight ("deliverability check") shared contracts.
+ *
+ * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
+ * from explainable per-finding deductions. The band thresholds live here — not in backend
+ * send-guards — because the composer gauge and the server-side send gate must agree on where the
+ * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
+ * is mostly sender reputation + engagement, which no pre-send check can compute.
+ */
 
-// Deliveries (spec §14). Enums mirror the binding spec (docs/spec/Deliveries Spec.dc.html §2) —
-// the spec's strings win, including the American spelling "canceled" for route status.
-export const DELIVERY_REQUEST_STATUSES = ['new', 'approved', 'declined', 'delivered'] as const;
-export const DELIVERY_ROUTE_STATUSES = ['draft', 'assigned', 'in_progress', 'completed', 'canceled'] as const;
-export const DELIVERY_STOP_STATUSES = ['pending', 'delivered', 'skipped'] as const;
-export const DELIVERY_SOURCES = ['web_form', 'manual'] as const;
+/** Scores at or above this are "good — ready to send". */
+export const PREFLIGHT_GOOD = 80;
+/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
+export const PREFLIGHT_BLOCK = 50;
 
-// The four failure reasons a volunteer can pick (spec §4.4). "Skip for now" (defer) is NOT a
-// reason — it keeps the stop pending and moves it to the end of the route.
-export const DELIVERY_SKIP_REASONS = ['No safe spot', 'Wrong address', 'Resident declined', 'Other'] as const;
+export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
+export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
 
-export type DeliveryRequestStatus = (typeof DELIVERY_REQUEST_STATUSES)[number];
+/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
+export function preflightBand(score: number): PreflightBand {
+  if (score < PREFLIGHT_BLOCK) return 'blocked';
+  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
+}
 
-/** Display labels for a request's standing on person/household pages ('new' reads as "Requested"). */
-export const DELIVERY_REQUEST_STATUS_LABELS: Record<DeliveryRequestStatus, string> = {
-  new: 'Requested',
-  approved: 'Approved',
-  declined: 'Declined',
-  delivered: 'Delivered',
-};
-export type DeliveryRouteStatus = (typeof DELIVERY_ROUTE_STATUSES)[number];
-export type DeliveryStopStatus = (typeof DELIVERY_STOP_STATUSES)[number];
-export type DeliverySource = (typeof DELIVERY_SOURCES)[number];
-export type DeliverySkipReason = (typeof DELIVERY_SKIP_REASONS)[number];
+export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
+export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
 
-// ---- Requests --------------------------------------------------------------
-export const AddDeliveryRequestObj = z.object({
-  /** Campaigns §15 — the context this yard-sign request belongs to; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  household_id: idSchema,
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-  notes: notesSchema,
+export const PreflightFindingObj = z.object({
+  /** Stable machine code, e.g. "subject-caps", "base64-image". */
+  code: z.string(),
+  severity: z.enum(PREFLIGHT_SEVERITIES),
+  /** What was found, user-facing. */
+  message: z.string(),
+  /** How to fix it, user-facing. */
+  hint: z.string(),
+  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
+  deduction: z.number(),
 });
+export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
 
-export const UpdateDeliveryRequestObj = z.object({
-  notes: notesSchema,
+/**
+ * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
+ * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
+ * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
+ */
+export const AI_CONTENT_TYPES = [
+  'newsletter_update',
+  'fundraising_appeal',
+  'event_promotion',
+  'auction_or_sale',
+  'advocacy',
+  'pure_commercial_marketing',
+  'scam_or_phishing',
+  'other',
+] as const;
+export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
+
+/** Structured verdict returned by the Claude content review (also its output-format schema). */
+export const AiPreflightVerdictObj = z.object({
+  contentType: z.enum(AI_CONTENT_TYPES),
+  /** 0 (clean) to 100 (reads like spam). */
+  spamRiskScore: z.number().min(0).max(100),
+  /** Short reasons behind the risk score, user-facing. */
+  reasons: z.array(z.string()),
+  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
+  deceptionFlags: z.array(z.string()),
+  /** Concrete copy rewrites for the worst offenders, user-facing. */
+  suggestions: z.array(z.string()),
+  /** The model's confidence in this verdict, 0–1. */
+  confidence: z.number().min(0).max(1),
 });
+export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
 
-// Bulk approve/decline from the selection bar (spec §4.1), plus the manual standing flips from the
-// household/person "Yard sign" control — 'delivered' covers signs installed without the app.
-export const SetDeliveryRequestStatusObj = z.object({
-  ids: z.array(idSchema).min(1, 'Select at least one request'),
-  status: z.enum(DELIVERY_REQUEST_STATUSES),
+/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
+export const RunPreflightObj = z.object({
+  subject: z.string().max(500),
+  html: z.string().max(500_000),
+  plainText: z.string().max(200_000).optional(),
 });
+export type RunPreflightType = z.infer<typeof RunPreflightObj>;
 
-// The yard-sign standing lookup for one household in one campaign context.
-export const GetSignStatusObj = z.object({
-  household_id: idSchema,
-  campaign_id: idSchema,
+/**
+ * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
+ * no API key or the API errored — so the score is partial ('unavailable'); or policy didn't call
+ * for it ('not_required' — the send-time gate skips the AI re-check for established paid tenants,
+ * while user-initiated checks always include it).
+ */
+export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
+export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
+
+/** Full preflight outcome: the score, its band, and every finding that shaped it. */
+export const PreflightResultObj = z.object({
+  score: z.number(),
+  band: z.enum(PREFLIGHT_BANDS),
+  findings: z.array(PreflightFindingObj),
+  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
+  spamAssassinScore: z.number().nullable(),
+  ai: AiPreflightVerdictObj.nullable(),
+  aiStatus: z.enum(AI_REVIEW_STATUSES),
+  checkedAt: z.string(),
 });
-
-// ---- Planning --------------------------------------------------------------
-// Advanced params default to the spec's inline summary (60 min/driver · 5 min/stop · 30 km/h · no
-// return trip). Preview is pure — it writes nothing.
-export const PlanDeliveriesObj = z.object({
-  start_address: z.string().trim().min(1, 'Start address is required').max(500, 'Address is too long'),
-  drivers: z.number().int().min(1).max(50).nullable().optional(),
-  service_minutes: z.number().min(0).max(60).nullable().optional(),
-  avg_speed_kmh: z.number().min(1).max(120).nullable().optional(),
-  include_return_leg: z.boolean().nullable().optional(),
-});
-
-export const CommitDeliveriesObj = PlanDeliveriesObj.extend({
-  routes: z
-    .array(
-      z.object({
-        request_ids: z.array(idSchema).min(1, 'A route needs at least one stop'),
-      }),
-    )
-    .min(1, 'Nothing to commit'),
-});
-
-// ---- Routes ----------------------------------------------------------------
-export const UpdateDeliveryRouteObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(150, 'Name is too long').optional(),
-  scheduled_for: z.string().datetime().nullable().optional(),
-});
-
-export const AssignVolunteerObj = z.object({
-  route_id: idSchema,
-  person_id: idSchema.nullable(),
-});
-
-export const SetDeliveryRouteStatusObj = z.object({
-  route_id: idSchema,
-  status: z.enum(['in_progress', 'completed', 'canceled']),
-});
-
-export const ReorderStopObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  direction: z.enum(['up', 'down']),
-});
-
-// Staff act on a stop from the route detail page. Same transitions as the public path.
-export const StopActionObj = z.object({
-  route_id: idSchema,
-  stop_id: idSchema,
-  action: z.enum(['deliver', 'skip', 'remove']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export const RouteIdObj = z.object({ route_id: idSchema });
-
-export const MintShareLinkObj = z.object({
-  route_id: idSchema,
-  regenerate: z.boolean().optional(),
-});
-
-// ---- Public volunteer path (token is the only credential) ------------------
-// defer = "Skip for now": moves the stop to the end and renumbers (stays pending, not a failure).
-export const PublicStopActionObj = z.object({
-  action: z.enum(['deliver', 'skip', 'defer', 'undo']),
-  reason: z.enum(DELIVERY_SKIP_REASONS).nullable().optional(),
-});
-
-export type AddDeliveryRequestType = z.infer<typeof AddDeliveryRequestObj>;
-export type UpdateDeliveryRequestType = z.infer<typeof UpdateDeliveryRequestObj>;
-export type SetDeliveryRequestStatusType = z.infer<typeof SetDeliveryRequestStatusObj>;
-export type GetSignStatusType = z.infer<typeof GetSignStatusObj>;
-export type PlanDeliveriesType = z.infer<typeof PlanDeliveriesObj>;
-export type CommitDeliveriesType = z.infer<typeof CommitDeliveriesObj>;
-export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
-export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
-export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
-export type ReorderStopType = z.infer<typeof ReorderStopObj>;
-export type StopActionType = z.infer<typeof StopActionObj>;
-export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
-export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
+export type PreflightResult = z.infer<typeof PreflightResultObj>;
 `````
 
 ## File: libs/common/src/lib/schemas/donations.schema.ts
@@ -76019,6 +74113,493 @@ export const UpdatePersonsObj = z.object({
   volunteer_status: z.enum(VOLUNTEER_STATUSES).nullable().optional(),
   staff_status: z.enum(STAFF_STATUSES).nullable().optional(),
 });
+`````
+
+## File: libs/common/src/lib/preflight-lint.ts
+`````typescript
+import type { AiPreflightVerdict, PreflightFinding, PreflightSeverity } from './schemas/content-check.schema';
+
+/**
+ * Deterministic newsletter lint + scoring. Pure and isomorphic (no Node/browser-only APIs) so the
+ * composer runs it live while the backend runs the identical checks authoritatively at send time.
+ * Every check yields a PreflightFinding whose deduction is subtracted from a 100-point score; the
+ * builders at the bottom convert the SpamAssassin score and the AI verdict into the same finding
+ * shape so the UI renders one list and the score stays a single explainable mechanism.
+ */
+
+export interface PreflightInput {
+  subject: string;
+  html: string;
+  plainText?: string;
+}
+
+// Point deductions per finding. Sized so any single "block"-severity pattern (phishing-shaped
+// links, base64 payloads) pulls the score below PREFLIGHT_BLOCK on its own or nearly so, while
+// style nits stay advisory. Tuning one of these is deliberately a one-line change.
+const DEDUCT = {
+  subjectEmpty: 30,
+  subjectTooLong: 5,
+  subjectCaps: 10,
+  subjectExclamations: 8,
+  subjectMoneySymbols: 8,
+  subjectFakeReply: 15,
+  htmlOversize: 15,
+  imageOnlyBody: 15,
+  imagesMissingAlt: 3,
+  insecureUrls: 5,
+  base64Image: 25,
+  tooManyLinks: 8,
+  urlShortener: 12,
+  anchorDomainMismatch: 30,
+  rawIpLink: 25,
+  suspiciousProtocol: 25,
+  aiDeceptionFlags: 10,
+  aiDisallowedContent: 90,
+} as const;
+
+const SUBJECT_MAX_CHARS = 70;
+const SUBJECT_CAPS_RATIO = 0.3;
+const SUBJECT_MIN_LETTERS_FOR_CAPS = 8;
+// Gmail clips messages around 102KB of HTML; warn with margin before that.
+const HTML_SIZE_WARN_BYTES = 100_000;
+const IMAGE_ONLY_MIN_TEXT_CHARS = 200;
+const MAX_LINKS = 25;
+// SpamAssassin's conventional spam threshold is 5; we start surfacing at 3.
+const SPAMASSASSIN_INFO_AT = 3;
+const SPAMASSASSIN_WARN_AT = 5;
+const SPAMASSASSIN_DEDUCTION_PER_POINT = 2;
+const SPAMASSASSIN_MAX_DEDUCTION = 30;
+// The AI risk score contributes at most this many points, scaled by its confidence.
+const AI_RISK_MAX_DEDUCTION = 40;
+const AI_RISK_WARN_AT = 60;
+// Below this confidence a disallowed-content verdict is advisory, not score-capping.
+const AI_DISALLOWED_MIN_CONFIDENCE = 0.6;
+
+// Widely-abused URL shorteners. Curated and small on purpose — extend it, don't import a huge list.
+const URL_SHORTENER_HOSTS = new Set([
+  'bit.ly',
+  'tinyurl.com',
+  'goo.gl',
+  't.co',
+  'ow.ly',
+  'is.gd',
+  'buff.ly',
+  'rebrand.ly',
+  'cutt.ly',
+  'shorturl.at',
+  'rb.gy',
+  'tiny.cc',
+  'lnkd.in',
+  's.id',
+  'snip.ly',
+]);
+
+/**
+ * Canonical string the content hash is computed over (raw stored fields, never rendered output),
+ * so the composer's pre-save check and the send-time row-loaded check hash identically. The server
+ * hashes this with sha256; hashing itself is not isomorphic so it stays out of this module.
+ */
+export function preflightHashInput(subject: string, html: string, plainText: string | null | undefined): string {
+  return `${subject}\u0000${html}\u0000${plainText ?? ''}`;
+}
+
+function finding(
+  code: string,
+  severity: PreflightSeverity,
+  deduction: number,
+  message: string,
+  hint: string,
+): PreflightFinding {
+  return { code, severity, message, hint, deduction };
+}
+
+/** Strips tags/styles and decodes the common entities — just enough text to measure, not render. */
+function visibleTextOf(html: string): string {
+  return html
+    .replace(/<(style|script|head|title)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** True when the two hosts are the same registrable site (one is the other or a subdomain). */
+function sameSite(a: string, b: string): boolean {
+  const ha = a.toLowerCase().replace(/^www\./, '');
+  const hb = b.toLowerCase().replace(/^www\./, '');
+  return ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`);
+}
+
+interface AnchorRef {
+  href: string;
+  text: string;
+}
+
+function extractAnchors(html: string): AnchorRef[] {
+  const anchors: AnchorRef[] = [];
+  const re = /<a\b[^>]*?\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const m of html.matchAll(re)) {
+    anchors.push({ href: (m[2] ?? '').trim(), text: (m[3] ?? '').replace(/<[^>]+>/g, ' ').trim() });
+  }
+  return anchors;
+}
+
+interface ImgRef {
+  src: string;
+  hasAlt: boolean;
+}
+
+function extractImages(html: string): ImgRef[] {
+  const imgs: ImgRef[] = [];
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = m[0];
+    const src = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
+    const alt = /\balt\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
+    imgs.push({ src: src.trim(), hasAlt: alt.trim().length > 0 });
+  }
+  return imgs;
+}
+
+function lintSubject(subject: string, out: PreflightFinding[]): void {
+  const trimmed = subject.trim();
+  if (!trimmed) {
+    out.push(
+      finding(
+        'subject-empty',
+        'block',
+        DEDUCT.subjectEmpty,
+        'The subject line is empty.',
+        'Write a short, specific subject — it is the single biggest factor in whether people open the email.',
+      ),
+    );
+    return;
+  }
+  if (trimmed.length > SUBJECT_MAX_CHARS) {
+    out.push(
+      finding(
+        'subject-too-long',
+        'info',
+        DEDUCT.subjectTooLong,
+        `The subject is ${trimmed.length} characters — inboxes truncate around ${SUBJECT_MAX_CHARS}.`,
+        'Front-load the message so the part people see carries the meaning.',
+      ),
+    );
+  }
+  const letters = trimmed.replace(/[^a-z]/gi, '');
+  const upper = trimmed.replace(/[^A-Z]/g, '');
+  if (letters.length >= SUBJECT_MIN_LETTERS_FOR_CAPS && upper.length / letters.length > SUBJECT_CAPS_RATIO) {
+    out.push(
+      finding(
+        'subject-caps',
+        'warn',
+        DEDUCT.subjectCaps,
+        'The subject shouts — a large share of it is in capitals.',
+        'Use sentence case. ALL-CAPS subjects correlate strongly with spam complaints.',
+      ),
+    );
+  }
+  if (/!{2,}/.test(trimmed) || (trimmed.match(/!/g) ?? []).length > 2) {
+    out.push(
+      finding(
+        'subject-exclamations',
+        'warn',
+        DEDUCT.subjectExclamations,
+        'The subject leans on exclamation marks.',
+        'One is plenty — stacked "!!" reads as spam to filters and to people.',
+      ),
+    );
+  }
+  if (/[$€£]{2,}/.test(trimmed) || (trimmed.match(/[$€£]/g) ?? []).length >= 3) {
+    out.push(
+      finding(
+        'subject-money-symbols',
+        'warn',
+        DEDUCT.subjectMoneySymbols,
+        'The subject repeats currency symbols.',
+        'Spell amounts out ("Help us raise $5,000") instead of stacking symbols.',
+      ),
+    );
+  }
+  if (/^(re|fwd?)\s*:/i.test(trimmed)) {
+    out.push(
+      finding(
+        'subject-fake-reply',
+        'warn',
+        DEDUCT.subjectFakeReply,
+        'The subject starts with "Re:" or "Fwd:" on a broadcast.',
+        'Faking a reply thread is deceptive (and a CAN-SPAM problem) — drop the prefix.',
+      ),
+    );
+  }
+}
+
+function lintBody(html: string, out: PreflightFinding[]): void {
+  const bytes = new TextEncoder().encode(html).length;
+  if (bytes >= HTML_SIZE_WARN_BYTES) {
+    out.push(
+      finding(
+        'html-oversize',
+        'warn',
+        DEDUCT.htmlOversize,
+        `The email HTML is ${Math.round(bytes / 1024)}KB — Gmail clips messages near 102KB.`,
+        'A clipped message hides your unsubscribe link and footer. Trim content or split into two sends.',
+      ),
+    );
+  }
+
+  const text = visibleTextOf(html);
+  const images = extractImages(html);
+
+  if (images.length > 0 && text.length < IMAGE_ONLY_MIN_TEXT_CHARS) {
+    out.push(
+      finding(
+        'image-only-body',
+        'warn',
+        DEDUCT.imageOnlyBody,
+        'The email is nearly all image with very little text.',
+        'Filters distrust image-only mail, and image-blocking clients show nothing. Add real text.',
+      ),
+    );
+  }
+
+  const missingAlt = images.filter((i) => !i.hasAlt && !i.src.startsWith('data:')).length;
+  if (missingAlt > 0) {
+    out.push(
+      finding(
+        'images-missing-alt',
+        'info',
+        DEDUCT.imagesMissingAlt,
+        `${missingAlt} image${missingAlt === 1 ? '' : 's'} ha${missingAlt === 1 ? 's' : 've'} no alt text.`,
+        'Alt text is what people see while images load (or stay blocked) — describe each image briefly.',
+      ),
+    );
+  }
+
+  const base64Count = images.filter((i) => i.src.startsWith('data:')).length;
+  if (base64Count > 0) {
+    out.push(
+      finding(
+        'base64-image',
+        'block',
+        DEDUCT.base64Image,
+        `${base64Count} image${base64Count === 1 ? ' is' : 's are'} embedded as base64 data.`,
+        'Embedded images balloon the HTML past clipping limits and are a spam signal — host images on an https URL instead.',
+      ),
+    );
+  }
+
+  const anchors = extractAnchors(html);
+  const httpAnchors = anchors
+    .map((a) => ({ ...a, url: parseUrl(a.href) }))
+    .filter((a): a is AnchorRef & { url: URL } => a.url != null);
+
+  if (anchors.length > MAX_LINKS) {
+    out.push(
+      finding(
+        'too-many-links',
+        'warn',
+        DEDUCT.tooManyLinks,
+        `The email contains ${anchors.length} links.`,
+        `Heavily link-stuffed mail scores worse. Keep it under ${MAX_LINKS} and make each link count.`,
+      ),
+    );
+  }
+
+  const shorteners = httpAnchors.filter((a) => URL_SHORTENER_HOSTS.has(a.url.hostname.replace(/^www\./, '')));
+  if (shorteners.length > 0) {
+    out.push(
+      finding(
+        'url-shortener',
+        'warn',
+        DEDUCT.urlShortener,
+        `Links use URL shorteners (${[...new Set(shorteners.map((s) => s.url.hostname))].join(', ')}).`,
+        'Shortener domains are heavily abused by spammers — link the real destination instead.',
+      ),
+    );
+  }
+
+  const insecure = [
+    ...httpAnchors.filter((a) => a.url.protocol === 'http:'),
+    ...images.filter((i) => i.src.toLowerCase().startsWith('http://')),
+  ].length;
+  if (insecure > 0) {
+    out.push(
+      finding(
+        'insecure-urls',
+        'warn',
+        DEDUCT.insecureUrls,
+        `${insecure} link${insecure === 1 ? '' : 's'}/image${insecure === 1 ? '' : 's'} use plain http://.`,
+        'Serve every link and image over https — mixed content looks unsafe to filters and clients.',
+      ),
+    );
+  }
+
+  const rawIp = httpAnchors.filter((a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a.url.hostname));
+  if (rawIp.length > 0) {
+    out.push(
+      finding(
+        'raw-ip-link',
+        'block',
+        DEDUCT.rawIpLink,
+        'A link points at a bare IP address.',
+        'Legitimate mail links to domains, not IPs — this is a classic phishing pattern.',
+      ),
+    );
+  }
+
+  const suspicious = anchors.filter((a) => /^(javascript|data|vbscript):/i.test(a.href));
+  if (suspicious.length > 0) {
+    out.push(
+      finding(
+        'suspicious-protocol',
+        'block',
+        DEDUCT.suspiciousProtocol,
+        'A link uses a script/data protocol.',
+        'Email clients strip these and filters flag them — use https links only.',
+      ),
+    );
+  }
+
+  // Anchor text that names one site while the href goes to another is the signature phishing shape.
+  const DOMAIN_IN_TEXT_RE = /(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i;
+  const mismatched = httpAnchors.filter((a) => {
+    const m = DOMAIN_IN_TEXT_RE.exec(a.text);
+    if (!m?.[1]) return false;
+    const claimed = m[1];
+    // Only treat it as a domain claim when it has a plausible TLD (avoids "e.g" style false hits).
+    if (!/\.[a-z]{2,}$/i.test(claimed)) return false;
+    return !sameSite(claimed, a.url.hostname);
+  });
+  if (mismatched.length > 0) {
+    out.push(
+      finding(
+        'anchor-domain-mismatch',
+        'block',
+        DEDUCT.anchorDomainMismatch,
+        `Link text claims one site but points to another (e.g. "${mismatched[0]?.text.slice(0, 60)}").`,
+        'Make the visible text match the real destination — mismatches are the signature phishing pattern.',
+      ),
+    );
+  }
+}
+
+/** Runs every deterministic check. Pure — same result in the composer and on the server. */
+export function lintNewsletterContent(input: PreflightInput): PreflightFinding[] {
+  const out: PreflightFinding[] = [];
+  lintSubject(input.subject, out);
+  lintBody(input.html, out);
+  return out;
+}
+
+/** Converts a SpamAssassin score (Postmark spamcheck) into a finding, or null when unremarkable. */
+export function buildSpamAssassinFinding(saScore: number): PreflightFinding | null {
+  if (saScore < SPAMASSASSIN_INFO_AT) return null;
+  const deduction = Math.min(
+    SPAMASSASSIN_MAX_DEDUCTION,
+    Math.max(0, Math.round(SPAMASSASSIN_DEDUCTION_PER_POINT * (saScore - SPAMASSASSIN_INFO_AT))),
+  );
+  return finding(
+    'spamassassin-score',
+    saScore >= SPAMASSASSIN_WARN_AT ? 'warn' : 'info',
+    deduction,
+    `SpamAssassin scores this email ${saScore.toFixed(1)} (5+ is typically filtered).`,
+    'Review the flagged wording and structure — small copy changes usually drop this fast.',
+  );
+}
+
+/** Converts the AI verdict into findings (risk contribution, deception flags, disallowed content). */
+export function buildAiFindings(verdict: AiPreflightVerdict): PreflightFinding[] {
+  const out: PreflightFinding[] = [];
+
+  const disallowed = verdict.contentType === 'pure_commercial_marketing' || verdict.contentType === 'scam_or_phishing';
+  if (disallowed && verdict.confidence >= AI_DISALLOWED_MIN_CONFIDENCE) {
+    const isScam = verdict.contentType === 'scam_or_phishing';
+    out.push(
+      finding(
+        isScam ? 'ai-scam-phishing' : 'ai-commercial-marketing',
+        'block',
+        DEDUCT.aiDisallowedContent,
+        isScam
+          ? 'The content review flagged this as a possible scam or phishing message.'
+          : 'The content review reads this as commercial marketing, which pplCRM newsletters do not cover.',
+        isScam
+          ? 'If this is a mistake, adjust the wording that resembles credential or payment bait and re-run the check.'
+          : 'pplCRM sending is for community, political and nonprofit updates — including fundraising and auctions. Product-sales blasts are outside the acceptable-use policy.',
+      ),
+    );
+  }
+
+  const riskDeduction = Math.round((verdict.spamRiskScore / 100) * AI_RISK_MAX_DEDUCTION * verdict.confidence);
+  if (riskDeduction > 0) {
+    const reasons = verdict.reasons.slice(0, 3).join('; ');
+    out.push(
+      finding(
+        'ai-spam-risk',
+        verdict.spamRiskScore >= AI_RISK_WARN_AT ? 'warn' : 'info',
+        riskDeduction,
+        `The content review rates the copy ${verdict.spamRiskScore}/100 for spam-like patterns${reasons ? ` — ${reasons}` : ''}.`,
+        'See the suggestions below for the specific lines to soften.',
+      ),
+    );
+  }
+
+  if (verdict.deceptionFlags.length > 0) {
+    out.push(
+      finding(
+        'ai-deception-flags',
+        'warn',
+        DEDUCT.aiDeceptionFlags,
+        `The copy uses pressure patterns: ${verdict.deceptionFlags.slice(0, 4).join(', ')}.`,
+        'Manufactured urgency and misleading claims drive spam reports — state the real ask plainly.',
+      ),
+    );
+  }
+
+  return out;
+}
+
+/** 100 minus every deduction, clamped to 0–100 and rounded. */
+export function computeScore(findings: PreflightFinding[]): number {
+  const total = findings.reduce((sum, f) => sum + f.deduction, 0);
+  return Math.max(0, Math.min(100, Math.round(100 - total)));
+}
+`````
+
+## File: libs/common/src/lib/schema.ts
+`````typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+export * from './schemas/content-check.schema';
 `````
 
 ## File: libs/uxcommon/src/components/alerts/alerts.html
@@ -77915,45 +76496,6 @@ export class DeliveriesRouteDetail {
 }
 `````
 
-## File: apps/frontend/src/app/experiences/deliveries/ui/yard-sign-standing.html
-`````html
-<label class="flex flex-col gap-1">
-  @if (showLabel()) {
-  <span class="text-[11px] font-medium text-base-content/60" i18n>Yard sign</span>
-  } @if (householdId()) {
-  <select
-    class="select select-bordered select-sm w-full"
-    [value]="request()?.status ?? ''"
-    [disabled]="saving() || readonlyContext()"
-    (change)="onStatusChange($event)"
-  >
-    @if (!request()) {
-    <option value="" i18n>None requested</option>
-    } @for (status of statuses; track status) {
-    <option [value]="status">{{ labels[status] }}</option>
-    }
-  </select>
-  } @else {
-  <!-- No address, no lawn — guide to the fix instead of a dead disabled control. -->
-  <p class="py-1 text-[11px] text-base-content/40" i18n>Needs an address. Assign a household first.</p>
-  }
-</label>
-
-@if (request(); as r) { @if (metaLine()) {
-<p class="mt-1 text-[10px] text-base-content/40">{{ metaLine() }}</p>
-} @if (r.route_id) {
-<p class="mt-1 text-[10px]">
-  <a class="link link-primary" [routerLink]="['/deliveries/routes', r.route_id]">
-    <ng-container i18n>On route:</ng-container> {{ r.route_name }}
-  </a>
-</p>
-} @else if (r.status === 'approved' && r.skip_reason) {
-<p class="mt-1 text-[10px] text-base-content/40">
-  <ng-container i18n>Last attempt skipped:</ng-container> {{ r.skip_reason.toLowerCase() }}
-</p>
-} }
-`````
-
 ## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
 `````typescript
 import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
@@ -79789,174 +78331,2099 @@ export class FormsPageComponent implements OnInit {
 </div>
 `````
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.html
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
 `````html
-<pc-detail-layout
-  [title]="addressString()"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Household'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!household()"
-  [showActions]="!!(household() && !household()?.is_placeholder)"
-  [showDelete]="true"
-  [deleteText]="'Delete household'"
-  [btn1Text]="'Edit household'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editHousehold()"
-  (delete)="deleteHousehold()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (household() && !household()?.is_placeholder) {
-  <pc-log-interaction
-    pc-actions-prefix
-    [entity]="'households'"
-    [entityId]="id()"
-    (logged)="onInteractionLogged()"
-  ></pc-log-interaction>
-  } @if (household(); as h) { @if (h.is_placeholder) {
-  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-    <div class="avatar placeholder mb-4">
-      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
+@if (mode() === 'options') {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="pc-eyebrow">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
+      <div>
+        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
+        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
+      </div>
+
+      <button
+        type="button"
+        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
+        (click)="selectRegular()"
+      >
+        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
+        <div class="flex-1">
+          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
+          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
+        </div>
+        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
+      </button>
+
+      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
+        <div class="flex items-center gap-4">
+          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
+            <pc-icon name="arrow-path" [size]="6"></pc-icon>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
+              <span
+                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
+                >Coming soon</span
+              >
+            </div>
+            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
+          Create a regular newsletter instead
+        </button>
       </div>
     </div>
-    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-    <p class="text-sm text-base-content/60 mb-6">
-      This is a system placeholder representing individuals who do not currently have a household or address assigned.
-      It is not a real household record and cannot be edited.
-    </p>
-    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Return to People
-    </a>
-  </div>
-  } @else {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- Left Column: Map, Details, Door notes -->
-    <div class="flex flex-col gap-6 lg:col-span-1">
-      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
-      <pc-card>
-        <div class="relative h-56 w-full overflow-hidden rounded-lg">
-          @if (hasMap()) {
-          <pc-map
-            class="block h-full w-full"
-            [markers]="mapMarkers()"
-            [interactive]="false"
-            [deepLink]="true"
-            ariaLabel="Household location"
-          ></pc-map>
-          <!-- Ward chip -->
-          @if (h.ward) {
-          <span class="absolute left-2 top-2 badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
-          }
-          <!-- Address + Maps affordance -->
-          <div class="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2">
-            <span class="badge badge-sm max-w-[70%] truncate bg-base-100/90 font-medium text-base-content shadow">
-              {{ addressString() }}
-            </span>
-            <span class="badge badge-sm gap-1 bg-base-100/90 font-medium text-base-content shadow">
-              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon> Maps
+  </main>
+</div>
+} @else if (mode() === 'regular') {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="pc-eyebrow">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+
+    <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
+    <ol class="mt-4 flex flex-wrap gap-2">
+      @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
+      stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
+      <li>
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+          [class.bg-primary]="isCurrent"
+          [class.text-primary-content]="isCurrent"
+          [class.bg-primary/10]="isDone"
+          [class.text-primary]="isDone"
+          [class.cursor-pointer]="isDone"
+          [class.hover:bg-primary/20]="isDone"
+          [class.bg-base-200]="isLocked"
+          [class.text-base-content/50]="isLocked"
+          [class.cursor-not-allowed]="isLocked"
+          [class.tooltip]="isLocked"
+          [class.tooltip-bottom]="isLocked"
+          [attr.data-tip]="isLocked ? lockedStepTooltip : null"
+          [attr.aria-disabled]="isLocked"
+          (click)="goToStep(stepNo)"
+        >
+          <span
+            class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
+            [class.bg-primary-content/25]="isCurrent"
+            [class.bg-primary/15]="isDone"
+            [class.bg-base-300]="isLocked"
+          >
+            @if (isDone) { <pc-icon name="check-circle" [size]="3"></pc-icon> } @else { {{ stepNo }} }
+          </span>
+          <span>{{ label }}</span>
+        </button>
+      </li>
+      }
+    </ol>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 py-6">
+    <form
+      class="mx-auto flex w-full flex-col gap-6"
+      [class.max-w-3xl]="currentStep() !== 2"
+      [class.max-w-none]="currentStep() === 2"
+    >
+      @switch (currentStep()) {
+
+      <!-- ============ STEP 1 · TEMPLATE ============ -->
+      @case (1) {
+      <div class="grid gap-5 sm:grid-cols-2">
+        @for (t of templateOptions; track t.id) {
+        <button
+          type="button"
+          class="overflow-hidden rounded-xl border text-left transition-colors"
+          [class.border-primary]="selectedTemplate() === t.id"
+          [class.bg-primary/5]="selectedTemplate() === t.id"
+          [class.border-base-300]="selectedTemplate() !== t.id"
+          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
+          (click)="selectTemplate(t.id)"
+        >
+          <div
+            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
+          >
+            template preview
+          </div>
+          <div class="flex items-start gap-3 p-4">
+            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
+            <div>
+              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
+              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
+            </div>
+          </div>
+        </button>
+        }
+      </div>
+      }
+
+      <!-- ============ STEP 2 · CONTENT ============ -->
+      @case (2) {
+      <div class="space-y-4">
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
+        >
+          <p class="max-w-xl text-xs text-base-content/60">
+            Personalize with merge fields like
+            <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[11px] text-base-content/80"
+              >{{ mergeFieldExample }}</code
+            >. The footer disclaimer and unsubscribe link are appended automatically from
+            <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline btn-secondary"
+              [disabled]="preflightRunning()"
+              (click)="runFullPreflight()"
+            >
+              @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+              <pc-icon name="check-circle" [size]="4"></pc-icon> } Check deliverability
+            </button>
+            <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary"
+                [disabled]="isDemo()"
+                (click)="sendTestEmail()"
+              >
+                <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+                Send test email
+              </button>
             </span>
           </div>
-          } @else {
-          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
-          <div
-            class="flex h-full flex-col items-center justify-center gap-2 bg-base-200 p-6 text-center text-base-content/40 select-none"
-          >
-            <pc-icon name="map-pin" [size]="8" class="mb-1 text-base-content/20"></pc-icon>
-            <h4 class="text-sm font-semibold text-base-content/60">No pin yet</h4>
-            <p class="max-w-[220px] text-xs font-light leading-snug">
-              The map pin appears once the address verifies. It geocodes in the background.
+        </div>
+        <pc-visual-newsletter-editor
+          [htmlContent]="regularPayload().htmlContent"
+          [plainTextContent]="regularPayload().plainTextContent"
+          (htmlContentChange)="onEditorHtmlChange($event)"
+          (plainTextContentChange)="onEditorTextChange($event)"
+        ></pc-visual-newsletter-editor>
+      </div>
+      }
+
+      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
+      @case (3) {
+      <div class="grid gap-6 md:grid-cols-2">
+        <!-- Email details -->
+        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="pc-eyebrow">Email details</h3>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">Subject</label>
+            <input
+              #subjectInput
+              class="input input-bordered input-sm w-full"
+              [formField]="regularForm.subject"
+              placeholder="What recipients see first"
+              (input)="onFieldInput()"
+            />
+            <p
+              class="mt-1 text-xs"
+              [class.text-error]="isInvalid('subject')"
+              [class.text-base-content/55]="!isInvalid('subject')"
+            >
+              {{ subjectCoach }}
             </p>
           </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">Preview text</label>
+            <input
+              class="input input-bordered input-sm w-full"
+              [formField]="regularForm.previewText"
+              placeholder="Optional. Shows after the subject in most inboxes"
+              (input)="onFieldInput()"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">From name</label>
+            <input
+              #fromNameInput
+              class="input input-bordered input-sm w-full"
+              [formField]="regularForm.fromName"
+              placeholder="Who is sending"
+              (input)="onFieldInput()"
+            />
+            @if (isInvalid('fromName')) {
+            <p class="mt-1 text-xs text-error">{{ fromNameCoach }}</p>
+            }
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">From address</label>
+            @if (verifiedSenders().length) {
+            <select
+              #fromAddressInput
+              class="select select-bordered select-sm w-full"
+              [formField]="regularForm.fromAddress"
+              (change)="onFieldInput()"
+            >
+              <option value="" disabled>Choose a verified sender</option>
+              @for (sender of verifiedSenders(); track sender) {
+              <option [value]="sender">{{ sender }}</option>
+              }
+            </select>
+            <button type="button" class="link link-primary mt-1 text-xs" (click)="goToVerifySender()">
+              Verify a new sender…
+            </button>
+            } @else {
+            <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
+              <p class="text-xs text-base-content/60">
+                No verified senders yet. A verified address stops your sends from bouncing or spoofing.
+              </p>
+              <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
+                Verify a sender
+              </button>
+            </div>
+            } @if (isInvalid('fromAddress')) {
+            <p class="mt-1 text-xs text-error">{{ fromAddressCoach }}</p>
+            } @if (verifiedSenders().length) {
+            <p class="mt-1 text-xs text-base-content/50">Prefilled from Workspace settings → Communications.</p>
+            }
+          </div>
+        </div>
+
+        <!-- Audience -->
+        <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="pc-eyebrow">Audience</h3>
+          </div>
+
+          <!-- Include lists -->
+          <div>
+            <h4 class="mb-2 pc-eyebrow">Include lists</h4>
+            @if (loadingLists()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of includeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeIncludeList(id)" aria-label="Remove list">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of includeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary"
+                (click)="addIncludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!includeListIds().length && !includeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists yet. Create one to target contacts.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Include tags -->
+          <div>
+            <h4 class="mb-2 pc-eyebrow">Include tags</h4>
+            @if (loadingTags()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of includeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-medium text-secondary"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeIncludeTag(name)" aria-label="Remove tag">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of includeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-secondary hover:text-secondary"
+                (click)="addIncludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!includeTagsList().length && !includeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags yet.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude lists -->
+          <div>
+            <h4 class="mb-2 pc-eyebrow">Exclude lists</h4>
+            @if (!loadingLists()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of excludeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeExcludeList(id)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of excludeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!excludeListIds().length && !excludeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude tags -->
+          <div>
+            <h4 class="mb-2 pc-eyebrow">Exclude tags</h4>
+            @if (!loadingTags()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of excludeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeExcludeTag(name)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of excludeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!excludeTagsList().length && !excludeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Estimated audience — the math, in public -->
+          <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+            <div class="mb-3 flex items-center gap-2">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+              <span class="pc-eyebrow">Estimated audience</span>
+            </div>
+            @if (hasAudienceSelection()) {
+            <dl class="space-y-1.5 text-sm">
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">In included lists</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedListsTotal()) }}</dd>
+              </div>
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Matching included tags</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedTagsTotal()) }}</dd>
+              </div>
+              @if (excludedListsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by lists</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedListsTotal()) }}</dd>
+              </div>
+              } @if (excludedTagsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by tags</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedTagsTotal()) }}</dd>
+              </div>
+              }
+              <div class="flex items-center justify-between border-t border-base-300 pt-2 font-semibold">
+                <dt>Total</dt>
+                <dd class="tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+              </div>
+            </dl>
+            <p class="mt-2 text-[11px] text-base-content/55">
+              @if (skipBounced()) { Overlap between lists and tags is removed, and previously bounced addresses are
+              skipped, when you send. } @else { Overlap is removed when you send. Bounced addresses are
+              <strong>not</strong> being skipped (Workspace setting). }
+            </p>
+            } @else {
+            <p class="text-sm text-base-content/60">Add a list or tag above to see who this newsletter reaches.</p>
+            }
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
+      @case (4) {
+      <div class="grid gap-6 md:grid-cols-2">
+        <!-- Review -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Review</h3>
+          <dl class="divide-y divide-base-200 text-sm">
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Template</dt>
+              <dd class="font-medium">{{ selectedTemplateName() }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Subject</dt>
+              <dd class="truncate text-right font-medium">{{ regularPayload().subject || '—' }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">From</dt>
+              <dd class="truncate text-right font-medium">
+                {{ regularPayload().fromName }} &lt;{{ regularPayload().fromAddress || '—' }}&gt;
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Audience</dt>
+              <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Timing</dt>
+              <dd class="text-right font-medium">
+                @if (regularPayload().timingMode === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send now }
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <!-- Send timing -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3 class="mb-3 border-b border-base-200 pb-3 pc-eyebrow">Send timing</h3>
+          <div class="space-y-3">
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                name="timingMode"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="now"
+                [checked]="regularPayload().timingMode === 'now'"
+                (change)="setTimingMode('now')"
+              />
+              <span>
+                <span class="block text-sm font-medium">Send now</span>
+                <span class="block text-xs text-base-content/60">Queued the moment you confirm.</span>
+              </span>
+            </label>
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                name="timingMode"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="schedule"
+                [checked]="regularPayload().timingMode === 'schedule'"
+                (change)="setTimingMode('schedule')"
+              />
+              <span>
+                <span class="block text-sm font-medium">Schedule for later</span>
+                <span class="block text-xs text-base-content/60">Delivered automatically at the time you pick.</span>
+              </span>
+            </label>
+          </div>
+
+          @if (regularPayload().timingMode === 'schedule') {
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div class="relative flex flex-col gap-1">
+              <label class="text-xs font-medium">Send date</label>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary justify-between"
+                (click)="toggleDatePicker()"
+              >
+                <span>{{ scheduledDateDisplay() }}</span>
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              @if (showDatePicker()) {
+              <div class="absolute left-0 top-full z-20 mt-2">
+                <calendar-date
+                  class="cally rounded-box border border-base-300 bg-base-100 shadow-lg"
+                  [value]="scheduledDateValue()"
+                  (change)="onScheduledDateChange($event)"
+                >
+                  <calendar-month></calendar-month>
+                </calendar-date>
+              </div>
+              }
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium">Send time</label>
+              <input
+                type="time"
+                class="input input-bordered input-sm w-full"
+                [formField]="regularForm.scheduledTime"
+                (input)="onTimingChange()"
+              />
+            </div>
+            @if (timingNeedsDate() && showFieldErrors()) {
+            <p class="text-xs text-error sm:col-span-2">{{ scheduleCoach }}</p>
+            }
+          </div>
           }
         </div>
-        <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
-        <div class="mt-3 flex items-center justify-between text-xs">
-          <span class="text-base-content/60">Geocoding status</span>
-          <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
+      </div>
+
+      <!-- Deliverability check -->
+      <section class="mt-6 rounded-xl border border-base-200 bg-base-100 p-5">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-base-200 pb-3">
+          <h3 class="pc-eyebrow">Deliverability check</h3>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline btn-secondary"
+            [disabled]="preflightRunning()"
+            (click)="runFullPreflight()"
+          >
+            @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> Checking… } @else {
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            {{ preflightView().kind === 'full' ? 'Re-run full check' : 'Run full check' }} }
+          </button>
         </div>
-      </pc-card>
-
-      <!-- Details card -->
-      <pc-card>
-        <h3 class="mb-3 block pc-eyebrow">Details</h3>
-        <dl class="flex flex-col divide-y divide-base-200 text-sm">
-          <div class="flex items-start justify-between gap-4 py-2 first:pt-0">
-            <dt class="text-base-content/50">City</dt>
-            <dd class="text-right font-medium text-base-content">{{ cityLine() || '—' }}</dd>
+        <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <div class="flex shrink-0 flex-col items-center gap-2">
+            <div
+              class="radial-progress {{ preflightGaugeClass(preflightView().band) }}"
+              [style.--value]="preflightView().score"
+              role="progressbar"
+              [attr.aria-valuenow]="preflightView().score"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <span class="text-lg font-semibold tabular-nums">{{ preflightView().score }}</span>
+            </div>
+            <p class="max-w-[10rem] text-center text-xs font-medium">{{ preflightBandCopy(preflightView().band) }}</p>
           </div>
-          <div class="flex items-start justify-between gap-4 py-2">
-            <dt class="text-base-content/50">First seen</dt>
-            <dd class="text-right font-medium text-base-content">
-              {{ h.created_at | date: 'MMM y' }}@if (h.file_id) { · imported }
-            </dd>
+          <div class="min-w-0 flex-1 space-y-3">
+            @if (preflightView().kind === 'quick') {
+            <p class="text-xs text-base-content/60">
+              Quick check of the content only. Run the full check to include the spam-filter score and the AI content
+              review.
+            </p>
+            } @else if (preflightView().aiStatus === 'unavailable') {
+            <p class="text-xs text-base-content/60">
+              The AI content review couldn't run this time — the score reflects the other checks.
+            </p>
+            } @else if (preflightView().aiStatus === 'not_required') {
+            <p class="text-xs text-base-content/60">
+              The AI content review wasn't needed for this check — the score reflects the standard checks.
+            </p>
+            } @if (preflightView().findings.length === 0) {
+            <p class="text-sm text-base-content/70">
+              No issues found. Inbox placement still depends mostly on your sender reputation and how recipients engage,
+              so keep sending to people who asked to hear from you.
+            </p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (f of preflightView().findings; track f.code) {
+              <li class="flex items-start gap-3 py-2.5">
+                <span [class]="preflightSeverityClass(f.severity)">
+                  <pc-icon [name]="preflightSeverityIcon(f.severity)" [size]="5"></pc-icon>
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-medium">{{ f.message }}</span>
+                  <span class="block text-xs text-base-content/60">{{ f.hint }}</span>
+                </span>
+                @if (f.deduction > 0) {
+                <span class="shrink-0 text-xs tabular-nums text-base-content/50">−{{ f.deduction }} pts</span>
+                }
+              </li>
+              }
+            </ul>
+            }
           </div>
-          <div class="flex flex-col gap-1 py-2 last:pb-0">
-            <dt class="text-base-content/50">Grouping</dt>
-            <dd class="text-sm font-light leading-relaxed text-base-content/70">
-              By address: edit a member’s address and the household follows.
-            </dd>
-          </div>
-        </dl>
-      </pc-card>
+        </div>
+      </section>
+      } }
+    </form>
+  </main>
 
-      <!-- Yard sign standing (Deliveries §14) — the sign lives at this door; scoped to the active campaign -->
-      <pc-card>
-        <h3 class="mb-1 block pc-eyebrow" i18n>Yard sign</h3>
-        @if (campaignContext.activeCampaign(); as campaign) {
-        <p class="mb-3 text-[11px] text-base-content/50">
-          <ng-container i18n>In</ng-container>
-          <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
-          @if (campaignContext.isArchivedContext()) {
-          <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
-          }
-        </p>
-        }
-        <pc-yard-sign-standing [householdId]="householdRecordId()" [showLabel]="false"></pc-yard-sign-standing>
-      </pc-card>
+  <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
+  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
+    <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
+      <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      @if (currentStep() === 1) { Back } @else { Back }
+    </button>
+    <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
+      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
+    </button>
+    <div class="flex-1"></div>
+    @if (currentStep() < 4) {
+    <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
+      Next
+      <pc-icon name="chevron-right" [size]="4"></pc-icon>
+    </button>
+    } @else {
+    <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="saving() || isDemo()" (click)="sendRegular()">
+        @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+        <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularPayload().timingMode === 'schedule') {
+        Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
+        peopleLabel(estimatedAudienceCount()) }} }
+      </button>
+    </span>
+    }
+  </footer>
+</div>
+} @else {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="switchToOptions()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletter types
+    </button>
+    <p class="pc-eyebrow">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
+  </header>
 
-      <!-- Door notes card -->
-      <pc-card>
-        <h3 class="mb-2 block pc-eyebrow">Door notes</h3>
-        @if (h.notes) {
-        <p class="whitespace-pre-line text-sm font-light leading-relaxed text-base-content/80">{{ h.notes }}</p>
-        } @else {
-        <pc-empty-state
-          icon="document-text"
-          [bordered]="false"
-          title="No door notes recorded yet"
-          hint="Use Edit household to jot down what matters at this door."
-        />
-        }
-      </pc-card>
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
+      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
+      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
+      <p class="mt-2 text-sm text-base-content/60">
+        Until then, create a regular newsletter and send it now or on a schedule.
+      </p>
+      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
+        Create a regular newsletter
+      </button>
     </div>
+  </main>
+</div>
+}
+`````
 
-    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
-    <div class="flex flex-col gap-6 lg:col-span-2">
-      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'households'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
+`````typescript
+import {
+  CUSTOM_ELEMENTS_SCHEMA,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { FormField, email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import {
+  computeScore,
+  lintNewsletterContent,
+  preflightBand,
+  preflightHashInput,
+  type AiReviewStatus,
+  type PreflightBand,
+  type PreflightFinding,
+  type PreflightResult,
+  type PreflightSeverity,
+} from '@common';
 
-        <pc-tab-panel id="members" [activeTab]="activeTab()">
-          <pc-people-in-household [householdId]="id()"></pc-people-in-household>
-        </pc-tab-panel>
-      </pc-tabs>
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
+import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
+import { NewslettersService } from '../services/newsletters-service';
+
+/** Sentence-case, heroicon-backed metadata for the four starting templates. */
+const TEMPLATE_OPTIONS: ReadonlyArray<{
+  id: TemplatePreset;
+  name: string;
+  description: string;
+  icon: PcIconNameType;
+}> = [
+  {
+    id: 'welcome',
+    name: 'Welcome email',
+    description: 'Warm greeting, hero image, social links & footer.',
+    icon: 'envelope',
+  },
+  {
+    id: 'product',
+    name: 'Announcement',
+    description: 'Hero, list of updates, CTA button & footer.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'newsletter',
+    name: 'Weekly digest',
+    description: 'Heading divider, digest content & footer.',
+    icon: 'queue-list',
+  },
+  {
+    id: 'empty',
+    name: 'Empty canvas',
+    description: 'Start from scratch with a single heading block.',
+    icon: 'document',
+  },
+];
+
+const STEP_LABELS = ['Template', 'Content', 'Audience & details', 'Review & send'] as const;
+const LOCKED_STEP_TOOLTIP = 'Complete the current step first';
+const DEMO_SEND_TOOLTIP = 'Sending is locked during the demo. Choose a plan, then exit demo mode';
+const SUBJECT_COACH = "Add a subject line. It's the one field every recipient sees.";
+const FROM_NAME_COACH = 'Add a from name so recipients know who the email is from.';
+const FROM_ADDRESS_COACH = 'Choose a verified sender address.';
+const SCHEDULE_COACH = 'Pick a send date and time, or switch to "Send now".';
+const COMMS_SETTINGS_LINK = '/settings/communications';
+const VERIFY_SENDER_LINK = '/settings/communications';
+
+const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
+  subject: '',
+  previewText: '',
+  fromName: '',
+  fromAddress: '',
+  htmlContent: '',
+  plainTextContent: '',
+  includeLists: [],
+  includeTags: [],
+  excludeLists: [],
+  excludeTags: [],
+  timingMode: 'now',
+  scheduledDate: '',
+  scheduledTime: '',
+};
+
+@Component({
+  selector: 'pc-newsletter-add',
+  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
+  templateUrl: './newsletter-add.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class NewsletterAddComponent implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authSvc = inject(AuthService);
+  private readonly confirmDlg = inject(ConfirmDialogService);
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+  private readonly listsSvc = inject(ListsService);
+  private readonly newslettersSvc = inject(NewslettersService);
+  private readonly numberFormatter = new Intl.NumberFormat();
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly tagsSvc = inject(TagsService);
+  private readonly timeFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  private readonly user = this.authSvc.getUserSignal();
+  /** Sending is blocked server-side during demo mode; the disabled buttons explain it (§2 explained-disabled). */
+  protected readonly isDemo = computed(() => !!this.user()?.tenant_demo_mode_at);
+  protected readonly demoSendTooltip = DEMO_SEND_TOOLTIP;
+
+  /** Raw wizard payload — the single source of truth the signal-form wraps. */
+  protected readonly regularPayload = signal<RegularNewsletterPayload>({ ...EMPTY_REGULAR_PAYLOAD });
+
+  protected readonly regularForm = form(this.regularPayload, (p) => {
+    required(p.subject);
+    required(p.fromName);
+    required(p.fromAddress);
+    email(p.fromAddress);
+  });
+
+  private readonly requiresScheduleDate = computed(() => {
+    const raw = this.regularPayload();
+    if (raw.timingMode !== 'schedule') return false;
+    return !raw.scheduledDate || !raw.scheduledTime;
+  });
+
+  private readonly subjectInput = viewChild<ElementRef<HTMLInputElement>>('subjectInput');
+  private readonly fromNameInput = viewChild<ElementRef<HTMLInputElement>>('fromNameInput');
+  private readonly fromAddressInput = viewChild<ElementRef<HTMLSelectElement>>('fromAddressInput');
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
+  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
+  protected readonly currentStep = signal<StepIndex>(1);
+  protected readonly excludeListIds = computed(() => this.regularPayload().excludeLists);
+  protected readonly excludeTagsList = computed(() => this.regularPayload().excludeTags);
+  protected readonly includeListIds = computed(() => this.regularPayload().includeLists);
+  protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
+  protected readonly loadingLists = signal<boolean>(false);
+  protected readonly loadingTags = signal<boolean>(false);
+  protected readonly mode = signal<CreationMode>('options');
+  protected readonly saving = signal(false);
+  protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
+  protected readonly showDatePicker = signal(false);
+  /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
+  protected readonly dirty = signal(false);
+  /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
+  protected readonly showFieldErrors = signal(false);
+
+  protected readonly steps = STEP_LABELS;
+  protected readonly templateOptions = TEMPLATE_OPTIONS;
+  protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
+  protected readonly subjectCoach = SUBJECT_COACH;
+  protected readonly fromNameCoach = FROM_NAME_COACH;
+  protected readonly fromAddressCoach = FROM_ADDRESS_COACH;
+  protected readonly scheduleCoach = SCHEDULE_COACH;
+  protected readonly commsSettingsLink = COMMS_SETTINGS_LINK;
+  protected readonly verifySenderLink = VERIFY_SENDER_LINK;
+  /** Rendered literally in the content-step helper; kept as a constant so Angular doesn't parse the braces. */
+  protected readonly mergeFieldExample = '{{first_name}}';
+
+  // --- Verified senders / workspace prefill ---------------------------------
+
+  protected readonly verifiedSenders = signal<string[]>([]);
+  protected readonly commsDefaultsApplied = signal(false);
+
+  // --- Audience math (every line is real; the total is the single source) ---
+
+  protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
+  protected readonly excludedListsTotal = computed(() => this.sumListSizes(this.excludeListIds()));
+  protected readonly includedTagsTotal = computed(() => this.sumTagUsage(this.includeTagsList()));
+  protected readonly excludedTagsTotal = computed(() => this.sumTagUsage(this.excludeTagsList()));
+  protected readonly estimatedAudienceCount = computed(() => {
+    const estimate =
+      this.includedListsTotal() + this.includedTagsTotal() - this.excludedListsTotal() - this.excludedTagsTotal();
+    return estimate > 0 ? Math.round(estimate) : 0;
+  });
+  protected readonly hasAudienceSelection = computed(
+    () =>
+      this.includeListIds().length > 0 ||
+      this.includeTagsList().length > 0 ||
+      this.excludeListIds().length > 0 ||
+      this.excludeTagsList().length > 0,
+  );
+  /** Reads the live workspace setting; ON by default (skip previously bounced addresses). */
+  protected readonly skipBounced = computed(() =>
+    this.settingsSvc.getValue<boolean>('communications.skip_bounced', true),
+  );
+
+  // --- Suggestion chips (a list/tag already used in one bucket isn't offered in it) ---
+
+  protected readonly includeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.includeListIds().includes(l.id)),
+  );
+  protected readonly excludeListSuggestions = computed(() =>
+    this.availableLists().filter((l) => !this.excludeListIds().includes(l.id)),
+  );
+  protected readonly includeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.includeTagsList().includes(t.name)),
+  );
+  protected readonly excludeTagSuggestions = computed(() =>
+    this.availableTags().filter((t) => !this.excludeTagsList().includes(t.name)),
+  );
+
+  public ngOnInit(): void {
+    void this.loadLists();
+    void this.loadTags();
+    void this.loadCommsDefaults();
+  }
+
+  /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
+  public canDeactivate(): Promise<boolean> {
+    if (!this.dirty()) return Promise.resolve(true);
+    return this.confirmDlg.confirm({
+      title: 'Leave without saving?',
+      message:
+        'Your changes to your draft newsletter (template, audience and copy) will be lost. Save it as a draft to keep working on it later.',
+      variant: 'warning',
+      confirmText: 'Discard draft',
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+  }
+
+  // --- Step navigation ------------------------------------------------------
+
+  protected canReachStep(step: number): boolean {
+    return step <= this.currentStep();
+  }
+
+  protected goToStep(targetStep: number): void {
+    // Completed or current steps are clickable; future steps stay locked (they narrate why via tooltip).
+    if (this.canReachStep(targetStep)) {
+      this.currentStep.set(targetStep as StepIndex);
+    }
+  }
+
+  protected handleBack(): void {
+    const step = this.currentStep();
+    if (step === 1) {
+      this.switchToOptions();
+    } else {
+      this.currentStep.set((step - 1) as StepIndex);
+    }
+  }
+
+  protected handleNext(): void {
+    const step = this.currentStep();
+
+    if (step === 3 && !this.validateDetails()) return;
+
+    if (step >= STEP_LABELS.length) return;
+    this.showFieldErrors.set(false);
+    this.currentStep.set((step + 1) as StepIndex);
+  }
+
+  // --- Mode / template ------------------------------------------------------
+
+  protected close(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected selectAutomated(): void {
+    this.mode.set('automated');
+  }
+
+  protected selectRegular(): void {
+    this.mode.set('regular');
+    this.currentStep.set(1);
+    this.applyTemplate('welcome');
+    // Auto-selecting the default template is not a user edit.
+    this.dirty.set(false);
+  }
+
+  protected switchToOptions(): void {
+    this.mode.set('options');
+    this.currentStep.set(1);
+  }
+
+  protected selectTemplate(preset: TemplatePreset): void {
+    this.applyTemplate(preset);
+    this.markDirty();
+  }
+
+  protected selectedTemplateName(): string {
+    return TEMPLATE_OPTIONS.find((t) => t.id === this.selectedTemplate())?.name ?? 'Template';
+  }
+
+  // --- Audience: add / remove -----------------------------------------------
+
+  protected addIncludeList(listId: string): void {
+    if (this.includeListIds().includes(listId)) return;
+    // A list can't be both included and excluded.
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+    this.setIncludeLists([...this.includeListIds(), listId]);
+  }
+
+  protected removeIncludeList(listId: string): void {
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+  }
+
+  protected addExcludeList(listId: string): void {
+    if (this.excludeListIds().includes(listId)) return;
+    this.setIncludeLists(this.includeListIds().filter((id) => id !== listId));
+    this.setExcludeLists([...this.excludeListIds(), listId]);
+  }
+
+  protected removeExcludeList(listId: string): void {
+    this.setExcludeLists(this.excludeListIds().filter((id) => id !== listId));
+  }
+
+  protected addIncludeTag(name: string): void {
+    if (this.includeTagsList().includes(name)) return;
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+    this.setIncludeTags([...this.includeTagsList(), name]);
+  }
+
+  protected removeIncludeTag(name: string): void {
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+  }
+
+  protected addExcludeTag(name: string): void {
+    if (this.excludeTagsList().includes(name)) return;
+    this.setIncludeTags(this.includeTagsList().filter((t) => t !== name));
+    this.setExcludeTags([...this.excludeTagsList(), name]);
+  }
+
+  protected removeExcludeTag(name: string): void {
+    this.setExcludeTags(this.excludeTagsList().filter((t) => t !== name));
+  }
+
+  protected listName(id: string): string {
+    return this.availableLists().find((list) => list.id === id)?.name ?? 'List';
+  }
+
+  protected listSize(id: string): number {
+    return this.availableLists().find((list) => list.id === id)?.size ?? 0;
+  }
+
+  protected tagUsage(name: string): number {
+    return this.availableTags().find((tag) => tag.name === name)?.usage ?? 0;
+  }
+
+  protected formatCount(value: number): string {
+    return this.numberFormatter.format(value);
+  }
+
+  /** "1 person" / "1,312 people" — honest scale for buttons and copy. */
+  protected peopleLabel(value: number): string {
+    return `${this.formatCount(value)} ${value === 1 ? 'person' : 'people'}`;
+  }
+
+  // --- Schedule -------------------------------------------------------------
+
+  protected isInvalid(field: 'subject' | 'fromName' | 'fromAddress'): boolean {
+    const state = this.regularForm[field]();
+    return state.invalid() && (state.dirty() || state.touched() || this.showFieldErrors());
+  }
+
+  protected onScheduledDateChange(event: unknown): void {
+    const value = this.normalizeCalendarValue(event) ?? '';
+    const state = this.regularForm.scheduledDate();
+    state.value.set(value);
+    state.markAsDirty();
+    state.markAsTouched();
+    this.markDirty();
+    this.showDatePicker.set(false);
+  }
+
+  protected scheduledDateDisplay(): string {
+    const value = this.scheduledDateValue();
+    if (!value) return 'Select a date';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
+  }
+
+  protected scheduledDateValue(): string {
+    return this.regularPayload().scheduledDate;
+  }
+
+  protected timingNeedsDate(): boolean {
+    return this.requiresScheduleDate();
+  }
+
+  protected toggleDatePicker(): void {
+    this.showDatePicker.update((open) => !open);
+  }
+
+  protected onFieldInput(): void {
+    this.markDirty();
+  }
+
+  protected setTimingMode(mode: TimingMode): void {
+    this.regularForm.timingMode().value.set(mode);
+    this.markDirty();
+  }
+
+  protected onTimingChange(): void {
+    this.markDirty();
+  }
+
+  protected onEditorHtmlChange(html: string): void {
+    this.regularForm.htmlContent().value.set(html);
+    this.markDirty();
+  }
+
+  protected onEditorTextChange(text: string): void {
+    this.regularForm.plainTextContent().value.set(text);
+  }
+
+  protected goToVerifySender(): void {
+    void this.router.navigateByUrl(this.verifySenderLink);
+  }
+
+  // --- Deliverability preflight --------------------------------------------
+
+  /** Full server check (lint + SpamAssassin + AI review) and the content key it was run for. */
+  private readonly serverPreflight = signal<{ key: string; result: PreflightResult } | null>(null);
+  protected readonly preflightRunning = signal(false);
+
+  /** Canonical key of the current content — a stored server result is stale once this changes. */
+  private readonly preflightContentKey = computed(() => {
+    const raw = this.regularPayload();
+    return preflightHashInput(raw.subject, raw.htmlContent, raw.plainTextContent);
+  });
+
+  /** Instant local lint of the current content — shown until a full server check runs. */
+  private readonly quickPreflight = computed<PreflightView>(() => {
+    const raw = this.regularPayload();
+    const findings = lintNewsletterContent({
+      subject: raw.subject,
+      html: raw.htmlContent,
+      plainText: raw.plainTextContent || undefined,
+    });
+    const score = computeScore(findings);
+    return { score, band: preflightBand(score), findings, kind: 'quick', aiStatus: 'not_required' };
+  });
+
+  /** What the Review card and the confirm dialog show: the full check while it still matches the
+   * content, otherwise the live quick check. */
+  protected readonly preflightView = computed<PreflightView>(() => {
+    const server = this.serverPreflight();
+    if (server && server.key === this.preflightContentKey()) {
+      const r = server.result;
+      return { score: r.score, band: r.band, findings: r.findings, kind: 'full', aiStatus: r.aiStatus };
+    }
+    return this.quickPreflight();
+  });
+
+  protected async runFullPreflight(): Promise<void> {
+    if (this.preflightRunning()) return;
+    const raw = this.regularPayload();
+    const key = this.preflightContentKey();
+    this.preflightRunning.set(true);
+    try {
+      const result = await this.newslettersSvc.runPreflight({
+        subject: raw.subject,
+        html: raw.htmlContent,
+        plainText: raw.plainTextContent || undefined,
+      });
+      this.serverPreflight.set({ key, result });
+      if (this.currentStep() !== 4) {
+        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the Review & send step.`);
+      }
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
+    } finally {
+      this.preflightRunning.set(false);
+    }
+  }
+
+  protected preflightBandCopy(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'Looking good — ready to send';
+      case 'fix':
+        return 'Fix these before sending';
+      default:
+        return 'Sending is disabled until you fix the items below';
+    }
+  }
+
+  protected preflightGaugeClass(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'text-success';
+      case 'fix':
+        return 'text-warning';
+      default:
+        return 'text-error';
+    }
+  }
+
+  protected preflightSeverityIcon(severity: PreflightSeverity): PcIconNameType {
+    switch (severity) {
+      case 'block':
+        return 'x-circle';
+      case 'warn':
+        return 'exclamation-triangle';
+      default:
+        return 'information-circle';
+    }
+  }
+
+  protected preflightSeverityClass(severity: PreflightSeverity): string {
+    switch (severity) {
+      case 'block':
+        return 'text-error';
+      case 'warn':
+        return 'text-warning';
+      default:
+        return 'text-info';
+    }
+  }
+
+  // --- Test send ------------------------------------------------------------
+
+  protected async sendTestEmail(): Promise<void> {
+    const raw = this.regularPayload();
+    const to = this.authSvc.getUser()?.email;
+    if (!to) {
+      this.alertSvc.showError('We could not find your email address for the test send.');
+      return;
+    }
+    const subject = raw.subject || 'Your newsletter';
+    try {
+      await this.newslettersSvc.sendTest({
+        subject,
+        html: raw.htmlContent,
+        text: raw.plainTextContent,
+        to,
+        fromName: raw.fromName,
+        fromEmail: raw.fromAddress,
+      });
+      this.alertSvc.showSuccess(`Sent a test of "${subject}" to ${to}`);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send the test email. Try again.'));
+    }
+  }
+
+  // --- Save draft -----------------------------------------------------------
+
+  protected async saveDraft(): Promise<void> {
+    if (this.saving()) return;
+    const raw = this.regularPayload();
+    const subject = raw.subject || 'Untitled draft';
+    this.saving.set(true);
+    try {
+      await this.newslettersSvc.add(this.buildPayload('draft'));
+      this.dirty.set(false);
+      this.alertSvc.showSuccess(`Saved draft "${subject}". Find it in Newsletters`);
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not save your draft. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Send / schedule (with preflight) -------------------------------------
+
+  protected async sendRegular(): Promise<void> {
+    if (this.saving()) return;
+    if (!this.validateDetails()) {
+      this.currentStep.set(3);
+      return;
+    }
+    if (this.requiresScheduleDate()) {
+      this.regularForm.scheduledDate().markAsTouched();
+      this.regularForm.scheduledTime().markAsTouched();
+      this.showFieldErrors.set(true);
+      this.alertSvc.showError(this.scheduleCoach);
+      return;
+    }
+
+    // The server enforces this again at send time; catching it here routes the user to the
+    // findings instead of a failed request.
+    const check = this.preflightView();
+    if (check.band === 'blocked') {
+      this.currentStep.set(4);
+      this.alertSvc.showError(
+        `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
+      );
+      return;
+    }
+
+    const raw = this.regularPayload();
+    const scheduled = raw.timingMode === 'schedule';
+    const count = this.estimatedAudienceCount();
+    const subject = raw.subject || 'Untitled newsletter';
+    const whenLabel = scheduled ? this.scheduleWhenLabel() : 'now';
+
+    const confirmed = await this.confirmDlg.confirm({
+      title: scheduled ? `Schedule "${subject}" for ${whenLabel}?` : `Send "${subject}" now?`,
+      message: this.preflightMessage(count),
+      variant: 'info',
+      icon: 'paper-airplane',
+      confirmText: scheduled ? `Schedule for ${this.peopleLabel(count)}` : `Send to ${this.peopleLabel(count)}`,
+      cancelText: 'Keep editing',
+      emphasizeCancel: true,
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      const created = await this.newslettersSvc.add(this.buildPayload(scheduled ? 'scheduled' : 'draft'));
+      const createdId = this.extractId(created);
+      if (!scheduled && createdId) {
+        await this.newslettersSvc.send(createdId);
+      }
+      this.dirty.set(false);
+      this.alertSvc.showSuccess(
+        scheduled
+          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
+          : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
+      );
+      this.close();
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not send this newsletter. Try again.'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  // --- Internals ------------------------------------------------------------
+
+  private applyTemplate(preset: TemplatePreset): void {
+    this.selectedTemplate.set(preset);
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: compileTemplateHtml(preset),
+      plainTextContent: compileTemplatePlainText(preset),
+    }));
+  }
+
+  private validateDetails(): boolean {
+    this.markDetailsTouched();
+    this.showFieldErrors.set(true);
+    const invalidField = this.firstInvalidDetail();
+    if (invalidField) {
+      this.focusAndCoach(invalidField);
+      return false;
+    }
+    return true;
+  }
+
+  private firstInvalidDetail(): 'subject' | 'fromName' | 'fromAddress' | null {
+    if (this.regularForm.subject().invalid()) return 'subject';
+    if (this.regularForm.fromName().invalid()) return 'fromName';
+    if (this.regularForm.fromAddress().invalid()) return 'fromAddress';
+    return null;
+  }
+
+  private focusAndCoach(field: 'subject' | 'fromName' | 'fromAddress'): void {
+    const map = {
+      subject: { ref: this.subjectInput(), coach: this.subjectCoach },
+      fromName: { ref: this.fromNameInput(), coach: this.fromNameCoach },
+      fromAddress: { ref: this.fromAddressInput(), coach: this.fromAddressCoach },
+    } as const;
+    const target = map[field];
+    target.ref?.nativeElement.focus();
+    this.alertSvc.showError(target.coach);
+  }
+
+  private preflightMessage(count: number): string {
+    const check = this.preflightView();
+    const flagged = check.findings.length;
+    const scoreLine =
+      check.band === 'good'
+        ? `Deliverability score ${check.score} — looking good.`
+        : `Deliverability score ${check.score} — ${flagged} item${flagged === 1 ? '' : 's'} worth fixing first (see the Review & send step).`;
+    const base = `It will go to ${this.peopleLabel(count)}.`;
+    if (this.skipBounced()) {
+      return `${scoreLine} ${base} Previously bounced addresses are skipped automatically.`;
+    }
+    return `${scoreLine} ${base} Bounced addresses are NOT being skipped (Workspace setting).`;
+  }
+
+  private scheduleWhenLabel(): string {
+    const date = this.scheduledDateValue();
+    const time = this.regularPayload().scheduledTime;
+    if (!date) return 'the scheduled time';
+    const parsed = new Date(`${date}T${time || '00:00'}`);
+    if (Number.isNaN(parsed.getTime())) return `${date} ${time}`.trim();
+    return time
+      ? `${this.dateFormatter.format(parsed)} at ${this.timeFormatter.format(parsed)}`
+      : this.dateFormatter.format(parsed);
+  }
+
+  private buildPayload(status: 'draft' | 'scheduled'): Parameters<NewslettersService['add']>[0] {
+    const raw = this.regularPayload();
+    const scheduledAt =
+      status === 'scheduled' && raw.scheduledDate && raw.scheduledTime
+        ? new Date(`${raw.scheduledDate}T${raw.scheduledTime}`)
+        : null;
+
+    return {
+      name: raw.subject || 'Unnamed Newsletter',
+      status,
+      subject: raw.subject,
+      preview_text: raw.previewText,
+      audience_description: this.buildAudienceDescription(),
+      target_lists: JSON.stringify({ include: raw.includeLists, exclude: raw.excludeLists }),
+      segments: JSON.stringify({ include: raw.includeTags, exclude: raw.excludeTags }),
+      html_content: raw.htmlContent,
+      plain_text_content: raw.plainTextContent,
+      send_date: scheduledAt,
+      total_recipients: this.estimatedAudienceCount(),
+    };
+  }
+
+  private buildAudienceDescription(): string {
+    const includeLists = this.includeListIds().map((id) => this.listName(id));
+    const includeTags = this.includeTagsList();
+    const excludeLists = this.excludeListIds().map((id) => this.listName(id));
+    const excludeTags = this.excludeTagsList();
+
+    const parts: string[] = [];
+    if (includeLists.length || includeTags.length) {
+      parts.push(
+        `Targeting lists: [${includeLists.join(', ') || 'None'}], tags: [${includeTags.join(', ') || 'None'}]`,
+      );
+    }
+    if (excludeLists.length || excludeTags.length) {
+      parts.push(
+        `Excluding lists: [${excludeLists.join(', ') || 'None'}], tags: [${excludeTags.join(', ') || 'None'}]`,
+      );
+    }
+    return parts.length ? parts.join(' ') : 'No target audience configured.';
+  }
+
+  private markDetailsTouched(): void {
+    this.regularForm.subject().markAsTouched();
+    this.regularForm.fromName().markAsTouched();
+    this.regularForm.fromAddress().markAsTouched();
+  }
+
+  private markDirty(): void {
+    if (!this.dirty()) this.dirty.set(true);
+  }
+
+  private setIncludeLists(next: string[]): void {
+    this.writeAudience('includeLists', next);
+  }
+
+  private setExcludeLists(next: string[]): void {
+    this.writeAudience('excludeLists', next);
+  }
+
+  private setIncludeTags(next: string[]): void {
+    this.writeAudience('includeTags', next);
+  }
+
+  private setExcludeTags(next: string[]): void {
+    this.writeAudience('excludeTags', next);
+  }
+
+  private writeAudience(key: 'includeLists' | 'excludeLists' | 'includeTags' | 'excludeTags', next: string[]): void {
+    this.regularPayload.update((p) => ({ ...p, [key]: next }));
+    this.markDirty();
+  }
+
+  private sumListSizes(ids: string[]): number {
+    const sizeById = new Map(this.availableLists().map((l) => [l.id, Number(l.size) || 0]));
+    return ids.reduce((sum, id) => sum + (sizeById.get(id) ?? 0), 0);
+  }
+
+  private sumTagUsage(names: string[]): number {
+    const usageByName = new Map(this.availableTags().map((t) => [t.name, Number(t.usage) || 0]));
+    return names.reduce((sum, name) => sum + (usageByName.get(name) ?? 0), 0);
+  }
+
+  private async loadLists(): Promise<void> {
+    this.loadingLists.set(true);
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows
+          .filter((row: { id?: unknown; name?: unknown }) => row?.id && row?.name)
+          .map((row: Record<string, unknown>) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            size:
+              Number(row['list_size'] ?? row['people_count'] ?? row['household_count'] ?? row['member_count'] ?? 0) ||
+              0,
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load lists. Try again later.'));
+    } finally {
+      this.loadingLists.set(false);
+    }
+  }
+
+  private async loadTags(): Promise<void> {
+    this.loadingTags.set(true);
+    try {
+      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray((result as { rows?: unknown })?.rows) ? (result as { rows: unknown[] }).rows : [];
+      this.availableTags.set(
+        rows
+          .filter(
+            (row): row is Record<string, unknown> => !!row && typeof row === 'object' && 'id' in row && 'name' in row,
+          )
+          .filter((row) => row['id'] && row['name'])
+          .map((row) => ({
+            id: String(row['id']),
+            name: String(row['name']),
+            usage: Number(row['use_count_people'] ?? 0) + Number(row['use_count_households'] ?? 0),
+          })),
+      );
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not load tags. Try again later.'));
+    } finally {
+      this.loadingTags.set(false);
+    }
+  }
+
+  private async loadCommsDefaults(): Promise<void> {
+    try {
+      await this.settingsSvc.load();
+    } catch {
+      // Non-fatal: the sender fields simply won't prefill.
+      return;
+    }
+    this.verifiedSenders.set(this.settingsSvc.getValue<string[]>('communications.verified_emails', []) ?? []);
+
+    const defaultName = this.settingsSvc.getValue<string>('communications.default_from_name', '');
+    const defaultEmail = this.settingsSvc.getValue<string>('communications.default_from_email', '');
+    let applied = false;
+    if (defaultName && !this.regularPayload().fromName) {
+      this.regularForm.fromName().value.set(defaultName);
+      applied = true;
+    }
+    if (defaultEmail && this.verifiedSenders().includes(defaultEmail) && !this.regularPayload().fromAddress) {
+      this.regularForm.fromAddress().value.set(defaultEmail);
+      applied = true;
+    }
+    this.commsDefaultsApplied.set(applied);
+  }
+
+  private normalizeCalendarValue(event: unknown): string | null {
+    const raw = this.readCalendarRaw(event);
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  }
+
+  private readCalendarRaw(event: unknown): string | null {
+    if (typeof event === 'string') return event;
+    if (!event || typeof event !== 'object') return null;
+    const e = event as Record<string, unknown>;
+    const detail = e['detail'];
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object' && typeof (detail as Record<string, unknown>)['value'] === 'string') {
+      return (detail as Record<string, unknown>)['value'] as string;
+    }
+    const target = e['target'];
+    if (target && typeof target === 'object' && typeof (target as Record<string, unknown>)['value'] === 'string') {
+      return (target as Record<string, unknown>)['value'] as string;
+    }
+    if (typeof e['value'] === 'string') return e['value'] as string;
+    return null;
+  }
+
+  private extractId(created: unknown): string | null {
+    if (created && typeof created === 'object' && 'id' in created) {
+      const id = (created as Record<string, unknown>)['id'];
+      return id != null ? String(id) : null;
+    }
+    return null;
+  }
+
+  private errorMessage(err: unknown, fallback: string): string {
+    return err instanceof Error && err.message ? err.message : fallback;
+  }
+}
+
+type CreationMode = 'options' | 'regular' | 'automated';
+
+/** Deliverability-check view model: a full server run, or the instant local quick check. */
+interface PreflightView {
+  score: number;
+  band: PreflightBand;
+  findings: PreflightFinding[];
+  kind: 'full' | 'quick';
+  aiStatus: AiReviewStatus;
+}
+
+type StepIndex = 1 | 2 | 3 | 4;
+
+type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
+
+type TimingMode = 'now' | 'schedule';
+
+interface RegularNewsletterPayload {
+  subject: string;
+  previewText: string;
+  fromName: string;
+  fromAddress: string;
+  htmlContent: string;
+  plainTextContent: string;
+  includeLists: string[];
+  includeTags: string[];
+  excludeLists: string[];
+  excludeTags: string[];
+  timingMode: TimingMode;
+  scheduledDate: string;
+  scheduledTime: string;
+}
+`````
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.html
+`````html
+<pc-card>
+  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
+
+  @if (activeCampaign(); as campaign) {
+  <p class="mb-3 text-[11px] text-base-content/50">
+    <ng-container i18n>In</ng-container>
+    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
+    @if (readonlyContext()) {
+    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
+    }
+  </p>
+
+  <div class="grid gap-3 sm:grid-cols-2">
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="activeFact()?.support_level ?? ''"
+        [disabled]="saving() || readonlyContext()"
+        (change)="onSupportChange($event)"
+      >
+        <option value="" i18n>Unknown (never asked)</option>
+        @for (level of supportLevels; track level) {
+        <option [value]="level">{{ supportLabels[level] }}</option>
+        }
+      </select>
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
+      <select
+        class="select select-bordered select-sm w-full"
+        [value]="activeFact()?.voting_status ?? ''"
+        [disabled]="saving() || readonlyContext()"
+        (change)="onVotingChange($event)"
+      >
+        <option value="" i18n>Unknown</option>
+        @for (status of votingStatuses; track status) {
+        <option [value]="status">{{ votingLabels[status] }}</option>
+        }
+      </select>
+    </label>
+
+    <!-- Yard sign is household-level truth (one lawn, one sign) surfaced as personal standing. -->
+    <pc-yard-sign-standing [householdId]="householdId()" [personId]="personId()"></pc-yard-sign-standing>
+  </div>
+  }
+
+  <!-- History across other campaigns -->
+  @if (otherFacts().length) {
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n> Other campaigns </span>
+    <ul class="flex flex-col gap-1.5">
+      @for (fact of otherFacts(); track fact.campaign_id) {
+      <li class="flex items-center justify-between gap-2 text-xs">
+        <span class="min-w-0 truncate text-base-content/70">
+          {{ fact.campaign_name }} @if (fact.campaign_status === 'archived') {
+          <span class="text-base-content/40" i18n>(archived)</span>
+          }
+        </span>
+        <span class="flex shrink-0 items-center gap-1">
+          <span class="badge badge-xs" [class]="supportBadgeClass(fact.support_level)">
+            {{ supportLabel(fact.support_level) }}
+          </span>
+          @if (fact.voting_status) {
+          <span class="badge badge-ghost badge-xs">{{ votingLabel(fact.voting_status) }}</span>
+          }
+        </span>
+      </li>
+      }
+    </ul>
+  </div>
+  }
+
+  <!-- Email consent for the active context (§15): one derived, honest state -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n> Email consent </span>
+    <div class="flex items-center justify-between gap-2">
+      <span
+        class="badge badge-sm"
+        [class.badge-success]="sendState().tone === 'ok'"
+        [class.badge-warning]="sendState().tone === 'warn'"
+        [class.badge-ghost]="sendState().tone === 'muted'"
+      >
+        {{ sendState().label }}
+      </span>
+      @if (hasEmail() && !readonlyContext()) { @if (activeSubscription()?.status === 'subscribed') {
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        [disabled]="saving()"
+        (click)="setSubscription('unsubscribed')"
+        i18n
+      >
+        Unsubscribe
+      </button>
+      } @else if (activeSubscription()?.status !== 'pending') {
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs"
+        [disabled]="saving()"
+        (click)="setSubscription('subscribed')"
+        i18n
+      >
+        Subscribe
+      </button>
+      } }
+    </div>
+    @if (activeSubscription(); as sub) {
+    <p class="mt-1 text-[10px] text-base-content/40">
+      <ng-container i18n>Consent via</ng-container> {{ sub.consent_source }}@if (sub.consent_at) {<ng-container i18n>
+        · </ng-container
+      >{{ sub.consent_at | date: 'MMM d, y' }}}
+    </p>
+    }
+  </div>
+
+  <!-- Global volunteer & staff standing (§15) — first-class person status, not a tag. -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    <span class="mb-2 block pc-eyebrow" i18n>Volunteer &amp; staff</span>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Volunteer status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="volunteerSel()"
+          [disabled]="saving()"
+          (change)="onVolunteerStatusChange($event)"
+        >
+          <option value="" i18n>Not a volunteer</option>
+          @for (status of volunteerStatuses; track status) {
+          <option [value]="status">{{ volunteerLabels[status] }}</option>
+          }
+        </select>
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/60" i18n>Staff status</span>
+        <select
+          class="select select-bordered select-sm w-full"
+          [value]="staffSel()"
+          [disabled]="saving()"
+          (change)="onStaffStatusChange($event)"
+        >
+          <option value="" i18n>Not staff</option>
+          @for (status of staffStatuses; track status) {
+          <option [value]="status">{{ staffLabels[status] }}</option>
+          }
+        </select>
+      </label>
     </div>
   </div>
-  } }
-</pc-detail-layout>
+
+  <!-- Global do-not-contact override -->
+  <div class="mt-4 border-t border-base-200 pt-3">
+    @if (doNotContact()) {
+    <div class="flex items-start gap-2 rounded-lg border border-error/30 bg-error/10 px-3 py-2">
+      <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-error"></pc-icon>
+      <div class="min-w-0 flex-1 space-y-0.5">
+        <p class="text-xs font-semibold text-error" i18n>Do not contact</p>
+        <p class="text-[11px] leading-snug text-base-content/70" i18n>
+          All outreach is suppressed. Every channel, every campaign.
+        </p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-xs shrink-0" [disabled]="saving()" (click)="toggleDnc()" i18n>
+        Undo
+      </button>
+    </div>
+    } @else {
+    <button
+      type="button"
+      class="text-left text-[11px] text-base-content/45 hover:text-error hover:underline"
+      [disabled]="saving()"
+      (click)="toggleDnc()"
+      i18n
+    >
+      Asked us to stop contacting them? Mark as do-not-contact
+    </button>
+    }
+  </div>
+</pc-card>
+`````
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
+`````typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import {
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
+import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
+
+import { CampaignContextService } from '../../../services/campaign-context.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
+import {
+  CampaignsService,
+  PersonCampaignFact,
+  PersonSubscriptionsPayload,
+} from '../../campaigns/services/campaigns-service';
+import { PersonsService } from '../services/persons-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/**
+ * Campaign standing card (Campaigns §15): this person's support level and voting
+ * status in the ACTIVE context, their history across every campaign, and the
+ * global do-not-contact override. Unknown = no stored value, on purpose.
+ */
+@Component({
+  selector: 'pc-person-campaign-facts',
+  imports: [DatePipe, Icon, PcCard, YardSignStanding],
+  templateUrl: './person-campaign-facts.html',
+})
+export class PersonCampaignFacts {
+  readonly personId = input.required<string>();
+  readonly dncFlag = input<boolean>(false);
+  /** Seed values for the global volunteer/staff status selects (§15). */
+  readonly volunteerStatus = input<string | null>(null);
+  readonly staffStatus = input<string | null>(null);
+  /** The person's household (null = no address) — drives the yard-sign standing control. */
+  readonly householdId = input<string | null>(null);
+
+  protected readonly context = inject(CampaignContextService);
+  private readonly campaignsSvc = inject(CampaignsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly supportLevels = SUPPORT_LEVELS;
+  protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
+  protected readonly votingStatuses = VOTING_STATUSES;
+  protected readonly votingLabels = VOTING_STATUS_LABELS;
+  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
+  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
+  protected readonly staffStatuses = STAFF_STATUSES;
+  protected readonly staffLabels = STAFF_STATUS_LABELS;
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly facts = signal<PersonCampaignFact[]>([]);
+  protected readonly doNotContact = signal(false);
+  /** Global volunteer/staff standing ('' = not one). Seeded from the person row. */
+  protected readonly volunteerSel = signal<string>('');
+  protected readonly staffSel = signal<string>('');
+  protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
+
+  protected readonly activeCampaign = this.context.activeCampaign;
+  protected readonly readonlyContext = this.context.isArchivedContext;
+
+  /** The fact row for the active context (undefined = everything Unknown). */
+  protected readonly activeFact = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.facts().find((f) => String(f.campaign_id) === id) : undefined;
+  });
+
+  /** History rows for campaigns other than the active one. */
+  protected readonly otherFacts = computed(() => {
+    const id = this.context.activeCampaignId();
+    return this.facts().filter((f) => String(f.campaign_id) !== id);
+  });
+
+  /** Subscription row for the active context (undefined = never asked). */
+  protected readonly activeSubscription = computed(() => {
+    const id = this.context.activeCampaignId();
+    return id ? this.consent()?.subscriptions.find((s) => String(s.campaign_id) === id) : undefined;
+  });
+
+  protected readonly hasEmail = computed(() => !!this.consent()?.email);
+  protected readonly suppressed = computed(() => (this.consent()?.suppressions.length ?? 0) > 0);
+
+  /**
+   * One honest, derived sendability state for the active context (§15):
+   * subscribed in this campaign ∧ address healthy ∧ not DNC(email).
+   */
+  protected readonly sendState = computed<{ label: string; tone: 'ok' | 'warn' | 'muted' }>(() => {
+    if (!this.hasEmail()) return { label: 'No email address', tone: 'muted' };
+    if (this.doNotContact()) return { label: 'Do not contact', tone: 'warn' };
+    const sub = this.activeSubscription();
+    if (!sub) return { label: 'Never asked', tone: 'muted' };
+    if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
+    if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
+    if (this.suppressed()) return { label: 'Subscribed, address bouncing', tone: 'warn' };
+    return { label: 'Subscribed', tone: 'ok' };
+  });
+
+  constructor() {
+    effect(() => {
+      const personId = this.personId();
+      void untracked(() => this.load(personId));
+    });
+    effect(() => {
+      this.doNotContact.set(this.dncFlag());
+    });
+    effect(() => {
+      this.volunteerSel.set(this.volunteerStatus() ?? '');
+    });
+    effect(() => {
+      this.staffSel.set(this.staffStatus() ?? '');
+    });
+  }
+
+  protected supportBadgeClass(level: string | null): string {
+    switch (level) {
+      case 'strong':
+        return 'badge-success';
+      case 'leaning':
+        return 'badge-info';
+      case 'leaning_against':
+        return 'badge-warning';
+      case 'against':
+        return 'badge-error';
+      case 'neutral':
+      case 'undecided':
+        return 'badge-neutral';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected supportLabel(level: string | null): string {
+    return level ? (this.supportLabels[level as SupportLevel] ?? level) : 'Unknown';
+  }
+
+  protected votingLabel(status: string | null): string {
+    return status ? (this.votingLabels[status as VotingStatus] ?? status) : 'Unknown';
+  }
+
+  protected async onSupportChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ support_level: value === '' ? null : (value as SupportLevel) });
+  }
+
+  protected async onVotingChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    await this.saveFact({ voting_status: value === '' ? null : (value as VotingStatus) });
+  }
+
+  protected async setSubscription(status: 'subscribed' | 'unsubscribed'): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.setSubscription({ campaign_id: campaignId, person_id: this.personId(), status });
+      await this.load(this.personId());
+      this.alerts.showSuccess(status === 'subscribed' ? 'Subscribed' : 'Unsubscribed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the subscription'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async toggleDnc(): Promise<void> {
+    const next = !this.doNotContact();
+    if (next) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Mark as do-not-contact',
+        message:
+          'This stops all outreach to this person (email, calls, and door knocks) in the office and every campaign. It is a global override, not a per-campaign preference.',
+        variant: 'danger',
+        confirmText: 'Stop all contact',
+      });
+      if (!confirmed) return;
+    }
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), { do_not_contact: next });
+      this.doNotContact.set(next);
+      this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async onVolunteerStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as VolunteerStatus);
+    await this.saveGlobalStatus({ volunteer_status: next }, this.volunteerSel, value, 'volunteer status');
+  }
+
+  protected async onStaffStatusChange(event: Event): Promise<void> {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === '' ? null : (value as StaffStatus);
+    await this.saveGlobalStatus({ staff_status: next }, this.staffSel, value, 'staff status');
+  }
+
+  /**
+   * Persist a global person status (volunteer/staff, §15). Optimistically stores
+   * the new value on success; reverts on error by re-reading nothing (the select
+   * is re-bound to the signal, so we just leave the prior value on failure).
+   */
+  private async saveGlobalStatus(
+    change: { volunteer_status?: VolunteerStatus | null; staff_status?: StaffStatus | null },
+    target: { set(v: string): void },
+    value: string,
+    label: string,
+  ): Promise<void> {
+    this.saving.set(true);
+    try {
+      await this.personsSvc.update(this.personId(), change);
+      target.set(value);
+      this.alerts.showSuccess('Saved');
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, `Could not update ${label}`));
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async saveFact(change: {
+    support_level?: SupportLevel | null;
+    voting_status?: VotingStatus | null;
+  }): Promise<void> {
+    const campaignId = this.context.activeCampaignId();
+    if (!campaignId) return;
+    this.saving.set(true);
+    try {
+      await this.campaignsSvc.upsertPersonFact({
+        campaign_id: campaignId,
+        person_id: this.personId(),
+        ...change,
+      });
+      await this.load(this.personId());
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not save. Please try again.'));
+      await this.load(this.personId());
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async load(personId: string): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [facts, consent] = await Promise.all([
+        this.campaignsSvc.getPersonFacts(personId),
+        this.campaignsSvc.getPersonSubscriptions(personId),
+        this.context.ensureLoaded(),
+      ]);
+      this.facts.set(facts);
+      this.consent.set(consent);
+      this.doNotContact.set(!!consent.do_not_contact);
+    } catch {
+      // The card degrades to "Unknown" rather than blocking the person page.
+    } finally {
+      end();
+    }
+  }
+}
 `````
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
@@ -80928,6 +81395,549 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     </div>
   </div>
 </pc-card>
+`````
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
+`````html
+<pc-detail-layout
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [avatarText]="initials()"
+  [statusChip]="statusChip()"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  <li pc-overflow-extra>
+    <button type="button" (click)="mergeIntoAnother()">
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Merge this person into another@@person.overflow.merge"
+        >Merge into another person…</ng-container
+      >
+    </button>
+  </li>
+
+  <li pc-overflow-extra>
+    <button type="button" (click)="exportVCard()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
+    </button>
+  </li>
+
+  @if (person()) {
+  <pc-log-interaction
+    pc-actions-prefix
+    [entity]="'persons'"
+    [entityId]="id()"
+    (logged)="onInteractionLogged()"
+  ></pc-log-interaction>
+  } @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact rail -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Contact card -->
+      <pc-card>
+        <h3 class="mb-3 block pc-eyebrow">Contact</h3>
+
+        <div class="flex w-full flex-col text-xs">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          @if (person().email2) {
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          }
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          @if (person().home_phone) {
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          }
+          <pc-detail-item
+            label="Address"
+            [value]="addressDisplay()"
+            icon="map-pin"
+            [link]="!!householdId() && !isPlaceholderHousehold()"
+            (linkClicked)="navigateToHousehold()"
+          ></pc-detail-item>
+          @if (preferredContactLabel()) {
+          <pc-detail-item
+            label="Preferred Contact"
+            [value]="preferredContactLabel()"
+            icon="chat-bubble-bottom-center-text"
+          ></pc-detail-item>
+          }
+        </div>
+
+        <!-- Tags & Issues of Interest -->
+        <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
+          <div>
+            <span class="mb-1.5 block pc-eyebrow">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40">No tags assigned</span>
+            }
+          </div>
+          <div>
+            <span class="mb-1.5 block pc-eyebrow">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <button
+              type="button"
+              class="text-left text-xs text-primary hover:underline"
+              (click)="editPerson()"
+              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
+            >
+              No issues yet. Add what they care about
+            </button>
+            }
+          </div>
+        </div>
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-card>
+
+      <!-- Campaign standing: support level + voting status + yard sign per context, DNC override (§15) -->
+      <pc-person-campaign-facts
+        [personId]="id()"
+        [dncFlag]="!!person().do_not_contact"
+        [volunteerStatus]="person().volunteer_status ?? null"
+        [staffStatus]="person().staff_status ?? null"
+        [householdId]="isPlaceholderHousehold() ? null : householdId()"
+      ></pc-person-campaign-facts>
+
+      <!-- Internal Notes (own card) -->
+      @if (person().notes) {
+      <pc-card>
+        <h3 class="mb-2 block pc-eyebrow">Internal notes</h3>
+        <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+
+            <!-- Newsletter engagement (folded into Emails) -->
+            @if (activityData().newsletters.length > 0) {
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
+              <span class="pc-eyebrow">Newsletter activity</span>
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event name</th>
+                    <th>Date & time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
+            >
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
+              >
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
+              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto pc-panel">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Method</th>
+                    <th class="font-bold text-base-content/70">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of visibleDonations(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75 tabular-nums">
+                      {{ donation.created_at | date:'mediumDate' }}
+                    </td>
+                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
+                    <td>
+                      <pc-status-badge [type]="donationReceipt(donation).type">
+                        {{ donationReceipt(donation).label }}
+                      </pc-status-badge>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
+            <div class="text-xs text-base-content/60 px-1">
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }}.
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
+                Show all {{ donationHistory().length }}
+              </button>
+              } @else { Showing all {{ donationHistory().length }}.
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
+                Show fewer
+              </button>
+              }
+            </div>
+            } }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40">No event registrations found for this person.</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table pc-table w-full">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <!-- Household members -->
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="flex flex-col items-center gap-3 py-10 text-center">
+              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+              <div class="flex flex-col gap-1">
+                <span
+                  class="font-medium text-base-content"
+                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                  >Not part of a household yet</span
+                >
+                <span
+                  class="max-w-sm text-sm text-base-content/50"
+                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                  >Households group people who share an address, so everyone at the same address stays in sync.</span
+                >
+              </div>
+              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                <pc-icon name="home" [size]="4"></pc-icon>
+                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                  >Assign household</ng-container
+                >
+              </button>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <pc-modal-shell
+    [open]="true"
+    (closed)="closeDonationModal()"
+    title="Collect donation"
+    icon="currency-dollar"
+    [boxClass]="'max-w-md'"
+  >
+    <div class="space-y-4">
+      <p class="text-xs text-base-content/60">
+        Enter the donation amount in dollars. Residency validation and limit verification will be performed
+        automatically before redirecting to the payment gateway.
+      </p>
+
+      <!-- Donor Residency Profile -->
+      <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+        <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+          >Donor Residency Profile</span
+        >
+        <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+          <pc-icon name="map-pin" [size]="4"></pc-icon>
+          {{ addressString() }}
+        </div>
+      </div>
+
+      <!-- Donation Amount input -->
+      <div class="flex flex-col gap-1.5">
+        <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+        <div class="relative">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+          <input
+            id="donation_input"
+            type="number"
+            min="1"
+            placeholder="250"
+            class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+            [value]="donationAmount() ?? ''"
+            (input)="onDonationAmountInput($event)"
+          />
+        </div>
+      </div>
+
+      <!-- Error alert -->
+      @if (eligibilityError()) {
+      <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+        <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+        <span>{{ eligibilityError() }}</span>
+      </div>
+      }
+    </div>
+
+    <div pc-modal-footer class="flex gap-3">
+      <button
+        type="button"
+        class="btn btn-outline btn-accent"
+        (click)="closeDonationModal()"
+        [disabled]="isCheckingEligibility()"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[140px] text-sm font-semibold"
+        (click)="submitDonation()"
+        [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+      >
+        @if (isCheckingEligibility()) {
+        <span class="loading loading-spinner loading-xs mr-1.5"></span>
+        Verifying... } @else { Verify & Proceed }
+      </button>
+    </div>
+  </pc-modal-shell>
+  }
+</pc-detail-layout>
 `````
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
@@ -82800,669 +83810,6 @@ export class DocsArticle {
 }
 `````
 
-## File: apps/website/src/app/legal/eula-content.ts
-`````typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The end user license agreement (the terms of service for the platform).
- * Operational specifics (plan caps, sending guards, deletion windows, the 1%
- * donation platform fee) mirror the product; if the product changes, change
- * this document in the same commit.
- */
-export const EULA_DOC: LegalDoc = {
-  eyebrow: 'Legal',
-  title: 'End user license agreement',
-  intro:
-    'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 17, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'agreement',
-      text: '1. The agreement',
-    },
-    {
-      kind: 'p',
-      text: 'These terms are a contract between pplCRM (“we”, “us”) and the organization or person creating an account (“you”). They cover the pplCRM application, the volunteer companion apps, the public pages you publish through us, and the marketing site. By creating an account, or by clicking agree at signup, you accept them. If you are accepting on behalf of an organization, you confirm you have authority to bind it, and “you” means that organization.',
-    },
-    {
-      kind: 'p',
-      text: 'You must be the age of majority in your jurisdiction to create an account. The [privacy policy](/privacy) explains how personal information is handled and is part of this agreement.',
-    },
-    {
-      kind: 'h2',
-      id: 'accounts',
-      text: '2. Accounts and workspaces',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Each organization gets its own workspace, isolated from every other organization on the platform.',
-        'You are responsible for the accuracy of your account information, for keeping credentials confidential, and for what happens under your seats. Tell us at hello@pplcrm.com immediately if you suspect unauthorized access.',
-        'Workspace admins control who has access, including requiring two-factor authentication for the whole workspace, approving field volunteers, and deactivating people who leave.',
-        'Signup requires a working email address; accounts with unverified email cannot sign in.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'plans-billing',
-      text: '3. Plans, billing and taxes',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
-        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins and the new bracket price applies from your next billing cycle. If your count shrinks, the price drops at the next cycle automatically.',
-        'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
-        'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
-        'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'cancellation',
-      text: '4. Cancellation and refunds',
-    },
-    {
-      kind: 'p',
-      text: 'You can cancel your subscription at any time. Cancellation stops future renewals; your paid features run until the end of the period you have paid for. Except where the law requires otherwise, fees already paid are not refunded, and partial periods are not prorated. If you believe we have billed you in error, write to hello@pplcrm.com and we will fix genuine mistakes without ceremony.',
-    },
-    {
-      kind: 'h2',
-      id: 'your-data',
-      text: '5. Your data stays yours',
-    },
-    {
-      kind: 'list',
-      items: [
-        'You own the data in your workspace. We claim no rights to it beyond the narrow license needed to run the service for you: storing it, displaying it to your team, sending what you tell us to send, and backing it up.',
-        'We never sell, share, rent or mine workspace data, use it for advertising, or use it to train machine-learning models. These commitments are stated in full in the [privacy policy](/privacy) and on the [data ownership page](/data-ownership).',
-        'You can export everything to CSV at any time, on every plan.',
-        'Workspace deletion is real: after a 30-day grace window it permanently and irreversibly deletes every record in the workspace. Export first; we cannot recover data you asked us to destroy.',
-        'If your organization needs a signed data processing agreement, write to hello@pplcrm.com.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'responsibilities',
-      text: '6. Your responsibilities for the people in your list',
-    },
-    {
-      kind: 'p',
-      text: 'You are the steward of the people in your workspace, and the law sees it the same way: for workspace data you are the controller and we are your service provider. That means you are responsible for:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Having consent or another lawful basis for the personal information you store and the messages you send, under the laws that apply to you (for example PIPEDA and CASL in Canada, CAN-SPAM in the US, GDPR and PECR in Europe and the UK).',
-        'Complying with the election, campaign finance and donor disclosure laws of your jurisdiction, including any rules about who may donate and what records you must keep.',
-        'Answering access, correction and deletion requests from the people in your list. The product gives you the tools; the obligation is yours.',
-        'What your team and volunteers do with the access you give them.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'acceptable-use',
-      text: '7. Acceptable use',
-    },
-    {
-      kind: 'p',
-      text: 'We built pplCRM for legitimate community, political and non-profit work. You agree not to use it to:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Send spam. Purchased, scraped or borrowed lists are prohibited; you may only email people who gave you their address with a reasonable expectation of hearing from you.',
-        'Break the law, including privacy, election, anti-harassment and anti-discrimination law.',
-        'Harass, threaten, defame or deceive people, or impersonate another person or organization.',
-        'Probe, disrupt or overload the service, resell access to it, or attempt to access another organization’s workspace.',
-        'Store data you have no right to hold, including data obtained by breach or deception.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'We may suspend or terminate accounts that break these rules. Where the situation allows it, we warn first and suspend second; where people are being harmed, we act first.',
-    },
-    {
-      kind: 'h2',
-      id: 'email-rules',
-      text: '8. Email sending rules',
-    },
-    {
-      kind: 'p',
-      text: 'Deliverability is a shared resource, so the platform enforces guardrails and you agree to them:',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
-        'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
-        'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
-        'Every newsletter passes a deliverability check before it sends. Content that scores in the blocked band — phishing-shaped links, scam patterns, or commercial marketing unrelated to your organization’s cause — will not send until fixed. Fundraising, auctions and event promotion are normal newsletter content and are not affected.',
-        'Sending pauses automatically if your hard-bounce rate exceeds 5%, and is suspended if your spam-complaint rate exceeds 1%. We do this to protect both your sending reputation and everyone else’s; write to us to review and resume.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'donations',
-      text: '9. Donations',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Donation payments are processed by Stripe. We are not a payment processor, and card details never touch our servers.',
-        'Card donations processed through Stripe carry a 1% platform fee in addition to Stripe’s own processing fees, as shown in the product.',
-        'You are responsible for your eligibility to accept donations, for issuing any receipts the law requires, and for compliance with contribution limits and disclosure rules.',
-        'Refunds and chargebacks are handled through the payment processor; the product reflects them against the donation record automatically.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'volunteers',
-      text: '10. Volunteer companion access',
-    },
-    {
-      kind: 'p',
-      text: 'Companion links give volunteers access to exactly the turf or route you assign, without an account. Volunteers verify with a one-time code and each must be approved once by an admin. You are responsible for who you approve, and you can revoke a volunteer or regenerate a link at any time. Companion sessions and links expire automatically unless you configure otherwise.',
-    },
-    {
-      kind: 'h2',
-      id: 'ip',
-      text: '11. Intellectual property',
-    },
-    {
-      kind: 'p',
-      text: 'We own the pplCRM software, design and brand. We grant you a non-exclusive, non-transferable right to use the service while this agreement is in effect. You may not copy, modify, reverse engineer or create derivative works of the service except where the law grants that right regardless of contract. If you send us feedback or feature ideas, we may use them without obligation; that license covers the idea, never your data.',
-    },
-    {
-      kind: 'h2',
-      id: 'availability',
-      text: '12. Availability and support',
-    },
-    {
-      kind: 'p',
-      text: 'We work to keep the service fast and available, and we maintain automated backups, but we do not promise uninterrupted service and self-serve plans carry no formal SLA. We may change the service as we improve it; if we materially remove functionality your plan depends on, we will give you notice and time to export. Support is by email at hello@pplcrm.com, and a human replies.',
-    },
-    {
-      kind: 'h2',
-      id: 'suspension-termination',
-      text: '13. Suspension and termination',
-    },
-    {
-      kind: 'list',
-      items: [
-        'You may stop using the service and delete your workspace at any time; section 5 describes how deletion works.',
-        'We may suspend or terminate for breach of these terms, non-payment, legal requirement, or genuine risk to the platform or other customers. Except in urgent cases, we give notice and a chance to fix the problem first.',
-        'On termination we will not withhold your data: export remains available for a reasonable wind-down period before deletion, except where the law forbids it.',
-        'Sections that by their nature should survive (data commitments, disclaimers, liability limits, governing law) survive termination.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'disclaimers',
-      text: '14. Disclaimers',
-    },
-    {
-      kind: 'p',
-      text: 'The service is provided “as is” and “as available”. To the maximum extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. pplCRM is a tool: we do not provide legal advice, and using features like consent tracking, suppression lists or receipts does not by itself make you compliant with the laws that apply to you.',
-    },
-    {
-      kind: 'h2',
-      id: 'liability',
-      text: '15. Limitation of liability',
-    },
-    {
-      kind: 'p',
-      text: 'To the maximum extent the law allows: neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenues or data; and our total liability under this agreement is capped at the amounts you paid us in the 12 months before the event giving rise to the claim (or 100 US dollars if you are on the free plan). Nothing in this section limits liability that cannot lawfully be limited, and nothing in it weakens our data commitments in section 5.',
-    },
-    {
-      kind: 'h2',
-      id: 'indemnity',
-      text: '16. Indemnity',
-    },
-    {
-      kind: 'p',
-      text: 'You will defend and indemnify us against third-party claims arising from your data, your messages, or your breach of sections 6 through 9, provided we tell you promptly about the claim and let you control the defense.',
-    },
-    {
-      kind: 'h2',
-      id: 'law',
-      text: '17. Governing law',
-    },
-    {
-      kind: 'p',
-      text: 'This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada applicable in it, and the courts of Ontario have exclusive jurisdiction, except that either party may seek injunctive relief for misuse of data or intellectual property in any competent court. If you are a consumer somewhere whose law gives you mandatory protections, those protections are unaffected.',
-    },
-    {
-      kind: 'h2',
-      id: 'changes',
-      text: '18. Changes to these terms',
-    },
-    {
-      kind: 'p',
-      text: 'When these terms change materially, we will email workspace admins at least 30 days before the change takes effect, and update the date at the top. If you keep using the service after that date, the new terms apply; if you do not agree, cancel and export before it, and we will help.',
-    },
-    {
-      kind: 'h2',
-      id: 'contact',
-      text: '19. Contact',
-    },
-    {
-      kind: 'p',
-      text: 'Questions about these terms go to hello@pplcrm.com. If anything here seems to conflict with the plain-language promises on the [data ownership page](/data-ownership), tell us; the stricter protection for you is the one we intend.',
-    },
-  ],
-};
-`````
-
-## File: apps/website/src/app/legal/privacy-content.ts
-`````typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The privacy policy. Every operational claim in here (retention windows,
- * cookie names, subprocessors, deletion behavior) mirrors what the product
- * actually does; if the product changes, change this document in the same
- * commit. Plain language on purpose: the policy is part of the pitch.
- */
-export const PRIVACY_DOC: LegalDoc = {
-  eyebrow: 'Legal',
-  title: 'Privacy policy',
-  intro:
-    'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 17, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'overview',
-      text: 'Who we are and what this covers',
-    },
-    {
-      kind: 'p',
-      text: 'pplCRM (“we”, “us”) is a relationship platform for constituency offices, campaigns and non-profits, operated from Canada. This policy covers the marketing site (pplcrm.com), the application (app.pplcrm.com and api.pplcrm.com), the volunteer companion apps (go.pplcrm.com), and the public pages organizations publish through us (their pages on pplforms.com). You can reach us about anything in this policy at hello@pplcrm.com.',
-    },
-    {
-      kind: 'p',
-      text: 'The short version: we collect what we need to run the service and nothing else. We never sell, share, rent or mine the people in your workspace. We run no advertising trackers and no third-party analytics anywhere. Delete means deleted.',
-    },
-    {
-      kind: 'h2',
-      id: 'roles',
-      text: 'Two kinds of data: yours and your organization’s',
-    },
-    {
-      kind: 'p',
-      text: 'It helps to separate two roles, because your rights differ between them.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Data we control.** Your account details, billing information, support conversations and website interactions. For this data, we decide how it is handled, and this policy is the full story.',
-        '**Data your organization controls.** Everything inside a workspace: the constituents, voters, donors and volunteers your organization stores, plus notes, donations, form submissions and synced email. Here the organization is the data controller and we are its service provider; we process this data only on the organization’s instructions and never for our own purposes.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'If you are in an organization’s list rather than a pplCRM account holder, the section “If you are in one of our customers’ lists” below is written for you.',
-    },
-    {
-      kind: 'h2',
-      id: 'account-data',
-      text: 'What we collect about account holders',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Identity and sign-in.** Your name, email address and password. Passwords are stored only as an argon2id hash; nobody at pplCRM can see them. If you enable passkeys or two-factor codes, we store the public credential or a hashed one-time code, never a usable secret.',
-        '**Session security data.** The IP address and browser signature of your active sessions. We keep these so we can show you where you are signed in and challenge sign-ins from a new device or location.',
-        '**Billing.** Paid plans are billed through Stripe. Stripe collects your card details and billing address directly; card numbers never touch our servers. We keep your plan, invoices and billing contact.',
-        '**Phone number.** Only if you provide one, for example to verify sending on the free plan. Verification codes are sent by SMS and stored hashed.',
-        '**Support.** Emails you send to hello@pplcrm.com, so we can answer them and improve the product.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'workspace-data',
-      text: 'Data your organization stores in its workspace',
-    },
-    {
-      kind: 'p',
-      text: 'A workspace can hold contact details for people, households and companies, notes and tags, casework, donation history, event RSVPs, volunteer availability, and campaign facts such as support level and voting status. Some of this is politically sensitive personal information; we treat the entire workspace with the same care regardless of category.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
-        '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
-        '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
-        '**Uploaded files.** Imports and attachments are stored in the workspace’s region.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'public-pages',
-      text: 'Public forms, donations, events and volunteer links',
-    },
-    {
-      kind: 'p',
-      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
-    },
-    {
-      kind: 'h2',
-      id: 'how-we-use',
-      text: 'How we use personal information',
-    },
-    {
-      kind: 'list',
-      items: [
-        'To run the service: signing you in, storing and displaying your workspace, sending the emails and SMS messages you ask it to send.',
-        'To bill you and send you invoices, receipts and important account notices.',
-        'To keep the platform safe: rate limiting, new-device challenges, and the sending guards that pause senders whose mail bounces or draws complaints.',
-        'To answer support requests, using the minimum data needed to help.',
-        'To comply with the law when we genuinely must, and we will tell you when the law allows it.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'what-we-never-do',
-      text: 'What we never do',
-    },
-    {
-      kind: 'list',
-      items: [
-        'We never sell, share, rent or trade personal information, yours or your organization’s. To anyone.',
-        'We never use workspace data for advertising, profiling, or building products for other customers, and we do not use it to train machine-learning models.',
-        'We run no third-party analytics, advertising pixels or fingerprinting scripts on the website or in the product.',
-        'We never read workspace content out of curiosity. Access by our team is limited to what a specific support request or safety issue requires.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'subprocessors',
-      text: 'Service providers we rely on',
-    },
-    {
-      kind: 'p',
-      text: 'We use a small set of infrastructure providers, each for one job. They receive only what that job requires and may not use it for anything else.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Microsoft Azure.** Hosts the application, database and file storage in your workspace’s region (Canada by default).',
-        '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
-        '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
-        '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
-        '**SendGrid.** Delivers newsletters from your organization’s own verified domain and reports delivery and engagement events.',
-        '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
-        '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
-        '**Google Maps.** Geocodes household addresses and renders maps.',
-        '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
-        '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'residency',
-      text: 'Where your data lives',
-    },
-    {
-      kind: 'p',
-      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Three narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
-    },
-    {
-      kind: 'h2',
-      id: 'retention',
-      text: 'Retention and deletion',
-    },
-    {
-      kind: 'p',
-      text: 'We keep personal information only while it does its job, and the product enforces its own deadlines.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Records you delete** are removed from the live database immediately. Automated backups expire within 7 days, at which point deleted data is gone from those too.',
-        '**Workspace deletion** can be scheduled by an organization admin. After a 30-day grace window (cancelable at any time), every record in the workspace is permanently deleted, and we confirm by email when it is done.',
-        '**Activity logs** are kept for 90 days, then pruned automatically.',
-        '**Export files** are downloadable for 30 days, then removed. **Import source files** are kept for 90 days so you can audit an import, then removed.',
-        '**Sessions** expire after 24 hours, or 30 days if you chose “remember me”. Volunteer device sessions expire after 30 days.',
-        '**Suppression records** (unsubscribes, bounces, complaints) are kept while a workspace is active, because keeping them is what honors the opt-out.',
-        '**Billing records** are kept as long as tax and accounting law requires.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'security',
-      text: 'How we protect it',
-    },
-    {
-      kind: 'p',
-      text: 'Encryption in transit everywhere, encrypted OAuth secrets at rest, hashed tokens, workspace isolation enforced by automated checks on every build, signature-verified webhooks, and least-privilege access for field volunteers. The full, honest detail (including what we do not claim) is on the [security page](/security).',
-    },
-    {
-      kind: 'h2',
-      id: 'cookies',
-      text: 'Cookies',
-    },
-    {
-      kind: 'p',
-      text: 'We use exactly two cookies, both ours, neither used for tracking.',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**pc_refresh.** Keeps you signed in to the app. HttpOnly and secure, so scripts cannot read it.',
-        '**pc_signed_in.** A yes/no flag that lets this website show “Dashboard” instead of “Log in” when you already have a session. It contains no personal data.',
-      ],
-    },
-    {
-      kind: 'p',
-      text: 'There are no advertising cookies, no analytics cookies, and no third-party cookies. That is the whole list.',
-    },
-    {
-      kind: 'h2',
-      id: 'rights',
-      text: 'Your rights',
-    },
-    {
-      kind: 'p',
-      text: 'Wherever you are, we extend the same rights: access the personal information we hold about you, correct it, receive a portable copy, and have it deleted. Account holders can exercise most of these directly in the product (export lives in settings; deletion is described above). For anything else, email hello@pplcrm.com and we will respond within 30 days. We comply with PIPEDA and applicable provincial privacy law in Canada, and with the GDPR and UK GDPR for workspaces and visitors in those regions. If you are unsatisfied with our answer, you can complain to your privacy regulator; in Canada that is the Office of the Privacy Commissioner.',
-    },
-    {
-      kind: 'h2',
-      id: 'in-someones-list',
-      text: 'If you are in one of our customers’ lists',
-    },
-    {
-      kind: 'p',
-      text: 'If a constituency office, campaign or non-profit that uses pplCRM holds your information, that organization decides why and how it is used, and your request is theirs to answer: contact them directly to access, correct or delete your record, or to opt out of contact. Every newsletter sent through pplCRM carries the sender’s name, postal address and a working unsubscribe link, and unsubscribes are honored automatically across all future sends. If you contact us instead, we will forward your request to the organization and help them fulfill it.',
-    },
-    {
-      kind: 'h2',
-      id: 'children',
-      text: 'Children',
-    },
-    {
-      kind: 'p',
-      text: 'pplCRM is a tool for organizations and is not directed at children. You must be the age of majority where you live to create an account. We do not knowingly collect personal information from children for our own purposes; organizations are responsible for the lawfulness of the records they store.',
-    },
-    {
-      kind: 'h2',
-      id: 'changes',
-      text: 'Changes to this policy',
-    },
-    {
-      kind: 'p',
-      text: 'When this policy changes materially, we will email workspace admins and update the date at the top before the change takes effect. We will never weaken the commitments in “What we never do” quietly; a change to those would be announced prominently and in advance.',
-    },
-    {
-      kind: 'h2',
-      id: 'contact',
-      text: 'Contact',
-    },
-    {
-      kind: 'p',
-      text: 'Privacy questions, requests and complaints all go to hello@pplcrm.com. A human reads every one.',
-    },
-  ],
-};
-`````
-
-## File: apps/website/src/app/legal/security-content.ts
-`````typescript
-import type { LegalDoc } from './legal-types';
-
-/**
- * The security page. Every mechanism named here (argon2id, hashed tokens,
- * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
- * checks, retention windows) exists in the codebase; if an implementation
- * changes, change this document in the same commit. The honesty section
- * (no certification claims) is deliberate; do not add badges we have not
- * earned.
- */
-export const SECURITY_DOC: LegalDoc = {
-  eyebrow: 'Trust',
-  title: 'Security',
-  intro:
-    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 17, 2026',
-  blocks: [
-    {
-      kind: 'h2',
-      id: 'approach',
-      text: 'Our approach',
-    },
-    {
-      kind: 'p',
-      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
-    },
-    {
-      kind: 'h2',
-      id: 'isolation',
-      text: 'Workspace isolation',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
-        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
-        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'accounts',
-      text: 'Account security',
-    },
-    {
-      kind: 'list',
-      items: [
-        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
-        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
-        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
-        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
-        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'encryption',
-      text: 'Encryption',
-    },
-    {
-      kind: 'list',
-      items: [
-        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
-        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
-        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
-        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'field-access',
-      text: 'Field and volunteer access',
-    },
-    {
-      kind: 'p',
-      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
-    },
-    {
-      kind: 'h2',
-      id: 'payments',
-      text: 'Payments',
-    },
-    {
-      kind: 'p',
-      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
-    },
-    {
-      kind: 'h2',
-      id: 'webhooks-integrations',
-      text: 'Integrations and webhooks',
-    },
-    {
-      kind: 'list',
-      items: [
-        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
-        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
-        'API keys for integrations are generated per workspace and revocable.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'sending',
-      text: 'Sending protections',
-    },
-    {
-      kind: 'p',
-      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
-    },
-    {
-      kind: 'h2',
-      id: 'infrastructure',
-      text: 'Infrastructure, residency and backups',
-    },
-    {
-      kind: 'list',
-      items: [
-        'The platform runs on Microsoft Azure, with workspaces hosted in Canada by default; Movement workspaces choose their region (Canada, US, EU or UK) at creation and stay there for processing and backups.',
-        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
-        'Databases are backed up automatically every day, with backups retained for 7 days in the workspace’s region. Deleted data therefore leaves backups within 7 days of leaving the live database.',
-      ],
-    },
-    {
-      kind: 'h2',
-      id: 'monitoring',
-      text: 'Audit trails',
-    },
-    {
-      kind: 'p',
-      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data.',
-    },
-    {
-      kind: 'h2',
-      id: 'honesty',
-      text: 'What we do not claim',
-    },
-    {
-      kind: 'p',
-      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
-    },
-    {
-      kind: 'h2',
-      id: 'disclosure',
-      text: 'Reporting a vulnerability',
-    },
-    {
-      kind: 'p',
-      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
-    },
-  ],
-};
-`````
-
 ## File: apps/website/src/app/ui/site-header.ts
 `````typescript
 import { Component, computed, inject, input, signal } from '@angular/core';
@@ -84704,473 +85051,6 @@ export class DeliveriesRoutes implements OnInit {
 </div>
 `````
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.html
-`````html
-<pc-card>
-  <h3 class="mb-1 block pc-eyebrow" i18n>Campaign standing</h3>
-
-  @if (activeCampaign(); as campaign) {
-  <p class="mb-3 text-[11px] text-base-content/50">
-    <ng-container i18n>In</ng-container>
-    <span class="font-medium text-base-content/70">{{ campaign.name }}</span>
-    @if (readonlyContext()) {
-    <span class="badge badge-ghost badge-xs ml-1 align-middle" i18n>Archived · read-only</span>
-    }
-  </p>
-
-  <div class="grid gap-3 sm:grid-cols-2">
-    <label class="flex flex-col gap-1">
-      <span class="text-[11px] font-medium text-base-content/60" i18n>Support level</span>
-      <select
-        class="select select-bordered select-sm w-full"
-        [value]="activeFact()?.support_level ?? ''"
-        [disabled]="saving() || readonlyContext()"
-        (change)="onSupportChange($event)"
-      >
-        <option value="" i18n>Unknown (never asked)</option>
-        @for (level of supportLevels; track level) {
-        <option [value]="level">{{ supportLabels[level] }}</option>
-        }
-      </select>
-    </label>
-
-    <label class="flex flex-col gap-1">
-      <span class="text-[11px] font-medium text-base-content/60" i18n>Voting status</span>
-      <select
-        class="select select-bordered select-sm w-full"
-        [value]="activeFact()?.voting_status ?? ''"
-        [disabled]="saving() || readonlyContext()"
-        (change)="onVotingChange($event)"
-      >
-        <option value="" i18n>Unknown</option>
-        @for (status of votingStatuses; track status) {
-        <option [value]="status">{{ votingLabels[status] }}</option>
-        }
-      </select>
-    </label>
-
-    <!-- Yard sign is household-level truth (one lawn, one sign) surfaced as personal standing. -->
-    <pc-yard-sign-standing [householdId]="householdId()" [personId]="personId()"></pc-yard-sign-standing>
-  </div>
-  }
-
-  <!-- History across other campaigns -->
-  @if (otherFacts().length) {
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block pc-eyebrow" i18n> Other campaigns </span>
-    <ul class="flex flex-col gap-1.5">
-      @for (fact of otherFacts(); track fact.campaign_id) {
-      <li class="flex items-center justify-between gap-2 text-xs">
-        <span class="min-w-0 truncate text-base-content/70">
-          {{ fact.campaign_name }} @if (fact.campaign_status === 'archived') {
-          <span class="text-base-content/40" i18n>(archived)</span>
-          }
-        </span>
-        <span class="flex shrink-0 items-center gap-1">
-          <span class="badge badge-xs" [class]="supportBadgeClass(fact.support_level)">
-            {{ supportLabel(fact.support_level) }}
-          </span>
-          @if (fact.voting_status) {
-          <span class="badge badge-ghost badge-xs">{{ votingLabel(fact.voting_status) }}</span>
-          }
-        </span>
-      </li>
-      }
-    </ul>
-  </div>
-  }
-
-  <!-- Email consent for the active context (§15): one derived, honest state -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block pc-eyebrow" i18n> Email consent </span>
-    <div class="flex items-center justify-between gap-2">
-      <span
-        class="badge badge-sm"
-        [class.badge-success]="sendState().tone === 'ok'"
-        [class.badge-warning]="sendState().tone === 'warn'"
-        [class.badge-ghost]="sendState().tone === 'muted'"
-      >
-        {{ sendState().label }}
-      </span>
-      @if (hasEmail() && !readonlyContext()) { @if (activeSubscription()?.status === 'subscribed') {
-      <button
-        type="button"
-        class="btn btn-ghost btn-xs"
-        [disabled]="saving()"
-        (click)="setSubscription('unsubscribed')"
-        i18n
-      >
-        Unsubscribe
-      </button>
-      } @else if (activeSubscription()?.status !== 'pending') {
-      <button
-        type="button"
-        class="btn btn-ghost btn-xs"
-        [disabled]="saving()"
-        (click)="setSubscription('subscribed')"
-        i18n
-      >
-        Subscribe
-      </button>
-      } }
-    </div>
-    @if (activeSubscription(); as sub) {
-    <p class="mt-1 text-[10px] text-base-content/40">
-      <ng-container i18n>Consent via</ng-container> {{ sub.consent_source }}@if (sub.consent_at) {<ng-container i18n>
-        · </ng-container
-      >{{ sub.consent_at | date: 'MMM d, y' }}}
-    </p>
-    }
-  </div>
-
-  <!-- Global volunteer & staff standing (§15) — first-class person status, not a tag. -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    <span class="mb-2 block pc-eyebrow" i18n>Volunteer &amp; staff</span>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-base-content/60" i18n>Volunteer status</span>
-        <select
-          class="select select-bordered select-sm w-full"
-          [value]="volunteerSel()"
-          [disabled]="saving()"
-          (change)="onVolunteerStatusChange($event)"
-        >
-          <option value="" i18n>Not a volunteer</option>
-          @for (status of volunteerStatuses; track status) {
-          <option [value]="status">{{ volunteerLabels[status] }}</option>
-          }
-        </select>
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-base-content/60" i18n>Staff status</span>
-        <select
-          class="select select-bordered select-sm w-full"
-          [value]="staffSel()"
-          [disabled]="saving()"
-          (change)="onStaffStatusChange($event)"
-        >
-          <option value="" i18n>Not staff</option>
-          @for (status of staffStatuses; track status) {
-          <option [value]="status">{{ staffLabels[status] }}</option>
-          }
-        </select>
-      </label>
-    </div>
-  </div>
-
-  <!-- Global do-not-contact override -->
-  <div class="mt-4 border-t border-base-200 pt-3">
-    @if (doNotContact()) {
-    <div class="flex items-start gap-2 rounded-lg border border-error/30 bg-error/10 px-3 py-2">
-      <pc-icon name="exclamation-triangle" [size]="4" class="mt-0.5 shrink-0 text-error"></pc-icon>
-      <div class="min-w-0 flex-1 space-y-0.5">
-        <p class="text-xs font-semibold text-error" i18n>Do not contact</p>
-        <p class="text-[11px] leading-snug text-base-content/70" i18n>
-          All outreach is suppressed. Every channel, every campaign.
-        </p>
-      </div>
-      <button type="button" class="btn btn-ghost btn-xs shrink-0" [disabled]="saving()" (click)="toggleDnc()" i18n>
-        Undo
-      </button>
-    </div>
-    } @else {
-    <button
-      type="button"
-      class="text-left text-[11px] text-base-content/45 hover:text-error hover:underline"
-      [disabled]="saving()"
-      (click)="toggleDnc()"
-      i18n
-    >
-      Asked us to stop contacting them? Mark as do-not-contact
-    </button>
-    }
-  </div>
-</pc-card>
-`````
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-campaign-facts.ts
-`````typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import {
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-} from '../../../../../../../libs/common/src';
-import type { SupportLevel, VotingStatus, VolunteerStatus, StaffStatus } from '../../../../../../../libs/common/src';
-
-import { CampaignContextService } from '../../../services/campaign-context.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { YardSignStanding } from '../../deliveries/ui/yard-sign-standing';
-import {
-  CampaignsService,
-  PersonCampaignFact,
-  PersonSubscriptionsPayload,
-} from '../../campaigns/services/campaigns-service';
-import { PersonsService } from '../services/persons-service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-/**
- * Campaign standing card (Campaigns §15): this person's support level and voting
- * status in the ACTIVE context, their history across every campaign, and the
- * global do-not-contact override. Unknown = no stored value, on purpose.
- */
-@Component({
-  selector: 'pc-person-campaign-facts',
-  imports: [DatePipe, Icon, PcCard, YardSignStanding],
-  templateUrl: './person-campaign-facts.html',
-})
-export class PersonCampaignFacts {
-  readonly personId = input.required<string>();
-  readonly dncFlag = input<boolean>(false);
-  /** Seed values for the global volunteer/staff status selects (§15). */
-  readonly volunteerStatus = input<string | null>(null);
-  readonly staffStatus = input<string | null>(null);
-  /** The person's household (null = no address) — drives the yard-sign standing control. */
-  readonly householdId = input<string | null>(null);
-
-  protected readonly context = inject(CampaignContextService);
-  private readonly campaignsSvc = inject(CampaignsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly supportLevels = SUPPORT_LEVELS;
-  protected readonly supportLabels = SUPPORT_LEVEL_LABELS;
-  protected readonly votingStatuses = VOTING_STATUSES;
-  protected readonly votingLabels = VOTING_STATUS_LABELS;
-  protected readonly volunteerStatuses = VOLUNTEER_STATUSES;
-  protected readonly volunteerLabels = VOLUNTEER_STATUS_LABELS;
-  protected readonly staffStatuses = STAFF_STATUSES;
-  protected readonly staffLabels = STAFF_STATUS_LABELS;
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly facts = signal<PersonCampaignFact[]>([]);
-  protected readonly doNotContact = signal(false);
-  /** Global volunteer/staff standing ('' = not one). Seeded from the person row. */
-  protected readonly volunteerSel = signal<string>('');
-  protected readonly staffSel = signal<string>('');
-  protected readonly consent = signal<PersonSubscriptionsPayload | null>(null);
-
-  protected readonly activeCampaign = this.context.activeCampaign;
-  protected readonly readonlyContext = this.context.isArchivedContext;
-
-  /** The fact row for the active context (undefined = everything Unknown). */
-  protected readonly activeFact = computed(() => {
-    const id = this.context.activeCampaignId();
-    return id ? this.facts().find((f) => String(f.campaign_id) === id) : undefined;
-  });
-
-  /** History rows for campaigns other than the active one. */
-  protected readonly otherFacts = computed(() => {
-    const id = this.context.activeCampaignId();
-    return this.facts().filter((f) => String(f.campaign_id) !== id);
-  });
-
-  /** Subscription row for the active context (undefined = never asked). */
-  protected readonly activeSubscription = computed(() => {
-    const id = this.context.activeCampaignId();
-    return id ? this.consent()?.subscriptions.find((s) => String(s.campaign_id) === id) : undefined;
-  });
-
-  protected readonly hasEmail = computed(() => !!this.consent()?.email);
-  protected readonly suppressed = computed(() => (this.consent()?.suppressions.length ?? 0) > 0);
-
-  /**
-   * One honest, derived sendability state for the active context (§15):
-   * subscribed in this campaign ∧ address healthy ∧ not DNC(email).
-   */
-  protected readonly sendState = computed<{ label: string; tone: 'ok' | 'warn' | 'muted' }>(() => {
-    if (!this.hasEmail()) return { label: 'No email address', tone: 'muted' };
-    if (this.doNotContact()) return { label: 'Do not contact', tone: 'warn' };
-    const sub = this.activeSubscription();
-    if (!sub) return { label: 'Never asked', tone: 'muted' };
-    if (sub.status === 'pending') return { label: 'Awaiting opt-in confirmation', tone: 'muted' };
-    if (sub.status === 'unsubscribed') return { label: 'Unsubscribed', tone: 'warn' };
-    if (this.suppressed()) return { label: 'Subscribed, address bouncing', tone: 'warn' };
-    return { label: 'Subscribed', tone: 'ok' };
-  });
-
-  constructor() {
-    effect(() => {
-      const personId = this.personId();
-      void untracked(() => this.load(personId));
-    });
-    effect(() => {
-      this.doNotContact.set(this.dncFlag());
-    });
-    effect(() => {
-      this.volunteerSel.set(this.volunteerStatus() ?? '');
-    });
-    effect(() => {
-      this.staffSel.set(this.staffStatus() ?? '');
-    });
-  }
-
-  protected supportBadgeClass(level: string | null): string {
-    switch (level) {
-      case 'strong':
-        return 'badge-success';
-      case 'leaning':
-        return 'badge-info';
-      case 'leaning_against':
-        return 'badge-warning';
-      case 'against':
-        return 'badge-error';
-      case 'neutral':
-      case 'undecided':
-        return 'badge-neutral';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected supportLabel(level: string | null): string {
-    return level ? (this.supportLabels[level as SupportLevel] ?? level) : 'Unknown';
-  }
-
-  protected votingLabel(status: string | null): string {
-    return status ? (this.votingLabels[status as VotingStatus] ?? status) : 'Unknown';
-  }
-
-  protected async onSupportChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    await this.saveFact({ support_level: value === '' ? null : (value as SupportLevel) });
-  }
-
-  protected async onVotingChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    await this.saveFact({ voting_status: value === '' ? null : (value as VotingStatus) });
-  }
-
-  protected async setSubscription(status: 'subscribed' | 'unsubscribed'): Promise<void> {
-    const campaignId = this.context.activeCampaignId();
-    if (!campaignId) return;
-    this.saving.set(true);
-    try {
-      await this.campaignsSvc.setSubscription({ campaign_id: campaignId, person_id: this.personId(), status });
-      await this.load(this.personId());
-      this.alerts.showSuccess(status === 'subscribed' ? 'Subscribed' : 'Unsubscribed');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update the subscription'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async toggleDnc(): Promise<void> {
-    const next = !this.doNotContact();
-    if (next) {
-      const confirmed = await this.dialogs.confirm({
-        title: 'Mark as do-not-contact',
-        message:
-          'This stops all outreach to this person (email, calls, and door knocks) in the office and every campaign. It is a global override, not a per-campaign preference.',
-        variant: 'danger',
-        confirmText: 'Stop all contact',
-      });
-      if (!confirmed) return;
-    }
-    this.saving.set(true);
-    try {
-      await this.personsSvc.update(this.personId(), { do_not_contact: next });
-      this.doNotContact.set(next);
-      this.alerts.showSuccess(next ? 'Marked as do-not-contact' : 'Do-not-contact removed');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not update do-not-contact'));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async onVolunteerStatusChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    const next = value === '' ? null : (value as VolunteerStatus);
-    await this.saveGlobalStatus({ volunteer_status: next }, this.volunteerSel, value, 'volunteer status');
-  }
-
-  protected async onStaffStatusChange(event: Event): Promise<void> {
-    const value = (event.target as HTMLSelectElement).value;
-    const next = value === '' ? null : (value as StaffStatus);
-    await this.saveGlobalStatus({ staff_status: next }, this.staffSel, value, 'staff status');
-  }
-
-  /**
-   * Persist a global person status (volunteer/staff, §15). Optimistically stores
-   * the new value on success; reverts on error by re-reading nothing (the select
-   * is re-bound to the signal, so we just leave the prior value on failure).
-   */
-  private async saveGlobalStatus(
-    change: { volunteer_status?: VolunteerStatus | null; staff_status?: StaffStatus | null },
-    target: { set(v: string): void },
-    value: string,
-    label: string,
-  ): Promise<void> {
-    this.saving.set(true);
-    try {
-      await this.personsSvc.update(this.personId(), change);
-      target.set(value);
-      this.alerts.showSuccess('Saved');
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, `Could not update ${label}`));
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async saveFact(change: {
-    support_level?: SupportLevel | null;
-    voting_status?: VotingStatus | null;
-  }): Promise<void> {
-    const campaignId = this.context.activeCampaignId();
-    if (!campaignId) return;
-    this.saving.set(true);
-    try {
-      await this.campaignsSvc.upsertPersonFact({
-        campaign_id: campaignId,
-        person_id: this.personId(),
-        ...change,
-      });
-      await this.load(this.personId());
-    } catch (err) {
-      this.alerts.showError(getUserErrorMessage(err, 'Could not save. Please try again.'));
-      await this.load(this.personId());
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load(personId: string): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const [facts, consent] = await Promise.all([
-        this.campaignsSvc.getPersonFacts(personId),
-        this.campaignsSvc.getPersonSubscriptions(personId),
-        this.context.ensureLoaded(),
-      ]);
-      this.facts.set(facts);
-      this.consent.set(consent);
-      this.doNotContact.set(!!consent.do_not_contact);
-    } catch {
-      // The card degrades to "Unknown" rather than blocking the person page.
-    } finally {
-      end();
-    }
-  }
-}
-`````
-
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
 `````html
 <!-- Template for person edit/add view -->
@@ -85492,549 +85372,6 @@ export class PersonCampaignFacts {
     </div>
   </pc-side-drawer>
 </div>
-`````
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-`````html
-<pc-detail-layout
-  [title]="fullName() || 'Person'"
-  [eyebrow]="'Person'"
-  [avatarText]="initials()"
-  [statusChip]="statusChip()"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete person'"
-  [btn1Text]="'Edit person'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  <li pc-overflow-extra>
-    <button type="button" (click)="mergeIntoAnother()">
-      <pc-icon name="merge" [size]="4"></pc-icon>
-      <ng-container i18n="PersonView|Merge this person into another@@person.overflow.merge"
-        >Merge into another person…</ng-container
-      >
-    </button>
-  </li>
-
-  <li pc-overflow-extra>
-    <button type="button" (click)="exportVCard()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
-    </button>
-  </li>
-
-  @if (person()) {
-  <pc-log-interaction
-    pc-actions-prefix
-    [entity]="'persons'"
-    [entityId]="id()"
-    (logged)="onInteractionLogged()"
-  ></pc-log-interaction>
-  } @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact rail -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Contact card -->
-      <pc-card>
-        <h3 class="mb-3 block pc-eyebrow">Contact</h3>
-
-        <div class="flex w-full flex-col text-xs">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          @if (person().email2) {
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          }
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          @if (person().home_phone) {
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          }
-          <pc-detail-item
-            label="Address"
-            [value]="addressDisplay()"
-            icon="map-pin"
-            [link]="!!householdId() && !isPlaceholderHousehold()"
-            (linkClicked)="navigateToHousehold()"
-          ></pc-detail-item>
-          @if (preferredContactLabel()) {
-          <pc-detail-item
-            label="Preferred Contact"
-            [value]="preferredContactLabel()"
-            icon="chat-bubble-bottom-center-text"
-          ></pc-detail-item>
-          }
-        </div>
-
-        <!-- Tags & Issues of Interest -->
-        <div class="mt-2 flex w-full flex-col gap-3 border-t border-base-200 pt-4">
-          <div>
-            <span class="mb-1.5 block pc-eyebrow">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40">No tags assigned</span>
-            }
-          </div>
-          <div>
-            <span class="mb-1.5 block pc-eyebrow">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <button
-              type="button"
-              class="text-left text-xs text-primary hover:underline"
-              (click)="editPerson()"
-              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
-            >
-              No issues yet. Add what they care about
-            </button>
-            }
-          </div>
-        </div>
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-card>
-
-      <!-- Campaign standing: support level + voting status + yard sign per context, DNC override (§15) -->
-      <pc-person-campaign-facts
-        [personId]="id()"
-        [dncFlag]="!!person().do_not_contact"
-        [volunteerStatus]="person().volunteer_status ?? null"
-        [staffStatus]="person().staff_status ?? null"
-        [householdId]="isPlaceholderHousehold() ? null : householdId()"
-      ></pc-person-campaign-facts>
-
-      <!-- Internal Notes (own card) -->
-      @if (person().notes) {
-      <pc-card>
-        <h3 class="mb-2 block pc-eyebrow">Internal notes</h3>
-        <p class="whitespace-pre-line text-xs leading-relaxed text-base-content/80">{{ person().notes }}</p>
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right Column: the standard pill tabs + content card (§1 "numbers before clicks") -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-
-            <!-- Newsletter engagement (folded into Emails) -->
-            @if (activityData().newsletters.length > 0) {
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
-              <span class="pc-eyebrow">Newsletter activity</span>
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event name</th>
-                    <th>Date & time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto pc-panel">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Method</th>
-                    <th class="font-bold text-base-content/70">Receipt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of visibleDonations(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75 tabular-nums">
-                      {{ donation.created_at | date:'mediumDate' }}
-                    </td>
-                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
-                    <td>
-                      <pc-status-badge [type]="donationReceipt(donation).type">
-                        {{ donationReceipt(donation).label }}
-                      </pc-status-badge>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
-            <div class="text-xs text-base-content/60 px-1">
-              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }}.
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
-                Show all {{ donationHistory().length }}
-              </button>
-              } @else { Showing all {{ donationHistory().length }}.
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
-                Show fewer
-              </button>
-              }
-            </div>
-            } }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40">No event registrations found for this person.</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table pc-table w-full">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <!-- Household members -->
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="flex flex-col items-center gap-3 py-10 text-center">
-              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-              <div class="flex flex-col gap-1">
-                <span
-                  class="font-medium text-base-content"
-                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                  >Not part of a household yet</span
-                >
-                <span
-                  class="max-w-sm text-sm text-base-content/50"
-                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                  >Households group people who share an address, so everyone at the same address stays in sync.</span
-                >
-              </div>
-              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                <pc-icon name="home" [size]="4"></pc-icon>
-                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                  >Assign household</ng-container
-                >
-              </button>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <pc-modal-shell
-    [open]="true"
-    (closed)="closeDonationModal()"
-    title="Collect donation"
-    icon="currency-dollar"
-    [boxClass]="'max-w-md'"
-  >
-    <div class="space-y-4">
-      <p class="text-xs text-base-content/60">
-        Enter the donation amount in dollars. Residency validation and limit verification will be performed
-        automatically before redirecting to the payment gateway.
-      </p>
-
-      <!-- Donor Residency Profile -->
-      <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-        <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-          >Donor Residency Profile</span
-        >
-        <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-          <pc-icon name="map-pin" [size]="4"></pc-icon>
-          {{ addressString() }}
-        </div>
-      </div>
-
-      <!-- Donation Amount input -->
-      <div class="flex flex-col gap-1.5">
-        <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-        <div class="relative">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-          <input
-            id="donation_input"
-            type="number"
-            min="1"
-            placeholder="250"
-            class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-            [value]="donationAmount() ?? ''"
-            (input)="onDonationAmountInput($event)"
-          />
-        </div>
-      </div>
-
-      <!-- Error alert -->
-      @if (eligibilityError()) {
-      <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-        <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-        <span>{{ eligibilityError() }}</span>
-      </div>
-      }
-    </div>
-
-    <div pc-modal-footer class="flex gap-3">
-      <button
-        type="button"
-        class="btn btn-outline btn-accent"
-        (click)="closeDonationModal()"
-        [disabled]="isCheckingEligibility()"
-      >
-        Cancel
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[140px] text-sm font-semibold"
-        (click)="submitDonation()"
-        [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-      >
-        @if (isCheckingEligibility()) {
-        <span class="loading loading-spinner loading-xs mr-1.5"></span>
-        Verifying... } @else { Verify & Proceed }
-      </button>
-    </div>
-  </pc-modal-shell>
-  }
-</pc-detail-layout>
 `````
 
 ## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.html
@@ -87708,6 +87045,515 @@ export function companionUrl(path: string): string {
 }
 `````
 
+## File: apps/website/src/app/legal/eula-content.ts
+`````typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The end user license agreement (the terms of service for the platform).
+ * Operational specifics (plan caps, sending guards, deletion windows, the 1%
+ * donation platform fee) mirror the product; if the product changes, change
+ * this document in the same commit.
+ */
+export const EULA_DOC: LegalDoc = {
+  eyebrow: 'Legal',
+  title: 'End user license agreement',
+  intro:
+    'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
+  updated: 'July 17, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'agreement',
+      text: '1. The agreement',
+    },
+    {
+      kind: 'p',
+      text: 'These terms are a contract between pplCRM (“we”, “us”) and the organization or person creating an account (“you”). They cover the pplCRM application, the volunteer companion apps, the public pages you publish through us, and the marketing site. By creating an account, or by clicking agree at signup, you accept them. If you are accepting on behalf of an organization, you confirm you have authority to bind it, and “you” means that organization.',
+    },
+    {
+      kind: 'p',
+      text: 'You must be the age of majority in your jurisdiction to create an account. The [privacy policy](/privacy) explains how personal information is handled and is part of this agreement.',
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: '2. Accounts and workspaces',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Each organization gets its own workspace, isolated from every other organization on the platform.',
+        'You are responsible for the accuracy of your account information, for keeping credentials confidential, and for what happens under your seats. Tell us at hello@pplcrm.com immediately if you suspect unauthorized access.',
+        'Workspace admins control who has access, including requiring two-factor authentication for the whole workspace, approving field volunteers, and deactivating people who leave.',
+        'Signup requires a working email address; accounts with unverified email cannot sign in.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'plans-billing',
+      text: '3. Plans, billing and taxes',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
+        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins and the new bracket price applies from your next billing cycle. If your count shrinks, the price drops at the next cycle automatically.',
+        'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
+        'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
+        'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'cancellation',
+      text: '4. Cancellation and refunds',
+    },
+    {
+      kind: 'p',
+      text: 'You can cancel your subscription at any time. Cancellation stops future renewals; your paid features run until the end of the period you have paid for. Except where the law requires otherwise, fees already paid are not refunded, and partial periods are not prorated. If you believe we have billed you in error, write to hello@pplcrm.com and we will fix genuine mistakes without ceremony.',
+    },
+    {
+      kind: 'h2',
+      id: 'your-data',
+      text: '5. Your data stays yours',
+    },
+    {
+      kind: 'list',
+      items: [
+        'You own the data in your workspace. We claim no rights to it beyond the narrow license needed to run the service for you: storing it, displaying it to your team, sending what you tell us to send, and backing it up.',
+        'We never sell, share, rent or mine workspace data, use it for advertising, or use it to train machine-learning models. These commitments are stated in full in the [privacy policy](/privacy) and on the [data ownership page](/data-ownership).',
+        'You can export everything to CSV at any time, on every plan.',
+        'Workspace deletion is real: after a 30-day grace window it permanently and irreversibly deletes every record in the workspace. Export first; we cannot recover data you asked us to destroy.',
+        'If your organization needs a signed data processing agreement, write to hello@pplcrm.com.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'responsibilities',
+      text: '6. Your responsibilities for the people in your list',
+    },
+    {
+      kind: 'p',
+      text: 'You are the steward of the people in your workspace, and the law sees it the same way: for workspace data you are the controller and we are your service provider. That means you are responsible for:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Having consent or another lawful basis for the personal information you store and the messages you send, under the laws that apply to you (for example PIPEDA and CASL in Canada, CAN-SPAM in the US, GDPR and PECR in Europe and the UK).',
+        'Complying with the election, campaign finance and donor disclosure laws of your jurisdiction, including any rules about who may donate and what records you must keep.',
+        'Answering access, correction and deletion requests from the people in your list. The product gives you the tools; the obligation is yours.',
+        'What your team and volunteers do with the access you give them.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'acceptable-use',
+      text: '7. Acceptable use',
+    },
+    {
+      kind: 'p',
+      text: 'We built pplCRM for legitimate community, political and non-profit work. You agree not to use it to:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Send spam. Purchased, scraped or borrowed lists are prohibited; you may only email people who gave you their address with a reasonable expectation of hearing from you.',
+        'Break the law, including privacy, election, anti-harassment and anti-discrimination law.',
+        'Harass, threaten, defame or deceive people, or impersonate another person or organization.',
+        'Probe, disrupt or overload the service, resell access to it, or attempt to access another organization’s workspace.',
+        'Store data you have no right to hold, including data obtained by breach or deception.',
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'We may suspend or terminate accounts that break these rules. Where the situation allows it, we warn first and suspend second; where people are being harmed, we act first.',
+    },
+    {
+      kind: 'h2',
+      id: 'email-rules',
+      text: '8. Email sending rules',
+    },
+    {
+      kind: 'p',
+      text: 'Deliverability is a shared resource, so the platform enforces guardrails and you agree to them:',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
+        'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
+        'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
+        'Every newsletter passes a deliverability check before it sends. Content that scores in the blocked band — phishing-shaped links, scam patterns, or commercial marketing unrelated to your organization’s cause — will not send until fixed. Fundraising, auctions and event promotion are normal newsletter content and are not affected.',
+        'Sending pauses automatically if your hard-bounce rate exceeds 5%, and is suspended if your spam-complaint rate exceeds 1%. We do this to protect both your sending reputation and everyone else’s; write to us to review and resume.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'donations',
+      text: '9. Donations',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Donation payments are processed by Stripe. We are not a payment processor, and card details never touch our servers.',
+        'Card donations processed through Stripe carry a 1% platform fee in addition to Stripe’s own processing fees, as shown in the product.',
+        'You are responsible for your eligibility to accept donations, for issuing any receipts the law requires, and for compliance with contribution limits and disclosure rules.',
+        'Refunds and chargebacks are handled through the payment processor; the product reflects them against the donation record automatically.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'volunteers',
+      text: '10. Volunteer companion access',
+    },
+    {
+      kind: 'p',
+      text: 'Companion links give volunteers access to exactly the turf or route you assign, without an account. Volunteers verify with a one-time code and each must be approved once by an admin. You are responsible for who you approve, and you can revoke a volunteer or regenerate a link at any time. Companion sessions and links expire automatically unless you configure otherwise.',
+    },
+    {
+      kind: 'h2',
+      id: 'ip',
+      text: '11. Intellectual property',
+    },
+    {
+      kind: 'p',
+      text: 'We own the pplCRM software, design and brand. We grant you a non-exclusive, non-transferable right to use the service while this agreement is in effect. You may not copy, modify, reverse engineer or create derivative works of the service except where the law grants that right regardless of contract. If you send us feedback or feature ideas, we may use them without obligation; that license covers the idea, never your data.',
+    },
+    {
+      kind: 'h2',
+      id: 'availability',
+      text: '12. Availability and support',
+    },
+    {
+      kind: 'p',
+      text: 'We work to keep the service fast and available, and we maintain automated backups, but we do not promise uninterrupted service and self-serve plans carry no formal SLA. We may change the service as we improve it; if we materially remove functionality your plan depends on, we will give you notice and time to export. Support is by email at hello@pplcrm.com, and a human replies.',
+    },
+    {
+      kind: 'h2',
+      id: 'suspension-termination',
+      text: '13. Suspension and termination',
+    },
+    {
+      kind: 'list',
+      items: [
+        'You may stop using the service and delete your workspace at any time; section 5 describes how deletion works.',
+        'We may suspend or terminate for breach of these terms, non-payment, legal requirement, or genuine risk to the platform or other customers. Except in urgent cases, we give notice and a chance to fix the problem first.',
+        'On termination we will not withhold your data: export remains available for a reasonable wind-down period before deletion, except where the law forbids it.',
+        'Sections that by their nature should survive (data commitments, disclaimers, liability limits, governing law) survive termination.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'disclaimers',
+      text: '14. Disclaimers',
+    },
+    {
+      kind: 'p',
+      text: 'The service is provided “as is” and “as available”. To the maximum extent the law allows, we disclaim implied warranties of merchantability, fitness for a particular purpose and non-infringement. pplCRM is a tool: we do not provide legal advice, and using features like consent tracking, suppression lists or receipts does not by itself make you compliant with the laws that apply to you.',
+    },
+    {
+      kind: 'h2',
+      id: 'liability',
+      text: '15. Limitation of liability',
+    },
+    {
+      kind: 'p',
+      text: 'To the maximum extent the law allows: neither party is liable for indirect, incidental, special, consequential or punitive damages, or for lost profits, revenues or data; and our total liability under this agreement is capped at the amounts you paid us in the 12 months before the event giving rise to the claim (or 100 US dollars if you are on the free plan). Nothing in this section limits liability that cannot lawfully be limited, and nothing in it weakens our data commitments in section 5.',
+    },
+    {
+      kind: 'h2',
+      id: 'indemnity',
+      text: '16. Indemnity',
+    },
+    {
+      kind: 'p',
+      text: 'You will defend and indemnify us against third-party claims arising from your data, your messages, or your breach of sections 6 through 9, provided we tell you promptly about the claim and let you control the defense.',
+    },
+    {
+      kind: 'h2',
+      id: 'law',
+      text: '17. Governing law',
+    },
+    {
+      kind: 'p',
+      text: 'This agreement is governed by the laws of the Province of Ontario and the federal laws of Canada applicable in it, and the courts of Ontario have exclusive jurisdiction, except that either party may seek injunctive relief for misuse of data or intellectual property in any competent court. If you are a consumer somewhere whose law gives you mandatory protections, those protections are unaffected.',
+    },
+    {
+      kind: 'h2',
+      id: 'changes',
+      text: '18. Changes to these terms',
+    },
+    {
+      kind: 'p',
+      text: 'When these terms change materially, we will email workspace admins at least 30 days before the change takes effect, and update the date at the top. If you keep using the service after that date, the new terms apply; if you do not agree, cancel and export before it, and we will help.',
+    },
+    {
+      kind: 'h2',
+      id: 'contact',
+      text: '19. Contact',
+    },
+    {
+      kind: 'p',
+      text: 'Questions about these terms go to hello@pplcrm.com. If anything here seems to conflict with the plain-language promises on the [data ownership page](/data-ownership), tell us; the stricter protection for you is the one we intend.',
+    },
+  ],
+};
+`````
+
+## File: apps/website/src/app/legal/privacy-content.ts
+`````typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The privacy policy. Every operational claim in here (retention windows,
+ * cookie names, subprocessors, deletion behavior) mirrors what the product
+ * actually does; if the product changes, change this document in the same
+ * commit. Plain language on purpose: the policy is part of the pitch.
+ */
+export const PRIVACY_DOC: LegalDoc = {
+  eyebrow: 'Legal',
+  title: 'Privacy policy',
+  intro:
+    'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
+  updated: 'July 17, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'overview',
+      text: 'Who we are and what this covers',
+    },
+    {
+      kind: 'p',
+      text: 'pplCRM (“we”, “us”) is a relationship platform for constituency offices, campaigns and non-profits, operated from Canada. This policy covers the marketing site (pplcrm.com), the application (app.pplcrm.com and api.pplcrm.com), the volunteer companion apps (go.pplcrm.com), and the public pages organizations publish through us (their pages on pplforms.com). You can reach us about anything in this policy at hello@pplcrm.com.',
+    },
+    {
+      kind: 'p',
+      text: 'The short version: we collect what we need to run the service and nothing else. We never sell, share, rent or mine the people in your workspace. We run no advertising trackers and no third-party analytics anywhere. Delete means deleted.',
+    },
+    {
+      kind: 'h2',
+      id: 'roles',
+      text: 'Two kinds of data: yours and your organization’s',
+    },
+    {
+      kind: 'p',
+      text: 'It helps to separate two roles, because your rights differ between them.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Data we control.** Your account details, billing information, support conversations and website interactions. For this data, we decide how it is handled, and this policy is the full story.',
+        '**Data your organization controls.** Everything inside a workspace: the constituents, voters, donors and volunteers your organization stores, plus notes, donations, form submissions and synced email. Here the organization is the data controller and we are its service provider; we process this data only on the organization’s instructions and never for our own purposes.',
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'If you are in an organization’s list rather than a pplCRM account holder, the section “If you are in one of our customers’ lists” below is written for you.',
+    },
+    {
+      kind: 'h2',
+      id: 'account-data',
+      text: 'What we collect about account holders',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Identity and sign-in.** Your name, email address and password. Passwords are stored only as an argon2id hash; nobody at pplCRM can see them. If you enable passkeys or two-factor codes, we store the public credential or a hashed one-time code, never a usable secret.',
+        '**Session security data.** The IP address and browser signature of your active sessions. We keep these so we can show you where you are signed in and challenge sign-ins from a new device or location.',
+        '**Billing.** Paid plans are billed through Stripe. Stripe collects your card details and billing address directly; card numbers never touch our servers. We keep your plan, invoices and billing contact.',
+        '**Phone number.** Only if you provide one, for example to verify sending on the free plan. Verification codes are sent by SMS and stored hashed.',
+        '**Support.** Emails you send to hello@pplcrm.com, so we can answer them and improve the product.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'workspace-data',
+      text: 'Data your organization stores in its workspace',
+    },
+    {
+      kind: 'p',
+      text: 'A workspace can hold contact details for people, households and companies, notes and tags, casework, donation history, event RSVPs, volunteer availability, and campaign facts such as support level and voting status. Some of this is politically sensitive personal information; we treat the entire workspace with the same care regardless of category.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Addresses and maps.** Household addresses can be geocoded so they appear on maps and turfs. Geocoding sends the street address to the Google Maps Geocoding API and stores the resulting coordinates.',
+        '**Synced mailboxes.** If a workspace admin connects Gmail or Microsoft 365, we sync email content into the workspace so conversations sit next to the people they belong to. The OAuth tokens for these connections are encrypted at rest with AES-256-GCM, and you can disconnect at any time. Our use of data received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements.',
+        '**Newsletter engagement.** When an organization sends a newsletter, delivery and engagement events (bounces, unsubscribes, opens and clicks) are recorded so the sender can respect them.',
+        '**Uploaded files.** Imports and attachments are stored in the workspace’s region.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'public-pages',
+      text: 'Public forms, donations, events and volunteer links',
+    },
+    {
+      kind: 'p',
+      text: 'Organizations can publish signup forms, donation pages, event pages and volunteer links. Anything you submit on those pages goes into that organization’s workspace, and the organization is responsible for how it is used. Donation payments are processed by Stripe (see the subprocessor list below); we receive the donation record, never your full card details. Volunteers using a companion link verify with a one-time code sent to the email or mobile number the organization has on file; codes and device sessions are stored hashed and expire automatically.',
+    },
+    {
+      kind: 'h2',
+      id: 'how-we-use',
+      text: 'How we use personal information',
+    },
+    {
+      kind: 'list',
+      items: [
+        'To run the service: signing you in, storing and displaying your workspace, sending the emails and SMS messages you ask it to send.',
+        'To bill you and send you invoices, receipts and important account notices.',
+        'To keep the platform safe: rate limiting, new-device challenges, and the sending guards that pause senders whose mail bounces or draws complaints.',
+        'To answer support requests, using the minimum data needed to help.',
+        'To comply with the law when we genuinely must, and we will tell you when the law allows it.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'what-we-never-do',
+      text: 'What we never do',
+    },
+    {
+      kind: 'list',
+      items: [
+        'We never sell, share, rent or trade personal information, yours or your organization’s. To anyone.',
+        'We never use workspace data for advertising, profiling, or building products for other customers, and we do not use it to train machine-learning models.',
+        'We run no third-party analytics, advertising pixels or fingerprinting scripts on the website or in the product.',
+        'We never read workspace content out of curiosity. Access by our team is limited to what a specific support request or safety issue requires.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'subprocessors',
+      text: 'Service providers we rely on',
+    },
+    {
+      kind: 'p',
+      text: 'We use a small set of infrastructure providers, each for one job. They receive only what that job requires and may not use it for anything else.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Microsoft Azure.** Hosts the application, database and file storage in your workspace’s region (Canada by default).',
+        '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
+        '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
+        '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
+        '**SendGrid.** Delivers newsletters from your organization’s own verified domain and reports delivery and engagement events.',
+        '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
+        '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
+        '**Google Maps.** Geocodes household addresses and renders maps.',
+        '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
+        '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'residency',
+      text: 'Where your data lives',
+    },
+    {
+      kind: 'p',
+      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Three narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
+    },
+    {
+      kind: 'h2',
+      id: 'retention',
+      text: 'Retention and deletion',
+    },
+    {
+      kind: 'p',
+      text: 'We keep personal information only while it does its job, and the product enforces its own deadlines.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Records you delete** are removed from the live database immediately. Automated backups expire within 7 days, at which point deleted data is gone from those too.',
+        '**Workspace deletion** can be scheduled by an organization admin. After a 30-day grace window (cancelable at any time), every record in the workspace is permanently deleted, and we confirm by email when it is done.',
+        '**Activity logs** are kept for 90 days, then pruned automatically.',
+        '**Export files** are downloadable for 30 days, then removed. **Import source files** are kept for 90 days so you can audit an import, then removed.',
+        '**Sessions** expire after 24 hours, or 30 days if you chose “remember me”. Volunteer device sessions expire after 30 days.',
+        '**Suppression records** (unsubscribes, bounces, complaints) are kept while a workspace is active, because keeping them is what honors the opt-out.',
+        '**Billing records** are kept as long as tax and accounting law requires.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'security',
+      text: 'How we protect it',
+    },
+    {
+      kind: 'p',
+      text: 'Encryption in transit everywhere, encrypted OAuth secrets at rest, hashed tokens, workspace isolation enforced by automated checks on every build, signature-verified webhooks, and least-privilege access for field volunteers. The full, honest detail (including what we do not claim) is on the [security page](/security).',
+    },
+    {
+      kind: 'h2',
+      id: 'cookies',
+      text: 'Cookies',
+    },
+    {
+      kind: 'p',
+      text: 'We use exactly two cookies, both ours, neither used for tracking.',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**pc_refresh.** Keeps you signed in to the app. HttpOnly and secure, so scripts cannot read it.',
+        '**pc_signed_in.** A yes/no flag that lets this website show “Dashboard” instead of “Log in” when you already have a session. It contains no personal data.',
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'There are no advertising cookies, no analytics cookies, and no third-party cookies. That is the whole list.',
+    },
+    {
+      kind: 'h2',
+      id: 'rights',
+      text: 'Your rights',
+    },
+    {
+      kind: 'p',
+      text: 'Wherever you are, we extend the same rights: access the personal information we hold about you, correct it, receive a portable copy, and have it deleted. Account holders can exercise most of these directly in the product (export lives in settings; deletion is described above). For anything else, email hello@pplcrm.com and we will respond within 30 days. We comply with PIPEDA and applicable provincial privacy law in Canada, and with the GDPR and UK GDPR for workspaces and visitors in those regions. If you are unsatisfied with our answer, you can complain to your privacy regulator; in Canada that is the Office of the Privacy Commissioner.',
+    },
+    {
+      kind: 'h2',
+      id: 'in-someones-list',
+      text: 'If you are in one of our customers’ lists',
+    },
+    {
+      kind: 'p',
+      text: 'If a constituency office, campaign or non-profit that uses pplCRM holds your information, that organization decides why and how it is used, and your request is theirs to answer: contact them directly to access, correct or delete your record, or to opt out of contact. Every newsletter sent through pplCRM carries the sender’s name, postal address and a working unsubscribe link, and unsubscribes are honored automatically across all future sends. If you contact us instead, we will forward your request to the organization and help them fulfill it.',
+    },
+    {
+      kind: 'h2',
+      id: 'children',
+      text: 'Children',
+    },
+    {
+      kind: 'p',
+      text: 'pplCRM is a tool for organizations and is not directed at children. You must be the age of majority where you live to create an account. We do not knowingly collect personal information from children for our own purposes; organizations are responsible for the lawfulness of the records they store.',
+    },
+    {
+      kind: 'h2',
+      id: 'changes',
+      text: 'Changes to this policy',
+    },
+    {
+      kind: 'p',
+      text: 'When this policy changes materially, we will email workspace admins and update the date at the top before the change takes effect. We will never weaken the commitments in “What we never do” quietly; a change to those would be announced prominently and in advance.',
+    },
+    {
+      kind: 'h2',
+      id: 'contact',
+      text: 'Contact',
+    },
+    {
+      kind: 'p',
+      text: 'Privacy questions, requests and complaints all go to hello@pplcrm.com. A human reads every one.',
+    },
+  ],
+};
+`````
+
 ## File: apps/website/tools/generate-help-static.ts
 `````typescript
 /**
@@ -88467,6 +88313,160 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
+`````
+
+## File: apps/website/src/app/legal/security-content.ts
+`````typescript
+import type { LegalDoc } from './legal-types';
+
+/**
+ * The security page. Every mechanism named here (argon2id, hashed tokens,
+ * AES-256-GCM OAuth secrets, signature-verified webhooks, tenant-scoping
+ * checks, retention windows) exists in the codebase; if an implementation
+ * changes, change this document in the same commit. The honesty section
+ * (no certification claims) is deliberate; do not add badges we have not
+ * earned.
+ */
+export const SECURITY_DOC: LegalDoc = {
+  eyebrow: 'Trust',
+  title: 'Security',
+  intro:
+    'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
+  updated: 'July 17, 2026',
+  blocks: [
+    {
+      kind: 'h2',
+      id: 'approach',
+      text: 'Our approach',
+    },
+    {
+      kind: 'p',
+      text: 'A political or community list is one of the most sensitive databases an organization holds: names, addresses, donations, opinions. We designed for that from the first table. The principles are simple: hold as little as possible, encrypt what must be held, hand out the narrowest slice that does the job, make deletion real, and verify everything that arrives from outside. This page describes the mechanisms, not aspirations.',
+    },
+    {
+      kind: 'h2',
+      id: 'isolation',
+      text: 'Workspace isolation',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every organization’s workspace is isolated. Every database query in the product is scoped to your workspace, and that rule is enforced by an automated check that runs on every build: code that touches workspace tables without workspace scoping fails and cannot ship.',
+        'The application connects to the database with a least-privilege role, and row-level security in the database provides defense in depth behind the application checks.',
+        'Public identifiers for people are deliberately non-sequential, so records cannot be enumerated by walking IDs.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'accounts',
+      text: 'Account security',
+    },
+    {
+      kind: 'list',
+      items: [
+        '**Passwords** are hashed with argon2id (64 MB memory cost), the current best practice, and are never stored or logged in plain text. At signup, passwords are checked against known breach corpora and you are warned before choosing one that has leaked elsewhere.',
+        '**Passkeys** (WebAuthn) are supported for phishing-resistant sign-in.',
+        '**Two-factor authentication** challenges sign-ins from a new device or location with a short-lived one-time code, and workspace admins can require 2FA for everyone in the organization.',
+        '**Sessions** use a short-lived access token plus a refresh token kept in an HttpOnly, secure cookie that page scripts cannot read. Session and refresh tokens are stored server-side only as SHA-256 hashes, so a database leak does not yield usable sessions. Sessions expire after 24 hours, or 30 days with “remember me”, and you can see and revoke your active sessions.',
+        '**Abuse resistance:** sign-in attempts are rate limited per IP, verification codes expire in minutes and allow limited attempts, and sign-in responses are constant-time so attackers cannot discover which emails have accounts.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'encryption',
+      text: 'Encryption',
+    },
+    {
+      kind: 'list',
+      items: [
+        'All traffic is encrypted in transit with TLS, with HSTS enforced. The application sets a strict content security policy and does not allow itself to be framed by other sites.',
+        'Database connections are encrypted, and stored data is encrypted at rest by the hosting platform.',
+        'OAuth tokens for connected mailboxes (Gmail, Microsoft 365) get an extra application-level layer: AES-256-GCM encryption with a key held outside the database.',
+        'Secrets that only need comparison (session tokens, verification codes, reset codes, volunteer device sessions) are stored as one-way hashes, never as plaintext.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'field-access',
+      text: 'Field and volunteer access',
+    },
+    {
+      kind: 'p',
+      text: 'Field tools are where lists usually leak, so companion access is least-privilege by construction. A volunteer link exposes exactly one turf or route, never the list. Volunteers verify with a one-time code sent to the contact your organization has on file (codes expire in 10 minutes, five attempts maximum) and must be approved once by an admin before first use. Device sessions are stored hashed and expire after 30 days; links expire too, and both are revocable at any time. A lost phone is an inconvenience, not a breach of your list.',
+    },
+    {
+      kind: 'h2',
+      id: 'payments',
+      text: 'Payments',
+    },
+    {
+      kind: 'p',
+      text: 'Card details never touch our servers. Subscriptions and card donations are processed by Stripe. We store the donation record; Stripe stores the payment instruments, under its PCI DSS obligations.',
+    },
+    {
+      kind: 'h2',
+      id: 'webhooks-integrations',
+      text: 'Integrations and webhooks',
+    },
+    {
+      kind: 'list',
+      items: [
+        'Every inbound webhook is authenticated before we act on it: Stripe events by signature, SendGrid events by ECDSA signature, and Postmark events by a shared token compared in constant time.',
+        'Mailbox sync is opt-in per workspace, scoped by OAuth consent, disconnectable at any time, and its tokens are encrypted as described above.',
+        'API keys for integrations are generated per workspace and revocable.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'sending',
+      text: 'Sending protections',
+    },
+    {
+      kind: 'p',
+      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices; drafts scoring below 50 cannot send until fixed. An AI review that catches phishing-shaped and scam-like content reinforces the check where abuse risk concentrates: always on the Free plan, for every account’s first sends, and in any check a sender runs themselves. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
+    },
+    {
+      kind: 'h2',
+      id: 'infrastructure',
+      text: 'Infrastructure, residency and backups',
+    },
+    {
+      kind: 'list',
+      items: [
+        'The platform runs on Microsoft Azure, with workspaces hosted in Canada by default; Movement workspaces choose their region (Canada, US, EU or UK) at creation and stay there for processing and backups.',
+        'The marketing site and public pages are served from Cloudflare’s edge with strict TLS between the edge and our origin.',
+        'Databases are backed up automatically every day, with backups retained for 7 days in the workspace’s region. Deleted data therefore leaves backups within 7 days of leaving the live database.',
+      ],
+    },
+    {
+      kind: 'h2',
+      id: 'monitoring',
+      text: 'Audit trails',
+    },
+    {
+      kind: 'p',
+      text: 'Every change to a record is written to the workspace activity log with who, what and when, including actions taken through volunteer links, which are labeled as such. Exports are logged too, so an admin can always answer “who pulled the list”. Activity is retained for 90 days and exportable. When something fails, errors shown to users carry a support code that lets us find the exact server-side event without you sending us your data.',
+    },
+    {
+      kind: 'h2',
+      id: 'honesty',
+      text: 'What we do not claim',
+    },
+    {
+      kind: 'p',
+      text: 'We are a small team and we would rather show you exactly what we do than imply an audit we have not had. We do not currently hold SOC 2 or ISO 27001 certification, and we do not display compliance badges we have not earned. What you get instead is specific, checkable engineering: the mechanisms on this page, the retention windows in the [privacy policy](/privacy), and the commitments on the [data ownership page](/data-ownership). If your organization requires a security questionnaire for procurement, write to us and we will answer it honestly.',
+    },
+    {
+      kind: 'h2',
+      id: 'disclosure',
+      text: 'Reporting a vulnerability',
+    },
+    {
+      kind: 'p',
+      text: 'If you believe you have found a security issue, email hello@pplcrm.com with “Security” in the subject line and we will respond within 3 business days. Please give us reasonable time to fix the issue before disclosing it publicly, do not access data that is not yours, and do not degrade the service while testing. We will not take legal action against good-faith research that follows these rules, and we credit reporters who want credit once a fix ships.',
+    },
+  ],
+};
 `````
 
 ## File: libs/common/src/lib/kysely.models.ts
@@ -89793,357 +89793,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
   persons_count: number;
   tags: string[] | null;
 };
-`````
-
-## File: libs/common/src/lib/help/articles/outreach.ts
-`````typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: [
-      'newsletter',
-      'campaign',
-      'email blast',
-      'send',
-      'schedule',
-      'template',
-      'audience',
-      'unsubscribe',
-      'deliverability',
-      'score',
-    ],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
-          },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
-      {
-        kind: 'p',
-        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
-      },
-      {
-        kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
-      },
-    ],
-  },
-  {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
-    summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
-    keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
-    ],
-    related: ['newsletters', 'settings', 'forms', 'deliverability'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
-      },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
-          },
-          {
-            title: 'Verify a mobile number (Free plan)',
-            detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
-      {
-        kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
-      },
-      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
-      {
-        kind: 'p',
-        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review is included every time you run the check yourself; at send time it also runs automatically while an account is new — on the Free plan and for any account’s first few sends — and is skipped once a paid account has an established sending history. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
-      },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
-      {
-        kind: 'list',
-        items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'deliverability',
-    category: 'outreach',
-    title: 'Get your newsletters delivered',
-    summary:
-      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
-    keywords: [
-      'spam',
-      'junk',
-      'inbox',
-      'deliverability',
-      'images',
-      'subject line',
-      'dmarc',
-      'postmaster',
-      'score',
-      'preflight',
-      'open rate',
-    ],
-    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
-      },
-      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
-      {
-        kind: 'list',
-        items: [
-          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
-          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
-          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
-          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
-        ],
-      },
-      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
-      {
-        kind: 'list',
-        items: [
-          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
-          'Unsubscribes and bounces are honored automatically — never re-import around them.',
-          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
-        ],
-      },
-      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
-      {
-        kind: 'list',
-        items: [
-          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
-          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
-          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
-          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test before the big send',
-        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
-      },
-      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
-      {
-        kind: 'p',
-        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'A good score is not a delivery guarantee',
-        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
-      },
-    ],
-  },
-];
 `````
 
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
@@ -92204,6 +91853,357 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 ];
 `````
 
+## File: libs/common/src/lib/help/articles/outreach.ts
+`````typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: [
+      'newsletter',
+      'campaign',
+      'email blast',
+      'send',
+      'schedule',
+      'template',
+      'audience',
+      'unsubscribe',
+      'deliverability',
+      'score',
+    ],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
+      {
+        kind: 'p',
+        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms', 'deliverability'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
+      {
+        kind: 'p',
+        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review is included every time you run the check yourself; at send time it also runs automatically while an account is new — on the Free plan and for any account’s first few sends — and is skipped once a paid account has an established sending history. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'deliverability',
+    category: 'outreach',
+    title: 'Get your newsletters delivered',
+    summary:
+      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
+    keywords: [
+      'spam',
+      'junk',
+      'inbox',
+      'deliverability',
+      'images',
+      'subject line',
+      'dmarc',
+      'postmaster',
+      'score',
+      'preflight',
+      'open rate',
+    ],
+    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
+      },
+      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
+      {
+        kind: 'list',
+        items: [
+          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
+          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
+          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
+          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
+        ],
+      },
+      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
+      {
+        kind: 'list',
+        items: [
+          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
+          'Unsubscribes and bounces are honored automatically — never re-import around them.',
+          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
+        ],
+      },
+      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
+      {
+        kind: 'list',
+        items: [
+          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
+          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
+          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
+          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test before the big send',
+        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
+      },
+      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
+      {
+        kind: 'p',
+        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'A good score is not a delivery guarantee',
+        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+`````
+
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
 `````html
 <div class="space-y-8">
@@ -93275,6 +93275,7 @@ libs/
           companies.schema.ts
           companion-access.schema.ts
           connections.schema.ts
+          content-check.schema.ts
           core.schema.ts
           deliveries.schema.ts
           donations.schema.ts
@@ -93295,6 +93296,7 @@ libs/
         jsend.ts
         kysely.models.ts
         models.ts
+        preflight-lint.ts
         public-id.ts
         schema.ts
         sla.ts
@@ -93367,6 +93369,8 @@ libs/
         public-link-panel/
           public-link-panel.html
           public-link-panel.ts
+        row-actions/
+          row-actions.ts
         select/
           select.ts
         side-drawer/
@@ -93640,6 +93644,270 @@ export const CarryOverCampaignObj = z.object({
 });
 ````
 
+## File: libs/common/src/lib/schemas/canvassing.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema, nameSchema, notesSchema } from './core.schema';
+
+/**
+ * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
+ * they drive both Zod validation and exhaustive discriminated-union switches on
+ * the frontend and in the controller.
+ */
+
+/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
+export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
+export type TurfStatus = (typeof TURF_STATUSES)[number];
+
+/**
+ * What happened at the door. "attempted" = any knock except `cleared`;
+ * "conversation" = a talk. `moved` is a person-level no-conversation code;
+ * `cleared` is the append-only "door outcome toggled off" marker — the latest
+ * outcome knock wins, and `cleared` means the door is back on the list.
+ */
+export const KNOCK_OUTCOMES = [
+  'conversation',
+  'no_answer',
+  'not_home',
+  'moved',
+  'refused',
+  'inaccessible',
+  'cleared',
+] as const;
+export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
+
+/**
+ * The voter's stance, when a conversation happened — the spec §3.5 five-option
+ * support scale. `not_voting`/`already_voted` feed `voting_status` rather than
+ * `support_level` on campaign_person_facts.
+ */
+export const KNOCK_RESPONSES = ['supporter', 'undecided', 'non_supporter', 'not_voting', 'already_voted'] as const;
+export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
+
+/** Survey labels for the five support options (sentence case, spec §3.5). */
+export const KNOCK_RESPONSE_LABELS: Record<KnockResponse, string> = {
+  supporter: 'Supporter',
+  undecided: 'Undecided',
+  non_supporter: 'Non-supporter',
+  not_voting: 'Not voting',
+  already_voted: 'Already voted',
+};
+
+/** Doors-per-turf presets from the Cut-new-turfs dialog. */
+export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
+
+export const turfStatusSchema = z.enum(TURF_STATUSES);
+export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
+export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
+
+export const AddTurfObj = z.object({
+  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: nameSchema('Name', 120),
+  list_id: idSchema.nullable().optional(),
+  notes: notesSchema,
+});
+
+export const UpdateTurfObj = z.object({
+  name: nameSchema('Name', 120).optional(),
+  status: turfStatusSchema.optional(),
+  notes: notesSchema,
+});
+
+/** Preview and Cut share this input; preview never writes. */
+export const CutTurfsObj = z.object({
+  list_id: idSchema,
+  doors_per_turf: z.number().int().min(5).max(500),
+});
+
+export const AssignTurfObj = z.object({
+  turf_id: idSchema,
+  team_id: idSchema.nullable().optional(),
+  /**
+   * The person this Companion link belongs to. Required: the companion access
+   * layer verifies the holder against this person's email/mobile on file, so
+   * an assignment without a person produces a link nobody can open.
+   */
+  volunteer_person_id: idSchema,
+});
+
+export const FieldReportRangeObj = z.object({
+  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
+  from: z.string().datetime().nullable().optional(),
+  to: z.string().datetime().nullable().optional(),
+});
+
+/**
+ * Companion knock payload. Arrives over the tokenised public route (no account),
+ * so the token authorises the turf and `client_knock_id` de-dupes offline
+ * re-sends. Parsed from `unknown` at the REST boundary.
+ */
+export const LogKnockObj = z.object({
+  token: z.string().min(10).max(200),
+  client_knock_id: z.string().min(1).max(200),
+  household_id: idSchema,
+  person_id: idSchema.nullable().optional(),
+  outcome: knockOutcomeSchema,
+  response: knockResponseSchema.nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  canvasser_name: z.string().trim().max(120).nullable().optional(),
+  knocked_at: z.string().datetime().nullable().optional(),
+});
+
+export function isTurfStatus(v: unknown): v is TurfStatus {
+  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
+}
+
+export function isKnockOutcome(v: unknown): v is KnockOutcome {
+  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
+// Companion batched results (spec §3.5/§5) — POST /api/canvass/t/:token/results
+// ---------------------------------------------------------------------------
+
+/**
+ * A full survey (spec §3.5). `person_id` null = the anonymous household-level
+ * survey. `support` is the one required field — EXCEPT that toggling
+ * "Do not contact" alone is saveable, which the refine below encodes.
+ */
+export const CompanionSurveyObj = z
+  .object({
+    household_id: idSchema,
+    person_id: idSchema.nullable().optional(),
+    support: knockResponseSchema.nullable().optional(),
+    issues: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
+    wants_volunteer: z.boolean().default(false),
+    wants_yard_sign: z.boolean().default(false),
+    set_dnc: z.boolean().default(false),
+    contact_phone: z.string().trim().max(40).nullable().optional(),
+    contact_email: z.string().trim().email().max(200).nullable().optional(),
+    subscribe: z.boolean().default(false),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((v) => v.support != null || v.set_dnc, { message: 'Pick a support level to save' });
+
+/** One-tap no-conversation codes for a person (spec §3.5). */
+export const CompanionPersonResultObj = z.object({
+  household_id: idSchema,
+  person_id: idSchema,
+  result: z.enum(['not_home', 'moved', 'refused']),
+});
+
+/** Door-level outcome (spec §3.4 quick actions). */
+export const CompanionDoorOutcomeObj = z.object({
+  household_id: idSchema,
+  outcome: z.enum(['no_answer', 'inaccessible', 'refused']),
+});
+
+export const CompanionClearOutcomeObj = z.object({
+  household_id: idSchema,
+});
+
+/** "+ Add someone at this door" (spec §3.4). */
+export const CompanionPersonCreateObj = z.object({
+  household_id: idSchema,
+  name: z.string().trim().min(1).max(120),
+});
+
+const companionOpBase = {
+  /** Client-generated UUID — the idempotency key (companion_ops ledger). */
+  op_id: z.string().min(8).max(100),
+  /** On-device timestamp so offline results keep their true door time. */
+  recorded_at: z.string().datetime().nullable().optional(),
+};
+
+export const CompanionOpObj = z.discriminatedUnion('type', [
+  z.object({ ...companionOpBase, type: z.literal('survey'), payload: CompanionSurveyObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_result'), payload: CompanionPersonResultObj }),
+  z.object({ ...companionOpBase, type: z.literal('door_outcome'), payload: CompanionDoorOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('clear_outcome'), payload: CompanionClearOutcomeObj }),
+  z.object({ ...companionOpBase, type: z.literal('person_create'), payload: CompanionPersonCreateObj }),
+]);
+
+export const CompanionResultsObj = z.object({
+  ops: z.array(CompanionOpObj).min(1).max(200),
+});
+
+export type CompanionSurveyType = z.infer<typeof CompanionSurveyObj>;
+export type CompanionOpType = z.infer<typeof CompanionOpObj>;
+export type CompanionResultsType = z.infer<typeof CompanionResultsObj>;
+
+/** Per-op server acknowledgement — `duplicate` means "already applied, treat as success". */
+export interface CompanionOpAck {
+  op_id: string;
+  status: 'applied' | 'duplicate' | 'rejected';
+  error?: string;
+  /** For person_create: the real id to swap in for the client's temp person. */
+  person_id?: string;
+}
+
+// ------------------------------------------------------------------------
+// Companion GET payload (spec §3, §5) — shared by backend + apps/companion.
+// Payload minimization is an acceptance criterion: names, walk data and prior
+// door RESULTS only — never emails, phones, donation history, or notes.
+// ------------------------------------------------------------------------
+
+/** Pre-fill for re-editing a surveyed person/door. Deliberately excludes notes + contact info. */
+export interface CompanionSurveyPrefill {
+  support: KnockResponse | null;
+  issues: string[];
+  wants_volunteer: boolean;
+  wants_yard_sign: boolean;
+  set_dnc: boolean;
+  subscribe: boolean;
+}
+
+export type CompanionPersonResult = 'canvassed' | 'not_home' | 'moved' | 'refused';
+
+export interface CompanionPerson {
+  id: string;
+  name: string;
+  /** Suppressed from all outreach — card renders dimmed and non-interactive. */
+  dnc: boolean;
+  result: CompanionPersonResult | null;
+  survey: CompanionSurveyPrefill | null;
+}
+
+export type CompanionDoorOutcome = 'no_answer' | 'inaccessible' | 'refused';
+
+export interface CompanionHousehold {
+  id: string;
+  walk_order: number;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  /** Whole-door do-not-contact (every resident is DNC) — skip, but it still counts. */
+  dnc: boolean;
+  door_outcome: CompanionDoorOutcome | null;
+  /** The anonymous household-level survey, when one was recorded. */
+  hh_survey: CompanionSurveyPrefill | null;
+  people: CompanionPerson[];
+}
+
+export interface CompanionTurfPayload {
+  campaign_name: string;
+  turf_name: string;
+  /** Whose name results save under — the assignment's volunteer. */
+  canvasser_name: string;
+  /** Collapsible door script (campaign-configured; empty string = none). */
+  script: string;
+  /** Issue-chip vocabulary (campaign-configured). */
+  issues: string[];
+  expires_at: string | null;
+  households: CompanionHousehold[];
+}
+
+/** Staff-configured survey vocabulary (campaigns.canvass_issues/script). */
+export const UpdateCompanionSettingsObj = z.object({
+  campaign_id: idSchema.optional(),
+  issues: z.array(z.string().trim().min(1).max(80)).max(30),
+  script: z.string().trim().max(4000).nullable(),
+});
+export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
+````
+
 ## File: libs/common/src/lib/schemas/companies.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -93665,6 +93933,106 @@ export const CompanyInputObj = z.object({
   industry: z.string().trim().max(100).optional().nullable(),
   notes: z.string().trim().max(10000).optional().nullable(),
 });
+````
+
+## File: libs/common/src/lib/schemas/companion-access.schema.ts
+````typescript
+import { z } from 'zod';
+
+/**
+ * Companion access layer (COMPANION-APPS-PLAN.md §2). A companion capability
+ * link (/t/:token canvass turf, /r/:token delivery route) is not enough on its
+ * own: the volunteer must verify a one-time code sent to their email/SMS on
+ * file, be approved once by an admin, and then hold a device session that
+ * accompanies every companion request.
+ */
+
+export const COMPANION_LINK_KINDS = ['turf', 'route'] as const;
+export type CompanionLinkKind = (typeof COMPANION_LINK_KINDS)[number];
+
+export const COMPANION_VERIFY_CHANNELS = ['email', 'sms'] as const;
+export type CompanionVerifyChannel = (typeof COMPANION_VERIFY_CHANNELS)[number];
+
+export const COMPANION_VOLUNTEER_STATUSES = ['invited', 'verified', 'approved', 'revoked'] as const;
+export type CompanionVolunteerStatus = (typeof COMPANION_VOLUNTEER_STATUSES)[number];
+
+/**
+ * What the gate UI renders:
+ * - dead: unknown/expired/revoked link — friendly dead-link page
+ * - unassigned: link has no volunteer person attached — ask the organizer to re-send
+ * - need_verification: pick a channel, get a code
+ * - pending_approval: verified, waiting for an admin — the page polls
+ * - ready: approved with a valid device session — load the app
+ */
+export const COMPANION_ACCESS_STATES = [
+  'dead',
+  'unassigned',
+  'need_verification',
+  'pending_approval',
+  'ready',
+] as const;
+export type CompanionAccessState = (typeof COMPANION_ACCESS_STATES)[number];
+
+export const CompanionAccessQueryObj = z.object({
+  kind: z.enum(COMPANION_LINK_KINDS),
+  token: z.string().min(8).max(200),
+});
+
+export const CompanionVerifyStartObj = CompanionAccessQueryObj.extend({
+  channel: z.enum(COMPANION_VERIFY_CHANNELS),
+});
+
+export const CompanionVerifyConfirmObj = CompanionAccessQueryObj.extend({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the 6-digit code'),
+});
+
+export type CompanionAccessQueryType = z.infer<typeof CompanionAccessQueryObj>;
+export type CompanionVerifyStartType = z.infer<typeof CompanionVerifyStartObj>;
+export type CompanionVerifyConfirmType = z.infer<typeof CompanionVerifyConfirmObj>;
+
+/** A verifiable contact on file, masked for display — never the raw value. */
+export interface CompanionContact {
+  channel: CompanionVerifyChannel;
+  masked: string;
+}
+
+/** Response of GET /api/companion/access. */
+export interface CompanionAccessPayload {
+  state: CompanionAccessState;
+  /** Volunteer first name — identity card ("Walking as Jordan"). */
+  volunteerName?: string;
+  /** Who to contact about a dead/unassigned link. */
+  organizerName?: string;
+  /** Organization name for the gate header. */
+  organizationName?: string;
+  contacts?: CompanionContact[];
+}
+
+/** Response of POST /api/companion/verify/confirm. */
+export interface CompanionVerifyConfirmResult {
+  status: 'ready' | 'pending_approval';
+  sessionToken: string;
+  expiresAt: string;
+}
+
+/** One row of the admin Volunteer access page. */
+export interface CompanionVolunteerRow {
+  id: string;
+  person_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  mobile: string | null;
+  status: CompanionVolunteerStatus;
+  verify_channel: CompanionVerifyChannel | null;
+  verified_at: string | null;
+  approved_at: string | null;
+  approved_by_name: string | null;
+  created_at: string;
+}
 ````
 
 ## File: libs/common/src/lib/schemas/connections.schema.ts
@@ -93710,6 +94078,114 @@ export const AddConnectionObj = z.object({
 });
 
 export type AddConnectionType = z.infer<typeof AddConnectionObj>;
+````
+
+## File: libs/common/src/lib/schemas/content-check.schema.ts
+````typescript
+import { z } from 'zod';
+
+/**
+ * Newsletter preflight ("deliverability check") shared contracts.
+ *
+ * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
+ * from explainable per-finding deductions. The band thresholds live here — not in backend
+ * send-guards — because the composer gauge and the server-side send gate must agree on where the
+ * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
+ * is mostly sender reputation + engagement, which no pre-send check can compute.
+ */
+
+/** Scores at or above this are "good — ready to send". */
+export const PREFLIGHT_GOOD = 80;
+/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
+export const PREFLIGHT_BLOCK = 50;
+
+export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
+export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
+
+/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
+export function preflightBand(score: number): PreflightBand {
+  if (score < PREFLIGHT_BLOCK) return 'blocked';
+  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
+}
+
+export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
+export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
+
+export const PreflightFindingObj = z.object({
+  /** Stable machine code, e.g. "subject-caps", "base64-image". */
+  code: z.string(),
+  severity: z.enum(PREFLIGHT_SEVERITIES),
+  /** What was found, user-facing. */
+  message: z.string(),
+  /** How to fix it, user-facing. */
+  hint: z.string(),
+  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
+  deduction: z.number(),
+});
+export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
+
+/**
+ * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
+ * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
+ * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
+ */
+export const AI_CONTENT_TYPES = [
+  'newsletter_update',
+  'fundraising_appeal',
+  'event_promotion',
+  'auction_or_sale',
+  'advocacy',
+  'pure_commercial_marketing',
+  'scam_or_phishing',
+  'other',
+] as const;
+export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
+
+/** Structured verdict returned by the Claude content review (also its output-format schema). */
+export const AiPreflightVerdictObj = z.object({
+  contentType: z.enum(AI_CONTENT_TYPES),
+  /** 0 (clean) to 100 (reads like spam). */
+  spamRiskScore: z.number().min(0).max(100),
+  /** Short reasons behind the risk score, user-facing. */
+  reasons: z.array(z.string()),
+  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
+  deceptionFlags: z.array(z.string()),
+  /** Concrete copy rewrites for the worst offenders, user-facing. */
+  suggestions: z.array(z.string()),
+  /** The model's confidence in this verdict, 0–1. */
+  confidence: z.number().min(0).max(1),
+});
+export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
+
+/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
+export const RunPreflightObj = z.object({
+  subject: z.string().max(500),
+  html: z.string().max(500_000),
+  plainText: z.string().max(200_000).optional(),
+});
+export type RunPreflightType = z.infer<typeof RunPreflightObj>;
+
+/**
+ * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
+ * no API key or the API errored — so the score is partial ('unavailable'); or policy didn't call
+ * for it ('not_required' — the send-time gate skips the AI re-check for established paid tenants,
+ * while user-initiated checks always include it).
+ */
+export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
+export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
+
+/** Full preflight outcome: the score, its band, and every finding that shaped it. */
+export const PreflightResultObj = z.object({
+  score: z.number(),
+  band: z.enum(PREFLIGHT_BANDS),
+  findings: z.array(PreflightFindingObj),
+  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
+  spamAssassinScore: z.number().nullable(),
+  ai: AiPreflightVerdictObj.nullable(),
+  aiStatus: z.enum(AI_REVIEW_STATUSES),
+  checkedAt: z.string(),
+});
+export type PreflightResult = z.infer<typeof PreflightResultObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -95558,6 +96034,466 @@ export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
 ````
 
+## File: libs/common/src/lib/preflight-lint.ts
+````typescript
+import type { AiPreflightVerdict, PreflightFinding, PreflightSeverity } from './schemas/content-check.schema';
+
+/**
+ * Deterministic newsletter lint + scoring. Pure and isomorphic (no Node/browser-only APIs) so the
+ * composer runs it live while the backend runs the identical checks authoritatively at send time.
+ * Every check yields a PreflightFinding whose deduction is subtracted from a 100-point score; the
+ * builders at the bottom convert the SpamAssassin score and the AI verdict into the same finding
+ * shape so the UI renders one list and the score stays a single explainable mechanism.
+ */
+
+export interface PreflightInput {
+  subject: string;
+  html: string;
+  plainText?: string;
+}
+
+// Point deductions per finding. Sized so any single "block"-severity pattern (phishing-shaped
+// links, base64 payloads) pulls the score below PREFLIGHT_BLOCK on its own or nearly so, while
+// style nits stay advisory. Tuning one of these is deliberately a one-line change.
+const DEDUCT = {
+  subjectEmpty: 30,
+  subjectTooLong: 5,
+  subjectCaps: 10,
+  subjectExclamations: 8,
+  subjectMoneySymbols: 8,
+  subjectFakeReply: 15,
+  htmlOversize: 15,
+  imageOnlyBody: 15,
+  imagesMissingAlt: 3,
+  insecureUrls: 5,
+  base64Image: 25,
+  tooManyLinks: 8,
+  urlShortener: 12,
+  anchorDomainMismatch: 30,
+  rawIpLink: 25,
+  suspiciousProtocol: 25,
+  aiDeceptionFlags: 10,
+  aiDisallowedContent: 90,
+} as const;
+
+const SUBJECT_MAX_CHARS = 70;
+const SUBJECT_CAPS_RATIO = 0.3;
+const SUBJECT_MIN_LETTERS_FOR_CAPS = 8;
+// Gmail clips messages around 102KB of HTML; warn with margin before that.
+const HTML_SIZE_WARN_BYTES = 100_000;
+const IMAGE_ONLY_MIN_TEXT_CHARS = 200;
+const MAX_LINKS = 25;
+// SpamAssassin's conventional spam threshold is 5; we start surfacing at 3.
+const SPAMASSASSIN_INFO_AT = 3;
+const SPAMASSASSIN_WARN_AT = 5;
+const SPAMASSASSIN_DEDUCTION_PER_POINT = 2;
+const SPAMASSASSIN_MAX_DEDUCTION = 30;
+// The AI risk score contributes at most this many points, scaled by its confidence.
+const AI_RISK_MAX_DEDUCTION = 40;
+const AI_RISK_WARN_AT = 60;
+// Below this confidence a disallowed-content verdict is advisory, not score-capping.
+const AI_DISALLOWED_MIN_CONFIDENCE = 0.6;
+
+// Widely-abused URL shorteners. Curated and small on purpose — extend it, don't import a huge list.
+const URL_SHORTENER_HOSTS = new Set([
+  'bit.ly',
+  'tinyurl.com',
+  'goo.gl',
+  't.co',
+  'ow.ly',
+  'is.gd',
+  'buff.ly',
+  'rebrand.ly',
+  'cutt.ly',
+  'shorturl.at',
+  'rb.gy',
+  'tiny.cc',
+  'lnkd.in',
+  's.id',
+  'snip.ly',
+]);
+
+/**
+ * Canonical string the content hash is computed over (raw stored fields, never rendered output),
+ * so the composer's pre-save check and the send-time row-loaded check hash identically. The server
+ * hashes this with sha256; hashing itself is not isomorphic so it stays out of this module.
+ */
+export function preflightHashInput(subject: string, html: string, plainText: string | null | undefined): string {
+  return `${subject}\u0000${html}\u0000${plainText ?? ''}`;
+}
+
+function finding(
+  code: string,
+  severity: PreflightSeverity,
+  deduction: number,
+  message: string,
+  hint: string,
+): PreflightFinding {
+  return { code, severity, message, hint, deduction };
+}
+
+/** Strips tags/styles and decodes the common entities — just enough text to measure, not render. */
+function visibleTextOf(html: string): string {
+  return html
+    .replace(/<(style|script|head|title)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** True when the two hosts are the same registrable site (one is the other or a subdomain). */
+function sameSite(a: string, b: string): boolean {
+  const ha = a.toLowerCase().replace(/^www\./, '');
+  const hb = b.toLowerCase().replace(/^www\./, '');
+  return ha === hb || ha.endsWith(`.${hb}`) || hb.endsWith(`.${ha}`);
+}
+
+interface AnchorRef {
+  href: string;
+  text: string;
+}
+
+function extractAnchors(html: string): AnchorRef[] {
+  const anchors: AnchorRef[] = [];
+  const re = /<a\b[^>]*?\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const m of html.matchAll(re)) {
+    anchors.push({ href: (m[2] ?? '').trim(), text: (m[3] ?? '').replace(/<[^>]+>/g, ' ').trim() });
+  }
+  return anchors;
+}
+
+interface ImgRef {
+  src: string;
+  hasAlt: boolean;
+}
+
+function extractImages(html: string): ImgRef[] {
+  const imgs: ImgRef[] = [];
+  for (const m of html.matchAll(/<img\b[^>]*>/gi)) {
+    const tag = m[0];
+    const src = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
+    const alt = /\balt\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? '';
+    imgs.push({ src: src.trim(), hasAlt: alt.trim().length > 0 });
+  }
+  return imgs;
+}
+
+function lintSubject(subject: string, out: PreflightFinding[]): void {
+  const trimmed = subject.trim();
+  if (!trimmed) {
+    out.push(
+      finding(
+        'subject-empty',
+        'block',
+        DEDUCT.subjectEmpty,
+        'The subject line is empty.',
+        'Write a short, specific subject — it is the single biggest factor in whether people open the email.',
+      ),
+    );
+    return;
+  }
+  if (trimmed.length > SUBJECT_MAX_CHARS) {
+    out.push(
+      finding(
+        'subject-too-long',
+        'info',
+        DEDUCT.subjectTooLong,
+        `The subject is ${trimmed.length} characters — inboxes truncate around ${SUBJECT_MAX_CHARS}.`,
+        'Front-load the message so the part people see carries the meaning.',
+      ),
+    );
+  }
+  const letters = trimmed.replace(/[^a-z]/gi, '');
+  const upper = trimmed.replace(/[^A-Z]/g, '');
+  if (letters.length >= SUBJECT_MIN_LETTERS_FOR_CAPS && upper.length / letters.length > SUBJECT_CAPS_RATIO) {
+    out.push(
+      finding(
+        'subject-caps',
+        'warn',
+        DEDUCT.subjectCaps,
+        'The subject shouts — a large share of it is in capitals.',
+        'Use sentence case. ALL-CAPS subjects correlate strongly with spam complaints.',
+      ),
+    );
+  }
+  if (/!{2,}/.test(trimmed) || (trimmed.match(/!/g) ?? []).length > 2) {
+    out.push(
+      finding(
+        'subject-exclamations',
+        'warn',
+        DEDUCT.subjectExclamations,
+        'The subject leans on exclamation marks.',
+        'One is plenty — stacked "!!" reads as spam to filters and to people.',
+      ),
+    );
+  }
+  if (/[$€£]{2,}/.test(trimmed) || (trimmed.match(/[$€£]/g) ?? []).length >= 3) {
+    out.push(
+      finding(
+        'subject-money-symbols',
+        'warn',
+        DEDUCT.subjectMoneySymbols,
+        'The subject repeats currency symbols.',
+        'Spell amounts out ("Help us raise $5,000") instead of stacking symbols.',
+      ),
+    );
+  }
+  if (/^(re|fwd?)\s*:/i.test(trimmed)) {
+    out.push(
+      finding(
+        'subject-fake-reply',
+        'warn',
+        DEDUCT.subjectFakeReply,
+        'The subject starts with "Re:" or "Fwd:" on a broadcast.',
+        'Faking a reply thread is deceptive (and a CAN-SPAM problem) — drop the prefix.',
+      ),
+    );
+  }
+}
+
+function lintBody(html: string, out: PreflightFinding[]): void {
+  const bytes = new TextEncoder().encode(html).length;
+  if (bytes >= HTML_SIZE_WARN_BYTES) {
+    out.push(
+      finding(
+        'html-oversize',
+        'warn',
+        DEDUCT.htmlOversize,
+        `The email HTML is ${Math.round(bytes / 1024)}KB — Gmail clips messages near 102KB.`,
+        'A clipped message hides your unsubscribe link and footer. Trim content or split into two sends.',
+      ),
+    );
+  }
+
+  const text = visibleTextOf(html);
+  const images = extractImages(html);
+
+  if (images.length > 0 && text.length < IMAGE_ONLY_MIN_TEXT_CHARS) {
+    out.push(
+      finding(
+        'image-only-body',
+        'warn',
+        DEDUCT.imageOnlyBody,
+        'The email is nearly all image with very little text.',
+        'Filters distrust image-only mail, and image-blocking clients show nothing. Add real text.',
+      ),
+    );
+  }
+
+  const missingAlt = images.filter((i) => !i.hasAlt && !i.src.startsWith('data:')).length;
+  if (missingAlt > 0) {
+    out.push(
+      finding(
+        'images-missing-alt',
+        'info',
+        DEDUCT.imagesMissingAlt,
+        `${missingAlt} image${missingAlt === 1 ? '' : 's'} ha${missingAlt === 1 ? 's' : 've'} no alt text.`,
+        'Alt text is what people see while images load (or stay blocked) — describe each image briefly.',
+      ),
+    );
+  }
+
+  const base64Count = images.filter((i) => i.src.startsWith('data:')).length;
+  if (base64Count > 0) {
+    out.push(
+      finding(
+        'base64-image',
+        'block',
+        DEDUCT.base64Image,
+        `${base64Count} image${base64Count === 1 ? ' is' : 's are'} embedded as base64 data.`,
+        'Embedded images balloon the HTML past clipping limits and are a spam signal — host images on an https URL instead.',
+      ),
+    );
+  }
+
+  const anchors = extractAnchors(html);
+  const httpAnchors = anchors
+    .map((a) => ({ ...a, url: parseUrl(a.href) }))
+    .filter((a): a is AnchorRef & { url: URL } => a.url != null);
+
+  if (anchors.length > MAX_LINKS) {
+    out.push(
+      finding(
+        'too-many-links',
+        'warn',
+        DEDUCT.tooManyLinks,
+        `The email contains ${anchors.length} links.`,
+        `Heavily link-stuffed mail scores worse. Keep it under ${MAX_LINKS} and make each link count.`,
+      ),
+    );
+  }
+
+  const shorteners = httpAnchors.filter((a) => URL_SHORTENER_HOSTS.has(a.url.hostname.replace(/^www\./, '')));
+  if (shorteners.length > 0) {
+    out.push(
+      finding(
+        'url-shortener',
+        'warn',
+        DEDUCT.urlShortener,
+        `Links use URL shorteners (${[...new Set(shorteners.map((s) => s.url.hostname))].join(', ')}).`,
+        'Shortener domains are heavily abused by spammers — link the real destination instead.',
+      ),
+    );
+  }
+
+  const insecure = [
+    ...httpAnchors.filter((a) => a.url.protocol === 'http:'),
+    ...images.filter((i) => i.src.toLowerCase().startsWith('http://')),
+  ].length;
+  if (insecure > 0) {
+    out.push(
+      finding(
+        'insecure-urls',
+        'warn',
+        DEDUCT.insecureUrls,
+        `${insecure} link${insecure === 1 ? '' : 's'}/image${insecure === 1 ? '' : 's'} use plain http://.`,
+        'Serve every link and image over https — mixed content looks unsafe to filters and clients.',
+      ),
+    );
+  }
+
+  const rawIp = httpAnchors.filter((a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a.url.hostname));
+  if (rawIp.length > 0) {
+    out.push(
+      finding(
+        'raw-ip-link',
+        'block',
+        DEDUCT.rawIpLink,
+        'A link points at a bare IP address.',
+        'Legitimate mail links to domains, not IPs — this is a classic phishing pattern.',
+      ),
+    );
+  }
+
+  const suspicious = anchors.filter((a) => /^(javascript|data|vbscript):/i.test(a.href));
+  if (suspicious.length > 0) {
+    out.push(
+      finding(
+        'suspicious-protocol',
+        'block',
+        DEDUCT.suspiciousProtocol,
+        'A link uses a script/data protocol.',
+        'Email clients strip these and filters flag them — use https links only.',
+      ),
+    );
+  }
+
+  // Anchor text that names one site while the href goes to another is the signature phishing shape.
+  const DOMAIN_IN_TEXT_RE = /(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i;
+  const mismatched = httpAnchors.filter((a) => {
+    const m = DOMAIN_IN_TEXT_RE.exec(a.text);
+    if (!m?.[1]) return false;
+    const claimed = m[1];
+    // Only treat it as a domain claim when it has a plausible TLD (avoids "e.g" style false hits).
+    if (!/\.[a-z]{2,}$/i.test(claimed)) return false;
+    return !sameSite(claimed, a.url.hostname);
+  });
+  if (mismatched.length > 0) {
+    out.push(
+      finding(
+        'anchor-domain-mismatch',
+        'block',
+        DEDUCT.anchorDomainMismatch,
+        `Link text claims one site but points to another (e.g. "${mismatched[0]?.text.slice(0, 60)}").`,
+        'Make the visible text match the real destination — mismatches are the signature phishing pattern.',
+      ),
+    );
+  }
+}
+
+/** Runs every deterministic check. Pure — same result in the composer and on the server. */
+export function lintNewsletterContent(input: PreflightInput): PreflightFinding[] {
+  const out: PreflightFinding[] = [];
+  lintSubject(input.subject, out);
+  lintBody(input.html, out);
+  return out;
+}
+
+/** Converts a SpamAssassin score (Postmark spamcheck) into a finding, or null when unremarkable. */
+export function buildSpamAssassinFinding(saScore: number): PreflightFinding | null {
+  if (saScore < SPAMASSASSIN_INFO_AT) return null;
+  const deduction = Math.min(
+    SPAMASSASSIN_MAX_DEDUCTION,
+    Math.max(0, Math.round(SPAMASSASSIN_DEDUCTION_PER_POINT * (saScore - SPAMASSASSIN_INFO_AT))),
+  );
+  return finding(
+    'spamassassin-score',
+    saScore >= SPAMASSASSIN_WARN_AT ? 'warn' : 'info',
+    deduction,
+    `SpamAssassin scores this email ${saScore.toFixed(1)} (5+ is typically filtered).`,
+    'Review the flagged wording and structure — small copy changes usually drop this fast.',
+  );
+}
+
+/** Converts the AI verdict into findings (risk contribution, deception flags, disallowed content). */
+export function buildAiFindings(verdict: AiPreflightVerdict): PreflightFinding[] {
+  const out: PreflightFinding[] = [];
+
+  const disallowed = verdict.contentType === 'pure_commercial_marketing' || verdict.contentType === 'scam_or_phishing';
+  if (disallowed && verdict.confidence >= AI_DISALLOWED_MIN_CONFIDENCE) {
+    const isScam = verdict.contentType === 'scam_or_phishing';
+    out.push(
+      finding(
+        isScam ? 'ai-scam-phishing' : 'ai-commercial-marketing',
+        'block',
+        DEDUCT.aiDisallowedContent,
+        isScam
+          ? 'The content review flagged this as a possible scam or phishing message.'
+          : 'The content review reads this as commercial marketing, which pplCRM newsletters do not cover.',
+        isScam
+          ? 'If this is a mistake, adjust the wording that resembles credential or payment bait and re-run the check.'
+          : 'pplCRM sending is for community, political and nonprofit updates — including fundraising and auctions. Product-sales blasts are outside the acceptable-use policy.',
+      ),
+    );
+  }
+
+  const riskDeduction = Math.round((verdict.spamRiskScore / 100) * AI_RISK_MAX_DEDUCTION * verdict.confidence);
+  if (riskDeduction > 0) {
+    const reasons = verdict.reasons.slice(0, 3).join('; ');
+    out.push(
+      finding(
+        'ai-spam-risk',
+        verdict.spamRiskScore >= AI_RISK_WARN_AT ? 'warn' : 'info',
+        riskDeduction,
+        `The content review rates the copy ${verdict.spamRiskScore}/100 for spam-like patterns${reasons ? ` — ${reasons}` : ''}.`,
+        'See the suggestions below for the specific lines to soften.',
+      ),
+    );
+  }
+
+  if (verdict.deceptionFlags.length > 0) {
+    out.push(
+      finding(
+        'ai-deception-flags',
+        'warn',
+        DEDUCT.aiDeceptionFlags,
+        `The copy uses pressure patterns: ${verdict.deceptionFlags.slice(0, 4).join(', ')}.`,
+        'Manufactured urgency and misleading claims drive spam reports — state the real ask plainly.',
+      ),
+    );
+  }
+
+  return out;
+}
+
+/** 100 minus every deduction, clamped to 0–100 and rounded. */
+export function computeScore(findings: PreflightFinding[]): number {
+  const total = findings.reduce((sum, f) => sum + f.deduction, 0);
+  return Math.max(0, Math.min(100, Math.round(100 - total)));
+}
+````
+
 ## File: libs/common/src/lib/public-id.ts
 ````typescript
 import { slugifyRecordName } from './utils';
@@ -95663,6 +96599,33 @@ export function buildPersonSlug(
   const id = publicId.toLowerCase();
   return `${name}-${id.slice(0, 4)}-${id.slice(4, PUBLIC_ID_LENGTH)}`;
 }
+````
+
+## File: libs/common/src/lib/schema.ts
+````typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+export * from './schemas/content-check.schema';
 ````
 
 ## File: libs/common/src/lib/sla.ts
@@ -95998,15 +96961,15 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../coverage/libs/common',
       provider: 'v8' as const,
-      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
-      // 94% branch on this small lib; held slightly below so one new helper
-      // file doesn't instantly break the build, but keep raising it as the
-      // lib grows. Never lower these — add tests instead.
+      // Coverage ratchet: set just under the measured baseline (2026-07-17:
+      // 98.04% stmts / 90.31% branch / 100% funcs / 98.41% lines); held slightly
+      // below so one new helper file doesn't instantly break the build, but keep
+      // raising it as the lib grows. Never lower these — add tests instead.
       thresholds: {
-        statements: 95,
+        statements: 96,
         branches: 90,
-        functions: 95,
-        lines: 95,
+        functions: 98,
+        lines: 96,
       },
     },
   },
@@ -97582,6 +98545,114 @@ export class FieldsSelector {
 </div>
 ````
 
+## File: libs/uxcommon/src/components/form-actions/form-actions.ts
+````typescript
+import { Component, inject, input, output } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * Minimal structural view of a signal-forms root (the object returned by
+ * `form()` from '@angular/forms/signals'): calling it yields the root field
+ * state. Kept structural so this shared control does not depend on the
+ * experimental signal-forms types directly.
+ */
+export type SignalFormRoot = () => {
+  dirty(): boolean;
+  invalid(): boolean;
+  reset(): void;
+};
+
+@Component({
+  selector: 'pc-form-actions',
+  imports: [Icon],
+  templateUrl: './form-actions.html',
+})
+export class FormActions {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  private stay = false;
+
+  public signalForm = input<SignalFormRoot>();
+
+  public disabled = input<boolean>(false);
+
+  /**
+   * §4 "Save never disables": when true, the primary button stays enabled
+   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
+   * consuming form is expected to guide on click (markAsTouched + focus the
+   * first invalid field) rather than block via a dead button.
+   */
+  public saveAlwaysEnabled = input<boolean>(false);
+
+  public showDelete = input<boolean>(false);
+
+  /** Whether to render the Cancel button. Read/detail views turn this off — a
+   * read view has no edit to cancel; the header's action is a navigation "Edit". */
+  public showCancel = input<boolean>(true);
+
+  public deleteText = input<string>('Delete');
+
+  public readonly deleteClicked = output<void>();
+
+  public readonly btn1Clicked = output<() => void>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+
+  public btn1Text = input<string>('Save');
+
+  public btn2Text = input<string>('Save & add more');
+
+  public buttonsToShow = input<'two' | 'three'>('three');
+
+  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
+  public size = input<'xs' | 'sm'>('sm');
+
+  public isLoading = input.required<boolean>();
+
+  protected get isSaveDisabled(): boolean {
+    if (this.isLoading()) return true;
+    if (this.disabled()) return true;
+    // Save never disables on validity/dirtiness — the form guides on click.
+    if (this.saveAlwaysEnabled()) return false;
+    const sigF = this.signalForm();
+    if (sigF) {
+      return sigF().invalid() || !sigF().dirty();
+    }
+    // No form at all: plain button bar (e.g. list-view) — never gate Save.
+    return false;
+  }
+
+  public cancel(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  public handleDeleteClicked(): void {
+    this.deleteClicked.emit();
+  }
+
+  public handleBtn1Clicked(): void {
+    this.stay = false;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public handleBtn2Clicked(): void {
+    this.stay = true;
+    this.btn1Clicked.emit(this.stayOrCancel);
+  }
+
+  public stayOrCancel = (): void => {
+    if (this.stay) {
+      this.signalForm()?.().reset();
+    } else {
+      this.cancel();
+    }
+  };
+}
+````
+
 ## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
 ````typescript
 import { Component, computed, input } from '@angular/core';
@@ -98570,6 +99641,92 @@ export class StatCard {
 }
 ````
 
+## File: libs/uxcommon/src/components/status-badge/status-badge.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+
+export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
+
+@Component({
+  selector: 'pc-status-badge',
+  template: `
+    <span class="badge font-semibold uppercase" [class]="badgeClass()">
+      <ng-content></ng-content>
+    </span>
+  `,
+})
+export class StatusBadge {
+  public type = input<PcStatusType>('ghost');
+  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
+
+  protected badgeClass = computed(() => {
+    const t = this.type();
+    let cls = '';
+    if (this.size() === 'xs') cls += 'badge-xs ';
+    else if (this.size() === 'sm') cls += 'badge-sm ';
+    else if (this.size() === 'md') cls += 'badge-md ';
+    else if (this.size() === 'lg') cls += 'badge-lg ';
+
+    switch (t) {
+      case 'success':
+        return cls + 'badge-success text-success-content';
+      case 'warning':
+        return cls + 'badge-warning text-warning-content';
+      case 'error':
+        return cls + 'badge-error text-error-content';
+      case 'info':
+        return cls + 'badge-info text-info-content';
+      case 'neutral':
+        return cls + 'badge-neutral text-neutral-content';
+      default:
+        return cls + 'badge-ghost';
+    }
+  });
+}
+````
+
+## File: libs/uxcommon/src/components/swap/swap.ts
+````typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-swap',
+  imports: [Icon],
+  template: `<label
+    class="swap ml-auto flex-none cursor-pointer p-2"
+    [class.swap-flip]="animation() === 'flip'"
+    [class.swap-rotate]="animation() === 'rotate'"
+    [class.swap-active]="checked()"
+    (click)="emitClick($event)"
+  >
+    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
+
+    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
+  </label> `,
+})
+export class Swap {
+  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
+  public readonly click = output<void>();
+
+  public animation = input<'flip' | 'rotate'>('rotate');
+
+  public checked = input<boolean>(false);
+  public hoverIcon = input<PcIconNameType | null>(null);
+  public size = input(6);
+
+  public swapOffIcon = input.required<PcIconNameType>();
+
+  public swapOnIcon = input.required<PcIconNameType>();
+
+  public emitClick(event: Event) {
+    event.stopPropagation();
+    this.click.emit();
+  }
+}
+````
+
 ## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
 ````typescript
 import { Component, input } from '@angular/core';
@@ -99110,6 +100267,191 @@ export class UserAvatarComponent {
     }
     return n[0]!.toUpperCase();
   });
+}
+````
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.html
+````html
+<dialog #dlg class="modal">
+  @if (state()) {
+  <div class="modal-box">
+    <div class="flex items-center gap-2">
+      <pc-icon [name]="icon()" class="text-xl" />
+      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
+    </div>
+
+    @if (state()!.message) {
+    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
+    } @if (state()!.type === 'prompt') {
+    <input
+      [placeholder]="state()!.inputPlaceholder || ''"
+      class="input input-bordered w-full mb-4"
+      [value]="promptValue()"
+      (input)="onPromptInput($event)"
+    />
+    } @if (state()!.type === 'choose') {
+    <div class="flex flex-col gap-2 w-full mt-4">
+      @for (choice of state()!.choices; track choice.label) {
+      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
+        {{ choice.label }}
+      </button>
+      } @if (showCancel()) {
+      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+    </div>
+    } @else {
+    <div class="flex justify-end gap-2">
+      @if (showCancel()) {
+      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
+      }
+      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
+    </div>
+    }
+  </div>
+
+  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
+    <button>close</button>
+  </form>
+  }
+</dialog>
+````
+
+## File: libs/uxcommon/src/components/confirm-dialog-host.ts
+````typescript
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
+
+@Component({
+  selector: 'pc-dialog-host',
+  imports: [Icon],
+  templateUrl: './confirm-dialog-host.html',
+})
+export class ConfirmDialogHost {
+  private readonly svc = inject(ConfirmDialogService);
+
+  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
+
+  private readonly stateSignal = this.svc.stateSignal;
+  private readonly openSignal = this.svc.isOpenSignal;
+  public state = this.stateSignal;
+  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
+  // default to emphasizing the cancel/keep button unless a caller opts out, and
+  // only when a cancel button is actually shown.
+  public readonly effectiveEmphasizeCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    const explicit = st.emphasizeCancel;
+    const wants = explicit ?? st.variant === 'danger';
+    return wants && this.showCancel();
+  });
+  public confirmBtnClass = computed(() => {
+    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
+    if (this.effectiveEmphasizeCancel()) {
+      switch (v) {
+        case 'danger':
+          return 'btn-ghost text-error';
+        case 'warning':
+          return 'btn-ghost text-warning';
+        case 'info':
+          return 'btn-ghost text-info';
+        case 'success':
+          return 'btn-ghost text-success';
+        default:
+          return 'btn-ghost';
+      }
+    }
+    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
+    // affirmative confirms (info/success/neutral) are the surface's main action.
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+      default:
+        return 'btn-primary';
+    }
+  });
+
+  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
+  // (danger variants by default, or any explicit emphasizeCancel), style the safe
+  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
+  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
+  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
+
+  public choiceBtnClass(v?: DialogVariant): string {
+    if (!v) return '';
+    switch (v) {
+      case 'danger':
+        return 'btn-outline btn-error';
+      case 'warning':
+        return 'btn-outline btn-warning';
+      case 'info':
+      case 'success':
+        return 'btn-primary';
+      default:
+        return '';
+    }
+  }
+
+  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
+  public showCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    if (st.type === 'choose') {
+      return !!st.cancelText;
+    }
+    return !!st.cancelText && st.type !== 'alert';
+  });
+
+  constructor() {
+    effect(() => {
+      const open = this.openSignal();
+      const dlg = this.dlgRef()?.nativeElement;
+      if (!dlg) return;
+
+      if (open) {
+        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
+        if (!dlg.open) {
+          try {
+            dlg.showModal();
+          } catch {}
+        }
+      } else if (dlg.open) {
+        try {
+          dlg.close();
+        } catch {}
+      }
+    });
+  }
+
+  public onPromptInput(event: Event): void {
+    this.promptValue.set((event.target as HTMLInputElement).value);
+  }
+
+  public onBackdrop(): void {
+    const st = this.state();
+    if (st?.allowBackdropClose) this.svc.cancel();
+  }
+
+  public onCancel(): void {
+    this.svc.cancel();
+  }
+
+  public onConfirm(): void {
+    const st = this.state();
+    if (!st) return;
+    if (st.type === 'prompt') this.svc.ok(this.promptValue());
+    else if (st.type === 'alert') this.svc.ok();
+    else this.svc.ok(true);
+  }
+
+  public onChoice(value: unknown): void {
+    this.svc.ok(value);
+  }
 }
 ````
 
@@ -100022,56 +101364,6 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 }
 ````
 
-## File: libs/uxcommon/src/index.ts
-````typescript
-export * from './loading-gate';
-export * from './request-guard';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/table/table';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-export * from './components/map/map';
-export * from './components/map/map-types';
-export * from './components/geocode-chip/geocode-chip';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-````
-
 ## File: libs/uxcommon/src/loading-gate.ts
 ````typescript
 // _loading-gate.ts
@@ -100417,14 +101709,14 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../coverage/libs/uxcommon',
       provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 81.22% stmts / 63.21% branch / 67.05% funcs / 82.27% lines). These may
+      // Coverage ratchet: set just under the measured baseline (2026-07-17:
+      // 81.67% stmts / 64.37% branch / 82.97% funcs / 81.48% lines). These may
       // only ever be raised, never lowered — if your change drops coverage
       // below them, add tests rather than editing the thresholds.
       thresholds: {
         statements: 80,
-        branches: 62,
-        functions: 66,
+        branches: 63,
+        functions: 80,
         lines: 81,
       },
     },
@@ -100973,415 +102265,6 @@ export const DATA_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Make it a habit',
         text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/getting-started.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to pplCRM',
-    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
-          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
-          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
-          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
-          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Your workspace starts in demo mode',
-        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
-      },
-    ],
-  },
-  {
-    id: 'demo-mode',
-    category: 'getting-started',
-    title: 'Demo mode and sample data',
-    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
-    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
-    related: ['welcome', 'add-people', 'import'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
-      },
-      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
-      {
-        kind: 'list',
-        items: [
-          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
-          '**10 companies**, with several people linked to them.',
-          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
-          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
-          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
-          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
-          '**Tasks** in every state: overdue, due this week, waiting, and done.',
-          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
-          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
-          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
-          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why draft forms show responses',
-        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
-      },
-      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
-      {
-        kind: 'p',
-        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'What stays locked during the demo',
-        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
-      },
-      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Choose a plan',
-            detail:
-              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
-          },
-          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
-          {
-            title: 'Choose Exit demo mode',
-            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
-          },
-          {
-            title: 'Start fresh',
-            detail:
-              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
-      {
-        kind: 'list',
-        items: [
-          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
-          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
-          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading (useful for areas you rarely use).',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
-          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
-          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
-          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
-          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
-        ],
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track**: no open items have exceeded their target.',
-          '**Warning**: the number of breached items has reached the warning threshold.',
-          '**Critical**: breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/automations)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
       },
     ],
   },
@@ -102343,370 +103226,6 @@ export function readingMinutes(article: HelpArticle): number {
 }
 ````
 
-## File: libs/common/src/lib/schemas/canvassing.schema.ts
-````typescript
-import { z } from 'zod';
-
-import { idSchema, nameSchema, notesSchema } from './core.schema';
-
-/**
- * Canvassing §13 schemas. The turf/knock status vocabularies are `as const` so
- * they drive both Zod validation and exhaustive discriminated-union switches on
- * the frontend and in the controller.
- */
-
-/** Stored turf lifecycle. Display state ("In field now") is derived from knocks. */
-export const TURF_STATUSES = ['draft', 'active', 'retired'] as const;
-export type TurfStatus = (typeof TURF_STATUSES)[number];
-
-/**
- * What happened at the door. "attempted" = any knock except `cleared`;
- * "conversation" = a talk. `moved` is a person-level no-conversation code;
- * `cleared` is the append-only "door outcome toggled off" marker — the latest
- * outcome knock wins, and `cleared` means the door is back on the list.
- */
-export const KNOCK_OUTCOMES = [
-  'conversation',
-  'no_answer',
-  'not_home',
-  'moved',
-  'refused',
-  'inaccessible',
-  'cleared',
-] as const;
-export type KnockOutcome = (typeof KNOCK_OUTCOMES)[number];
-
-/**
- * The voter's stance, when a conversation happened — the spec §3.5 five-option
- * support scale. `not_voting`/`already_voted` feed `voting_status` rather than
- * `support_level` on campaign_person_facts.
- */
-export const KNOCK_RESPONSES = ['supporter', 'undecided', 'non_supporter', 'not_voting', 'already_voted'] as const;
-export type KnockResponse = (typeof KNOCK_RESPONSES)[number];
-
-/** Survey labels for the five support options (sentence case, spec §3.5). */
-export const KNOCK_RESPONSE_LABELS: Record<KnockResponse, string> = {
-  supporter: 'Supporter',
-  undecided: 'Undecided',
-  non_supporter: 'Non-supporter',
-  not_voting: 'Not voting',
-  already_voted: 'Already voted',
-};
-
-/** Doors-per-turf presets from the Cut-new-turfs dialog. */
-export const DOORS_PER_TURF_PRESETS = [30, 40, 50, 60] as const;
-
-export const turfStatusSchema = z.enum(TURF_STATUSES);
-export const knockOutcomeSchema = z.enum(KNOCK_OUTCOMES);
-export const knockResponseSchema = z.enum(KNOCK_RESPONSES);
-
-export const AddTurfObj = z.object({
-  /** Campaigns §15 — the context this turf is knocked for; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: nameSchema('Name', 120),
-  list_id: idSchema.nullable().optional(),
-  notes: notesSchema,
-});
-
-export const UpdateTurfObj = z.object({
-  name: nameSchema('Name', 120).optional(),
-  status: turfStatusSchema.optional(),
-  notes: notesSchema,
-});
-
-/** Preview and Cut share this input; preview never writes. */
-export const CutTurfsObj = z.object({
-  list_id: idSchema,
-  doors_per_turf: z.number().int().min(5).max(500),
-});
-
-export const AssignTurfObj = z.object({
-  turf_id: idSchema,
-  team_id: idSchema.nullable().optional(),
-  /**
-   * The person this Companion link belongs to. Required: the companion access
-   * layer verifies the holder against this person's email/mobile on file, so
-   * an assignment without a person produces a link nobody can open.
-   */
-  volunteer_person_id: idSchema,
-});
-
-export const FieldReportRangeObj = z.object({
-  range: z.enum(['today', 'yesterday', 'week', 'month', 'campaign', 'custom']).default('week'),
-  from: z.string().datetime().nullable().optional(),
-  to: z.string().datetime().nullable().optional(),
-});
-
-/**
- * Companion knock payload. Arrives over the tokenised public route (no account),
- * so the token authorises the turf and `client_knock_id` de-dupes offline
- * re-sends. Parsed from `unknown` at the REST boundary.
- */
-export const LogKnockObj = z.object({
-  token: z.string().min(10).max(200),
-  client_knock_id: z.string().min(1).max(200),
-  household_id: idSchema,
-  person_id: idSchema.nullable().optional(),
-  outcome: knockOutcomeSchema,
-  response: knockResponseSchema.nullable().optional(),
-  notes: z.string().trim().max(2000).nullable().optional(),
-  canvasser_name: z.string().trim().max(120).nullable().optional(),
-  knocked_at: z.string().datetime().nullable().optional(),
-});
-
-export function isTurfStatus(v: unknown): v is TurfStatus {
-  return typeof v === 'string' && (TURF_STATUSES as readonly string[]).includes(v);
-}
-
-export function isKnockOutcome(v: unknown): v is KnockOutcome {
-  return typeof v === 'string' && (KNOCK_OUTCOMES as readonly string[]).includes(v);
-}
-
-// ---------------------------------------------------------------------------
-// Companion batched results (spec §3.5/§5) — POST /api/canvass/t/:token/results
-// ---------------------------------------------------------------------------
-
-/**
- * A full survey (spec §3.5). `person_id` null = the anonymous household-level
- * survey. `support` is the one required field — EXCEPT that toggling
- * "Do not contact" alone is saveable, which the refine below encodes.
- */
-export const CompanionSurveyObj = z
-  .object({
-    household_id: idSchema,
-    person_id: idSchema.nullable().optional(),
-    support: knockResponseSchema.nullable().optional(),
-    issues: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
-    wants_volunteer: z.boolean().default(false),
-    wants_yard_sign: z.boolean().default(false),
-    set_dnc: z.boolean().default(false),
-    contact_phone: z.string().trim().max(40).nullable().optional(),
-    contact_email: z.string().trim().email().max(200).nullable().optional(),
-    subscribe: z.boolean().default(false),
-    notes: z.string().trim().max(2000).nullable().optional(),
-  })
-  .refine((v) => v.support != null || v.set_dnc, { message: 'Pick a support level to save' });
-
-/** One-tap no-conversation codes for a person (spec §3.5). */
-export const CompanionPersonResultObj = z.object({
-  household_id: idSchema,
-  person_id: idSchema,
-  result: z.enum(['not_home', 'moved', 'refused']),
-});
-
-/** Door-level outcome (spec §3.4 quick actions). */
-export const CompanionDoorOutcomeObj = z.object({
-  household_id: idSchema,
-  outcome: z.enum(['no_answer', 'inaccessible', 'refused']),
-});
-
-export const CompanionClearOutcomeObj = z.object({
-  household_id: idSchema,
-});
-
-/** "+ Add someone at this door" (spec §3.4). */
-export const CompanionPersonCreateObj = z.object({
-  household_id: idSchema,
-  name: z.string().trim().min(1).max(120),
-});
-
-const companionOpBase = {
-  /** Client-generated UUID — the idempotency key (companion_ops ledger). */
-  op_id: z.string().min(8).max(100),
-  /** On-device timestamp so offline results keep their true door time. */
-  recorded_at: z.string().datetime().nullable().optional(),
-};
-
-export const CompanionOpObj = z.discriminatedUnion('type', [
-  z.object({ ...companionOpBase, type: z.literal('survey'), payload: CompanionSurveyObj }),
-  z.object({ ...companionOpBase, type: z.literal('person_result'), payload: CompanionPersonResultObj }),
-  z.object({ ...companionOpBase, type: z.literal('door_outcome'), payload: CompanionDoorOutcomeObj }),
-  z.object({ ...companionOpBase, type: z.literal('clear_outcome'), payload: CompanionClearOutcomeObj }),
-  z.object({ ...companionOpBase, type: z.literal('person_create'), payload: CompanionPersonCreateObj }),
-]);
-
-export const CompanionResultsObj = z.object({
-  ops: z.array(CompanionOpObj).min(1).max(200),
-});
-
-export type CompanionSurveyType = z.infer<typeof CompanionSurveyObj>;
-export type CompanionOpType = z.infer<typeof CompanionOpObj>;
-export type CompanionResultsType = z.infer<typeof CompanionResultsObj>;
-
-/** Per-op server acknowledgement — `duplicate` means "already applied, treat as success". */
-export interface CompanionOpAck {
-  op_id: string;
-  status: 'applied' | 'duplicate' | 'rejected';
-  error?: string;
-  /** For person_create: the real id to swap in for the client's temp person. */
-  person_id?: string;
-}
-
-// ------------------------------------------------------------------------
-// Companion GET payload (spec §3, §5) — shared by backend + apps/companion.
-// Payload minimization is an acceptance criterion: names, walk data and prior
-// door RESULTS only — never emails, phones, donation history, or notes.
-// ------------------------------------------------------------------------
-
-/** Pre-fill for re-editing a surveyed person/door. Deliberately excludes notes + contact info. */
-export interface CompanionSurveyPrefill {
-  support: KnockResponse | null;
-  issues: string[];
-  wants_volunteer: boolean;
-  wants_yard_sign: boolean;
-  set_dnc: boolean;
-  subscribe: boolean;
-}
-
-export type CompanionPersonResult = 'canvassed' | 'not_home' | 'moved' | 'refused';
-
-export interface CompanionPerson {
-  id: string;
-  name: string;
-  /** Suppressed from all outreach — card renders dimmed and non-interactive. */
-  dnc: boolean;
-  result: CompanionPersonResult | null;
-  survey: CompanionSurveyPrefill | null;
-}
-
-export type CompanionDoorOutcome = 'no_answer' | 'inaccessible' | 'refused';
-
-export interface CompanionHousehold {
-  id: string;
-  walk_order: number;
-  address: string;
-  lat: number | null;
-  lng: number | null;
-  /** Whole-door do-not-contact (every resident is DNC) — skip, but it still counts. */
-  dnc: boolean;
-  door_outcome: CompanionDoorOutcome | null;
-  /** The anonymous household-level survey, when one was recorded. */
-  hh_survey: CompanionSurveyPrefill | null;
-  people: CompanionPerson[];
-}
-
-export interface CompanionTurfPayload {
-  campaign_name: string;
-  turf_name: string;
-  /** Whose name results save under — the assignment's volunteer. */
-  canvasser_name: string;
-  /** Collapsible door script (campaign-configured; empty string = none). */
-  script: string;
-  /** Issue-chip vocabulary (campaign-configured). */
-  issues: string[];
-  expires_at: string | null;
-  households: CompanionHousehold[];
-}
-
-/** Staff-configured survey vocabulary (campaigns.canvass_issues/script). */
-export const UpdateCompanionSettingsObj = z.object({
-  campaign_id: idSchema.optional(),
-  issues: z.array(z.string().trim().min(1).max(80)).max(30),
-  script: z.string().trim().max(4000).nullable(),
-});
-export type UpdateCompanionSettingsType = z.infer<typeof UpdateCompanionSettingsObj>;
-````
-
-## File: libs/common/src/lib/schemas/companion-access.schema.ts
-````typescript
-import { z } from 'zod';
-
-/**
- * Companion access layer (COMPANION-APPS-PLAN.md §2). A companion capability
- * link (/t/:token canvass turf, /r/:token delivery route) is not enough on its
- * own: the volunteer must verify a one-time code sent to their email/SMS on
- * file, be approved once by an admin, and then hold a device session that
- * accompanies every companion request.
- */
-
-export const COMPANION_LINK_KINDS = ['turf', 'route'] as const;
-export type CompanionLinkKind = (typeof COMPANION_LINK_KINDS)[number];
-
-export const COMPANION_VERIFY_CHANNELS = ['email', 'sms'] as const;
-export type CompanionVerifyChannel = (typeof COMPANION_VERIFY_CHANNELS)[number];
-
-export const COMPANION_VOLUNTEER_STATUSES = ['invited', 'verified', 'approved', 'revoked'] as const;
-export type CompanionVolunteerStatus = (typeof COMPANION_VOLUNTEER_STATUSES)[number];
-
-/**
- * What the gate UI renders:
- * - dead: unknown/expired/revoked link — friendly dead-link page
- * - unassigned: link has no volunteer person attached — ask the organizer to re-send
- * - need_verification: pick a channel, get a code
- * - pending_approval: verified, waiting for an admin — the page polls
- * - ready: approved with a valid device session — load the app
- */
-export const COMPANION_ACCESS_STATES = [
-  'dead',
-  'unassigned',
-  'need_verification',
-  'pending_approval',
-  'ready',
-] as const;
-export type CompanionAccessState = (typeof COMPANION_ACCESS_STATES)[number];
-
-export const CompanionAccessQueryObj = z.object({
-  kind: z.enum(COMPANION_LINK_KINDS),
-  token: z.string().min(8).max(200),
-});
-
-export const CompanionVerifyStartObj = CompanionAccessQueryObj.extend({
-  channel: z.enum(COMPANION_VERIFY_CHANNELS),
-});
-
-export const CompanionVerifyConfirmObj = CompanionAccessQueryObj.extend({
-  code: z
-    .string()
-    .trim()
-    .regex(/^\d{6}$/, 'Enter the 6-digit code'),
-});
-
-export type CompanionAccessQueryType = z.infer<typeof CompanionAccessQueryObj>;
-export type CompanionVerifyStartType = z.infer<typeof CompanionVerifyStartObj>;
-export type CompanionVerifyConfirmType = z.infer<typeof CompanionVerifyConfirmObj>;
-
-/** A verifiable contact on file, masked for display — never the raw value. */
-export interface CompanionContact {
-  channel: CompanionVerifyChannel;
-  masked: string;
-}
-
-/** Response of GET /api/companion/access. */
-export interface CompanionAccessPayload {
-  state: CompanionAccessState;
-  /** Volunteer first name — identity card ("Walking as Jordan"). */
-  volunteerName?: string;
-  /** Who to contact about a dead/unassigned link. */
-  organizerName?: string;
-  /** Organization name for the gate header. */
-  organizationName?: string;
-  contacts?: CompanionContact[];
-}
-
-/** Response of POST /api/companion/verify/confirm. */
-export interface CompanionVerifyConfirmResult {
-  status: 'ready' | 'pending_approval';
-  sessionToken: string;
-  expiresAt: string;
-}
-
-/** One row of the admin Volunteer access page. */
-export interface CompanionVolunteerRow {
-  id: string;
-  person_id: string;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  mobile: string | null;
-  status: CompanionVolunteerStatus;
-  verify_channel: CompanionVerifyChannel | null;
-  verified_at: string | null;
-  approved_at: string | null;
-  approved_by_name: string | null;
-  created_at: string;
-}
-````
-
 ## File: libs/common/src/lib/schemas/deliveries.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -102997,633 +103516,6 @@ export const UpdatePersonsObj = z.object({
   volunteer_status: z.enum(VOLUNTEER_STATUSES).nullable().optional(),
   staff_status: z.enum(STAFF_STATUSES).nullable().optional(),
 });
-````
-
-## File: libs/common/src/lib/schema.ts
-````typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-````
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-````typescript
-import { Component, inject, input, output } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-/**
- * Minimal structural view of a signal-forms root (the object returned by
- * `form()` from '@angular/forms/signals'): calling it yields the root field
- * state. Kept structural so this shared control does not depend on the
- * experimental signal-forms types directly.
- */
-export type SignalFormRoot = () => {
-  dirty(): boolean;
-  invalid(): boolean;
-  reset(): void;
-};
-
-@Component({
-  selector: 'pc-form-actions',
-  imports: [Icon],
-  templateUrl: './form-actions.html',
-})
-export class FormActions {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-
-  private stay = false;
-
-  public signalForm = input<SignalFormRoot>();
-
-  public disabled = input<boolean>(false);
-
-  /**
-   * §4 "Save never disables": when true, the primary button stays enabled
-   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
-   * consuming form is expected to guide on click (markAsTouched + focus the
-   * first invalid field) rather than block via a dead button.
-   */
-  public saveAlwaysEnabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  /** Whether to render the Cancel button. Read/detail views turn this off — a
-   * read view has no edit to cancel; the header's action is a navigation "Edit". */
-  public showCancel = input<boolean>(true);
-
-  public deleteText = input<string>('Delete');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('Save');
-
-  public btn2Text = input<string>('Save & add more');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  /** Button size; detail-header uses 'xs' to sit inline with the compact record pager. */
-  public size = input<'xs' | 'sm'>('sm');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    // Save never disables on validity/dirtiness — the form guides on click.
-    if (this.saveAlwaysEnabled()) return false;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    // No form at all: plain button bar (e.g. list-view) — never gate Save.
-    return false;
-  }
-
-  public cancel(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked(): void {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked(): void {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked(): void {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public stayOrCancel = (): void => {
-    if (this.stay) {
-      this.signalForm()?.().reset();
-    } else {
-      this.cancel();
-    }
-  };
-}
-````
-
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'xs' | 'sm' | 'md' | 'lg'>('xs');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'xs') cls += 'badge-xs ';
-    else if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'md') cls += 'badge-md ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-````
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  // eslint-disable-next-line @angular-eslint/no-output-native -- pre-existing public API; renaming `click` breaks every pc-swap consumer and is out of scope here
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-````html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="onPromptInput($event)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-````
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-````typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // bound via [value] + (input) in the template
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    // UX-GUIDELINES §4b: destructive/archive confirms wear the outline role classes;
-    // affirmative confirms (info/success/neutral) are the surface's main action.
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-      default:
-        return 'btn-primary';
-    }
-  });
-
-  // Mirror the confirm side: whenever the destructive/confirm action is de-emphasized
-  // (danger variants by default, or any explicit emphasizeCancel), style the safe
-  // cancel/keep action as the primary default so there is always a clear safe default (§7.4).
-  // Default cancel wears the house cancel style (UX-GUIDELINES "Buttons"): outline accent.
-  public cancelBtnClass = computed(() => (this.effectiveEmphasizeCancel() ? 'btn-primary' : 'btn-outline btn-accent'));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-outline btn-error';
-      case 'warning':
-        return 'btn-outline btn-warning';
-      case 'info':
-      case 'success':
-        return 'btn-primary';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onPromptInput(event: Event): void {
-    this.promptValue.set((event.target as HTMLInputElement).value);
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
-````
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
-    campaignId: z.string().optional(),
-    /**
-     * Volunteer/staff status filters (§15) — first-class replacements for the
-     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
-     * circular import with persons.schema; the enum is validated at the column.
-     */
-    volunteerStatus: z.array(z.string()).optional(),
-    staffStatus: z.array(z.string()).optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const exportEntitySchema = z.enum([
-  'persons',
-  'households',
-  'companies',
-  'tags',
-  'issues',
-  'tasks',
-  'lists',
-  'newsletters',
-  'teams',
-  'users',
-  'volunteer',
-  'forms',
-  'workflows',
-]);
-
-export const queueExportInput = z.object({
-  entity: exportEntitySchema,
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
- * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
- * so the resulting record is not re-downloadable. */
-export const logInstantExportInput = z.object({
-  entity: exportEntitySchema,
-  fileName: z.string(),
-  rowCount: z.number().int().nonnegative(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  downloadable: z.boolean(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-/**
- * One column's server-side filter as the datagrid posts it inside `filterModel`:
- * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
- * `value` to match. Consumed by BaseRepository.applyColumnFilter /
- * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
- * numbers, and booleans — coerce with String(...) at the point of use. Matches
- * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
- */
-export interface GridColumnFilter {
-  op?: string;
-  value?: unknown;
-}
-
-/** The datagrid's per-column filter bag: column id → its filter. */
-export type GridFilterModel = Record<string, GridColumnFilter>;
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
 ````
 
 ## File: libs/uxcommon/src/components/alerts/alerts.html
@@ -103973,6 +103865,112 @@ export const icons = {
 } as const;
 ````
 
+## File: libs/uxcommon/src/components/row-actions/row-actions.ts
+````typescript
+import { ChangeDetectionStrategy, Component, ElementRef, input, viewChild } from '@angular/core';
+
+import { Icon } from '../icons/icon';
+
+/** Feeds the unique `id`/`anchor-name` pair each instance needs to anchor its popover. */
+let nextRowActionsId = 0;
+
+/**
+ * `pc-row-actions` — the house ⋯ overflow menu for a table row.
+ *
+ * The one idiom for per-row actions (design principles §4: destructive actions are
+ * demoted to the ⋯ menu). Before this existed, five pages hand-rolled the same
+ * DaisyUI dropdown and drifted apart on width, z-index, trigger element and border.
+ *
+ * It renders as a **popover-mode DaisyUI dropdown**: the menu carries the native
+ * `popover` attribute, so an open menu is promoted to the browser's top layer and
+ * placed against the trigger via CSS anchor positioning (`anchor-name` on the
+ * button, `position-anchor` on the menu). This is what makes it usable inside a
+ * table at all — `.pc-table-shell` sets `overflow-x: auto`, which per spec forces
+ * `overflow-y: auto` too, so a normal absolutely-positioned `.dropdown-content` is
+ * clipped by the shell's scroll box. No z-index can defeat ancestor clipping; only
+ * leaving the shell's clipping context can, and the top layer does exactly that.
+ *
+ * Everything else — placement, open/close, Esc, light-dismiss, focus — is the
+ * platform's (design §6, rung 1: DaisyUI + CSS, no JS positioning). The only
+ * TypeScript here is the one bit of genuine state logic: closing the menu after an
+ * action is chosen.
+ *
+ * Browsers without CSS anchor positioning (Safari < 26, Firefox < 144) fall back to
+ * DaisyUI's own centered top-layer menu with a backdrop — unanchored, but never
+ * clipped or truncated.
+ *
+ * Projected content is the menu body: `<li>` items, exactly as DaisyUI's `menu`
+ * expects. Keep destructive items last and mark them `class="text-error"`.
+ *
+ * ```html
+ * <td class="text-right">
+ *   <pc-row-actions label="Route actions">
+ *     <li><button type="button" (click)="openAssign(row)">Assign volunteer</button></li>
+ *     <li><button type="button" class="text-error" (click)="deleteRoute(row)">Delete route</button></li>
+ *   </pc-row-actions>
+ * </td>
+ * ```
+ */
+@Component({
+  selector: 'pc-row-actions',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon],
+  template: `
+    <button
+      type="button"
+      class="btn btn-ghost btn-xs btn-circle"
+      [attr.popovertarget]="menuId"
+      [style.anchor-name]="anchorName"
+      [attr.aria-label]="label()"
+    >
+      <pc-icon name="ellipsis-vertical" [size]="4" />
+    </button>
+
+    <!-- popover promotes the open menu to the top layer, escaping the table
+         shell's scroll box; position-anchor pins it back to the button. -->
+    <ul
+      #menu
+      popover
+      [id]="menuId"
+      [style.position-anchor]="anchorName"
+      class="dropdown dropdown-end menu w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg"
+      (click)="closeMenu()"
+    >
+      <ng-content></ng-content>
+    </ul>
+  `,
+  styles: `
+    :host {
+      display: inline-block;
+    }
+
+    /* Near the bottom of the viewport, drop the menu above the trigger instead of
+       off-screen. position-area alone does not reposition itself. */
+    ul[popover] {
+      position-try-fallbacks: flip-block;
+    }
+  `,
+})
+export class RowActions {
+  private readonly menu = viewChild.required<ElementRef<HTMLElement>>('menu');
+
+  protected readonly anchorName = `--pc-row-actions-${nextRowActionsId}`;
+  protected readonly menuId = `pc-row-actions-${nextRowActionsId++}`;
+
+  /** Accessible name for the ⋯ trigger. Name the record where you can: "Actions for Amira Hassan". */
+  public readonly label = input<string>('Row actions');
+
+  /**
+   * Dismiss once an item is chosen. `popover="auto"` light-dismisses on outside
+   * clicks and Esc, but a click *inside* the menu is not a dismissal to the
+   * platform — and every item here is a terminal action, so it is to us.
+   */
+  protected closeMenu(): void {
+    this.menu().nativeElement.hidePopover();
+  }
+}
+````
+
 ## File: libs/uxcommon/src/styles/themes.css
 ````css
 /*
@@ -104071,622 +104069,682 @@ export const icons = {
 }
 ````
 
-## File: libs/common/src/lib/help/articles/engagement.ts
+## File: libs/uxcommon/src/index.ts
 ````typescript
-import type { HelpArticle } from '../help-types';
+export * from './loading-gate';
+export * from './request-guard';
 
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
+// Components
+export * from './components/alerts/alert-service';
+export * from './components/alerts/alerts';
+export * from './components/icons/icon';
+export * from './components/icons/icons.index';
+export * from './components/confirm-dialog-host';
+export * from './components/confirm-dialog.service';
+export * from './components/user-avatar/user-avatar';
+export * from './components/tags/tagitem';
+export * from './components/input/input';
+export * from './components/textarea/textarea';
+export * from './components/select/select';
+export * from './components/toggle/toggle';
+export * from './components/detail-header/detail-header';
+export * from './components/detail-layout/detail-layout';
+export * from './components/entity-overview/entity-overview';
+export * from './components/address-form-group/address-form-group';
+export * from './components/card/card';
+export * from './components/stat-card/stat-card';
+export * from './components/table/table';
+export * from './components/row-actions/row-actions';
+export * from './components/side-drawer/side-drawer';
+export * from './components/tabs/tabs';
+export * from './components/status-badge/status-badge';
+export * from './components/profile-card/profile-card';
+export * from './components/detail-row/detail-row';
+export * from './components/detail-item/detail-item';
+export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
+export * from './components/map/map';
+export * from './components/map/map-types';
+export * from './components/geocode-chip/geocode-chip';
+
+// Directives
+export * from './directives/animate-if.directive';
+export * from './directives/spin-on-click.directive';
+
+// Pipes
+export * from './pipes/file-icon.pipe';
+export * from './pipes/filesize.pipe';
+export * from './pipes/sanitize-html.pipe';
+export * from './pipes/svg-html-pipe';
+export * from './pipes/timeago.pipe';
 ````
 
-## File: libs/common/src/lib/help/articles/outreach.ts
+## File: libs/common/src/lib/schemas/core.schema.ts
+````typescript
+import { z } from 'zod';
+
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
+
+export interface QueryBuilderRuleNode {
+  kind: 'rule';
+  id: string;
+  field: string;
+  op: string;
+  value?: any;
+}
+
+export interface QueryBuilderGroupNode {
+  kind: 'group';
+  id: string;
+  conjunction: 'AND' | 'OR';
+  rules: QueryBuilderNode[];
+}
+
+export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
+
+export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
+  if (node.kind === 'rule') {
+    return { ...node };
+  } else {
+    return {
+      ...node,
+      rules: node.rules.map(cloneQueryBuilderNode),
+    };
+  }
+}
+
+export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('rule'),
+      id: z.string(),
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown().optional(),
+    }),
+    z.object({
+      kind: z.literal('group'),
+      id: z.string(),
+      conjunction: z.enum(['AND', 'OR']),
+      rules: z.array(queryBuilderNodeSchema),
+    }),
+  ]),
+);
+
+export const oldAdvancedFilterModelSchema = z.object({
+  conjunction: z.enum(['AND', 'OR']),
+  rules: z.array(
+    z.object({
+      field: z.string(),
+      op: z.string(),
+      value: z.unknown(),
+    }),
+  ),
+});
+
+export const getAllOptions = z
+  .object({
+    searchStr: z.string().optional(),
+    startRow: z.number().optional(),
+    endRow: z.number().optional(),
+    sortModel: z.array(sortModelItem).optional(),
+    filterModel: z.record(z.string(), z.unknown()).optional(),
+    includeArchived: z.boolean().optional(),
+    columns: z.array(z.string()).optional(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+    orderBy: z.array(z.string()).optional(),
+    groupBy: z.array(z.string()).optional(),
+    tags: z.array(z.string()).optional(),
+    issues: z.array(z.string()).optional(),
+    type: z.enum(['tag', 'issue']).optional(),
+    userId: z.string().optional(),
+    entity: z.string().optional(),
+    activity: z.string().optional(),
+    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
+    listId: z.string().optional(),
+    /** Campaigns §15 — the active context; scopes campaign-specific columns/rows (e.g. support level). */
+    campaignId: z.string().optional(),
+    /**
+     * Volunteer/staff status filters (§15) — first-class replacements for the
+     * old `tags: ['volunteer']` filter. Plain string arrays here to avoid a
+     * circular import with persons.schema; the enum is validated at the column.
+     */
+    volunteerStatus: z.array(z.string()).optional(),
+    staffStatus: z.array(z.string()).optional(),
+  })
+  .optional();
+
+export const exportCsvInput = z
+  .object({
+    options: getAllOptions,
+    columns: z.array(z.string()).optional(),
+    fileName: z.string().optional(),
+  })
+  .optional();
+
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
+
+export const exportEntitySchema = z.enum([
+  'persons',
+  'households',
+  'companies',
+  'tags',
+  'issues',
+  'tasks',
+  'lists',
+  'newsletters',
+  'teams',
+  'users',
+  'volunteer',
+  'forms',
+  'workflows',
+]);
+
+export const queueExportInput = z.object({
+  entity: exportEntitySchema,
+  options: getAllOptions,
+  columns: z.array(z.string()).optional(),
+  fileName: z.string().optional(),
+});
+
+/** Logs an export that already downloaded straight to the browser (small/displayed-rows path)
+ * so it still shows up in the Exports history — see pplcrm-datagrid. No file is stored server-side,
+ * so the resulting record is not re-downloadable. */
+export const logInstantExportInput = z.object({
+  entity: exportEntitySchema,
+  fileName: z.string(),
+  rowCount: z.number().int().nonnegative(),
+});
+
+export const dataExportRecord = z.object({
+  id: z.string(),
+  entity: z.string(),
+  file_name: z.string(),
+  status: z.enum(['pending', 'processing', 'completed', 'failed']),
+  row_count: z.number().nullable(),
+  error: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  downloadable: z.boolean(),
+  createdBy: z
+    .object({
+      id: z.string(),
+      name: z.string().nullable(),
+      email: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
+export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const idSchema = dbIdSchema;
+
+export const addressSchema = z.object({
+  lat: z.number().nullable().optional(),
+  lng: z.number().nullable().optional(),
+  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
+  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
+  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
+  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
+  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
+  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
+  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
+  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
+  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
+});
+
+/**
+ * One column's server-side filter as the datagrid posts it inside `filterModel`:
+ * an optional comparison `op` (contains/equals/startsWith/isEmpty/…) and the
+ * `value` to match. Consumed by BaseRepository.applyColumnFilter /
+ * applyCastColumnFilter. `value` is `unknown` because the grid sends strings,
+ * numbers, and booleans — coerce with String(...) at the point of use. Matches
+ * the wire shape validated by getAllOptions' `filterModel: z.record(z.unknown())`.
+ */
+export interface GridColumnFilter {
+  op?: string;
+  value?: unknown;
+}
+
+/** The datagrid's per-column filter bag: column id → its filter. */
+export type GridFilterModel = Record<string, GridColumnFilter>;
+
+export const nameSchema = (fieldName: string, maxLen = 100) =>
+  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
+
+export const descriptionSchema = (maxLen = 1000) =>
+  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
+
+export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
+
+export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
+export const phoneSchema = (fieldName: string) =>
+  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
+
+export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
+````
+
+## File: libs/common/src/lib/help/articles/getting-started.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const OUTREACH_ARTICLES: HelpArticle[] = [
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
   {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to pplCRM',
+    summary: 'What pplCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['demo-mode', 'getting-around', 'add-people', 'grid-basics'],
     blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'p',
+        text: 'pplCRM keeps every relationship your organization cares about (supporters, donors, volunteers, households, and companies) in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard**: your landing page, with key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Work**: [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts; tabs under the People header switch between them.',
+          '**Outreach**: [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, [Donations](/donations), and public-facing [Forms](/forms) (fundraising forms, event pages, and volunteer shifts are all created from here too).',
+          '**Field**: [Canvassing](/canvassing), [Deliveries](/deliveries), and [Teams](/teams).',
+          '**Data**: [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), and [Automations](/automations).',
+          '**Admin** (administrators only): [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin. See [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
           },
           {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
           },
           {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send. [Create and send a newsletter](/help/newsletters) walks through it.',
           },
         ],
       },
       {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Personalize with merge fields',
-        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
         kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+        text: 'Every page in this help center is searchable. Head back to [Help](/help) and start typing.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+        title: 'Your workspace starts in demo mode',
+        text: 'New workspaces come pre-loaded with realistic sample contacts so every page has something to show. See [Demo mode and sample data](/help/demo-mode) for what is included and how to clear it.',
       },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+    ],
+  },
+  {
+    id: 'demo-mode',
+    category: 'getting-started',
+    title: 'Demo mode and sample data',
+    summary: 'What the pre-loaded demo data includes, why it exists, and how to remove it when you are ready.',
+    keywords: ['demo', 'sample data', 'test drive', 'seed', 'exit demo', 'remove demo data', 'example contacts'],
+    related: ['welcome', 'add-people', 'import'],
+    blocks: [
       {
         kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+        text: 'Every new workspace starts in **demo mode**: it is pre-loaded with a realistic, fully connected sample dataset so you can try every part of pplCRM before adding your own contacts. A banner at the top of the app reminds you that you are looking at demo data, and the [Dashboard](/dashboard) shows a demo-mode card with the exit button.',
       },
-      {
-        kind: 'p',
-        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
-      {
-        kind: 'p',
-        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
-      },
-      {
-        kind: 'p',
-        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      { kind: 'h2', id: 'whats-included', text: 'What the demo data includes' },
       {
         kind: 'list',
         items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+          '**60 people in 24 households** with real Ottawa street addresses, so the household map pins, geocoding chips, and ward-based canvassing turfs all work.',
+          '**10 companies**, with several people linked to them.',
+          '**Tags, issues, support levels, and newsletter consent** spread across the contacts, plus three lists, a team, and two volunteer events with sign-ups.',
+          '**Canvassing turfs** cut across the wards (one complete, one being knocked right now, one just assigned, and one still a draft) with real door knocks so the field report and coverage map have something to show.',
+          '**Yard-sign deliveries**: sign requests waiting to be triaged, approved requests ready to route, and two driving routes (one finished, one in progress) so the requests, planner, and routes pages are all populated.',
+          '**Three demo teammates** on the [Users](/users) page, with tasks and inbox emails assigned to them. They cannot sign in; their accounts exist so assignment and triage look real.',
+          '**Tasks** in every state: overdue, due this week, waiting, and done.',
+          '**A working inbox**: a handful of emails from demo contacts, some open, some closed, some assigned.',
+          '**Three newsletters**, including a sent one with a full engagement report: opens over time, top links, bounces, and unsubscribes.',
+          '**Sample form responses** on two of the starter forms, so the Forms page shows what collected submissions look like.',
+          '**A donations ledger**: recorded one-time gifts across this month and last, plus a few active monthly pledges, so the [Donations](/donations) page shows real totals and trends. The two fundraising forms live on that page too, not on the Forms page.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why draft forms show responses',
+        text: 'The six starter forms are drafts (a draft form does not accept new submissions), but two of them carry sample responses so you can see how submissions appear. Publishing a form gives it a live public link. See [Forms](/help/forms).',
+      },
+      { kind: 'h2', id: 'safe-to-touch', text: 'Everything is safe to touch' },
+      {
+        kind: 'p',
+        text: 'The demo contacts use reserved example.com addresses that cannot receive real email, so nothing you do here can reach a real person. Edit, delete, merge, tag, and explore freely.',
       },
       {
         kind: 'callout',
         tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+        title: 'What stays locked during the demo',
+        text: 'Demo mode is the free test drive before you pick a plan, so outward-facing setup is disabled: sending newsletters, inviting teammates on the [Users](/users) page, verifying sender emails and domains, connecting a mailbox, and workspace configuration. Choose a plan on the [Billing](/workspace/billing) page to unlock them.',
       },
+      { kind: 'h2', id: 'exit', text: 'Exiting demo mode' },
       {
-        kind: 'p',
-        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+        kind: 'steps',
+        items: [
+          {
+            title: 'Choose a plan',
+            detail:
+              'Exiting the demo requires an active subscription. Pick one on the [Billing](/workspace/billing) page.',
+          },
+          { title: 'Open the [Dashboard](/dashboard)', detail: 'The demo-mode card sits at the top of the page.' },
+          {
+            title: 'Choose Exit demo mode',
+            detail: 'A confirmation explains exactly what will be removed. This cannot be undone.',
+          },
+          {
+            title: 'Start fresh',
+            detail:
+              'A Getting started checklist appears on the [Dashboard](/dashboard) once the demo is gone. Add your first real contact on [People](/people) or bring everything in at once with [Import data from CSV](/help/import).',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'what-stays', text: 'What is kept' },
+      {
+        kind: 'list',
+        items: [
+          '**Your six draft forms**: volunteer signup, newsletter sign-up, one-time and recurring donations, yard sign request, and the issues survey. Their sample responses are removed with the demo people.',
+          '**The starter tags and issues**: the tag labels (community leader, lawn sign location, and so on) and the issues list stay as a ready-made vocabulary for your real contacts. They lose their demo attachments and are fully yours to rename, recolor, merge, or delete on the [Tags](/tags) and [Issues](/issues) pages.',
+          '**Anything you created yourself** while exploring: your own contacts, tasks, notes, and settings survive. A contact you added to a demo household keeps its record; it just loses that address. Tags you applied to your own contacts stay applied.',
+        ],
       },
     ],
   },
   {
-    id: 'sending-protections',
-    category: 'outreach',
-    title: 'Sending protections and verification',
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
     summary:
-      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
     keywords: [
-      'verify domain',
-      'verify phone',
-      'sms code',
-      'sending paused',
-      'suspended',
-      'bounce rate',
-      'spam complaint',
-      'warm-up',
-      'daily limit',
-      'deliverability',
-      'anti-spam',
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
     ],
-    related: ['newsletters', 'settings', 'forms'],
+    related: ['welcome', 'search', 'shortcuts'],
     blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
       {
         kind: 'p',
-        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+        text: 'Every page shows a breadcrumb trail in the top bar. The bold first crumb is the page title (for example **People**, or **People / Amira Hassan** on a record). On a record, the first crumb takes you back to the grid you came from, with your filters, page, and scroll position exactly as you left them. On tabbed pages like Import / export, the trail follows the tab you have open.',
       },
-      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Verify your sending domain',
-            detail:
-              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
-          },
-          {
-            title: 'Verify a mobile number (Free plan)',
-            detail:
-              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
       {
         kind: 'p',
-        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
-      },
-      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
-      {
-        kind: 'list',
-        items: [
-          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
-          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'How to never hit these',
-        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
-      },
-      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
-      {
-        kind: 'p',
-        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set (“4 of 43 filtered”) with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'The Inbox belongs to your active campaign',
-        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
       },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on (a grid like People, or the dashboard) to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
       {
         kind: 'list',
         items: [
-          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
-          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+          'Collapse any section by clicking its heading (useful for areas you rarely use).',
+          'On a narrow window the sidebar shrinks to an icon-only rail and the expand control is hidden; hover an icon to see its name. Widen the window past roughly 1024px to get the labels and the toggle back.',
+          'On a phone the sidebar tucks away: tap the ☰ menu button in the top-left to slide it open, and tap it again (now an ✕) to close.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list. See [Keyboard shortcuts](/help/shortcuts).',
         ],
       },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
       {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
       },
     ],
   },
   {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type. Here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
       },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
       {
         kind: 'list',
         items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
-          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
-          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
-          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
         ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
-          },
-          {
-            title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
-          },
-          {
-            title: 'Name it and set it Active',
-            detail:
-              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
-      {
-        kind: 'p',
-        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Every run is logged',
-        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied. The grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections. The full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching (say, everyone in a city with a certain tag)? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now (unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft), and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards**: the three cards below the briefing surface your most urgent queues (task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send). A card turns quiet when there is nothing to do there.',
+          '**Stat tiles**: a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up**: a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance**: a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time: for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track**: no open items have exceeded their target.',
+          '**Warning**: the number of breached items has reached the warning threshold.',
+          '**Critical**: breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → Service levels**. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first. Those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in pplCRM on one page, plus the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord, then follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
       },
     ],
   },
@@ -104759,6 +104817,7 @@ export interface Models {
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
   newsletter_send_log: NewsletterSendLog;
+  newsletter_content_checks: NewsletterContentChecks;
   person_newsletter_engagements: PersonNewsletterEngagements;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
@@ -105495,6 +105554,25 @@ export interface NewsletterSendLog {
   created_at: Generated<Timestamp>;
 }
 
+/** Cached newsletter preflight result, one row per (tenant, content_hash). The composer's
+ * on-demand check upserts here and the send-time content gate reuses the row on a hash match. */
+export interface NewsletterContentChecks {
+  id: Generated<string>;
+  tenant_id: string;
+  /** Null until a send (or a check on an existing newsletter) ties the content to a row. */
+  newsletter_id: string | null;
+  /** sha256 hex over the raw stored subject/html/plain-text fields. */
+  content_hash: string;
+  score: number;
+  band: string;
+  /** PreflightFinding[] as JSON. */
+  findings: unknown;
+  /** AiPreflightVerdict as JSON, null when the AI layer was skipped. */
+  ai_verdict: unknown | null;
+  ai_model: string | null;
+  created_at: Generated<Timestamp>;
+}
+
 export interface PersonNewsletterEngagements {
   tenant_id: string;
   newsletter_id: string;
@@ -105999,6 +106077,357 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
+## File: libs/common/src/lib/help/articles/outreach.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: [
+      'newsletter',
+      'campaign',
+      'email blast',
+      'send',
+      'schedule',
+      'template',
+      'audience',
+      'unsubscribe',
+      'deliverability',
+      'score',
+    ],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Newsletters](/newsletters) and click New newsletter',
+            detail: 'Start from a template or a blank canvas.',
+          },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it on the Newsletters page and in its performance stats later.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Personalize with merge fields',
+        text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags. Include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
+      {
+        kind: 'p',
+        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
+      },
+      { kind: 'h2', id: 'report', text: 'Read the engagement report' },
+      {
+        kind: 'p',
+        text: 'The report opens with delivered, open rate, click rate, replies and bounces, then breaks the send down: a delivery funnel (sent → delivered → opened → clicked), every bounced address with the provider’s reason and a hard/soft label plus a CSV export, an hour-by-hour chart of the first 48 hours, the top links clicked, and a comparison of the last five sends in the campaign. Bounced addresses that match a person in the CRM link straight to their profile.',
+      },
+      {
+        kind: 'p',
+        text: 'The **What to do next** panel turns the numbers into actions: **Create list of N clickers** snapshots everyone who clicked into a static list for the follow-up send, replies link to the [Inbox](/inbox), and the most engaged readers are listed by name. The side panels show the audience composition at send, unsubscribe and spam-report rates, and the exact content that went out. **Duplicate newsletter** starts the next send from a copy of this one.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there. Only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it. It damages trust and your sender reputation.',
+      },
+      {
+        kind: 'p',
+        text: 'Before your first send you will also complete a couple of one-time verifications, and new Free workspaces ramp up gradually — see [Sending protections and verification](/help/sending-protections).',
+      },
+    ],
+  },
+  {
+    id: 'sending-protections',
+    category: 'outreach',
+    title: 'Sending protections and verification',
+    summary:
+      'The one-time verifications required before your first newsletter, the Free-plan warm-up limit, and why sending can pause automatically.',
+    keywords: [
+      'verify domain',
+      'verify phone',
+      'sms code',
+      'sending paused',
+      'suspended',
+      'bounce rate',
+      'spam complaint',
+      'warm-up',
+      'daily limit',
+      'deliverability',
+      'anti-spam',
+    ],
+    related: ['newsletters', 'settings', 'forms', 'deliverability'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every pplCRM newsletter leaves through a shared sending infrastructure, so one bad sender can hurt everyone’s deliverability. These protections keep spammers out — and for a legitimate organization they cost a few minutes, once.',
+      },
+      { kind: 'h2', id: 'before-first-send', text: 'Before your first send' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Verify your sending domain',
+            detail:
+              'Under **Workspace → Domains**, add the domain you send from. You’ll get a checklist of **4 required DNS records** to add at your domain provider (GoDaddy, Namecheap, Cloudflare, and similar); use the copy buttons so nothing gets mistyped, then select **Check DNS records**. Changes usually appear within minutes but can take up to 48 hours. A fifth record, DMARC, is recommended but optional; it never blocks verification. Once verified, set a **default From address** on that domain under **Workspace → Communications**. Mail authenticated with your own domain lands in inboxes; unauthenticated mail lands in spam.',
+          },
+          {
+            title: 'Verify a mobile number (Free plan)',
+            detail:
+              'Under **Workspace → Communications → Sending phone verification**, enter a mobile number and confirm the 6-digit SMS code. One number per workspace, one time.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'warmup', text: 'The Free-plan warm-up' },
+      {
+        kind: 'p',
+        text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
+      {
+        kind: 'p',
+        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review is included every time you run the check yourself; at send time it also runs automatically while an account is new — on the Free plan and for any account’s first few sends — and is skipped once a paid account has an established sending history. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
+      },
+      { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
+      {
+        kind: 'list',
+        items: [
+          'If a send’s **hard-bounce rate passes 5%**, sending is paused automatically — a bounce rate that high almost always means the list contains addresses that never opted in. Even a send already in progress stops.',
+          'If a send’s **spam-complaint rate passes 1%**, the account is suspended pending a human review.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'How to never hit these',
+        text: 'Only email people who opted in through your [forms](/help/forms), events, or sign-ups. Purchased or scraped lists bounce hard and get reported — the tripwires exist precisely to catch them. If your sending was paused and you believe it’s a mistake, contact support.',
+      },
+      { kind: 'h2', id: 'plan-features', text: 'Plan-gated features' },
+      {
+        kind: 'p',
+        text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'deliverability',
+    category: 'outreach',
+    title: 'Get your newsletters delivered',
+    summary:
+      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
+    keywords: [
+      'spam',
+      'junk',
+      'inbox',
+      'deliverability',
+      'images',
+      'subject line',
+      'dmarc',
+      'postmaster',
+      'score',
+      'preflight',
+      'open rate',
+    ],
+    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
+      },
+      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
+      {
+        kind: 'list',
+        items: [
+          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
+          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
+          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
+          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
+        ],
+      },
+      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
+      {
+        kind: 'list',
+        items: [
+          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
+          'Unsubscribes and bounces are honored automatically — never re-import around them.',
+          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
+        ],
+      },
+      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
+      {
+        kind: 'list',
+        items: [
+          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
+          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
+          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
+          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test before the big send',
+        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
+      },
+      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
+      {
+        kind: 'p',
+        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'A good score is not a delivery guarantee',
+        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside pplCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab, context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to: their tags, issues of interest, and a link straight to their record.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The Inbox belongs to your active campaign',
+        text: 'Each campaign connects its own mailbox and has its own Inbox. Connect an Office 365 or Gmail account while a campaign is active and its mail syncs into that campaign; switch campaigns (from the avatar menu) and both the connected account and the visible mail switch with it. Connect a separate account under each campaign that needs one. Connecting under one campaign never touches another’s.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
+          'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys: `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration**. See [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own, triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
+          '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/automations) and click New automation',
+            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+          },
+          {
+            title: 'Build the sequence',
+            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+          },
+          {
+            title: 'Name it and set it Active',
+            detail:
+              'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
+      {
+        kind: 'p',
+        text: 'The Enrolled contacts tab shows who is moving through the sequence and where they are. Enrollment is per contact. Someone already in the sequence isn’t enrolled twice by the same trigger.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Every run is logged',
+        text: 'Each step an automation runs is written to the Activity log, and the last run shows on the list. A failure names the step that failed, so you can see exactly where to look.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/help/articles/administration.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -106316,6 +106745,375 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         tone: 'info',
         title: 'The office cannot be archived or deleted',
         text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
       },
     ],
   },
@@ -107209,6 +108007,38 @@ export {
   buildPersonSlug,
 } from './lib/public-id';
 export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
 
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 

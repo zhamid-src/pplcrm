@@ -35,15 +35,15 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../coverage/apps/frontend',
       provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 55.49% stmts / 37.15% branch / 54.85% funcs / 55.75% lines). These may
+      // Coverage ratchet: set just under the measured baseline (2026-07-17:
+      // 56.96% stmts / 39.72% branch / 55.18% funcs / 56.98% lines). These may
       // only ever be raised, never lowered — if your change drops coverage
       // below them, add tests rather than editing the thresholds.
       thresholds: {
-        statements: 54,
-        branches: 36,
-        functions: 53,
-        lines: 54,
+        statements: 55,
+        branches: 38,
+        functions: 54,
+        lines: 55,
       },
     },
     // Suppress NG0914: Angular fires this when provideZonelessChangeDetection() is used

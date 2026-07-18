@@ -86,4 +86,32 @@ describe('WorkflowsGridComponent', () => {
     expect(svc.setStatus).toHaveBeenCalledWith('9', 'paused');
     expect(component['rows']()[0].status).toBe('paused');
   });
+
+  it('should revert the optimistic status flip and toast when setStatus fails', async () => {
+    svc.list.mockResolvedValue({
+      rows: [
+        {
+          id: '9',
+          name: 'X',
+          trigger_type: 'manual',
+          status: 'active',
+          conditions: null,
+          steps: [],
+          runs_30d: 0,
+          last_run_at: null,
+          last_run_status: null,
+          last_run_error: null,
+        },
+      ],
+      summary: { total: 1, active: 1, runs30d: 0 },
+    });
+    svc.setStatus.mockRejectedValue(new Error('server said no'));
+    await component['load']();
+
+    await component['toggleStatus'](component['rows']()[0] as never, new Event('change'));
+
+    expect(component['rows']()[0].status).toBe('active'); // optimistic flip rolled back
+    expect(alertStub.showError).toHaveBeenCalledWith('Could not change the automation status. Please try again.');
+    expect(svc.triggerRefresh).not.toHaveBeenCalled();
+  });
 });

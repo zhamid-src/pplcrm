@@ -152,4 +152,32 @@ describe('ListsService', () => {
       expect(result).toEqual(response);
     });
   });
+
+  describe('campaign scoping (§15)', () => {
+    beforeEach(() => {
+      (service as any).campaignContext = { activeCampaignId: () => 'camp-1' };
+    });
+
+    it('scopes getAllWithCounts reads to the active campaign', async () => {
+      mockApi.lists.getAllWithCounts.query.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.getAllWithCounts({ startRow: 0, endRow: 25 } as any);
+
+      expect(mockApi.lists.getAllWithCounts.query).toHaveBeenCalledWith(
+        { startRow: 0, endRow: 25, campaignId: 'camp-1' },
+        { signal: (service as any).ac.signal },
+      );
+    });
+
+    it('stamps new lists with the active campaign id', async () => {
+      mockApi.lists.add.mutate.mockResolvedValue({ id: '1' });
+
+      await service.add({ name: 'Members' } as any);
+
+      expect(mockApi.lists.add.mutate).toHaveBeenCalledWith(
+        { name: 'Members', campaign_id: 'camp-1' },
+        { context: { skipErrorHandler: true } },
+      );
+    });
+  });
 });

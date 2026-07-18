@@ -159,4 +159,35 @@ describe('categoryNeighbors', () => {
     expect(last.next).toBeUndefined();
     expect(last.prev?.id).toBe(siblings[siblings.length - 2].id);
   });
+
+  it('returns no neighbors for an article outside its category list', () => {
+    const stray = { ...HELP_ARTICLES[0], id: 'not-a-real-article' };
+    expect(categoryNeighbors(stray)).toEqual({});
+  });
+});
+
+describe('relatedArticles hand-picked ordering', () => {
+  it('lists the hand-picked related ids first, in order', () => {
+    const withRelated = HELP_ARTICLES.find((a) => (a.related ?? []).length > 0);
+    if (!withRelated) throw new Error('expected at least one article with hand-picked related ids');
+
+    const result = relatedArticles(withRelated, 3);
+    const expectedFirst = (withRelated.related ?? []).slice(0, 3);
+
+    expect(result.slice(0, expectedFirst.length).map((a) => a.id)).toEqual(expectedFirst);
+    expect(result.some((a) => a.id === withRelated.id)).toBe(false);
+  });
+
+  it('tops up with same-category neighbors when the limit allows', () => {
+    const withRelated = HELP_ARTICLES.find((a) => (a.related ?? []).length > 0);
+    if (!withRelated) throw new Error('expected at least one article with hand-picked related ids');
+
+    const generous = relatedArticles(withRelated, 100);
+    const handPicked = new Set(withRelated.related ?? []);
+    const toppedUp = generous.filter((a) => !handPicked.has(a.id));
+
+    // every top-up entry comes from the article's own category, deduped
+    expect(toppedUp.every((a) => a.category === withRelated.category)).toBe(true);
+    expect(new Set(generous.map((a) => a.id)).size).toBe(generous.length);
+  });
 });

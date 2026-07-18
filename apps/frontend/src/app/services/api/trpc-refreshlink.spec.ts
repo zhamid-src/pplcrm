@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { refreshLink } from './trpc-refreshlink';
+import { refreshLink, silentRefresh } from './trpc-refreshlink';
 import { TRPCClientError } from '@trpc/client';
 import type { Operation } from '@trpc/client';
 import type { Observer } from '@trpc/server/observable';
@@ -157,10 +157,190 @@ describe('trpc-refreshlink', () => {
     expect(mockTokenSvc.clearAll).toHaveBeenCalled();
     expect(mockRouter.navigate).toHaveBeenCalledWith(['/signin'], { queryParams: { returnUrl: '/current-url' } });
   });
+
+  it('should forward a guest request untouched without probing the refresh endpoint', async () => {
+    currentAuthToken = '';
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+    const mockNext = successNext();
+
+    const result = await runLink(link, makeOp('persons.getAll'), mockNext);
+
+    expect(result).toBe('result');
+    expect(fetchCount).toBe(0);
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
+  });
+
+  it('should treat a token inside the 30s expiry leeway as expired and refresh pre-flight', async () => {
+    // exp is 10s away — technically unexpired, but inside the 30s leeway window.
+    currentAuthToken = makeToken(Math.floor(Date.now() / 1000) + 10);
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    const result = await runLink(link, makeOp('persons.getAll'), successNext());
+
+    expect(result).toBe('result');
+    expect(fetchCount).toBe(1);
+    expect(mockTokenSvc.setAuthToken).toHaveBeenCalledWith(validToken);
+  });
+
+  it('should not refresh a token comfortably outside the leeway window', async () => {
+    currentAuthToken = makeToken(Math.floor(Date.now() / 1000) + 120);
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    const result = await runLink(link, makeOp('persons.getAll'), successNext());
+
+    expect(result).toBe('result');
+    expect(fetchCount).toBe(0);
+  });
+
+  it('should clear tokens, redirect, and never run the call when the pre-flight refresh fails', async () => {
+    currentAuthToken = expiredToken;
+    globalThis.fetch = failingRenewFetch();
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+    const mockNext = successNext();
+
+    await expect(runLink(link, makeOp('persons.getAll'), mockNext)).rejects.toBeInstanceOf(TRPCClientError);
+
+    expect(mockNext).not.toHaveBeenCalled(); // the original call never went out
+    expect(mockTokenSvc.clearAll).toHaveBeenCalled();
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/signin'], { queryParams: { returnUrl: '/current-url' } });
+  });
+
+  it('should wrap a non-TRPC refresh failure into a TRPCClientError for the observer', async () => {
+    currentAuthToken = expiredToken;
+    mockTokenSvc.setAuthToken.mockImplementation((): void => {
+      throw new Error('storage exploded');
+    });
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    await expect(runLink(link, makeOp('persons.getAll'), successNext())).rejects.toBeInstanceOf(TRPCClientError);
+    expect(mockTokenSvc.clearAll).toHaveBeenCalled();
+  });
+
+  it('should clear tokens but NOT redirect when the refresh fails on a public route', async () => {
+    currentAuthToken = expiredToken;
+    mockRouter.url = '/f/some-form';
+    globalThis.fetch = failingRenewFetch();
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    await expect(runLink(link, makeOp('persons.getAll'), successNext())).rejects.toBeInstanceOf(TRPCClientError);
+
+    expect(mockTokenSvc.clearAll).toHaveBeenCalled();
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
+  });
+
+  it('should never transparently retry a failed sign-in (rate-limit safety)', async () => {
+    currentAuthToken = validToken;
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    for (const path of ['signIn', 'auth.signIn']) {
+      const mockNext = errorNext(unauthorizedClientError());
+      await expect(runLink(link, makeOp(path), mockNext)).rejects.toBeInstanceOf(TRPCClientError);
+      expect(mockNext).toHaveBeenCalledTimes(1);
+    }
+    expect(fetchCount).toBe(0); // no refresh attempted for either sign-in path
+  });
+
+  it('should propagate a non-UNAUTHORIZED error immediately without refreshing', async () => {
+    currentAuthToken = validToken;
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+    const badRequest = TRPCClientError.from({
+      error: { message: 'Name is required', code: -32600, data: { code: 'BAD_REQUEST', httpStatus: 400 } },
+    } as any);
+    const mockNext = errorNext(badRequest);
+
+    await expect(runLink(link, makeOp('persons.update'), mockNext)).rejects.toBe(badRequest);
+
+    expect(mockNext).toHaveBeenCalledTimes(1);
+    expect(fetchCount).toBe(0);
+    expect(mockRouter.navigate).not.toHaveBeenCalled();
+  });
+
+  it('should parse a base64url-encoded unpadded JWT payload (-/_ alphabet)', async () => {
+    // '??????' guarantees '/' chars and stripping guarantees no padding, so this
+    // token is undecodable by plain atob without the base64url conversion.
+    const payloadJson = JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, blob: '??????>>>' });
+    const b64url = btoa(payloadJson).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    expect(b64url).toMatch(/[-_]/); // the fixture must actually exercise the conversion
+    currentAuthToken = `header.${b64url}.sig`;
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    const result = await runLink(link, makeOp('persons.getAll'), successNext());
+
+    expect(result).toBe('result');
+    expect(fetchCount).toBe(0); // exp parsed successfully → no refresh
+  });
+
+  it('should treat an unparseable token as expired and refresh it', async () => {
+    currentAuthToken = 'not.a.jwt';
+    const link = refreshLink(mockTokenSvc, mockRouter)({} as any);
+
+    const result = await runLink(link, makeOp('persons.getAll'), successNext());
+
+    expect(result).toBe('result');
+    expect(fetchCount).toBe(1);
+    expect(mockTokenSvc.setAuthToken).toHaveBeenCalledWith(validToken);
+  });
+
+  describe('silentRefresh', () => {
+    it('returns the new token on success', async () => {
+      await expect(silentRefresh(mockTokenSvc)).resolves.toBe(validToken);
+      expect(mockTokenSvc.setAuthToken).toHaveBeenCalledWith(validToken);
+      expect(mockTokenSvc.clearAll).not.toHaveBeenCalled();
+    });
+
+    it('returns null and clears tokens for a genuine guest — never throws', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('network down')) as any;
+
+      await expect(silentRefresh(mockTokenSvc)).resolves.toBeNull();
+      expect(mockTokenSvc.clearAll).toHaveBeenCalled();
+    });
+  });
 });
 
 function makeOp(path: string): Operation {
   return { id: 1, type: 'query', path, input: {}, context: {}, signal: new AbortController().signal };
+}
+
+function makeToken(exp: number): string {
+  return 'header.' + btoa(JSON.stringify({ exp })) + '.signature';
+}
+
+function runLink(link: any, op: Operation, next: any): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    link({ op, next }).subscribe({ next: resolve, error: reject });
+  });
+}
+
+function successNext() {
+  return vi.fn().mockReturnValue({
+    subscribe: (observer: Observer<any, any>) => {
+      observer.next('result');
+      observer.complete();
+      return { unsubscribe: vi.fn() };
+    },
+  });
+}
+
+function errorNext(err: unknown) {
+  return vi.fn().mockReturnValue({
+    subscribe: (observer: Observer<any, any>) => {
+      observer.error(err as any);
+      return { unsubscribe: vi.fn() };
+    },
+  });
+}
+
+/** A renew endpoint whose session is gone — every refresh round-trip 401s. */
+function failingRenewFetch(): typeof globalThis.fetch {
+  return vi.fn().mockImplementation(async () => ({
+    ok: false,
+    status: 401,
+    headers: new Headers({ 'Content-Type': 'application/json' }),
+    json: async () => ({
+      error: { json: { message: 'UNAUTHORIZED', code: -32001, data: { code: 'UNAUTHORIZED', httpStatus: 401 } } },
+    }),
+  })) as any;
 }
 
 function unauthorizedClientError(): TRPCClientError<any> {

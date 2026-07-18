@@ -267,4 +267,67 @@ describe('DataGrid', () => {
       expect(component.allSelectedCount()).toBe(0);
     });
   });
+
+  describe('server-side fetch options (FetchController integration)', () => {
+    const loadPage = (index: number, append?: boolean) =>
+      (component as unknown as { loadPage: (i: number, a?: boolean) => Promise<void> }).loadPage(index, append);
+
+    const lastGetAllOptions = () =>
+      mockGridSvc.getAll.mock.calls[mockGridSvc.getAll.mock.calls.length - 1]?.[0] as Record<string, unknown>;
+
+    it('turning the page re-fetches with the next row window', async () => {
+      mockGridSvc.getAll.mockResolvedValue({ rows: [{ id: '1', name: 'Alice' }], count: 52 });
+      await init();
+
+      await (component as unknown as { nextPage: () => Promise<void> }).nextPage();
+
+      expect(lastGetAllOptions()).toMatchObject({ startRow: 25, endRow: 50 });
+      expect((component as unknown as { pageIndex: () => number }).pageIndex()).toBe(1);
+    });
+
+    it('sorting is forwarded to the server as a sortModel on the next fetch', async () => {
+      await init();
+
+      component.store.sorting.set([{ id: 'name', desc: true }]);
+      await loadPage(0);
+
+      expect(lastGetAllOptions()).toMatchObject({ sortModel: [{ colId: 'name', sort: 'desc' }] });
+    });
+
+    it('append mode concatenates the incoming page instead of replacing it', async () => {
+      mockGridSvc.getAll.mockResolvedValue({
+        rows: [
+          { id: '1', name: 'Alice' },
+          { id: '2', name: 'Bob' },
+        ],
+        count: 52,
+      });
+      await init();
+      expect(component.rows()).toHaveLength(2);
+
+      mockGridSvc.getAll.mockResolvedValue({
+        rows: [
+          { id: '3', name: 'Cara' },
+          { id: '4', name: 'Dan' },
+        ],
+        count: 52,
+      });
+      await loadPage(1, true);
+
+      expect(component.rows().map((r) => r['id'])).toEqual(['1', '2', '3', '4']);
+    });
+
+    it('archive mode routes the fetch to getAllArchived', async () => {
+      await init();
+      mockGridSvc.getAllArchived.mockResolvedValue({ rows: [{ id: '9', name: 'Old' }], count: 1 });
+
+      component.archiveMode.set(true);
+      await loadPage(0);
+
+      expect(mockGridSvc.getAllArchived).toHaveBeenCalled();
+      const options = mockGridSvc.getAllArchived.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(options).toMatchObject({ includeArchived: true });
+      expect(component.rows().map((r) => r['id'])).toEqual(['9']);
+    });
+  });
 });

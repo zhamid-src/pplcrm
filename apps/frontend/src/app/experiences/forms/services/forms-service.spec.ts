@@ -131,4 +131,33 @@ describe('FormsService', () => {
     await expect(service.addMany([])).resolves.toEqual([]);
     await expect(service.count()).resolves.toBe(0);
   });
+
+  describe('campaign scoping (§15)', () => {
+    beforeEach(() => {
+      (service as any).campaignContext = { activeCampaignId: () => 'camp-1' };
+    });
+
+    it('scopes getAll reads to the active campaign', async () => {
+      mockApi.webForms.getAllWithCounts.query.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.getAll({ startRow: 0, endRow: 25 } as any);
+
+      expect(mockApi.webForms.getAllWithCounts.query).toHaveBeenCalledWith(
+        { startRow: 0, endRow: 25, campaignId: 'camp-1' },
+        { signal: (service as any).ac.signal },
+      );
+    });
+
+    it('stamps newly created forms with the active campaign id', async () => {
+      mockApi.webForms.create = { mutate: vi.fn().mockResolvedValue({ id: 'f1' }) };
+
+      await service.createForm({ name: 'Signup', type: 'signup' } as any);
+
+      expect(mockApi.webForms.create.mutate).toHaveBeenCalledWith({
+        name: 'Signup',
+        type: 'signup',
+        campaign_id: 'camp-1',
+      });
+    });
+  });
 });

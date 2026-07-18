@@ -39,7 +39,7 @@ describe('DetailItem Component', () => {
     fixture.componentRef.setInput('value', null);
     fixture.detectChanges();
 
-    const labelEl = fixture.debugElement.query(By.css('span.uppercase'));
+    const labelEl = fixture.debugElement.query(By.css('span.pc-eyebrow'));
     expect(labelEl.nativeElement.textContent.trim()).toBe('Test Label');
 
     const valueEl = fixture.debugElement.query(By.css('span.italic'));

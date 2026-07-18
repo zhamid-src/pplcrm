@@ -162,4 +162,29 @@ describe('EventsFrontendService', () => {
       await expect(service.getById('missing')).rejects.toThrow('Not found');
     });
   });
+
+  describe('campaign scoping (§15)', () => {
+    beforeEach(() => {
+      (service as any).campaignContext = { activeCampaignId: () => 'camp-1' };
+    });
+
+    it('scopes getAll reads to the active campaign', async () => {
+      mockApi.events.getAll.query.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.getAll({ startRow: 0, endRow: 25 } as any);
+
+      expect(mockApi.events.getAll.query).toHaveBeenCalledWith(
+        { startRow: 0, endRow: 25, campaignId: 'camp-1' },
+        { signal: (service as any).ac.signal },
+      );
+    });
+
+    it('stamps new events with the active campaign id', async () => {
+      mockApi.events.add.mutate.mockResolvedValue({ id: 'e1' });
+
+      await service.add({ name: 'Rally' } as any);
+
+      expect(mockApi.events.add.mutate).toHaveBeenCalledWith({ name: 'Rally', campaign_id: 'camp-1' });
+    });
+  });
 });

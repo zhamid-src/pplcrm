@@ -193,4 +193,30 @@ describe('PersonsService', () => {
       expect(result).toEqual(response);
     });
   });
+
+  describe('campaign scoping (§15)', () => {
+    it('stamps the active campaign into getAllWithAddress reads', async () => {
+      (service as any).campaignContext = { activeCampaignId: () => 'camp-1' };
+      mockApi.persons.getAllWithAddress.query.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.getAllWithAddress({ startRow: 0, endRow: 25 } as any);
+
+      expect(mockApi.persons.getAllWithAddress.query).toHaveBeenCalledWith(
+        { startRow: 0, endRow: 25, campaignId: 'camp-1' },
+        { signal: (service as any).ac.signal },
+      );
+    });
+
+    it('leaves reads unscoped when no campaign is active', async () => {
+      (service as any).campaignContext = { activeCampaignId: () => null };
+      mockApi.persons.getAllWithAddress.query.mockResolvedValue({ rows: [], count: 0 });
+
+      await service.getAllWithAddress({ startRow: 0, endRow: 25 } as any);
+
+      expect(mockApi.persons.getAllWithAddress.query).toHaveBeenCalledWith(
+        { startRow: 0, endRow: 25 },
+        { signal: (service as any).ac.signal },
+      );
+    });
+  });
 });
