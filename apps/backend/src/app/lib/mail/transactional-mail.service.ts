@@ -16,7 +16,9 @@ export interface SendMailOptions {
 
 export class TransactionalEmailService {
   private serverToken = env.postmarkServerToken;
-  private fromEmail = env.postmarkFromEmail;
+  // Full RFC 5322 From with a display name — a bare address lets clients show the
+  // Postmark sender-signature name instead of the product name.
+  private from = `"${env.postmarkFromName}" <${env.postmarkFromEmail}>`;
 
   private wrapInTemplate(title: string, contentHtml: string): string {
     return `<!DOCTYPE html>
@@ -179,7 +181,7 @@ export class TransactionalEmailService {
 
     if (!this.serverToken) {
       logger.info(
-        { from: this.fromEmail, to: options.to, subject: options.subject },
+        { from: this.from, to: options.to, subject: options.subject },
         '[POSTMARK DEV MOCK] Transactional Email Outbound',
       );
       return;
@@ -194,7 +196,7 @@ export class TransactionalEmailService {
           'X-Postmark-Server-Token': this.serverToken,
         },
         body: JSON.stringify({
-          From: this.fromEmail,
+          From: this.from,
           To: options.to,
           Subject: options.subject,
           TextBody: options.text,

@@ -43,6 +43,10 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
   STRIPE_PLAN_MOVEMENT_PRICE_ID: z.string().optional(),
+  // Annual (interval = year) graduated prices — unit amounts are exactly 10× the monthly ones
+  // ("2 months free"; see libs/common/src/lib/billing/plans.ts → Stripe ops).
+  STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID: z.string().optional(),
   // Signing secret of the platform's CONNECT webhook endpoint ("Listen to events on connected
   // accounts") — routes donation events for every tenant's connected account; tenants no longer
   // hold webhook secrets of their own.
@@ -53,6 +57,9 @@ const envSchema = z.object({
   DONATIONS_PLATFORM_FEE_PERCENT: z.coerce.number().min(0).max(100).default(1),
   POSTMARK_SERVER_TOKEN: z.string().optional(),
   POSTMARK_FROM_EMAIL: z.string().email().default('hello@pplcrm.com'),
+  // Display name on transactional email; without it, clients fall back to the Postmark
+  // sender-signature name (a personal name), which reads wrong on product email.
+  POSTMARK_FROM_NAME: z.string().min(1).default('pplCRM'),
   SENDGRID_API_KEY: z.string().optional(),
   SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
   // SendGrid subuser that free-tier newsletter traffic is routed through when the platform key
@@ -174,10 +181,13 @@ export const env = {
   stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
   stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
   stripePlanMovementPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_PRICE_ID,
+  stripePlanGrassrootsAnnualPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_ANNUAL_PRICE_ID,
+  stripePlanMovementAnnualPriceId: parsedEnv.STRIPE_PLAN_MOVEMENT_ANNUAL_PRICE_ID,
   stripeConnectWebhookSecret: parsedEnv.STRIPE_CONNECT_WEBHOOK_SECRET,
   donationsPlatformFeePercent: parsedEnv.DONATIONS_PLATFORM_FEE_PERCENT,
   postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  postmarkFromName: parsedEnv.POSTMARK_FROM_NAME,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
   sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
   sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
