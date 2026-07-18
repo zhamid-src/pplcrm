@@ -543,6 +543,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
       { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
       { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
       { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },
