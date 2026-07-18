@@ -62,6 +62,7 @@ export interface Models {
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
   newsletter_send_log: NewsletterSendLog;
+  newsletter_content_checks: NewsletterContentChecks;
   person_newsletter_engagements: PersonNewsletterEngagements;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
@@ -795,6 +796,25 @@ export interface NewsletterSendLog {
   tenant_id: string;
   newsletter_id: string;
   recipient_count: number;
+  created_at: Generated<Timestamp>;
+}
+
+/** Cached newsletter preflight result, one row per (tenant, content_hash). The composer's
+ * on-demand check upserts here and the send-time content gate reuses the row on a hash match. */
+export interface NewsletterContentChecks {
+  id: Generated<string>;
+  tenant_id: string;
+  /** Null until a send (or a check on an existing newsletter) ties the content to a row. */
+  newsletter_id: string | null;
+  /** sha256 hex over the raw stored subject/html/plain-text fields. */
+  content_hash: string;
+  score: number;
+  band: string;
+  /** PreflightFinding[] as JSON. */
+  findings: unknown;
+  /** AiPreflightVerdict as JSON, null when the AI layer was skipped. */
+  ai_verdict: unknown | null;
+  ai_model: string | null;
   created_at: Generated<Timestamp>;
 }
 

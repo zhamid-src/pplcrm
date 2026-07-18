@@ -88,11 +88,8 @@ export class NewsletterEmailService {
         },
         ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
         subject: options.subject,
+        // SendGrid requires text/plain (when present) to come before text/html in this array.
         content: [
-          {
-            type: 'text/html',
-            value: options.html,
-          },
           ...(options.text
             ? [
                 {
@@ -101,6 +98,10 @@ export class NewsletterEmailService {
                 },
               ]
             : []),
+          {
+            type: 'text/html',
+            value: options.html,
+          },
         ],
         ...(options.newsletterId && options.tenantId
           ? {
@@ -121,12 +122,16 @@ export class NewsletterEmailService {
             }
           : {}),
         // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
-        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        // the server-appended footer with a working, per-recipient unsubscribe URL. Open/click
+        // tracking are set explicitly so engagement data never depends on per-subuser account
+        // defaults; text links stay unwrapped so the plain part keeps human-readable URLs.
         tracking_settings: {
           subscription_tracking: {
             enable: true,
             substitution_tag: '<% unsubscribe %>',
           },
+          open_tracking: { enable: true },
+          click_tracking: { enable: true, enable_text: false },
         },
       };
 

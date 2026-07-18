@@ -92,6 +92,59 @@ export function renderNewsletterHtml(html: string, options: { baseUrl: string; p
   return out;
 }
 
+// Elements whose entire content is invisible to readers and must not leak into the text part.
+const INVISIBLE_ELEMENT_RE = /<(style|script|head|title)\b[^>]*>[\s\S]*?<\/\1>/gi;
+
+// The hidden preheader div injected by injectPreheader (escaped text only, never nested divs).
+const PREHEADER_DIV_RE = new RegExp(`<div ${PREHEADER_MARKER}[^>]*>[\\s\\S]*?</div>`, 'gi');
+
+/** Decodes the handful of HTML entities the editor/escaper emits into plain characters. */
+function decodeBasicEntities(text: string): string {
+  return (
+    text
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0?39;/g, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      // last, so "&amp;lt;" decodes to "&lt;" rather than "<"
+      .replace(/&amp;/gi, '&')
+  );
+}
+
+/**
+ * Derives a readable text/plain part from newsletter HTML so every send is multipart/alternative
+ * (an HTML-only body is a spam-filter signal). Block-level closers become line breaks, anchors keep
+ * their destination as "text (url)", images collapse to their alt text, and everything else is
+ * stripped. Not a general-purpose converter — tuned to the markup the block compiler emits.
+ */
+export function htmlToPlainText(html: string): string {
+  let out = stripEditorBlockData(html);
+  out = out.replace(INVISIBLE_ELEMENT_RE, '');
+  out = out.replace(PREHEADER_DIV_RE, '');
+  out = out.replace(/<br\s*\/?>/gi, '\n');
+  out = out.replace(/<\/(?:p|div|h[1-6]|tr|table|ul|ol|blockquote)>/gi, '\n\n');
+  out = out.replace(/<li\b[^>]*>/gi, '\n- ');
+  out = out.replace(
+    /<a\b[^>]*?\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+    (_match, _quote, href: string, inner: string) => {
+      const text = inner.replace(/<[^>]+>/g, '').trim();
+      const url = href.trim();
+      if (!/^https?:\/\//i.test(url) || text === url) return text || url;
+      return text ? `${text} (${url})` : url;
+    },
+  );
+  out = out.replace(/<img\b[^>]*?\balt\s*=\s*(["'])(.*?)\1[^>]*>/gi, '$2');
+  out = out.replace(/<[^>]+>/g, '');
+  out = decodeBasicEntities(out);
+  out = out
+    .split('\n')
+    .map((line) => line.replace(/[ \t\u00A0]+/g, ' ').trim())
+    .join('\n');
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 /** Scans the given content strings for the distinct merge tokens they contain. */
 export function extractMergeTokens(...contents: (string | null | undefined)[]): MergeToken[] {
   const re = new RegExp(MERGE_TOKEN_PATTERN, 'g');

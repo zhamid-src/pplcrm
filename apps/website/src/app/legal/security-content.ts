@@ -13,7 +13,7 @@ export const SECURITY_DOC: LegalDoc = {
   title: 'Security',
   intro:
     'Boring, deliberate security: what we actually do to protect your list, described specifically enough to be checked. No badges we have not earned.',
-  updated: 'July 16, 2026',
+  updated: 'July 17, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -104,7 +104,7 @@ export const SECURITY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
+      text: 'Outbound email is guarded because deliverability and trust are shared resources. Newsletters only leave from a domain you have verified with SPF and DKIM. New senders warm up under caps. Every newsletter also passes a deliverability check before it sends — a 0–100 score over content best practices plus an AI review that catches phishing-shaped and scam-like content; drafts scoring below 50 cannot send until fixed. Sending pauses automatically when hard bounces exceed 5% and is suspended when spam complaints exceed 1%. Suppression is enforced in the send path itself: unsubscribed, bounced and do-not-contact addresses are excluded from every future send, and nobody in your workspace can override that.',
     },
     {
       kind: 'h2',

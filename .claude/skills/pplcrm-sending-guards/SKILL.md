@@ -1,6 +1,6 @@
 ---
 name: pplcrm-sending-guards
-description: "The anti-abuse layer around outbound email and plan enforcement: the pre-send gates in send-guards.ts (verified domain, free-tier phone verification, 7-day warm-up cap), the bounce/complaint tripwires that pause or suspend a tenant, the per-tenant hourly send cap in the outbox worker, the FEATURE_MATRIX plan gate (plan-gate.ts + GATED_FEATURES), the disposable-email signup block, the free-tier SendGrid subuser, and the Postmark bounce webhook. USE WHEN a send is blocked/paused/suspended, a tenant hit 'requires the Grassroots plan', changing plan feature gates or send caps/tripwire thresholds, adding a plan-gated module, un-pausing a tenant, or touching newsletter_send_log / tenants.sending_paused_at / phone verification. EXAMPLES: 'why can't this free tenant send', 'resume sending for tenant X', 'gate the new module to Movement', 'change the warm-up cap'."
+description: "The anti-abuse layer around outbound email and plan enforcement: the pre-send gates in send-guards.ts (verified domain, free-tier phone verification, 7-day warm-up cap), the newsletter preflight content gate (deliverability score 0-100, blocked band refuses the send; preflight.service.ts + libs/common preflight-lint + Claude AI review), the bounce/complaint tripwires that pause or suspend a tenant, the per-tenant hourly send cap in the outbox worker, the FEATURE_MATRIX plan gate (plan-gate.ts + GATED_FEATURES), the disposable-email signup block, the free-tier SendGrid subuser, and the Postmark bounce webhook. USE WHEN a send is blocked/paused/suspended, a 'Deliverability score N' error blocks a send, a tenant hit 'requires the Grassroots plan', changing plan feature gates or send caps/tripwire/preflight thresholds, adding a plan-gated module, un-pausing a tenant, or touching newsletter_send_log / newsletter_content_checks / tenants.sending_paused_at / phone verification. EXAMPLES: 'why can't this free tenant send', 'resume sending for tenant X', 'gate the new module to Movement', 'change the warm-up cap', 'why is this newsletter blocked at score 42'."
 ---
 
 # Sending guards & plan enforcement (anti-abuse layer)
@@ -39,6 +39,32 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
      Communications → "Sending phone verification".
    - Free plan and tenant younger than 7 days → warm-up cap: ≤100 emails per rolling 24h
      (`warmupDailyCap`, summed from `newsletter_send_log`).
+     1b. **Content gate (newsletter preflight)** — `newsletterPreflight.assertNewsletterContentSendable(db,
+   tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called in
+     `NewslettersController.sendNewsletter` directly after `assertTenantMaySendNewsletter`. A
+     deliverability score 0–100 is assembled from explainable deductions: the shared deterministic
+     lint (`libs/common/src/lib/preflight-lint.ts` — subject patterns, base64/oversize HTML,
+     shortener/raw-IP/anchor-mismatch links, image-only bodies) plus a Claude content review
+     (`@anthropic-ai/sdk`, `messages.parse` + `zodOutputFormat(AiPreflightVerdictObj)`, model
+     `env.anthropicModel` default claude-opus-4-8). Bands live in
+     `libs/common/src/lib/schemas/content-check.schema.ts`: `PREFLIGHT_GOOD = 80`,
+     `PREFLIGHT_BLOCK = 50`; `score < 50` → PRECONDITION_FAILED ("Deliverability score N — fix the
+     items flagged…") on every plan. Results cache in `newsletter_content_checks` keyed
+     `(tenant_id, content_hash)` (sha256 over raw subject/html/plainText via `preflightHashInput`) —
+     the composer's interactive `newsletters.runPreflight` (lint + Postmark spamcheck + AI, rate
+     limited 30/h/tenant) usually pre-populates it, so the send-time gate is a cache hit.
+     **Fail-open:** `ANTHROPIC_API_KEY` unset or the API erroring skips the AI layer (lint still
+     scores); the Postmark spamcheck runs ONLY in the interactive check, never the send gate (keeps
+     tests network-free). AI verdicts `scam_or_phishing` / `pure_commercial_marketing` (confidence
+     ≥0.6) carry a 90-point deduction — blocked by construction. Fundraising/auctions/events are
+     explicitly allowed in the prompt. **Risk-targeted at the gate:** the send-time AI review runs
+     only while a tenant is unproven — free plan always, or `< AI_GATE_FIRST_SENDS` (3) newsletters
+     with `status='sent'` on any plan (`aiRequiredAtGate` in `preflight.service.ts`); established
+     paid tenants gate on the lint score alone unless a cached interactive check (which always
+     includes AI, any plan) covers the content hash. `PreflightResult.aiStatus`:
+     'reviewed' | 'unavailable' (wanted, key unset/API error) | 'not_required' (policy). Composer
+     UI: score gauge + findings card on Review & send, "Check deliverability" next to Send test
+     email.
 2. **Per batch, in the worker** — `handleSendNewsletter` (`lib/jobs/handlers/newsletter.handlers.ts`)
    re-loads the tenant every batch:
    - Paused/suspended mid-send → newsletter `status = 'paused'`, resume point saved in
@@ -59,8 +85,11 @@ re-sent from the UI and resumes at its `send_offset`.
 
 **Website claims:** the 5% bounce / 1% complaint tripwires, the warm-up cap and the
 verified-domain requirement are quoted verbatim on the marketing site (EULA §8, security page,
-FAQ). If you change a threshold here, update those pages in the same change — see the
-`pplcrm-website-claims` skill for the full registry.
+FAQ). The preflight is also stated publicly: the "below 50 cannot send" threshold (security page,
+EULA §8 bullet, help articles) and Anthropic in the privacy policy's subprocessor list + the
+US-processing residency exception. If you change `PREFLIGHT_BLOCK`, the AI provider, or what the
+AI receives, update those pages in the same change — see the `pplcrm-website-claims` skill for
+the full registry.
 
 **Reputation isolation:** free-tier sends on the platform SendGrid key default to the
 `SENDGRID_FREE_TIER_SUBUSER` env subuser (tenant whitelabel subuser or tenant-owned API key wins).

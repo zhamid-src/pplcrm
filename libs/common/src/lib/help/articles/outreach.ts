@@ -7,8 +7,19 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     title: 'Create and send a newsletter',
     summary:
       'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections'],
+    keywords: [
+      'newsletter',
+      'campaign',
+      'email blast',
+      'send',
+      'schedule',
+      'template',
+      'audience',
+      'unsubscribe',
+      'deliverability',
+      'score',
+    ],
+    related: ['lists', 'tags-issues', 'settings', 'automations', 'sending-protections', 'deliverability'],
     blocks: [
       { kind: 'h2', id: 'compose', text: 'From template to draft' },
       {
@@ -53,6 +64,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'After the send, the [Newsletters](/newsletters) page shows each campaign’s status, audience and open/click rates, with all-time totals (sent campaigns, deliveries, average engagement and bounces) summarized at the top. **View report** opens the full engagement report (it appears once a send is underway, since an unsent campaign has nothing to report), and each recipient’s profile lists the send under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'preflight', text: 'The deliverability check' },
+      {
+        kind: 'p',
+        text: 'The **Review & send** step scores your email **0–100** for deliverability. **80 or higher** means you are good to go; **50–79** lists items worth fixing before you send; **below 50, sending is disabled** until the flagged items are fixed. Every finding shows the points it costs and how to fix it. A quick check runs as you edit; **Run full check** (also next to *Send test email* on the Content step) adds a spam-filter score and an AI review of the copy. See [Get your newsletters delivered](/help/deliverability) for what the checks look for and why.',
       },
       { kind: 'h2', id: 'report', text: 'Read the engagement report' },
       {
@@ -103,7 +119,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       'deliverability',
       'anti-spam',
     ],
-    related: ['newsletters', 'settings', 'forms'],
+    related: ['newsletters', 'settings', 'forms', 'deliverability'],
     blocks: [
       {
         kind: 'p',
@@ -130,6 +146,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
       },
+      { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
+      {
+        kind: 'p',
+        text: 'Every send must also clear the **deliverability check**: a 0–100 score built from content best practices, an optional spam-filter score, and an AI review that catches scam-like patterns and content outside the acceptable-use policy. pplCRM sending is for community, political and nonprofit updates — fundraising appeals, auctions and event promotion included; unrelated commercial product blasts are not. Scores **below 50 block the send** on every plan; 50–79 sends with a warning. The AI review is included every time you run the check yourself; at send time it also runs automatically while an account is new — on the Free plan and for any account’s first few sends — and is skipped once a paid account has an established sending history. It reads only the newsletter content itself and is processed by Anthropic (listed with our other service providers in the privacy policy). See [Get your newsletters delivered](/help/deliverability).',
+      },
       { kind: 'h2', id: 'pauses', text: 'Automatic pauses' },
       {
         kind: 'list',
@@ -148,6 +169,79 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'Some features are enforced by plan: forms, donations, automations, lists and volunteer management (teams and events) need **Grassroots** or higher; canvassing, deliveries and companion volunteer access need **Movement**. See your options under [Workspace → Billing](/workspace/billing).',
+      },
+    ],
+  },
+  {
+    id: 'deliverability',
+    category: 'outreach',
+    title: 'Get your newsletters delivered',
+    summary:
+      'What actually decides inbox versus spam — sender reputation, list quality, engagement — and the content habits the deliverability check scores.',
+    keywords: [
+      'spam',
+      'junk',
+      'inbox',
+      'deliverability',
+      'images',
+      'subject line',
+      'dmarc',
+      'postmaster',
+      'score',
+      'preflight',
+      'open rate',
+    ],
+    related: ['newsletters', 'sending-protections', 'forms', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Whether an email lands in the inbox is decided mostly by **your sending reputation and how recipients engage** — opens, clicks, replies, deletes and spam reports — not by magic keywords. The content checks below matter, but the foundation is sending mail people asked for, from a domain that vouches for you.',
+      },
+      { kind: 'h2', id: 'foundation', text: 'The foundation: identity and reputation' },
+      {
+        kind: 'list',
+        items: [
+          '**Send from your verified domain.** pplCRM requires this before any broadcast — it is what lets Gmail and Outlook trust the mail is really yours.',
+          '**Add a DMARC record.** It is optional for verification but Gmail, Yahoo and Microsoft require it of bulk senders; even a monitor-only policy (`p=none`) counts. Your DNS checklist under **Workspace → Domains** shows the record.',
+          '**Keep your identity steady.** Same from-name and address every send, a regular cadence, and no sudden jumps in volume.',
+          '**Watch your reputation where the inboxes do.** Enroll your domain in [Google Postmaster Tools](https://postmaster.google.com) — keep the spam-rate graph under 0.1% and never past 0.3%.',
+        ],
+      },
+      { kind: 'h2', id: 'list-quality', text: 'List quality beats everything' },
+      {
+        kind: 'list',
+        items: [
+          'Only email people who **opted in** through your [forms](/help/forms), events or sign-ups. Purchased and scraped lists bounce hard, get reported, and trip the automatic pauses.',
+          'Unsubscribes and bounces are honored automatically — never re-import around them.',
+          'Consider **double opt-in** on public forms, and rest people who have not opened anything in months; mailing the unengaged drags down delivery for everyone else on your list.',
+        ],
+      },
+      { kind: 'h2', id: 'content', text: 'Content habits the check scores' },
+      {
+        kind: 'list',
+        items: [
+          '**Subject:** sentence case, under ~70 characters, no stacked exclamation marks or currency symbols, and never a fake “Re:”.',
+          '**Body:** keep the HTML under ~100KB (Gmail clips beyond that and hides your footer), and keep a healthy balance of real text to images. A plain-text version is generated automatically for every send.',
+          '**Images:** host them on regular `https://` URLs, keep each roughly 600px wide and comfortably under 200KB, and give every image alt text — that is what people see while images load or stay blocked.',
+          '**Links:** link real destinations on domains you control — no URL shorteners, no bare IP addresses, and make the visible text match where the link goes.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test before the big send',
+        text: 'Use **Check deliverability** and **Send test email** on the Content step, and read the test in Gmail and Outlook. Small copy fixes before a send are worth more than any amount of analysis after it.',
+      },
+      { kind: 'h2', id: 'the-check', text: 'How the deliverability check scores you' },
+      {
+        kind: 'p',
+        text: 'The check starts at 100 and subtracts points per finding, each shown with its cost and fix. **80+** is ready to send, **50–79** is worth fixing first, and **below 50 sending is disabled**. The full check adds a spam-filter (SpamAssassin) score and an AI read of the copy that flags deceptive patterns — manufactured urgency, misleading claims, look-alike links — and content outside the acceptable-use policy. Fundraising appeals, donation asks, auctions and event promotion are all normal newsletter content here; unrelated commercial product blasts and anything phishing-shaped are not.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'A good score is not a delivery guarantee',
+        text: 'The score covers what can be checked before sending. Reputation and engagement — built over many sends to a clean list — remain the larger factors, which is why the [sending protections](/help/sending-protections) watch bounces and complaints after every send.',
       },
     ],
   },

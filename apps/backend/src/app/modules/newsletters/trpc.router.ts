@@ -1,4 +1,9 @@
-import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
+import {
+  AddMarketingEmailObj,
+  RunPreflightObj,
+  UpdateMarketingEmailObj,
+  idSchema,
+} from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -34,4 +39,8 @@ export const NewslettersRouter = router({
   sendTest: authProcedure
     .input(sendTestSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
+
+  runPreflight: authProcedure
+    .input(RunPreflightObj)
+    .mutation(async ({ input, ctx }) => newsletters.runPreflight(ctx.auth.tenant_id, input)),
 });

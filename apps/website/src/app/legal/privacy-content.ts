@@ -11,7 +11,7 @@ export const PRIVACY_DOC: LegalDoc = {
   title: 'Privacy policy',
   intro:
     'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 16, 2026',
+  updated: 'July 17, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -135,6 +135,7 @@ export const PRIVACY_DOC: LegalDoc = {
         '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
         '**SendGrid.** Delivers newsletters from your organization’s own verified domain and reports delivery and engagement events.',
         '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
+        '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
         '**Google Maps.** Geocodes household addresses and renders maps.',
         '**Google and Microsoft.** Mailbox sync, only for workspaces that connect them.',
         '**Zapier.** Only if your organization creates an integration; data flows are defined by the workflows you build.',
@@ -147,7 +148,7 @@ export const PRIVACY_DOC: LegalDoc = {
     },
     {
       kind: 'p',
-      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Two narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, and email or SMS necessarily travels to wherever the recipient is.',
+      text: 'Workspaces are hosted in Canada by default. On the Movement plan, you choose your workspace’s region (Canada, US, EU or UK) when you create it, and your workspace data stays in that region for processing and backups. Three narrow exceptions apply regardless of region: card payments processed by Stripe are stored by Stripe in the United States, email or SMS necessarily travels to wherever the recipient is, and newsletter drafts sent to the AI deliverability review are processed by Anthropic in the United States.',
     },
     {
       kind: 'h2',

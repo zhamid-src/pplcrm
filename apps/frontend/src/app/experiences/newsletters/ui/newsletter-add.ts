@@ -15,6 +15,17 @@ import { TagsService } from '@experiences/tags/services/tags-service';
 import { Icon } from '@icons/icon';
 import type { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import {
+  computeScore,
+  lintNewsletterContent,
+  preflightBand,
+  preflightHashInput,
+  type AiReviewStatus,
+  type PreflightBand,
+  type PreflightFinding,
+  type PreflightResult,
+  type PreflightSeverity,
+} from '@common';
 
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -410,6 +421,107 @@ export class NewsletterAddComponent implements OnInit {
     void this.router.navigateByUrl(this.verifySenderLink);
   }
 
+  // --- Deliverability preflight --------------------------------------------
+
+  /** Full server check (lint + SpamAssassin + AI review) and the content key it was run for. */
+  private readonly serverPreflight = signal<{ key: string; result: PreflightResult } | null>(null);
+  protected readonly preflightRunning = signal(false);
+
+  /** Canonical key of the current content — a stored server result is stale once this changes. */
+  private readonly preflightContentKey = computed(() => {
+    const raw = this.regularPayload();
+    return preflightHashInput(raw.subject, raw.htmlContent, raw.plainTextContent);
+  });
+
+  /** Instant local lint of the current content — shown until a full server check runs. */
+  private readonly quickPreflight = computed<PreflightView>(() => {
+    const raw = this.regularPayload();
+    const findings = lintNewsletterContent({
+      subject: raw.subject,
+      html: raw.htmlContent,
+      plainText: raw.plainTextContent || undefined,
+    });
+    const score = computeScore(findings);
+    return { score, band: preflightBand(score), findings, kind: 'quick', aiStatus: 'not_required' };
+  });
+
+  /** What the Review card and the confirm dialog show: the full check while it still matches the
+   * content, otherwise the live quick check. */
+  protected readonly preflightView = computed<PreflightView>(() => {
+    const server = this.serverPreflight();
+    if (server && server.key === this.preflightContentKey()) {
+      const r = server.result;
+      return { score: r.score, band: r.band, findings: r.findings, kind: 'full', aiStatus: r.aiStatus };
+    }
+    return this.quickPreflight();
+  });
+
+  protected async runFullPreflight(): Promise<void> {
+    if (this.preflightRunning()) return;
+    const raw = this.regularPayload();
+    const key = this.preflightContentKey();
+    this.preflightRunning.set(true);
+    try {
+      const result = await this.newslettersSvc.runPreflight({
+        subject: raw.subject,
+        html: raw.htmlContent,
+        plainText: raw.plainTextContent || undefined,
+      });
+      this.serverPreflight.set({ key, result });
+      if (this.currentStep() !== 4) {
+        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the Review & send step.`);
+      }
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
+    } finally {
+      this.preflightRunning.set(false);
+    }
+  }
+
+  protected preflightBandCopy(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'Looking good — ready to send';
+      case 'fix':
+        return 'Fix these before sending';
+      default:
+        return 'Sending is disabled until you fix the items below';
+    }
+  }
+
+  protected preflightGaugeClass(band: PreflightBand): string {
+    switch (band) {
+      case 'good':
+        return 'text-success';
+      case 'fix':
+        return 'text-warning';
+      default:
+        return 'text-error';
+    }
+  }
+
+  protected preflightSeverityIcon(severity: PreflightSeverity): PcIconNameType {
+    switch (severity) {
+      case 'block':
+        return 'x-circle';
+      case 'warn':
+        return 'exclamation-triangle';
+      default:
+        return 'information-circle';
+    }
+  }
+
+  protected preflightSeverityClass(severity: PreflightSeverity): string {
+    switch (severity) {
+      case 'block':
+        return 'text-error';
+      case 'warn':
+        return 'text-warning';
+      default:
+        return 'text-info';
+    }
+  }
+
   // --- Test send ------------------------------------------------------------
 
   protected async sendTestEmail(): Promise<void> {
@@ -467,6 +579,17 @@ export class NewsletterAddComponent implements OnInit {
       this.regularForm.scheduledTime().markAsTouched();
       this.showFieldErrors.set(true);
       this.alertSvc.showError(this.scheduleCoach);
+      return;
+    }
+
+    // The server enforces this again at send time; catching it here routes the user to the
+    // findings instead of a failed request.
+    const check = this.preflightView();
+    if (check.band === 'blocked') {
+      this.currentStep.set(4);
+      this.alertSvc.showError(
+        `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
+      );
       return;
     }
 
@@ -549,11 +672,17 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   private preflightMessage(count: number): string {
+    const check = this.preflightView();
+    const flagged = check.findings.length;
+    const scoreLine =
+      check.band === 'good'
+        ? `Deliverability score ${check.score} — looking good.`
+        : `Deliverability score ${check.score} — ${flagged} item${flagged === 1 ? '' : 's'} worth fixing first (see the Review & send step).`;
     const base = `It will go to ${this.peopleLabel(count)}.`;
     if (this.skipBounced()) {
-      return `${base} Previously bounced addresses are skipped automatically.`;
+      return `${scoreLine} ${base} Previously bounced addresses are skipped automatically.`;
     }
-    return `${base} Bounced addresses are NOT being skipped (Workspace setting).`;
+    return `${scoreLine} ${base} Bounced addresses are NOT being skipped (Workspace setting).`;
   }
 
   private scheduleWhenLabel(): string {
@@ -761,6 +890,15 @@ export class NewsletterAddComponent implements OnInit {
 }
 
 type CreationMode = 'options' | 'regular' | 'automated';
+
+/** Deliverability-check view model: a full server run, or the instant local quick check. */
+interface PreflightView {
+  score: number;
+  band: PreflightBand;
+  findings: PreflightFinding[];
+  kind: 'full' | 'quick';
+  aiStatus: AiReviewStatus;
+}
 
 type StepIndex = 1 | 2 | 3 | 4;
 

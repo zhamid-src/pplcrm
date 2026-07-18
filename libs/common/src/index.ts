@@ -360,6 +360,38 @@ export {
 } from './lib/public-id';
 export { calculateWorkingTimeMs } from './lib/sla';
 
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
+
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
 
 export type { EmailStatus, EmailFolderConfig } from './lib/emails';

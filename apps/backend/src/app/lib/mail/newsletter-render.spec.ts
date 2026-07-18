@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractMergeTokens,
+  htmlToPlainText,
   injectPreheader,
   renderNewsletterHtml,
   resolveMergeSubstitutions,
@@ -94,6 +95,50 @@ describe('renderNewsletterHtml', () => {
     expect(out).toContain('https://app.example.com/assets/n/x.png');
     expect(out).toContain('data-pc-preheader');
     expect(out).toContain('Hello');
+  });
+});
+
+describe('htmlToPlainText', () => {
+  it('converts block closers and <br> into line structure', () => {
+    const out = htmlToPlainText('<h1>Title</h1><p>Line one<br>Line two</p><p>Next</p>');
+    expect(out).toBe('Title\n\nLine one\nLine two\n\nNext');
+  });
+
+  it('keeps link destinations as "text (url)"', () => {
+    expect(htmlToPlainText('<a href="https://vote.example.com/donate">Chip in</a>')).toBe(
+      'Chip in (https://vote.example.com/donate)',
+    );
+  });
+
+  it('does not duplicate a link whose text already is the url, and drops non-http hrefs', () => {
+    expect(htmlToPlainText('<a href="https://a.com">https://a.com</a>')).toBe('https://a.com');
+    expect(htmlToPlainText('<a href="mailto:x@y.com">Write us</a>')).toBe('Write us');
+  });
+
+  it('drops style/script content and the injected preheader', () => {
+    const withPreheader = injectPreheader('<body><style>.a{color:red}</style><p>Hi</p></body>', 'Preview line');
+    expect(htmlToPlainText(withPreheader)).toBe('Hi');
+  });
+
+  it('uses image alt text and drops alt-less images', () => {
+    expect(htmlToPlainText('<img src="x.png" alt="Our team">')).toBe('Our team');
+    expect(htmlToPlainText('before <img src="x.png"> after')).toBe('before after');
+  });
+
+  it('renders list items as dashed lines', () => {
+    expect(htmlToPlainText('<ul><li>One</li><li>Two</li></ul>')).toBe('- One\n- Two');
+  });
+
+  it('decodes entities and collapses whitespace runs', () => {
+    expect(htmlToPlainText('<p>Fish &amp; chips&nbsp;&nbsp;now &lt;cheap&gt;</p>')).toBe('Fish & chips now <cheap>');
+  });
+
+  it('never ships the editor block-data comment', () => {
+    expect(htmlToPlainText('<p>Hi</p><!-- PPLCRM_VISUAL_BLOCKS_DATA: z -->')).toBe('Hi');
+  });
+
+  it('leaves merge tokens intact for SendGrid substitution', () => {
+    expect(htmlToPlainText('<p>Hi {FirstName|there},</p>')).toBe('Hi {FirstName|there},');
   });
 });
 

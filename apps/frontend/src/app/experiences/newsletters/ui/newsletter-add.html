@@ -159,17 +159,28 @@
             >. The footer disclaimer and unsubscribe link are appended automatically from
             <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
           </p>
-          <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+          <div class="flex items-center gap-2">
             <button
               type="button"
               class="btn btn-sm btn-outline btn-secondary"
-              [disabled]="isDemo()"
-              (click)="sendTestEmail()"
+              [disabled]="preflightRunning()"
+              (click)="runFullPreflight()"
             >
-              <pc-icon name="paper-airplane" [size]="4"></pc-icon>
-              Send test email
+              @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+              <pc-icon name="check-circle" [size]="4"></pc-icon> } Check deliverability
             </button>
-          </span>
+            <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-secondary"
+                [disabled]="isDemo()"
+                (click)="sendTestEmail()"
+              >
+                <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+                Send test email
+              </button>
+            </span>
+          </div>
         </div>
         <pc-visual-newsletter-editor
           [htmlContent]="regularPayload().htmlContent"
@@ -554,6 +565,76 @@
           }
         </div>
       </div>
+
+      <!-- Deliverability check -->
+      <section class="mt-6 rounded-xl border border-base-200 bg-base-100 p-5">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-base-200 pb-3">
+          <h3 class="pc-eyebrow">Deliverability check</h3>
+          <button
+            type="button"
+            class="btn btn-sm btn-outline btn-secondary"
+            [disabled]="preflightRunning()"
+            (click)="runFullPreflight()"
+          >
+            @if (preflightRunning()) { <span class="loading loading-spinner loading-xs"></span> Checking… } @else {
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            {{ preflightView().kind === 'full' ? 'Re-run full check' : 'Run full check' }} }
+          </button>
+        </div>
+        <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
+          <div class="flex shrink-0 flex-col items-center gap-2">
+            <div
+              class="radial-progress {{ preflightGaugeClass(preflightView().band) }}"
+              [style.--value]="preflightView().score"
+              role="progressbar"
+              [attr.aria-valuenow]="preflightView().score"
+              aria-valuemin="0"
+              aria-valuemax="100"
+            >
+              <span class="text-lg font-semibold tabular-nums">{{ preflightView().score }}</span>
+            </div>
+            <p class="max-w-[10rem] text-center text-xs font-medium">{{ preflightBandCopy(preflightView().band) }}</p>
+          </div>
+          <div class="min-w-0 flex-1 space-y-3">
+            @if (preflightView().kind === 'quick') {
+            <p class="text-xs text-base-content/60">
+              Quick check of the content only. Run the full check to include the spam-filter score and the AI content
+              review.
+            </p>
+            } @else if (preflightView().aiStatus === 'unavailable') {
+            <p class="text-xs text-base-content/60">
+              The AI content review couldn't run this time — the score reflects the other checks.
+            </p>
+            } @else if (preflightView().aiStatus === 'not_required') {
+            <p class="text-xs text-base-content/60">
+              The AI content review wasn't needed for this check — the score reflects the standard checks.
+            </p>
+            } @if (preflightView().findings.length === 0) {
+            <p class="text-sm text-base-content/70">
+              No issues found. Inbox placement still depends mostly on your sender reputation and how recipients engage,
+              so keep sending to people who asked to hear from you.
+            </p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (f of preflightView().findings; track f.code) {
+              <li class="flex items-start gap-3 py-2.5">
+                <span [class]="preflightSeverityClass(f.severity)">
+                  <pc-icon [name]="preflightSeverityIcon(f.severity)" [size]="5"></pc-icon>
+                </span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-sm font-medium">{{ f.message }}</span>
+                  <span class="block text-xs text-base-content/60">{{ f.hint }}</span>
+                </span>
+                @if (f.deduction > 0) {
+                <span class="shrink-0 text-xs tabular-nums text-base-content/50">−{{ f.deduction }} pts</span>
+                }
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </section>
       } }
     </form>
   </main>

@@ -3,6 +3,7 @@ import { NewslettersController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
 import { executeJob } from '../../lib/jobs/job-handlers';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+import { NewsletterPreflightService, contentHashOf } from './preflight.service';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -137,6 +138,7 @@ async function cleanTenant(db: any, tenantId: string) {
   // map_newsletters_lists rows cascade when newsletters/lists are deleted.
   // Newsletters reference campaigns (fk_newsletters_campaign), so they go first.
   await db.deleteFrom('newsletter_send_log').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('newsletter_content_checks').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('newsletters').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('lists').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
@@ -157,6 +159,11 @@ describe('NewslettersController Asynchronous Sending', () => {
   let personId: string;
 
   beforeEach(async () => {
+    // The send path crosses the content gate; pin its network seams shut so tests never call
+    // Anthropic (even when a dev shell exports ANTHROPIC_API_KEY) or the Postmark spamcheck API.
+    vi.spyOn(NewsletterPreflightService.prototype, 'aiReview').mockResolvedValue(null);
+    vi.spyOn(NewsletterPreflightService.prototype, 'spamAssassinScore').mockResolvedValue(null);
+
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
     userId = seed.userId;
@@ -290,6 +297,89 @@ describe('NewslettersController Asynchronous Sending', () => {
     expect(payload.newsletterId).toBe(id);
     expect(payload.offset).toBe(0);
     expect(payload.deliveredCount).toBe(0);
+  });
+
+  it('should refuse to send when the content preflight lands in the blocked band', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    // Phishing-shaped content: anchor text claims one domain, href goes elsewhere, plus a raw-IP
+    // link — the lint deductions alone push the score below the blocked threshold.
+    const phishyHtml =
+      `<p>${'Real newsletter text so the body is not image-only. '.repeat(5)}</p>` +
+      '<a href="https://evil.example.net/login">www.yourbank.com</a>' +
+      '<a href="https://93.184.216.34/pay">Confirm your payment</a>';
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Blocked Newsletter',
+        status: 'draft',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject: 'Hello',
+        html_content: phishyHtml,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    await expect(controller.sendNewsletter(tenantId, id, userId)).rejects.toThrow(/Deliverability score \d+/);
+
+    // The send never got as far as enqueueing a job, and the check was cached for the panel.
+    const job = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
+    expect(job).toBeUndefined();
+    const check = await db
+      .selectFrom('newsletter_content_checks')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    expect(check?.band).toBe('blocked');
+    expect(String(check?.newsletter_id)).toBe(id);
+  });
+
+  it('should reuse a cached preflight verdict at send time instead of recomputing', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    // Content that would lint into the blocked band if recomputed…
+    const html = '<a href="https://evil.example.net">www.yourbank.com</a><a href="https://93.184.216.34/x">pay</a>';
+    const subject = 'Hello';
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Cached Newsletter',
+        status: 'draft',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject,
+        html_content: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+    // …but a cached row (as the composer's runPreflight would have written) says it passed, so the
+    // send must consume the cache rather than recompute, and backfill the newsletter id.
+    await db
+      .insertInto('newsletter_content_checks')
+      .values({
+        tenant_id: tenantId,
+        newsletter_id: null,
+        content_hash: contentHashOf(subject, html, null),
+        score: 97,
+        band: 'good',
+        findings: JSON.stringify([]),
+      })
+      .execute();
+
+    const result = await controller.sendNewsletter(tenantId, id, userId);
+    expect(result.status).toBe('queuing');
+
+    const check = await db
+      .selectFrom('newsletter_content_checks')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    expect(String(check?.newsletter_id)).toBe(id);
   });
 
   it('should process newsletter sending, support batching, and update status/activity', async () => {
@@ -444,6 +534,153 @@ describe('NewslettersController Asynchronous Sending', () => {
     expect(newsletter.status).toBe('sent');
     expect(Number(newsletter.delivered_count)).toBe(2);
   });
+
+  // ---- send-job edge cases (handleSendNewsletter) ----
+
+  const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
+
+  /** A queued newsletter + its processing job row, ready for executeJob. */
+  async function seedQueuedNewsletter(overrides: Record<string, unknown> = {}) {
+    const id = rand();
+    const jobId = rand();
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Edge Case Newsletter',
+        status: 'queuing',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject: 'Hello',
+        html_content: '<p>Hi</p>',
+        createdby_id: userId,
+        updatedby_id: userId,
+        ...overrides,
+      })
+      .execute();
+    const payload = { type: 'send-newsletter', newsletterId: id, tenantId, userId, offset: 0, deliveredCount: 0 };
+    await db
+      .insertInto('background_jobs')
+      .values({
+        id: jobId,
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'processing',
+        payload: JSON.stringify(payload),
+        attempts: 1,
+        max_attempts: 3,
+        run_at: new Date(),
+      })
+      .execute();
+    return { id, jobId, payload };
+  }
+
+  it('always hands SendGrid a plain-text part: derived from the HTML when none was composed', async () => {
+    const { jobId, payload } = await seedQueuedNewsletter({
+      html_content: '<h1>Big news</h1><p>Hello supporters</p>',
+      plain_text_content: null,
+    });
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+
+    await executeJob(payload, db, jobId);
+
+    const call = spy.mock.calls[0][0];
+    // Derived text mirrors the HTML structure, and the mandatory footer (with the SendGrid
+    // unsubscribe substitution tag) is appended to BOTH parts so it can never be edited out.
+    expect(call.text).toBe('Big news\n\nHello supporters\n\n----\nUnsubscribe: <% unsubscribe %>');
+    expect(call.html).toContain('<a href="<% unsubscribe %>">Unsubscribe</a>');
+  });
+
+  it('prefers the composed plain text over the derived one', async () => {
+    const { jobId, payload } = await seedQueuedNewsletter({ plain_text_content: 'Hand-written text.' });
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+
+    await executeJob(payload, db, jobId);
+
+    expect(spy.mock.calls[0][0].text).toBe('Hand-written text.\n\n----\nUnsubscribe: <% unsubscribe %>');
+  });
+
+  it('fails loudly instead of sending from a platform address when the From setting is missing', async () => {
+    // Simulates the send-guard invariant being bypassed (e.g. settings wiped between gate and job).
+    await db
+      .deleteFrom('settings')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.default_from_email')
+      .execute();
+    const { jobId, payload } = await seedQueuedNewsletter();
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+
+    await expect(executeJob(payload, db, jobId)).rejects.toThrow(/no verified From address/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('drops an unverified reply-to address but honors a verified one', async () => {
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+    await db
+      .insertInto('settings')
+      .values({ tenant_id: tenantId, key: 'communications.reply_to', value: JSON.stringify('reply@test-tenant.org') })
+      .execute();
+
+    const first = await seedQueuedNewsletter();
+    await executeJob(first.payload, db, first.jobId);
+    expect(spy.mock.calls[0][0].replyTo).toBeUndefined();
+
+    await db
+      .insertInto('settings')
+      .values({
+        tenant_id: tenantId,
+        key: 'communications.verified_emails',
+        value: JSON.stringify(['reply@test-tenant.org']),
+      })
+      .execute();
+    const second = await seedQueuedNewsletter();
+    await executeJob(second.payload, db, second.jobId);
+    expect(spy.mock.calls[1][0].replyTo).toBe('reply@test-tenant.org');
+  });
+
+  it('pauses mid-send (storing the resume point) when the tenant is blocked while in flight', async () => {
+    const { id, jobId, payload } = await seedQueuedNewsletter();
+    // Tripwire fires (via the SendGrid webhook) after the job was queued but before this batch.
+    await db.updateTable('tenants').set({ sending_paused_at: new Date() }).where('id', '=', tenantId).execute();
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+
+    await executeJob(payload, db, jobId);
+
+    expect(spy).not.toHaveBeenCalled();
+    const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
+    expect(newsletter.status).toBe('paused');
+    expect(Number(newsletter.send_offset)).toBe(0);
+  });
+
+  it('defers the remainder to a continuation job when the hourly send cap is exhausted', async () => {
+    const { id, jobId, payload } = await seedQueuedNewsletter();
+    // Movement plan: 20k/rolling hour. A batch of exactly that size leaves zero allowance.
+    await db
+      .insertInto('newsletter_send_log')
+      .values({ tenant_id: tenantId, newsletter_id: id, recipient_count: 20000 })
+      .execute();
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+
+    await executeJob(payload, db, jobId);
+
+    expect(spy).not.toHaveBeenCalled();
+    // The resume point is stored and a future-dated continuation job carries the send forward.
+    const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
+    expect(Number(newsletter.send_offset)).toBe(0);
+    expect(newsletter.status).not.toBe('sent');
+    const continuation = await db
+      .selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('status', '=', 'pending')
+      .executeTakeFirst();
+    expect(continuation).toBeDefined();
+    const contPayload =
+      typeof continuation.payload === 'string' ? JSON.parse(continuation.payload) : continuation.payload;
+    expect(contPayload).toMatchObject({ type: 'send-newsletter', newsletterId: id, offset: 0 });
+    expect(new Date(continuation.run_at).getTime()).toBeGreaterThan(Date.now());
+  });
 });
 
 describe('NewslettersController list targeting (map_newsletters_lists)', () => {
@@ -459,6 +696,11 @@ describe('NewslettersController list targeting (map_newsletters_lists)', () => {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
 
   beforeEach(async () => {
+    // The send path crosses the content gate; pin its network seams shut so tests never call
+    // Anthropic (even when a dev shell exports ANTHROPIC_API_KEY) or the Postmark spamcheck API.
+    vi.spyOn(NewsletterPreflightService.prototype, 'aiReview').mockResolvedValue(null);
+    vi.spyOn(NewsletterPreflightService.prototype, 'spamAssassinScore').mockResolvedValue(null);
+
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
     userId = seed.userId;

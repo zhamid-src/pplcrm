@@ -5,7 +5,12 @@ import { env } from '../../../../env';
 import { logger } from '../../../logger';
 import type { NewsletterAttachment, NewsletterRecipient } from '../../mail/newsletter-mail.service';
 import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../mail/newsletter-render';
+import {
+  extractMergeTokens,
+  htmlToPlainText,
+  renderNewsletterHtml,
+  resolveMergeSubstitutions,
+} from '../../mail/newsletter-render';
 import { UserActivityRepo } from '../../user-activity.repo';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
@@ -137,7 +142,9 @@ export async function handleSendNewsletter(
   });
   const mergeTokens = extractMergeTokens(newsletter.subject, renderedHtml, newsletter.plain_text_content);
   const finalHtml = renderedHtml + footer.html;
-  const finalText = newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined;
+  // Always send a text/plain part — HTML-only email is a spam-filter signal. When the composer
+  // didn't provide one, derive it from the rendered HTML.
+  const finalText = (newsletter.plain_text_content || htmlToPlainText(renderedHtml)) + footer.text;
 
   const attachments = await buildNewsletterAttachments(db, tenantId, newsletterId);
 

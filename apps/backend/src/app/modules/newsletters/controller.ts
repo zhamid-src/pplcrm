@@ -8,6 +8,8 @@ import type {
   NewsletterReportEngagedType,
   NewsletterReportLinkType,
   NewsletterReportType,
+  PreflightResult,
+  RunPreflightType,
 } from '../../../../../../libs/common/src';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -24,7 +26,13 @@ import { assertNotDemoMode } from '../demo/demo-guard';
 import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
-import { extractMergeTokens, renderNewsletterHtml, resolveMergeSubstitutions } from '../../lib/mail/newsletter-render';
+import {
+  extractMergeTokens,
+  htmlToPlainText,
+  renderNewsletterHtml,
+  resolveMergeSubstitutions,
+} from '../../lib/mail/newsletter-render';
+import { newsletterPreflight } from './preflight.service';
 
 const DEFAULT_FROM_NAME = 'pplCRM Team';
 // Fallback sender for TEST/preview sends only (sendTestEmail), which are allowed before a tenant has
@@ -379,6 +387,16 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     // Anti-abuse gate: identity prerequisites, tripwire pauses, free-tier warm-up cap.
     await assertTenantMaySendNewsletter(db, tenant_id, totalRecipients - resumeOffset);
 
+    // Content gate: the deliverability score must clear the blocked band. A check the composer
+    // already ran on this exact content is reused from the cache — no recompute, no AI spend.
+    const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+    await newsletterPreflight.assertNewsletterContentSendable(db, tenant_id, {
+      id,
+      subject: str(newsletter['subject']),
+      html_content: str(newsletter['html_content']),
+      plain_text_content: str(newsletter['plain_text_content']),
+    });
+
     const updated = await this.update({
       tenant_id,
       id,
@@ -410,6 +428,11 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .execute();
 
     return updated;
+  }
+
+  /** Interactive deliverability check for the composer — lint + SpamAssassin + AI, cached by hash. */
+  public async runPreflight(tenant_id: string, input: RunPreflightType): Promise<PreflightResult> {
+    return newsletterPreflight.runPreflight(this.getRepo().db, tenant_id, input);
   }
 
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
@@ -466,7 +489,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       recipients: [{ email: input.to, substitutions }],
       subject: input.subject,
       html,
-      text: input.text,
+      // Same multipart guarantee as the real send: derive the text part when none was written.
+      text: input.text || htmlToPlainText(html),
       sendgridApiKey,
       subuserUsername,
     });

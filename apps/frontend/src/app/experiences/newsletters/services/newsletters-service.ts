@@ -6,6 +6,8 @@ import {
   ExportCsvResponseType,
   MarketingEmailTopLinkType,
   NewsletterReportType,
+  PreflightResult,
+  RunPreflightType,
   UpdateMarketingEmailType,
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
@@ -94,6 +96,11 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
 
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.newsletters.exportCsv.mutate(input);
+  }
+
+  /** Full deliverability check (lint + SpamAssassin + AI content review), cached server-side. */
+  public runPreflight(input: RunPreflightType): Promise<PreflightResult> {
+    return this.api.newsletters.runPreflight.mutate(input);
   }
 
   private normalize(record: any) {

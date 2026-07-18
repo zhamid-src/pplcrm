@@ -62,6 +62,10 @@ const envSchema = z.object({
   // Shared secret Postmark is configured to send in the X-Postmark-Webhook-Token header of
   // bounce/complaint webhooks. The webhook rejects requests without it.
   POSTMARK_WEBHOOK_TOKEN: z.string().optional(),
+  // Anthropic Claude API key for the newsletter preflight's AI content review. Optional — when
+  // unset the preflight scores from the deterministic lint alone (fail-open, layer skipped).
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-opus-4-8'),
   // Twilio SMS (companion verification codes). All optional — the SMS service
   // logs a dev mock instead of sending when these are unset.
   TWILIO_ACCOUNT_SID: z.string().optional(),
@@ -178,6 +182,8 @@ export const env = {
   sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
   sendgridFreeTierSubuser: parsedEnv.SENDGRID_FREE_TIER_SUBUSER,
   postmarkWebhookToken: parsedEnv.POSTMARK_WEBHOOK_TOKEN,
+  anthropicApiKey: parsedEnv.ANTHROPIC_API_KEY,
+  anthropicModel: parsedEnv.ANTHROPIC_MODEL,
   twilioAccountSid: parsedEnv.TWILIO_ACCOUNT_SID,
   twilioAuthToken: parsedEnv.TWILIO_AUTH_TOKEN,
   twilioFromNumber: parsedEnv.TWILIO_FROM_NUMBER,
