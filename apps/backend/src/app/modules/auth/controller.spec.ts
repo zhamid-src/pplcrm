@@ -91,8 +91,14 @@ async function signUpOwner(controller: AuthController, db: any, verified = true)
     await db.updateTable('authusers').set({ verified: true }).where('id', '=', user.id).execute();
     user = { ...user, verified: true };
   }
-  // signUp seeds demo mode, which blocks invites (demo-guard); these tests exercise post-demo behavior.
-  await db.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', user.tenant_id).execute();
+  // signUp seeds demo mode (blocks invites via demo-guard) and the Free plan (2 seats). These tests
+  // exercise post-demo invite/role logic, not the seat cap, so clear demo mode and move to Movement
+  // (unlimited seats) for headroom — seat-cap enforcement has its own dedicated test.
+  await db
+    .updateTable('tenants')
+    .set({ demo_mode_at: null, subscription_plan: 'movement' })
+    .where('id', '=', user.tenant_id)
+    .execute();
   return user as { id: string; tenant_id: string; email: string; first_name: string; role: string };
 }
 
@@ -123,6 +129,37 @@ describe('AuthController', () => {
     expect(result).toMatchObject({ email: owner.email });
 
     await expect(controller.currentUser({} as any)).rejects.toThrow(UnauthorizedError);
+
+    await cleanup(db, owner.id, owner.tenant_id);
+  });
+
+  it('should enforce the plan seat cap on inviteUser', async () => {
+    const owner = await signUpOwner(controller, db);
+    // Free plan allows 2 staff seats. signUp seeds demo teammates, so deactivate everyone but the
+    // owner to get a deterministic 1 seat in use before testing the cap.
+    await db.updateTable('tenants').set({ subscription_plan: 'free' }).where('id', '=', owner.tenant_id).execute();
+    await db
+      .updateTable('authusers')
+      .set({ deactivated_at: new Date() })
+      .where('tenant_id', '=', owner.tenant_id)
+      .where('id', '!=', owner.id)
+      .execute();
+
+    // Second seat is within the cap.
+    await controller.inviteUser(authFor(owner), {
+      email: `seat1-${rand()}@example.com`,
+      first_name: 'Seat1',
+      role: 'user',
+    });
+
+    // A third invite would exceed the 2-seat cap and is refused.
+    await expect(
+      controller.inviteUser(authFor(owner), {
+        email: `seat2-${rand()}@example.com`,
+        first_name: 'Seat2',
+        role: 'user',
+      }),
+    ).rejects.toThrow(ForbiddenError);
 
     await cleanup(db, owner.id, owner.tenant_id);
   });

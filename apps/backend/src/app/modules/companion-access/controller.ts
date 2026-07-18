@@ -115,6 +115,19 @@ export class CompanionAccessController {
 
     const link = await this.resolveLink(kind, token);
     if (!link || !link.volunteer_person_id) throw new NotFoundError('This link is not active.');
+
+    // A suspended organization (under abuse review) must not be able to burn verification SMS/email
+    // cost. Companion codes sit outside the newsletter send-guard chain, so this path needs its own
+    // check — otherwise a suspended tenant keeps emitting outbound SMS/email here.
+    const org = await this.volunteersRepo.db
+      .selectFrom('tenants')
+      .select('suspended_at')
+      .where('id', '=', link.tenant_id)
+      .executeTakeFirst();
+    if (org?.suspended_at) {
+      throw new ForbiddenError('This organization is temporarily unavailable. Please contact your organizer.');
+    }
+
     const person = await this.personContacts(link.tenant_id, link.volunteer_person_id);
     if (!person) throw new NotFoundError('This link is not active.');
 

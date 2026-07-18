@@ -33,8 +33,15 @@ function mockAuthDb() {
 }
 
 // signUp seeds demo mode, which blocks invites (demo-guard); tests that invite exercise post-demo behavior.
+// It also lands the tenant on the Free plan (2 seats) — these tests exercise invite/role logic, not the
+// seat cap, so move to Movement (unlimited seats) to give them headroom (seat-cap enforcement is covered
+// by its own test).
 async function clearDemoMode(db: any, tenant_id: any) {
-  await db.updateTable('tenants').set({ demo_mode_at: null }).where('id', '=', tenant_id).execute();
+  await db
+    .updateTable('tenants')
+    .set({ demo_mode_at: null, subscription_plan: 'movement' })
+    .where('id', '=', tenant_id)
+    .execute();
 }
 
 async function cleanup(db: any, user_id: any, tenant_id: any) {

@@ -66,6 +66,32 @@ export async function handleSendNewsletter(
   const totalRecipients = Number(countResult?.count || 0);
 
   if (offset === 0) {
+    // Preflight TOCTOU guard: the send-time content gate ran against whatever content was stored
+    // when `send` was called, but the worker reads the content fresh here — so re-score the actual
+    // content about to go out. If it was swapped for something in the blocked band after the gate,
+    // refuse to send it and revert to draft rather than blasting unscored content.
+    const { newsletterPreflight } = await import('../../../modules/newsletters/preflight.service');
+    try {
+      await newsletterPreflight.assertNewsletterContentSendable(db, tenantId, {
+        id: newsletterId,
+        subject: newsletter.subject ?? null,
+        html_content: newsletter.html_content ?? null,
+        plain_text_content: newsletter.plain_text_content ?? null,
+      });
+    } catch (err) {
+      logger.warn(
+        { err, tenantId, newsletterId },
+        'Newsletter content failed the send-time re-check — reverting to draft instead of sending',
+      );
+      await db
+        .updateTable('newsletters')
+        .set({ status: 'draft', send_offset: null, updated_at: new Date() })
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
+        .execute();
+      return;
+    }
+
     await db
       .updateTable('newsletters')
       .set({

@@ -4,6 +4,7 @@ import { StorageService } from '../../lib/storage.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { getAllOptionsType } from '../../../../../../libs/common/src';
 import { logger } from '../../logger';
+import { ForbiddenError } from '../../errors/app-errors';
 import { getPlanLimits } from '../billing/usage-limits';
 
 const LARGEST_FILES_LIMIT = 5;
@@ -73,6 +74,36 @@ export class FilesController extends BaseController<'files', FilesRepo> {
           logger.error({ err }, `Failed to clean up duplicate file ${input.storageKey}`);
         }
         return existing;
+      }
+    }
+
+    // Storage quota: enforce the plan's storage cap before recording the file, otherwise the limit
+    // is only ever measured after the fact by the async usage job (and by then the bytes are
+    // already stored). Dedup hits above add no bytes, so they're exempt. The blob has already been
+    // uploaded to storage by the client SAS flow, so a rejected upload is cleaned up here.
+    const sizeBytes = input.sizeBytes || 0;
+    if (sizeBytes > 0) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select(['subscription_plan', 'subscription_quantity'])
+        .where('id', '=', auth.tenant_id)
+        .executeTakeFirst();
+      const quotaBytes = getPlanLimits(
+        tenant?.subscription_plan ?? null,
+        tenant?.subscription_quantity ?? 1,
+      ).storageBytes;
+      if (Number.isFinite(quotaBytes)) {
+        const usedBytes = await this.getRepo().getTotalBytes(auth.tenant_id);
+        if (usedBytes + sizeBytes > quotaBytes) {
+          try {
+            await this.storageService.delete(input.storageKey);
+          } catch (err) {
+            logger.error({ err }, `Failed to clean up over-quota upload ${input.storageKey}`);
+          }
+          throw new ForbiddenError(
+            "This upload would exceed your plan's storage quota. Free up space or upgrade your plan to add more files.",
+          );
+        }
       }
     }
 

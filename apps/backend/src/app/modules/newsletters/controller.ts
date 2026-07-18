@@ -86,11 +86,30 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return result;
   }
 
+  /** Content fields whose value the deliverability preflight scores. Editing any of these after a
+   * send has been enqueued would let the sent content diverge from the scored content (a preflight
+   * TOCTOU), so they are frozen once the newsletter leaves the draft/paused states. */
+  private static readonly SCORED_CONTENT_FIELDS = ['subject', 'html_content', 'plain_text_content'] as const;
+
   public override async update(input: {
     tenant_id: string;
     id: string;
     row: OperationDataType<'newsletters', 'update'>;
   }) {
+    const editsScoredContent = NewslettersController.SCORED_CONTENT_FIELDS.some(
+      (field) => (input.row as Record<string, unknown>)[field] !== undefined,
+    );
+    if (editsScoredContent) {
+      const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as
+        | Record<string, unknown>
+        | undefined;
+      const status = current?.['status'];
+      if (status === 'queuing' || status === 'sending' || status === 'sent') {
+        throw new BadRequestError(
+          'This newsletter is already sending or has been sent — its content can no longer be edited.',
+        );
+      }
+    }
     const result = await super.update(input);
     const rowObj = input.row as Record<string, unknown>;
     const resultObj = result as Record<string, unknown> | undefined;

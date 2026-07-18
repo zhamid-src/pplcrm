@@ -760,6 +760,35 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const email = input.email.toLowerCase();
     await this.verifyUserDoesNotExist(email);
 
+    // Seat cap: enforce the plan's staff-seat allowance up front. Every non-deactivated login,
+    // including still-pending invites, holds a seat (matches getSeatUsage and the billing usage
+    // check), so a full workspace must free or buy a seat before adding another — otherwise the
+    // limit is only ever measured after the fact by the async usage job.
+    const seatTenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['subscription_plan', 'subscription_quantity'])
+      .where('id', '=', auth.tenant_id)
+      .executeTakeFirst();
+    const seatLimit = getPlanLimits(
+      seatTenant?.subscription_plan ?? null,
+      seatTenant?.subscription_quantity ?? 1,
+    ).seats;
+    if (Number.isFinite(seatLimit)) {
+      const seatRow = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select((eb) => eb.fn.countAll().as('cnt'))
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('deletion_scheduled_at', 'is', null)
+        .where('deactivated_at', 'is', null)
+        .executeTakeFirst();
+      if (Number(seatRow?.cnt ?? 0) >= seatLimit) {
+        throw new ForbiddenError(
+          `Your plan includes ${seatLimit} staff seat${seatLimit === 1 ? '' : 's'}, all of which are in use. ` +
+            `Upgrade your plan or deactivate a user before inviting another.`,
+        );
+      }
+    }
+
     // Fall back to the tenant's configured default invite role when the caller didn't specify one.
     let role = input.role ?? null;
     if (!role) {

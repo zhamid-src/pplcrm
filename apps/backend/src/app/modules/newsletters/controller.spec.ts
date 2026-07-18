@@ -299,6 +299,42 @@ describe('NewslettersController Asynchronous Sending', () => {
     expect(payload.deliveredCount).toBe(0);
   });
 
+  it('freezes scored content once a newsletter is queuing/sending/sent (preflight TOCTOU guard)', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Locked Newsletter',
+        status: 'queuing',
+        subject: 'Benign subject',
+        html_content: '<p>Benign body that passed preflight</p>',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Swapping the content after send was requested would let the sent copy diverge from the
+    // scored copy — refuse it.
+    await expect(
+      controller.update({
+        tenant_id: tenantId,
+        id,
+        row: { html_content: '<p>Swapped-in phishing</p>', updatedby_id: userId },
+      }),
+    ).rejects.toThrow(/no longer be edited/);
+
+    // A non-content edit (e.g. renaming) is still allowed in this state.
+    const renamed = (await controller.update({
+      tenant_id: tenantId,
+      id,
+      row: { name: 'Renamed', updatedby_id: userId },
+    })) as Record<string, unknown>;
+    expect(renamed['name']).toBe('Renamed');
+  });
+
   it('should refuse to send when the content preflight lands in the blocked band', async () => {
     const id = String(Math.floor(Math.random() * 100000000) + 10000000);
     // Phishing-shaped content: anchor text claims one domain, href goes elsewhere, plus a raw-IP
@@ -448,6 +484,64 @@ describe('NewslettersController Asynchronous Sending', () => {
     expect(activity).toBeDefined();
     expect(activity.activity).toBe('send');
     expect(Number(activity.quantity)).toBe(1);
+  });
+
+  it('reverts to draft instead of sending when content fails the send-time re-check (TOCTOU)', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    // Simulate a post-send content swap: the newsletter is queued to send, but the stored content
+    // now lints into the blocked band. The worker must re-score and refuse rather than blast it.
+    const phishyHtml =
+      `<p>${'Real newsletter text so the body is not image-only. '.repeat(5)}</p>` +
+      '<a href="https://evil.example.net/login">www.yourbank.com</a>' +
+      '<a href="https://93.184.216.34/pay">Confirm your payment</a>';
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Swapped Newsletter',
+        status: 'queuing',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject: 'Hello',
+        html_content: phishyHtml,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    const jobId = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('background_jobs')
+      .values({
+        id: jobId,
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'processing',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId,
+          userId,
+          offset: 0,
+          deliveredCount: 0,
+        }),
+        attempts: 1,
+        max_attempts: 3,
+        run_at: new Date(),
+      })
+      .execute();
+
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+    const job = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId).executeTakeFirst();
+    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+
+    await executeJob(payload, db, jobId);
+
+    // Nothing was sent, and the newsletter was returned to draft for the operator to fix.
+    expect(spy).not.toHaveBeenCalled();
+    const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
+    expect(newsletter.status).toBe('draft');
   });
 
   it('should process all recipients and set status to sent', async () => {

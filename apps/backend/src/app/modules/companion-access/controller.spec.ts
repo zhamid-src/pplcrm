@@ -260,6 +260,22 @@ describe('CompanionAccessController', () => {
     await expect(controller.verifyStart('turf', s.token, 'email')).rejects.toThrow(/too many requests/i);
   });
 
+  it('refuses to send verification codes while the organization is suspended', async () => {
+    await db.updateTable('tenants').set({ suspended_at: new Date() }).where('id', '=', s.tenantId).execute();
+    await expect(controller.verifyStart('turf', s.token, 'email')).rejects.toThrow(/temporarily unavailable/i);
+    // No code email was queued to the outbox.
+    expect((await outboxTypes(db, s.tenantId)).includes('send-transactional-email')).toBe(false);
+  });
+
+  it('still sends verification codes when sending is only tripwire-paused, not suspended', async () => {
+    // A hard-bounce pause halts newsletters, but must NOT knock out field-ops verification codes —
+    // only a full suspension (abuse review) gates the companion path.
+    await db.updateTable('tenants').set({ sending_paused_at: new Date() }).where('id', '=', s.tenantId).execute();
+    const start = await controller.verifyStart('turf', s.token, 'email');
+    expect(start.masked).toBe('j•••@example.com');
+    expect((await outboxTypes(db, s.tenantId)).includes('send-transactional-email')).toBe(true);
+  });
+
   it('rejects a channel that is not on file', async () => {
     await db.updateTable('persons').set({ mobile: null }).where('tenant_id', '=', s.tenantId).execute();
     await expect(controller.verifyStart('turf', s.token, 'sms')).rejects.toThrow(/not on file/i);

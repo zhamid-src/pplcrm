@@ -194,6 +194,29 @@ describe('FilesController', () => {
     expect(all.count).toBe(2);
   });
 
+  it('refuses an upload that would exceed the plan storage quota and cleans up the blob', async () => {
+    const deleteSpy = vi.spyOn(StorageService.prototype, 'delete').mockResolvedValue(undefined);
+    const GB = 1024 * 1024 * 1024;
+
+    // The default (Free) plan quota is 1 GB — a 2 GB upload blows past it.
+    await expect(
+      controller.registerFile(
+        {
+          filename: 'huge.zip',
+          sizeBytes: 2 * GB,
+          storageKey: `uploads/${tenantId}/huge.zip`,
+          sha256Hex: 'huge-hash',
+        },
+        auth,
+      ),
+    ).rejects.toThrow(/storage quota/i);
+
+    // The rejected blob is deleted from storage, and nothing is recorded.
+    expect(deleteSpy).toHaveBeenCalledWith(`uploads/${tenantId}/huge.zip`);
+    const rows = await db.selectFrom('files').selectAll().where('tenant_id', '=', tenantId).execute();
+    expect(rows).toHaveLength(0);
+  });
+
   it('summarizes storage usage with quota and largest files, labeling entity-linked files', async () => {
     const campaignRow = await db
       .insertInto('campaigns')
