@@ -422,6 +422,8 @@ export {
   ANNUAL_PRICE_MULTIPLIER,
   GATED_FEATURES,
   planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
   DATA_RESIDENCY_REGIONS,
   DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
@@ -445,7 +447,6 @@ export {
   currencyForCountry,
   convertFromUsd,
   formatCurrency,
-  formatCurrencyExact,
   currencyPriceSymbol,
 } from './lib/billing/currency';
 export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';

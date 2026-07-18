@@ -83,6 +83,16 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.api.newsletters.send.mutate(id);
   }
 
+  /** Monthly newsletter-email allowance at the billed bracket (`cap: null` = unlimited). */
+  public getSendQuota(): Promise<{
+    cap: number | null;
+    used: number;
+    remaining: number | null;
+    resetsAt: string | null;
+  }> {
+    return this.api.newsletters.sendQuota.query();
+  }
+
   public sendTest(input: {
     subject: string;
     html: string;

@@ -79,9 +79,9 @@ export class PricingPage {
     rows: group.rows.filter((row) => !isAllTrueRow(row)),
   })).filter((group) => group.rows.length > 0);
 
-  /** Billing interval the cards and comparison table price at. Monthly is the deliberate
-   * default — electoral campaigns often end mid-year and shouldn't be nudged into prepay. */
-  protected readonly interval = signal<BillingInterval>('month');
+  /** Billing interval the cards and comparison table price at. The marketing page defaults to
+   * Annual (the in-app billing page keeps Monthly — see the plans.ts decision log). */
+  protected readonly interval = signal<BillingInterval>('year');
   protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
 
   protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
@@ -101,8 +101,9 @@ export class PricingPage {
   }
 
   /** Live price at the slider's subscriber count, formatted in the active display currency.
-   * On annual, paid tiers show the monthly-equivalent of the annual total with cents
-   * (`$24.17`); Free keeps its plain `$0` (nothing to bill annually). */
+   * On annual, paid tiers show the rounded monthly-equivalent of the annual total (`$24` —
+   * the exact total renders alongside via `annualNote`, with the rounding disclaimer below
+   * the cards); Free keeps its plain `$0` (nothing to bill annually). */
   protected priceLabel(plan: PlanDef): string {
     const index = bracketIndexForSubscribers(plan.key, this.subscribers());
     if (index === null) return 'Contact us';

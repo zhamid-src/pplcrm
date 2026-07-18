@@ -5046,7 +5046,7 @@ import { StatusBadge } from '../status-badge/status-badge';
 import type { PcStatusType } from '../status-badge/status-badge';
 
 /** The household geocoding lifecycle as stored in `households.geocoding_status`. */
-export type PcGeocodeStatus = 'success' | 'pending' | 'failed' | null | undefined;
+export type PcGeocodeStatus = 'success' | 'pending' | 'failed' | 'skipped' | null | undefined;
 
 interface GeocodeChipSpec {
   label: string;
@@ -5055,13 +5055,15 @@ interface GeocodeChipSpec {
 
 /**
  * The single, binding surface for a household's geocode state (§6 consumers):
- * "Located / Locating… / Address problem" — never a hidden row. Wave 2
- * (canvassing readiness, delivery coverage) reads the same three states.
+ * "Located / Locating… / Address problem / Not geocoded" — never a hidden row.
+ * Wave 2 (canvassing readiness, delivery coverage) reads the same states.
  *
  * DB status → chip:
  *  - `success`            → **Located** (success — done)
  *  - `pending` / `null`   → **Locating…** (info — in progress)
  *  - `failed`             → **Address problem** (warning — needs attention)
+ *  - `skipped`            → **Not geocoded** (neutral — geocoding is a Movement feature; the
+ *                           address is fine, it just wasn't sent to the geocoder on this plan)
  */
 export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSpec {
   switch (status) {
@@ -5069,6 +5071,8 @@ export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSp
       return { label: 'Located', type: 'success' };
     case 'failed':
       return { label: 'Address problem', type: 'warning' };
+    case 'skipped':
+      return { label: 'Not geocoded', type: 'neutral' };
     default:
       return { label: 'Locating…', type: 'info' };
   }
@@ -8070,136 +8074,6 @@ Run `nx test uxcommon` to execute the unit tests.
 }
 ````
 
-## File: libs/common/src/lib/billing/currency.ts
-````typescript
-/**
- * Display-currency helpers for the marketing website.
- *
- * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
- * marketing site *show* those USD prices converted to a handful of local currencies at live
- * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
- * page carries that disclaimer whenever a non-USD currency is shown.
- *
- * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
- * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
- * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
- * the "billed in USD" note.
- */
-
-/** The currencies the marketing site can display prices in. USD is the billing currency. */
-export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
-export type CurrencyCode = (typeof CURRENCY_CODES)[number];
-
-export interface CurrencyDef {
-  readonly code: CurrencyCode;
-  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
-  readonly symbol: string;
-  /** Human label for the switcher menu. */
-  readonly label: string;
-}
-
-/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
- * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
-export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
-  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
-  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
-  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
-  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
-};
-
-/** Locale used for number grouping in formatted prices (fixed for consistent English
- * presentation on the marketing site). */
-const FORMAT_LOCALE = 'en-US';
-
-/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
- * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
- * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
-const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  CAD: 'C$',
-};
-
-/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
-export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
-
-/** Type guard: is a string one of our supported currency codes? */
-export function isCurrencyCode(value: string): value is CurrencyCode {
-  return (CURRENCY_CODES as readonly string[]).includes(value);
-}
-
-/**
- * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
- * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
- */
-export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
-  GB: 'GBP',
-  CA: 'CAD',
-  // Eurozone (the 20 EUR members).
-  AT: 'EUR',
-  BE: 'EUR',
-  HR: 'EUR',
-  CY: 'EUR',
-  EE: 'EUR',
-  FI: 'EUR',
-  FR: 'EUR',
-  DE: 'EUR',
-  GR: 'EUR',
-  IE: 'EUR',
-  IT: 'EUR',
-  LV: 'EUR',
-  LT: 'EUR',
-  LU: 'EUR',
-  MT: 'EUR',
-  NL: 'EUR',
-  PT: 'EUR',
-  SK: 'EUR',
-  SI: 'EUR',
-  ES: 'EUR',
-};
-
-/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
-export function currencyForCountry(country: string | null | undefined): CurrencyCode {
-  if (!country) return 'USD';
-  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
-}
-
-/**
- * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
- * Falls back to the original amount when the rate for `code` is missing (treated as USD).
- */
-export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
-  const rate = code === 'USD' ? 1 : rates[code];
-  if (rate == null) return Math.round(usd);
-  return Math.round(usd * rate);
-}
-
-/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
- * inline — kept consistent with `formatCurrency`'s output. */
-export function currencyPriceSymbol(code: CurrencyCode): string {
-  return PRICE_SYMBOLS[code];
-}
-
-/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
- * (e.g. `$69`, `C$95`, `€65`, `£55`). */
-export function formatCurrency(amount: number, code: CurrencyCode): string {
-  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
-  return `${currencyPriceSymbol(code)}${number}`;
-}
-
-/** Format an amount as a price with exactly two fractional digits (e.g. `$24.17`, `C$33.08`).
- * Used for annual billing's monthly-equivalent display, where the cents are the honest part of
- * the number — everything else on the site stays whole-unit via `formatCurrency`. */
-export function formatCurrencyExact(amount: number, code: CurrencyCode): string {
-  const number = new Intl.NumberFormat(FORMAT_LOCALE, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-  return `${currencyPriceSymbol(code)}${number}`;
-}
-````
-
 ## File: libs/common/src/lib/help/articles/contacts.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -8359,7 +8233,7 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found; open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
+        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
       },
       { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
       {
@@ -11037,6 +10911,125 @@ export default defineConfig(() => ({
 }));
 ````
 
+## File: libs/common/src/lib/billing/currency.ts
+````typescript
+/**
+ * Display-currency helpers for the marketing website.
+ *
+ * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
+ * marketing site *show* those USD prices converted to a handful of local currencies at live
+ * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
+ * page carries that disclaimer whenever a non-USD currency is shown.
+ *
+ * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
+ * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
+ * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
+ * the "billed in USD" note.
+ */
+
+/** The currencies the marketing site can display prices in. USD is the billing currency. */
+export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
+export type CurrencyCode = (typeof CURRENCY_CODES)[number];
+
+export interface CurrencyDef {
+  readonly code: CurrencyCode;
+  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
+  readonly symbol: string;
+  /** Human label for the switcher menu. */
+  readonly label: string;
+}
+
+/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
+ * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
+export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
+  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
+  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
+  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
+  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
+};
+
+/** Locale used for number grouping in formatted prices (fixed for consistent English
+ * presentation on the marketing site). */
+const FORMAT_LOCALE = 'en-US';
+
+/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
+ * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
+ * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
+const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  CAD: 'C$',
+};
+
+/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
+export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
+
+/** Type guard: is a string one of our supported currency codes? */
+export function isCurrencyCode(value: string): value is CurrencyCode {
+  return (CURRENCY_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
+ * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
+ */
+export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
+  GB: 'GBP',
+  CA: 'CAD',
+  // Eurozone (the 20 EUR members).
+  AT: 'EUR',
+  BE: 'EUR',
+  HR: 'EUR',
+  CY: 'EUR',
+  EE: 'EUR',
+  FI: 'EUR',
+  FR: 'EUR',
+  DE: 'EUR',
+  GR: 'EUR',
+  IE: 'EUR',
+  IT: 'EUR',
+  LV: 'EUR',
+  LT: 'EUR',
+  LU: 'EUR',
+  MT: 'EUR',
+  NL: 'EUR',
+  PT: 'EUR',
+  SK: 'EUR',
+  SI: 'EUR',
+  ES: 'EUR',
+};
+
+/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
+export function currencyForCountry(country: string | null | undefined): CurrencyCode {
+  if (!country) return 'USD';
+  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
+}
+
+/**
+ * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
+ * Falls back to the original amount when the rate for `code` is missing (treated as USD).
+ */
+export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
+  const rate = code === 'USD' ? 1 : rates[code];
+  if (rate == null) return Math.round(usd);
+  return Math.round(usd * rate);
+}
+
+/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
+ * inline — kept consistent with `formatCurrency`'s output. */
+export function currencyPriceSymbol(code: CurrencyCode): string {
+  return PRICE_SYMBOLS[code];
+}
+
+/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
+ * (e.g. `$69`, `C$95`, `€65`, `£55`). */
+export function formatCurrency(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
+````
+
 ## File: libs/common/src/lib/schemas/content-check.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -12883,333 +12876,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
-## File: libs/common/src/lib/help/articles/administration.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**Integrations & API**: webhook keys and connected services.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      {
-        kind: 'p',
-        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
-      },
-      {
-        kind: 'p',
-        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified. On **monthly** billing the new amount takes effect on your **next billing cycle**, never mid-cycle. On **annual** billing the prorated difference for the remainder of your year is charged right away — otherwise a year-long prepay would make growth free until renewal. If your list shrinks back below a bracket, the lower price reconciles at the next renewal on either interval rather than refunding the current period.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
-    summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/engagement.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -13579,6 +13245,333 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Integrations & API**: webhook keys and connected services.',
+          '**Billing**: your plan, live usage, and payment details.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus A/B testing and priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      {
+        kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/help/articles/outreach.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -13728,6 +13721,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
+      },
+      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
+      {
+        kind: 'p',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
       },
       { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
       {
@@ -14356,6 +14354,8 @@ export {
   ANNUAL_PRICE_MULTIPLIER,
   GATED_FEATURES,
   planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
   DATA_RESIDENCY_REGIONS,
   DATA_RESIDENCY_LABEL,
 } from './lib/billing/plans';
@@ -14379,7 +14379,6 @@ export {
   currencyForCountry,
   convertFromUsd,
   formatCurrency,
-  formatCurrencyExact,
   currencyPriceSymbol,
 } from './lib/billing/currency';
 export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
@@ -14459,9 +14458,11 @@ export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
  *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
  *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
  *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
- *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
- *    keeps 2×.
+ *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
+ *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
+ *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
+ *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
+ *    not just alerted on.
  *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
  *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
  *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
@@ -14476,10 +14477,13 @@ export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
  *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
  *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
  *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
- *    quantity-as-bracket-index mechanism carries over unchanged. Display is monthly-equivalent
- *    with cents ("$24.17 per month, billed annually as $290") so every number stays checkable;
- *    monthly remains the default toggle state everywhere (electoral campaigns end in November —
- *    don't nudge them into prepay). Mid-year bracket GROWTH on an annual subscription is
+ *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
+ *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
+ *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
+ *    number is the annual total, which is what's actually charged. The website pricing page
+ *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
+ *    Monthly as its default (electoral campaigns end in November — don't nudge existing
+ *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
  *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
  *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
  *
@@ -14651,7 +14655,7 @@ export const PLANS: readonly PlanDef[] = [
     name: 'Grassroots',
     cadence: 'per month',
     blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
     storageBytes: 10 * GB,
     seats: 5,
     volunteers: 0,
@@ -14662,7 +14666,7 @@ export const PLANS: readonly PlanDef[] = [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
       'Save 2 months with annual billing',
-      'Up to 100,000 email subscribers · 12× emails/month',
+      'Up to 100,000 email subscribers · 8× emails/month',
       '5 staff seats · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
@@ -14814,13 +14818,15 @@ export function annualPriceForQuantity(key: PlanKey, qty: number): number {
   return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
 }
 
-/** Monthly-equivalent of an annual USD total, rounded to cents (290 → 24.17). The
- * customer-facing framing for annual prices: "$24.17 per month, billed annually as $290". */
+/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
+ * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
+ * surfaces that show it must keep the exact annual total alongside and carry the rounding
+ * disclaimer, since equivalent × 12 ≠ the billed total. */
 export function monthlyEquivalentUsd(annualUsd: number): number {
-  return Math.round((annualUsd / 12) * 100) / 100;
+  return Math.round(annualUsd / 12);
 }
 
-/** "$29" for whole dollars, "$24.17" for cent amounts (monthly-equivalents). */
+/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
 function usdLabel(amount: number): string {
   return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
 }
@@ -14835,7 +14841,7 @@ export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
 
 /** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
  * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
- * monthly-equivalent of the annual price, e.g. 'From $24.17'. */
+ * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
 export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
   const usd = startingPriceUsd(plan, interval);
   if (usd === null) return 'Custom';
@@ -14845,7 +14851,7 @@ export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'm
 /** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
  * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
  * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
- * monthly-equivalent of the annual price. */
+ * rounded monthly-equivalent of the annual price. */
 export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
   if (!plan.pricing) return null;
   const first = plan.pricing.brackets[0];
@@ -14859,7 +14865,7 @@ export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'mon
 
 /** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
  * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
- * `interval: 'year'`, the label is the monthly-equivalent of the annual price ('$57.50').
+ * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
  * Used by the website pricing slider and the frontend billing upgrade cards. */
 export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
   if (!plan.pricing) return 'Custom';
@@ -14900,6 +14906,21 @@ export function planAllowsFeature(planName: string | null | undefined, feature: 
   return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
 }
 
+/**
+ * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
+ * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
+ * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
+ * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
+ * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
+ */
+export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
+
+/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
+export function planAllowsGeocoding(planName: string | null | undefined): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
+}
+
 /** Regions a Movement customer can choose to store their data in, set when they create their
  * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
  * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
@@ -14938,7 +14959,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       },
       {
         label: 'Emails / month',
-        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
       },
       { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
       { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },

@@ -19,6 +19,7 @@ import { StorageService } from '../../storage.service';
 import { getPlanDef } from '@common';
 import { getPlanLimits } from '../../../modules/billing/usage-limits';
 import {
+  hasPaymentHold,
   loadSendingTenant,
   logNewsletterBatch,
   remainingSendAllowance,
@@ -176,10 +177,11 @@ export async function handleSendNewsletter(
 
   while (offset < totalRecipients) {
     // Re-check the tenant's blocked state every batch so an abuse tripwire (fired by the
-    // SendGrid webhook while this send is in flight) stops the send mid-stream, not just the
-    // next one. The resume point is stored on the newsletter for a supervised restart.
+    // SendGrid webhook while this send is in flight) or a payment hold (subscription going
+    // past_due mid-send) stops the send mid-stream, not just the next one. The resume point
+    // is stored on the newsletter for a supervised restart.
     const tenantNow = await loadSendingTenant(db, tenantId);
-    if (tenantNow.suspended_at || tenantNow.sending_paused_at) {
+    if (tenantNow.suspended_at || tenantNow.sending_paused_at || hasPaymentHold(tenantNow)) {
       logger.warn(
         { tenantId, newsletterId, offset, deliveredCount },
         'Tenant sending is blocked — pausing newsletter mid-send',

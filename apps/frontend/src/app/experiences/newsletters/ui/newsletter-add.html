@@ -478,6 +478,14 @@
               <dt class="text-base-content/60">Audience</dt>
               <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
             </div>
+            @if (sendQuota(); as quota) { @if (quota.remaining != null && quota.cap != null) {
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Monthly allowance</dt>
+              <dd class="font-medium tabular-nums" [class.text-error]="quotaShortfall()">
+                {{ formatCount(quota.remaining) }} of {{ formatCount(quota.cap) }} emails left
+              </dd>
+            </div>
+            } }
             <div class="flex items-center justify-between gap-4 py-2.5">
               <dt class="text-base-content/60">Timing</dt>
               <dd class="text-right font-medium">
@@ -485,6 +493,17 @@
               </dd>
             </div>
           </dl>
+          @if (quotaShortfall()) {
+          <div class="alert alert-warning mt-3 items-start text-sm" role="alert">
+            <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+            <span>
+              This audience is larger than the {{ formatCount(sendQuota()?.remaining ?? 0) }} emails left in your plan's
+              monthly allowance@if (quotaResetLabel()) { (resets {{ quotaResetLabel() }})}. Narrow the audience, or
+              <a routerLink="/workspace/billing" class="link">upgrade your plan</a>
+              for a larger allowance.
+            </span>
+          </div>
+          }
         </div>
 
         <!-- Send timing -->
@@ -655,8 +674,13 @@
       <pc-icon name="chevron-right" [size]="4"></pc-icon>
     </button>
     } @else {
-    <span class="tooltip-left" [class.tooltip]="isDemo()" [attr.data-tip]="isDemo() ? demoSendTooltip : null">
-      <button type="button" class="btn btn-primary btn-sm" [disabled]="saving() || isDemo()" (click)="sendRegular()">
+    <span class="tooltip-left" [class.tooltip]="!!sendBlockedTooltip()" [attr.data-tip]="sendBlockedTooltip()">
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        [disabled]="saving() || !!sendBlockedTooltip()"
+        (click)="sendRegular()"
+      >
         @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
         <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularPayload().timingMode === 'schedule') {
         Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{

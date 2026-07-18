@@ -96,6 +96,10 @@ const envSchema = z.object({
   // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
   // this comfortably below the Postgres pool size. Default 4.
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max real Google Geocoding API calls per tenant per calendar day. A large voter-file import is
+  // spread across days at this rate instead of geocoding the whole list in one night (see
+  // lib/gis/geocode-queue.ts). Caps daily Google spend per tenant; only bites very large imports.
+  GEOCODE_DAILY_BUDGET: z.coerce.number().int().min(1).default(25000),
   // Max connections in the shared pg pool. The API server, the job worker (up to
   // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
   // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
@@ -163,6 +167,7 @@ export const env = {
   publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  geocodeDailyBudget: parsedEnv.GEOCODE_DAILY_BUDGET,
   dbPoolMax: parsedEnv.DB_POOL_MAX,
   allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
   allowMockDomainVerification: parsedEnv.ALLOW_MOCK_DOMAIN_VERIFICATION,

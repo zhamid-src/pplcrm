@@ -18,6 +18,9 @@ describe('geocodeChipSpec (binding §6 contract)', () => {
     expect(geocodeChipSpec(null)).toEqual({ label: 'Locating…', type: 'info' });
     expect(geocodeChipSpec(undefined)).toEqual({ label: 'Locating…', type: 'info' });
   });
+  it('maps skipped → Not geocoded (plan-gated, neutral — distinct from failed)', () => {
+    expect(geocodeChipSpec('skipped')).toEqual({ label: 'Not geocoded', type: 'neutral' });
+  });
 });
 
 describe('GeocodeChip', () => {

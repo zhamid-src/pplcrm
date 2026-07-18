@@ -89,10 +89,11 @@ describe('annual pricing', () => {
     expect(annualPriceForQuantity('movement', 11)).toBe(6_650);
   });
 
-  it('monthlyEquivalentUsd rounds the annual total to cents', () => {
-    expect(monthlyEquivalentUsd(290)).toBe(24.17);
-    expect(monthlyEquivalentUsd(550)).toBe(45.83);
-    expect(monthlyEquivalentUsd(690)).toBe(57.5);
+  it('monthlyEquivalentUsd rounds the annual total to the nearest whole dollar', () => {
+    expect(monthlyEquivalentUsd(290)).toBe(24); // 24.17 → 24
+    expect(monthlyEquivalentUsd(550)).toBe(46); // 45.83 → 46
+    expect(monthlyEquivalentUsd(690)).toBe(58); // 57.50 → 58
+    expect(monthlyEquivalentUsd(1810)).toBe(151); // 150.83 → 151
     expect(monthlyEquivalentUsd(0)).toBe(0);
   });
 });
@@ -111,8 +112,8 @@ describe('cadenceLabel', () => {
 });
 
 describe('emailCapForQuantity', () => {
-  it('is 12x the subscriber cap on paid tiers', () => {
-    expect(emailCapForQuantity('grassroots', 1)).toBe(1_000 * 12);
+  it('is 8x the subscriber cap on Grassroots and 12x on Movement', () => {
+    expect(emailCapForQuantity('grassroots', 1)).toBe(1_000 * 8);
     expect(emailCapForQuantity('movement', 6)).toBe(20_000 * 12);
   });
 
@@ -129,9 +130,9 @@ describe('startingPriceLabel', () => {
     expect(startingPriceLabel(PLANS_BY_KEY.enterprise)).toBe('Custom');
   });
 
-  it('shows the monthly-equivalent of the annual price on the year interval', () => {
-    expect(startingPriceLabel(PLANS_BY_KEY.grassroots, 'year')).toBe('From $24.17');
-    expect(startingPriceLabel(PLANS_BY_KEY.movement, 'year')).toBe('From $45.83');
+  it('shows the rounded monthly-equivalent of the annual price on the year interval', () => {
+    expect(startingPriceLabel(PLANS_BY_KEY.grassroots, 'year')).toBe('From $24');
+    expect(startingPriceLabel(PLANS_BY_KEY.movement, 'year')).toBe('From $46');
     expect(startingPriceLabel(PLANS_BY_KEY.free, 'year')).toBe('$0');
     expect(startingPriceLabel(PLANS_BY_KEY.enterprise, 'year')).toBe('Custom');
   });
@@ -152,10 +153,10 @@ describe('priceLabelAt', () => {
     expect(priceLabelAt(PLANS_BY_KEY.enterprise, 5)).toBe('Custom');
   });
 
-  it('year interval shows the monthly-equivalent of the annual price', () => {
-    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 10_000, 'year')).toBe('$74.17'); // $890/yr
-    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 5_000, 'year')).toBe('$57.50'); // $690/yr
-    expect(priceLabelAt(PLANS_BY_KEY.movement, 100_000, 'year')).toBe('$470.83'); // $5,650/yr
+  it('year interval shows the rounded monthly-equivalent of the annual price', () => {
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 10_000, 'year')).toBe('$74'); // $890/yr
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 5_000, 'year')).toBe('$58'); // $690/yr
+    expect(priceLabelAt(PLANS_BY_KEY.movement, 100_000, 'year')).toBe('$471'); // $5,650/yr
     expect(priceLabelAt(PLANS_BY_KEY.grassroots, 100_001, 'year')).toBe('Contact us');
   });
 });

@@ -4,10 +4,15 @@ import { Client } from 'pg';
 import { env } from '../../../env';
 import { logger } from '../../logger';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { claimNextPendingJob } from './job-claim';
 import { executeJob } from './job-handlers';
 
 // Backoff before polling again once the queue drained empty.
 const IDLE_POLL_MS = 30000;
+
+// Worker-pool slots kept out of any single tenant's reach, so one tenant's large batch can never
+// occupy the whole pool and starve others (per-tenant in-flight fairness; see claimNextPendingJob).
+const RESERVED_SLOTS = 1;
 
 // A 'processing' job whose lock is older than this is treated as abandoned (its worker died) and
 // recovered. While a job runs we refresh its lock every JOB_HEARTBEAT_MS so a legitimately long
@@ -502,36 +507,10 @@ export class BackgroundJobWorker {
   private async processNextJob(): Promise<boolean> {
     const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
-    // Try to find and lock a job using SKIP LOCKED
-    const job = await this.db.transaction().execute(async (trx) => {
-      const pendingJob = await trx
-        .selectFrom('background_jobs')
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
-
-      if (!pendingJob) return null;
-
-      const updatedJob = await trx
-        .updateTable('background_jobs')
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingJob.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingJob.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedJob;
-    });
+    // Per-tenant in-flight fairness: a tenant may hold at most (pool − RESERVED_SLOTS) jobs in flight,
+    // so one tenant's big batch can never take the whole pool. See claimNextPendingJob.
+    const inFlightCap = Math.max(1, this.maxConcurrency - RESERVED_SLOTS);
+    const job = await claimNextPendingJob(this.db, workerId, inFlightCap);
 
     if (!job) return false;
 

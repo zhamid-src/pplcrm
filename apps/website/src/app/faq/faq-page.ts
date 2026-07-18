@@ -131,7 +131,7 @@ export class FaqPage {
         },
         {
           q: 'Can I pay annually?',
-          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year on an annual plan, the prorated difference for the rest of your year is charged right away instead of waiting for renewal.',
+          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year, the prorated difference for the rest of your current billing period is charged right away on either interval.',
         },
         {
           q: 'How is pricing metered?',
@@ -147,7 +147,7 @@ export class FaqPage {
         },
         {
           q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins. On monthly billing the new bracket price applies from your next billing cycle; on annual billing the prorated difference for the rest of your year is charged right away. If your list shrinks, the price drops at the next renewal automatically.',
+          a: 'Nothing surprising, and nothing ever blocks. When your emailable subscribers cross into a new bracket we email your admins, move you to the new bracket, and charge the prorated difference for the rest of your current billing period — so your monthly email allowance grows the moment your list does. If your list shrinks, the price drops at the next renewal automatically.',
         },
         {
           q: 'Do you have a plan for larger organizations?',

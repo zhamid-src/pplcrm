@@ -43,4 +43,6 @@ export const NewslettersRouter = router({
   runPreflight: authProcedure
     .input(RunPreflightObj)
     .mutation(async ({ input, ctx }) => newsletters.runPreflight(ctx.auth.tenant_id, input)),
+
+  sendQuota: authProcedure.query(({ ctx }) => newsletters.getSendQuota(ctx.auth.tenant_id)),
 });

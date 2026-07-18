@@ -24,9 +24,11 @@
  *    price, and the app reports `quantity = 1-based bracket index` (see `bracketIndexForSubscribers`).
  *    All bracket→price/subscriber-cap/email-cap logic lives here, in `plans.ts`, as inspectable
  *    data; Stripe just multiplies quantity by its graduated unit amounts.
- *  - Emails/month = 12× the bracket's subscriber cap on paid tiers (matches Mailchimp
- *    Standard / Constant Contact Standard so no spec-sheet line shows pplCRM smaller). Free
- *    keeps 2×.
+ *  - Emails/month = 8× the bracket's subscriber cap on Grassroots (between Mailchimp
+ *    Essentials' 10× and a weekly-send cadence) and 12× on Movement (matches Mailchimp
+ *    Standard / Constant Contact Standard so the flagship spec-sheet line shows no smaller).
+ *    Free keeps 2×. Enforced at send time since 2026-07-18 (send-guards.ts monthly allowance),
+ *    not just alerted on.
  *  - Monthly send, storage and seat caps protect the real COGS: SendGrid (newsletters),
  *    Postmark (transactional, scales with seats/activity) and Azure Blob (files).
  *  - Companion volunteers carry an auth-SMS cost — and the companion apps that use them are
@@ -41,10 +43,13 @@
  *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
  *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
  *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
- *    quantity-as-bracket-index mechanism carries over unchanged. Display is monthly-equivalent
- *    with cents ("$24.17 per month, billed annually as $290") so every number stays checkable;
- *    monthly remains the default toggle state everywhere (electoral campaigns end in November —
- *    don't nudge them into prepay). Mid-year bracket GROWTH on an annual subscription is
+ *    quantity-as-bracket-index mechanism carries over unchanged. Display is the monthly
+ *    equivalent rounded to the nearest dollar, with the EXACT annual total always alongside
+ *    plus a rounding disclaimer ("$24 per month, billed annually as $290") — the checkable
+ *    number is the annual total, which is what's actually charged. The website pricing page
+ *    defaults to Annual (marketing convention: 2026-07-18); the in-app billing page keeps
+ *    Monthly as its default (electoral campaigns end in November — don't nudge existing
+ *    customers into prepay). Mid-year bracket GROWTH on an annual subscription is
  *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
  *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
  *
@@ -216,7 +221,7 @@ export const PLANS: readonly PlanDef[] = [
     name: 'Grassroots',
     cadence: 'per month',
     blurb: 'For a local candidate or small campaign getting to work.',
-    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 12 },
+    pricing: { brackets: GRASSROOTS_BRACKETS, emailsPerSubscriber: 8 },
     storageBytes: 10 * GB,
     seats: 5,
     volunteers: 0,
@@ -227,7 +232,7 @@ export const PLANS: readonly PlanDef[] = [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
       'Save 2 months with annual billing',
-      'Up to 100,000 email subscribers · 12× emails/month',
+      'Up to 100,000 email subscribers · 8× emails/month',
       '5 staff seats · 10 GB storage',
       'Forms & donations',
       'Automations & lists (segments)',
@@ -379,13 +384,15 @@ export function annualPriceForQuantity(key: PlanKey, qty: number): number {
   return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
 }
 
-/** Monthly-equivalent of an annual USD total, rounded to cents (290 → 24.17). The
- * customer-facing framing for annual prices: "$24.17 per month, billed annually as $290". */
+/** Monthly-equivalent of an annual USD total, rounded to the nearest whole dollar (290 → 24).
+ * The customer-facing framing for annual prices: "$24 per month, billed annually as $290" —
+ * surfaces that show it must keep the exact annual total alongside and carry the rounding
+ * disclaimer, since equivalent × 12 ≠ the billed total. */
 export function monthlyEquivalentUsd(annualUsd: number): number {
-  return Math.round((annualUsd / 12) * 100) / 100;
+  return Math.round(annualUsd / 12);
 }
 
-/** "$29" for whole dollars, "$24.17" for cent amounts (monthly-equivalents). */
+/** "$29" for whole dollars; tolerates cent amounts defensively ("$24.17"). */
 function usdLabel(amount: number): string {
   return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
 }
@@ -400,7 +407,7 @@ export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
 
 /** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
  * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
- * monthly-equivalent of the annual price, e.g. 'From $24.17'. */
+ * rounded monthly-equivalent of the annual price, e.g. 'From $24'. */
 export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
   const usd = startingPriceUsd(plan, interval);
   if (usd === null) return 'Custom';
@@ -410,7 +417,7 @@ export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'm
 /** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
  * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
  * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
- * monthly-equivalent of the annual price. */
+ * rounded monthly-equivalent of the annual price. */
 export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
   if (!plan.pricing) return null;
   const first = plan.pricing.brackets[0];
@@ -424,7 +431,7 @@ export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'mon
 
 /** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
  * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
- * `interval: 'year'`, the label is the monthly-equivalent of the annual price ('$57.50').
+ * `interval: 'year'`, the label is the rounded monthly-equivalent of the annual price ('$58').
  * Used by the website pricing slider and the frontend billing upgrade cards. */
 export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
   if (!plan.pricing) return 'Custom';
@@ -465,6 +472,21 @@ export function planAllowsFeature(planName: string | null | undefined, feature: 
   return PLAN_RANK[plan.key] >= PLAN_RANK[GATED_FEATURES[feature].minPlan];
 }
 
+/**
+ * Minimum plan for real (paid) household geocoding. Kept OUT of `GATED_FEATURES`/`FEATURE_MATRIX`
+ * deliberately: this is a backend cost control, not a marketed tRPC-module feature — the heavy
+ * geocoding consumers (canvassing turf-cutting, delivery routing) are already Movement-gated via
+ * `GATED_FEATURES`, and this just stops lower tiers from incurring Google Geocoding API spend on
+ * plain household map pins / ward enrichment. Mock/test geocoding is free and stays ungated.
+ */
+export const GEOCODING_MIN_PLAN: PlanKey = 'movement';
+
+/** Whether a stored plan value may incur real (paid) geocoding — Movement and up. See `GEOCODING_MIN_PLAN`. */
+export function planAllowsGeocoding(planName: string | null | undefined): boolean {
+  const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
+  return PLAN_RANK[plan.key] >= PLAN_RANK[GEOCODING_MIN_PLAN];
+}
+
 /** Regions a Movement customer can choose to store their data in, set when they create their
  * workspace. Single-sourced so the plan bullet, the comparison-table cell and any FAQ/help copy
  * stay in agreement. (Display-only on the marketing site; the actual choice happens at signup.) */
@@ -503,7 +525,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       },
       {
         label: 'Emails / month',
-        values: { free: '2,000', grassroots: '12× your subscriber cap', movement: '12× your subscriber cap' },
+        values: { free: '2,000', grassroots: '8× your subscriber cap', movement: '12× your subscriber cap' },
       },
       { label: 'File storage', values: { free: '1 GB', grassroots: '10 GB', movement: '200 GB' } },
       { label: 'Staff seats', values: { free: '2', grassroots: '5', movement: 'Unlimited' } },

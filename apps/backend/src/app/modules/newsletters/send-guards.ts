@@ -1,7 +1,7 @@
 import type { Kysely, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
-import { getPlanDef, type PlanKey } from '@common';
+import { emailCapForQuantity, getPlanDef, PLANS_BY_KEY, type PlanKey } from '@common';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { ForbiddenError, NotFoundError, PreconditionFailedError, TooManyRequestsError } from '../../errors/app-errors';
 import { logger } from '../../logger';
@@ -18,6 +18,14 @@ import { logger } from '../../logger';
  *  - `assertTenantSendingNotBlocked` + the caps — per batch, in the send-newsletter job handler
  *    (so an in-flight send stops mid-batch when a tripwire fires).
  *  - `applyEngagementTripwires` — in the SendGrid event webhook after aggregates recompute.
+ *
+ * Besides the abuse guards, this module enforces the PLAN METER: the monthly email allowance
+ * (`emailsPerSubscriber` × the billed bracket's subscriber cap — 2× Free, 8× Grassroots,
+ * 12× Movement). Billing handles subscriber growth by moving the tenant up a bracket and
+ * invoicing the prorated difference immediately (usage-limits.ts + subscription-sync.ts), so
+ * the allowance is keyed to `tenants.subscription_quantity` — always a paid-for bracket. The
+ * gate is what makes "pay for the lowest bracket, import a huge list, blast it, cancel"
+ * impossible: sending N emails requires being billed like a tenant with an N-sized audience.
  */
 
 /** New Free tenants are warmed up: at most this many newsletter emails per rolling day… */
@@ -45,6 +53,14 @@ export const SENDING_SUSPENDED_MESSAGE =
   'This account is suspended pending a review of recent sending activity. Please contact support.';
 export const SENDING_PAUSED_MESSAGE =
   'Sending is paused: a recent newsletter had an unusually high bounce rate, which usually means the list contains addresses that never opted in. Please contact support to review and resume sending.';
+export const SENDING_PAYMENT_HOLD_MESSAGE =
+  'Sending is on hold because your last subscription payment did not go through. Update your payment method on the Billing page (Workspace → Billing) to resume — everything else keeps working, and nothing is lost.';
+
+/** Stripe subscription statuses that put newsletter sending on hold: the tenant is on a paid
+ * plan whose latest invoice failed (`past_due`, then `unpaid` once retries are exhausted).
+ * Without this, growth is invoiced immediately (subscription-sync `always_invoice`) but a
+ * declined card would not actually stop the blast the invoice was for. */
+const PAYMENT_HOLD_STATUSES: ReadonlySet<string> = new Set(['past_due', 'unpaid']);
 export const DOMAIN_UNVERIFIED_MESSAGE =
   'Before sending, verify the domain you send from (Settings → Domains) and choose a default From address on that domain (Settings → Communications). This protects your deliverability.';
 export const PHONE_UNVERIFIED_MESSAGE =
@@ -58,6 +74,12 @@ type Db = Kysely<Models> | Transaction<Models>;
 export interface SendingTenant {
   id: string;
   plan: PlanKey;
+  /** Billed Stripe bracket index (1-based); 1 for free tenants. Keys the monthly allowance. */
+  subscription_quantity: number;
+  /** End of the current billing period — anchors the monthly allowance window on paid plans. */
+  subscription_ends_at: Date | null;
+  /** Stripe subscription status ('' for free tenants) — `past_due`/`unpaid` holds sending. */
+  subscription_status: string;
   created_at: Date | null;
   suspended_at: Date | null;
   sending_paused_at: Date | null;
@@ -78,6 +100,39 @@ export function warmupDailyCap(plan: PlanKey, createdAt: Date | null, now: Date)
   return ageMs < FREE_WARMUP_DAYS * DAY_MS ? FREE_WARMUP_DAILY_CAP : null;
 }
 
+/** The tenant's monthly newsletter-email cap at its billed bracket, or `Infinity` when no cap
+ * applies (enterprise — custom pricing, no ladder). Pure, so the cap math is unit-testable. */
+export function monthlyEmailCap(plan: PlanKey, billedQuantity: number): number {
+  if (!PLANS_BY_KEY[plan].pricing) return Number.POSITIVE_INFINITY;
+  return emailCapForQuantity(plan, billedQuantity);
+}
+
+/**
+ * The window the monthly allowance meters over. Paid plans use the current billing cycle —
+ * monthly anniversaries stepped back from `subscription_ends_at`, so annual subscriptions
+ * still reset monthly ("send caps stay monthly regardless of billing interval", plans.ts).
+ * Free tenants have no cycle, so they meter the UTC calendar month. Pure for unit tests.
+ */
+export function sendWindow(subscriptionEndsAt: Date | null, now: Date): { start: Date; resetsAt: Date } {
+  if (!subscriptionEndsAt) {
+    return {
+      start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+      resetsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+    };
+  }
+  // Step to the last monthly anniversary at or before `now`, then forward if the subscription
+  // has lapsed (endsAt in the past) so the window always contains `now`.
+  const start = new Date(subscriptionEndsAt);
+  while (start > now) start.setMonth(start.getMonth() - 1);
+  const resetsAt = new Date(start);
+  resetsAt.setMonth(resetsAt.getMonth() + 1);
+  while (resetsAt <= now) {
+    start.setMonth(start.getMonth() + 1);
+    resetsAt.setMonth(resetsAt.getMonth() + 1);
+  }
+  return { start, resetsAt };
+}
+
 /** Which tripwire, if any, a send's engagement stats have crossed. Pure for unit tests. */
 export function evaluateTripwires(stats: {
   totalRecipients: number;
@@ -93,7 +148,17 @@ export function evaluateTripwires(stats: {
 export async function loadSendingTenant(db: Db, tenantId: string): Promise<SendingTenant> {
   const row = await db
     .selectFrom('tenants')
-    .select(['id', 'subscription_plan', 'created_at', 'suspended_at', 'sending_paused_at', 'sending_phone_verified_at'])
+    .select([
+      'id',
+      'subscription_plan',
+      'subscription_quantity',
+      'subscription_ends_at',
+      'subscription_status',
+      'created_at',
+      'suspended_at',
+      'sending_paused_at',
+      'sending_phone_verified_at',
+    ])
     .where('id', '=', tenantId)
     .executeTakeFirst();
   if (!row) throw new NotFoundError('Organization not found');
@@ -101,6 +166,9 @@ export async function loadSendingTenant(db: Db, tenantId: string): Promise<Sendi
   return {
     id: String(row.id),
     plan: planKeyOf(row.subscription_plan),
+    subscription_quantity: Number(row.subscription_quantity ?? 1) || 1,
+    subscription_ends_at: toDate(row.subscription_ends_at),
+    subscription_status: typeof row.subscription_status === 'string' ? row.subscription_status : '',
     created_at: toDate(row.created_at),
     suspended_at: toDate(row.suspended_at),
     sending_paused_at: toDate(row.sending_paused_at),
@@ -108,10 +176,18 @@ export async function loadSendingTenant(db: Db, tenantId: string): Promise<Sendi
   };
 }
 
-/** Throws when the tenant is suspended or its sending is tripwire-paused. */
+/** True when a paid tenant's subscription payment has failed (`past_due`/`unpaid`) — sending
+ * is on hold until the payment method is fixed. Free/enterprise tenants never hold (no
+ * self-serve invoice to fail). Pure, shared with the worker's mid-flight check. */
+export function hasPaymentHold(tenant: SendingTenant): boolean {
+  return PLANS_BY_KEY[tenant.plan].purchasable && PAYMENT_HOLD_STATUSES.has(tenant.subscription_status);
+}
+
+/** Throws when the tenant is suspended, tripwire-paused, or on a payment hold. */
 export function assertTenantSendingNotBlocked(tenant: SendingTenant): void {
   if (tenant.suspended_at) throw new ForbiddenError(SENDING_SUSPENDED_MESSAGE);
   if (tenant.sending_paused_at) throw new ForbiddenError(SENDING_PAUSED_MESSAGE);
+  if (hasPaymentHold(tenant)) throw new PreconditionFailedError(SENDING_PAYMENT_HOLD_MESSAGE);
 }
 
 /** SUM of newsletter emails handed to SendGrid for this tenant since `since`. */
@@ -163,7 +239,7 @@ export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promis
 
 /**
  * The pre-send gate. Ordered so the most actionable message wins: blocked states first, then
- * identity prerequisites, then the warm-up volume cap.
+ * identity prerequisites, then the warm-up volume cap, then the monthly plan allowance.
  */
 export async function assertTenantMaySendNewsletter(
   db: Db,
@@ -193,11 +269,33 @@ export async function assertTenantMaySendNewsletter(
       );
     }
   }
+
+  const planCap = monthlyEmailCap(tenant.plan, tenant.subscription_quantity);
+  if (Number.isFinite(planCap)) {
+    const window = sendWindow(tenant.subscription_ends_at, now);
+    const sentThisCycle = await sentEmailsSince(db, tenantId, window.start);
+    if (sentThisCycle + plannedRecipients > planCap) {
+      const remaining = Math.max(0, planCap - sentThisCycle);
+      const resetsOn = window.resetsAt.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        timeZone: 'UTC',
+      });
+      throw new TooManyRequestsError(
+        `Your plan includes ${planCap.toLocaleString()} newsletter emails per month and ` +
+          `${remaining.toLocaleString()} remain until ${resetsOn}. This newsletter has ` +
+          `${plannedRecipients.toLocaleString()} recipients — narrow the audience, or upgrade ` +
+          `your plan for a larger monthly allowance.`,
+      );
+    }
+  }
 }
 
 /**
- * How many more emails the tenant may send right now under the hourly cap and (if active) the
- * warm-up daily cap. The worker trims batches to this and defers when it reaches 0.
+ * How many more emails the tenant may send right now under the hourly cap, (if active) the
+ * warm-up daily cap, and the monthly plan allowance. The worker trims batches to this and
+ * defers when it reaches 0 — so even a send that raced past the pre-send gate (or a
+ * mid-flight bracket change) can't trickle past the monthly ceiling.
  */
 export async function remainingSendAllowance(db: Db, tenant: SendingTenant, now: Date): Promise<number> {
   const hourly = HOURLY_SEND_CAPS[tenant.plan];
@@ -208,6 +306,13 @@ export async function remainingSendAllowance(db: Db, tenant: SendingTenant, now:
   if (dailyCap != null) {
     const sentToday = await sentEmailsSince(db, tenant.id, new Date(now.getTime() - DAY_MS));
     allowance = Math.min(allowance, Math.max(0, dailyCap - sentToday));
+  }
+
+  const planCap = monthlyEmailCap(tenant.plan, tenant.subscription_quantity);
+  if (Number.isFinite(planCap)) {
+    const window = sendWindow(tenant.subscription_ends_at, now);
+    const sentThisCycle = await sentEmailsSince(db, tenant.id, window.start);
+    allowance = Math.min(allowance, Math.max(0, planCap - sentThisCycle));
   }
   return allowance;
 }

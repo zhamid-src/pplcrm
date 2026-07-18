@@ -165,7 +165,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
       {
         kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified. On **monthly** billing the new amount takes effect on your **next billing cycle**, never mid-cycle. On **annual** billing the prorated difference for the remainder of your year is charged right away — otherwise a year-long prepay would make growth free until renewal. If your list shrinks back below a bracket, the lower price reconciles at the next renewal on either interval rather than refunding the current period.',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
       },
       {
         kind: 'callout',

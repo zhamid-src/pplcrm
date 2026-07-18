@@ -12,6 +12,7 @@ import { sql } from 'kysely';
 import type { QueryParams } from '../../lib/base.repo';
 import { BaseRepository } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { enqueueGeocodeJobs } from '../../lib/gis/geocode-queue';
 import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
 import { StorageService } from '../../lib/storage.service';
 import { HouseholdRepo } from './repositories/households.repo';
@@ -200,23 +201,10 @@ export class HouseholdsController extends BaseController<'households', Household
         };
         await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
 
-        // Queue geocoding background job if geocoding status is pending
+        // Queue geocoding (plan-gated + daily-budgeted — see lib/gis/geocode-queue.ts) when the
+        // address changed into a geocodable state.
         if (geocoding_status === 'pending') {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: input.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'geocode_household',
-                household_id: input.id,
-                tenant_id: input.tenant_id,
-              }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
+          await enqueueGeocodeJobs(this.getRepo().db, input.tenant_id, [input.id]);
         }
         // Duplicate maintenance is only calculated nightly
       } catch (err) {

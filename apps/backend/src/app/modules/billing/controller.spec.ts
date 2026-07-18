@@ -322,7 +322,7 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
     expect(stripeSubscriptionsUpdate).not.toHaveBeenCalled();
   });
 
-  it('calls subscriptions.update with proration_behavior "none" when the quantity differs, and writes the column optimistically', async () => {
+  it('calls subscriptions.update when the quantity differs, and writes the column optimistically', async () => {
     stripeSubscriptionsRetrieve.mockResolvedValue({
       items: { data: [{ id: 'si_1', quantity: 2 }] },
     });
@@ -331,7 +331,7 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
 
     expect(stripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_' + tenantId, {
       items: [{ id: 'si_1', quantity: 6 }],
-      proration_behavior: 'none',
+      proration_behavior: 'always_invoice',
     });
     const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
     expect(tenant.subscription_quantity).toBe(6);
@@ -374,7 +374,7 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
     });
   });
 
-  it('keeps proration "none" for a quantity increase on a monthly subscription', async () => {
+  it('invoices a quantity INCREASE on a monthly subscription immediately too (proration always_invoice)', async () => {
     stripeSubscriptionsRetrieve.mockResolvedValue({
       items: { data: [{ id: 'si_1', quantity: 2, price: { recurring: { interval: 'month' } } }] },
     });
@@ -383,7 +383,7 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
 
     expect(stripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_' + tenantId, {
       items: [{ id: 'si_1', quantity: 6 }],
-      proration_behavior: 'none',
+      proration_behavior: 'always_invoice',
     });
   });
 });

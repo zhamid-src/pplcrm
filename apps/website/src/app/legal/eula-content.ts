@@ -50,8 +50,9 @@ export const EULA_DOC: LegalDoc = {
       items: [
         'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
         'Paid plans can be billed monthly or annually. Annual billing is paid up front for the year at 10× the monthly price — two months free — and renews yearly unless canceled.',
-        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins. On monthly billing the new bracket price applies from your next billing cycle; on annual billing we charge the prorated difference for the remainder of your year right away. If your count shrinks, the price drops at the next renewal automatically.',
+        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins, move you to the new bracket, and charge the prorated difference for the remainder of your current billing period on either interval. Growing never interrupts your service. If your count shrinks, the price drops at the next renewal automatically.',
         'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
+        'If a subscription payment fails, newsletter sending is placed on hold until the payment method is updated — nothing else is restricted, and reading and exporting your data are never affected.',
         'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
         'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',
       ],
@@ -136,6 +137,7 @@ export const EULA_DOC: LegalDoc = {
         'Newsletters are sent from your own verified domain. Every newsletter automatically carries your organization’s name, postal address and a working unsubscribe link, and this footer cannot be removed.',
         'Unsubscribes, bounces and do-not-contact flags are honored automatically on all future sends. Attempting to circumvent suppression is a breach of this agreement.',
         'New free-plan senders verify a mobile number and warm up gradually under a daily cap.',
+        'Each plan includes a monthly newsletter-email allowance (shown on the [pricing page](/pricing)), and it is enforced at send time: a send larger than what remains of your allowance is declined with the exact numbers, and the allowance resets each billing month. Growing your list raises your bracket — and your allowance — automatically.',
         'Every newsletter passes a deliverability check before it sends. Content that scores in the blocked band — phishing-shaped links, scam patterns, or commercial marketing unrelated to your organization’s cause — will not send until fixed. Fundraising, auctions and event promotion are normal newsletter content and are not affected.',
         'Sending pauses automatically if your hard-bounce rate exceeds 5%, and is suspended if your spam-complaint rate exceeds 1%. We do this to protect both your sending reputation and everyone else’s; write to us to review and resume.',
       ],

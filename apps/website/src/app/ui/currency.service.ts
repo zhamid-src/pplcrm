@@ -3,7 +3,6 @@ import {
   currencyForCountry,
   currencyPriceSymbol,
   formatCurrency,
-  formatCurrencyExact,
   isCurrencyCode,
   SUPPORTED_CURRENCIES,
   type CurrencyCode,
@@ -80,14 +79,15 @@ export class CurrencyService {
     return formatCurrency(Math.round(usd * rate), code);
   }
 
-  /** Monthly-equivalent of an annual USD total, in the active currency with cents (`$24.17`).
-   * The annual total is converted to whole units first and then divided by 12, so the two
-   * numbers an annual card shows (equivalent + total) always agree with each other. */
+  /** Rounded monthly-equivalent of an annual USD total, in the active currency (`$24`). The
+   * annual total is converted to whole units first, then divided by 12 and rounded — surfaces
+   * showing it must keep the exact annual total alongside plus the rounding disclaimer, since
+   * equivalent × 12 ≠ the billed total. */
   public formatMonthlyEquivalent(annualUsd: number): string {
     const code = this.currency();
     const rate = code === 'USD' ? 1 : this.rates()[code];
-    if (rate == null) return formatCurrencyExact(annualUsd / 12, 'USD');
-    return formatCurrencyExact(Math.round(annualUsd * rate) / 12, code);
+    if (rate == null) return formatCurrency(Math.round(annualUsd / 12), 'USD');
+    return formatCurrency(Math.round(Math.round(annualUsd * rate) / 12), code);
   }
 
   private init(): void {

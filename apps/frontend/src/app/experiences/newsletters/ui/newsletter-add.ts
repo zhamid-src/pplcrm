@@ -173,6 +173,37 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly verifiedSenders = signal<string[]>([]);
   protected readonly commsDefaultsApplied = signal(false);
 
+  // --- Monthly send allowance (mirror of the server's send-guards math) -----
+
+  /** null until loaded (or when the load failed — the server still enforces the gate). */
+  protected readonly sendQuota = signal<{
+    cap: number | null;
+    used: number;
+    remaining: number | null;
+    resetsAt: string | null;
+  } | null>(null);
+  /** True when the selected audience is larger than what's left of the monthly allowance. */
+  protected readonly quotaShortfall = computed(() => {
+    const quota = this.sendQuota();
+    if (!quota || quota.remaining == null) return false;
+    return this.estimatedAudienceCount() > quota.remaining;
+  });
+  protected readonly quotaResetLabel = computed(() => {
+    const resetsAt = this.sendQuota()?.resetsAt;
+    return resetsAt ? this.dateFormatter.format(new Date(resetsAt)) : '';
+  });
+  /** Why the Send button is disabled, if it is (§2 explained-disabled): demo mode or allowance.
+   * A scheduled send may fire after the allowance resets, so the shortfall only blocks "Send
+   * now" — the server re-checks the gate when a scheduled send actually fires either way. */
+  protected readonly sendBlockedTooltip = computed<string | null>(() => {
+    if (this.isDemo()) return this.demoSendTooltip;
+    if (this.quotaShortfall() && this.regularPayload().timingMode === 'now') {
+      const remaining = this.sendQuota()?.remaining ?? 0;
+      return `This audience exceeds the ${this.numberFormatter.format(remaining)} emails left in your monthly allowance`;
+    }
+    return null;
+  });
+
   // --- Audience math (every line is real; the total is the single source) ---
 
   protected readonly includedListsTotal = computed(() => this.sumListSizes(this.includeListIds()));
@@ -215,6 +246,7 @@ export class NewsletterAddComponent implements OnInit {
     void this.loadLists();
     void this.loadTags();
     void this.loadCommsDefaults();
+    void this.loadSendQuota();
   }
 
   /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
@@ -847,6 +879,14 @@ export class NewsletterAddComponent implements OnInit {
       applied = true;
     }
     this.commsDefaultsApplied.set(applied);
+  }
+
+  private async loadSendQuota(): Promise<void> {
+    try {
+      this.sendQuota.set(await this.newslettersSvc.getSendQuota());
+    } catch {
+      // Non-fatal: the Review step just won't show the allowance line — the server still enforces it.
+    }
   }
 
   private normalizeCalendarValue(event: unknown): string | null {

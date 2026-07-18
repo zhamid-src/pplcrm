@@ -39,6 +39,25 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
      Communications → "Sending phone verification".
    - Free plan and tenant younger than 7 days → warm-up cap: ≤100 emails per rolling 24h
      (`warmupDailyCap`, summed from `newsletter_send_log`).
+   - Monthly plan email allowance exceeded → TOO_MANY_REQUESTS with the exact numbers and reset
+     date. The allowance is `monthlyEmailCap(plan, tenants.subscription_quantity)` =
+     `emailsPerSubscriber` × the billed bracket's subscriber cap (2× Free, 8× Grassroots,
+     12× Movement; enterprise uncapped), metered from `newsletter_send_log` over `sendWindow()` —
+     the billing cycle stepped monthly back from `subscription_ends_at` (so annual still resets
+     monthly), or the UTC calendar month for free tenants. This is the plan meter (added
+     2026-07-18): sending N emails requires being billed like an N-sized audience, which closes
+     the "buy the lowest bracket, import a huge list, blast, cancel" hole. It works because
+     upward bracket syncs are invoiced prorated IMMEDIATELY on both intervals
+     (`subscription-sync.ts` `always_invoice`), so `subscription_quantity` is always paid-for.
+     The composer surfaces it (newsletters.sendQuota query → "Monthly allowance" row + warning
+     on Review & send; shortfall disables "Send now" but not scheduling).
+   - Paid plan and `subscription_status` in `past_due`/`unpaid` → PRECONDITION_FAILED payment
+     hold (`hasPaymentHold`, checked inside `assertTenantSendingNotBlocked`, so it also blocks
+     test sends and stops in-flight sends per batch in the worker). This is the enforcement
+     backstop for the immediate proration invoice: a declined card holds sending until the
+     payment method is fixed on Workspace → Billing. Free/enterprise never hold. The status is
+     written by the `customer.subscription.updated` Stripe webhook; clears automatically when
+     Stripe retries succeed (status back to `active`).
      1b. **Content gate (newsletter preflight)** — `newsletterPreflight.assertNewsletterContentSendable(db,
 tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called in
      `NewslettersController.sendNewsletter` directly after `assertTenantMaySendNewsletter`. A
@@ -70,8 +89,8 @@ tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called i
    - Paused/suspended mid-send → newsletter `status = 'paused'`, resume point saved in
      `newsletters.send_offset`, job ends. A later re-send resumes from `send_offset` instead of
      double-sending (`sendNewsletter` handles `status === 'paused'`).
-   - `remainingSendAllowance` (hourly cap per plan + warm-up cap) trims each batch; at 0 it
-     enqueues a continuation job (+15 min) and frees the worker slot.
+   - `remainingSendAllowance` (hourly cap per plan + warm-up cap + monthly plan allowance)
+     trims each batch; at 0 it enqueues a continuation job (+15 min) and frees the worker slot.
    - Every delivered batch inserts a `newsletter_send_log` row — that table IS the meter; it is
      pruned (30 days) inside the per-tenant loop of `pruneNewsletterEvents`.
 3. **Tripwires, in the SendGrid webhook** — `applyEngagementTripwires` runs after each aggregate
@@ -83,9 +102,10 @@ tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called i
 `sending_paused_reason`) or `tenants.suspended_at` in the DB. A paused newsletter is then
 re-sent from the UI and resumes at its `send_offset`.
 
-**Website claims:** the 5% bounce / 1% complaint tripwires, the warm-up cap and the
-verified-domain requirement are quoted verbatim on the marketing site (EULA §8, security page,
-FAQ). The preflight is also stated publicly: the "below 50 cannot send" threshold (security page,
+**Website claims:** the 5% bounce / 1% complaint tripwires, the warm-up cap, the
+verified-domain requirement and the enforced monthly allowance (2×/8×/12× multipliers on the
+security page; "enforced at send time" in EULA §8) are quoted verbatim on the marketing site
+(EULA §8, security page, FAQ). The preflight is also stated publicly: the "below 50 cannot send" threshold (security page,
 EULA §8 bullet, help articles) and Anthropic in the privacy policy's subprocessor list + the
 US-processing residency exception. If you change `PREFLIGHT_BLOCK`, the AI provider, or what the
 AI receives, update those pages in the same change — see the `pplcrm-website-claims` skill for

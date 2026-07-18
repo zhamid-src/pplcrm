@@ -146,6 +146,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'For the first **7 days**, a Free workspace can send up to **100 newsletter emails per day**. If a send is larger than the day’s remaining allowance, you’ll be told before anything goes out — narrow the audience or wait a day. After the first week the normal plan limits apply.',
       },
+      { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
+      {
+        kind: 'p',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
+      },
       { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
       {
         kind: 'p',

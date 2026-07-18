@@ -4,6 +4,7 @@ import { BaseRepository } from '../../lib/base.repo';
 import { executeJob } from '../../lib/jobs/job-handlers';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import { NewsletterPreflightService, contentHashOf } from './preflight.service';
+import { loadSendingTenant, remainingSendAllowance } from './send-guards';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -297,6 +298,91 @@ describe('NewslettersController Asynchronous Sending', () => {
     expect(payload.newsletterId).toBe(id);
     expect(payload.offset).toBe(0);
     expect(payload.deliveredCount).toBe(0);
+  });
+
+  it('rejects a send that would exceed the monthly plan email allowance', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Over Allowance Newsletter',
+        status: 'draft',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject: 'Hello',
+        html_content: '<p>Hi</p>',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Movement at quantity 1 allows 12,000 emails/month (12× the 1,000-subscriber bracket).
+    // Exhaust it, so even a 1-recipient send must be refused with the exact numbers.
+    await db
+      .insertInto('newsletter_send_log')
+      .values({ tenant_id: tenantId, newsletter_id: id, recipient_count: 12_000 })
+      .execute();
+
+    await expect(controller.sendNewsletter(tenantId, id, userId)).rejects.toThrow(/12,000 newsletter emails per month/);
+
+    const job = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
+    expect(job).toBeUndefined();
+  });
+
+  it('holds sending while the subscription payment is past due', async () => {
+    await db.updateTable('tenants').set({ subscription_status: 'past_due' }).where('id', '=', tenantId).execute();
+
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Payment Hold Newsletter',
+        status: 'draft',
+        segments: JSON.stringify(['NewsletterTag']),
+        subject: 'Hello',
+        html_content: '<p>Hi</p>',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    await expect(controller.sendNewsletter(tenantId, id, userId)).rejects.toThrow(/payment did not go through/);
+
+    const job = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
+    expect(job).toBeUndefined();
+  });
+
+  it('bounds the worker batch allowance by what remains of the monthly allowance', async () => {
+    const id = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('newsletters')
+      .values({
+        id,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        name: 'Nearly Exhausted Newsletter',
+        status: 'draft',
+        subject: 'Hello',
+        html_content: '<p>Hi</p>',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 11,900 of the 12,000 monthly allowance used → 100 left. The hourly cap (20,000 on
+    // Movement) leaves 8,100, so the monthly term must be the binding one.
+    await db
+      .insertInto('newsletter_send_log')
+      .values({ tenant_id: tenantId, newsletter_id: id, recipient_count: 11_900 })
+      .execute();
+
+    const tenant = await loadSendingTenant(db, tenantId);
+    expect(await remainingSendAllowance(db, tenant, new Date())).toBe(100);
   });
 
   it('freezes scored content once a newsletter is queuing/sending/sent (preflight TOCTOU guard)', async () => {

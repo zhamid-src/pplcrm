@@ -292,9 +292,10 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
         await syncSubscriptionQuantity(tenantId, clamped);
       }
     } else if (targetQuantity > billedQuantity) {
-      // List grew into a higher bracket — notify, then adjust Stripe immediately. On monthly,
-      // the new amount bills starting next cycle (proration 'none'); on annual, the prorated
-      // difference for the rest of the year is invoiced right away (see subscription-sync.ts).
+      // List grew into a higher bracket — notify, then adjust Stripe immediately. On either
+      // interval the prorated difference for the rest of the current period is invoiced right
+      // away (see subscription-sync.ts) — this also raises the send-time email allowance,
+      // which is keyed to the billed quantity (newsletters/send-guards.ts).
       const billingInterval: BillingInterval = tenant['subscription_interval'] === 'year' ? 'year' : 'month';
       const flag = bracketUpFlag(targetQuantity);
       if (!alertSettings[flag]) {
@@ -434,8 +435,8 @@ The pplCRM team`;
 }
 
 /** "Your list grew into the next bracket" email — sent once per bracket via the `bracket_up_N`
- * dedup flag. Wording follows the billing interval: monthly bills the new bracket next cycle;
- * annual invoices the prorated difference for the rest of the year immediately. */
+ * dedup flag. Both intervals invoice the prorated difference for the rest of the current
+ * period immediately; the interval only changes how the price is labelled. */
 async function sendBracketUpEmail(
   tenantId: string,
   tenantName: string,
@@ -453,10 +454,8 @@ async function sendBracketUpEmail(
 
   const priceText =
     interval === 'year' ? `$${annualPriceForQuantity(planKey, targetQuantity)}/year` : `$${bracket.price}/month`;
-  const timingText =
-    interval === 'year'
-      ? `you'll now be billed ${priceText} for up to ${bracket.upTo.toLocaleString()} emailable subscribers, and the prorated difference for the remainder of your current year has been charged`
-      : `starting next billing cycle, you'll be billed ${priceText} for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle`;
+  const periodText = interval === 'year' ? 'year' : 'month';
+  const timingText = `you'll now be billed ${priceText} for up to ${bracket.upTo.toLocaleString()} emailable subscribers, and the prorated difference for the remainder of your current ${periodText} has been charged. Your monthly email allowance grows with the new bracket right away`;
 
   const subject = `Your ${plan.name} plan is moving to a new price bracket`;
   const text = `Hi,

@@ -23,7 +23,14 @@ import { ListsController } from '../lists/controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { assertNotDemoMode } from '../demo/demo-guard';
-import { assertTenantMaySendNewsletter, assertTenantSendingNotBlocked, loadSendingTenant } from './send-guards';
+import {
+  assertTenantMaySendNewsletter,
+  assertTenantSendingNotBlocked,
+  loadSendingTenant,
+  monthlyEmailCap,
+  sendWindow,
+  sentEmailsSince,
+} from './send-guards';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
 import {
@@ -47,6 +54,15 @@ export interface SendTestEmailInput {
   to: string;
   fromName?: string;
   fromEmail?: string;
+}
+
+/** What the composer's Review step shows before send. `cap: null` = unlimited (enterprise). */
+export interface SendQuota {
+  cap: number | null;
+  used: number;
+  remaining: number | null;
+  /** ISO timestamp of the next allowance reset; null when unlimited. */
+  resetsAt: string | null;
 }
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
@@ -452,6 +468,21 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
   /** Interactive deliverability check for the composer — lint + SpamAssassin + AI, cached by hash. */
   public async runPreflight(tenant_id: string, input: RunPreflightType): Promise<PreflightResult> {
     return newsletterPreflight.runPreflight(this.getRepo().db, tenant_id, input);
+  }
+
+  /** The tenant's monthly newsletter-email allowance, for the composer's Review & send step.
+   * Mirrors the math the pre-send gate enforces (send-guards) so what the UI shows is exactly
+   * what the server will allow. */
+  public async getSendQuota(tenant_id: string): Promise<SendQuota> {
+    const db = this.getRepo().db;
+    const tenant = await loadSendingTenant(db, tenant_id);
+    const cap = monthlyEmailCap(tenant.plan, tenant.subscription_quantity);
+    const window = sendWindow(tenant.subscription_ends_at, new Date());
+    const used = await sentEmailsSince(db, tenant_id, window.start);
+    if (!Number.isFinite(cap)) {
+      return { cap: null, used, remaining: null, resetsAt: null };
+    }
+    return { cap, used, remaining: Math.max(0, cap - used), resetsAt: window.resetsAt.toISOString() };
   }
 
   public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {

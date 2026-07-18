@@ -39,18 +39,28 @@ The `Loader` is provided once in `apps/frontend/src/app/app.config.ts` with
 
 ## Geocode-status chip — the binding contract
 
-`households.geocoding_status` is `'pending' | 'success' | 'failed' | null`.
+`households.geocoding_status` is `'pending' | 'success' | 'failed' | 'skipped' | null`.
 Surface it with `<pc-geocode-chip [status]="...">`
 (`@uxcommon/components/geocode-chip/geocode-chip`) or the pure `geocodeChipSpec()`
 helper — **never invent your own labels**, and never hide the row:
 
-| DB status        | Chip label          | Tone (semantic)     |
-| ---------------- | ------------------- | ------------------- |
-| `success`        | **Located**         | success (done)      |
-| `pending` / null | **Locating…**       | info (in progress)  |
-| `failed`         | **Address problem** | warning (attention) |
+| DB status        | Chip label          | Tone (semantic)      |
+| ---------------- | ------------------- | -------------------- |
+| `success`        | **Located**         | success (done)       |
+| `pending` / null | **Locating…**       | info (in progress)   |
+| `failed`         | **Address problem** | warning (attention)  |
+| `skipped`        | **Not geocoded**    | neutral (plan-gated) |
 
-Wave 2 (canvassing readiness, delivery coverage) reads these same three states.
+Wave 2 (canvassing readiness, delivery coverage) reads these same states.
+
+**`skipped` = plan-gated, not broken.** Real (paid) geocoding is Movement-only
+(cost control): households on lower tiers are never sent to the Google Geocoding
+API — the enqueue helper marks them `skipped`. Mock/test/no-key geocoding is free
+and stays ungated (demo/dev/CI still get pins). The gate + per-tenant daily budget
+(`GEOCODE_DAILY_BUDGET`, spreads big imports over days) live in the ONE enqueue
+helper `apps/backend/src/app/lib/gis/geocode-queue.ts` — both `HouseholdRepo.addMany`
+and the single-address update path call it. The plan check is `planAllowsGeocoding`
+(`@common`, min plan `GEOCODING_MIN_PLAN = 'movement'`).
 
 ## Geocoding runs as a transactional-outbox job
 

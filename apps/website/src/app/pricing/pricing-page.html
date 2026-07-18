@@ -37,7 +37,7 @@
     </div>
 
     <!-- Monthly / Annual billing toggle -->
-    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-line pt-4">
+    <div class="mt-4 flex flex-col items-center gap-2 border-t border-line pt-4">
       <div role="tablist" class="tabs tabs-boxed tabs-sm">
         <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
           Monthly
@@ -96,6 +96,13 @@
     </div>
     }
   </div>
+
+  @if (interval() === 'year') {
+  <p class="site-wrap mt-3 text-center text-[12px] text-base-content/50">
+    Per-month prices on annual billing are rounded to the nearest dollar. You're billed once a year, at the exact annual
+    total shown on each card.
+  </p>
+  }
 
   <!-- Included in every plan -->
   <div class="site-wrap mt-4 rounded-xl border border-line bg-base-50 p-6">

@@ -127,12 +127,12 @@ describe('Usage Limits System', () => {
     it('resolves Grassroots limits at quantity 1 vs 2', () => {
       const g1 = getPlanLimits('grassroots', 1);
       expect(g1.subscribers).toBe(1_000);
-      expect(g1.emails).toBe(12_000); // 12x
+      expect(g1.emails).toBe(8_000); // 8x on Grassroots
       expect(g1.price).toBe('$29/month');
 
       const g2 = getPlanLimits('grassroots', 2);
       expect(g2.subscribers).toBe(2_500);
-      expect(g2.emails).toBe(30_000);
+      expect(g2.emails).toBe(20_000);
       expect(g2.price).toBe('$49/month');
 
       // Seats/storage are flat per tier, independent of quantity.
@@ -151,7 +151,7 @@ describe('Usage Limits System', () => {
       expect(m8.seats).toBe(Number.POSITIVE_INFINITY); // unlimited seats
     });
 
-    it('applies the Free plan 2x email multiplier (vs 12x on paid tiers)', () => {
+    it('applies the Free plan 2x email multiplier (vs 8x/12x on paid tiers)', () => {
       const free = getPlanLimits('free');
       expect(free.subscribers).toBe(1_000);
       expect(free.emails).toBe(2_000);
@@ -172,7 +172,7 @@ describe('Usage Limits System', () => {
       const g1 = getPlanLimits('grassroots', 1, 'year');
       expect(g1.price).toBe('$290/year');
       expect(g1.subscribers).toBe(1_000);
-      expect(g1.emails).toBe(12_000); // email caps stay monthly regardless of billing interval
+      expect(g1.emails).toBe(8_000); // email caps stay monthly regardless of billing interval
 
       expect(getPlanLimits('movement', 8, 'year').price).toBe('$3650/year');
       expect(getPlanLimits('free', 1, 'year').price).toBe('$0/month');

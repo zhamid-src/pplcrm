@@ -7,6 +7,7 @@ import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normal
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
+import { enqueueGeocodeJobs } from '../../../lib/gis/geocode-queue';
 import { logger } from '../../../logger';
 
 export class HouseholdRepo extends BaseRepository<'households'> {
@@ -53,23 +54,18 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const createdRows = await super.addMany({ rows: processedRows }, trx);
     const db = trx || this.db;
 
-    const jobs = createdRows
-      .filter((row) => row && row.id && row.geocoding_status === 'pending')
-      .map((row) => ({
-        tenant_id: row.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'geocode_household',
-          household_id: String(row.id),
-          tenant_id: row.tenant_id,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      }));
-
-    if (jobs.length > 0) {
-      await db.insertInto('background_jobs').values(jobs).execute();
+    // Enqueue geocoding for the newly-pending households, grouped by tenant so the plan gate and
+    // per-tenant daily budget apply per workspace (see lib/gis/geocode-queue.ts).
+    const pendingByTenant = new Map<string, string[]>();
+    for (const row of createdRows) {
+      if (row && row.id && row.geocoding_status === 'pending') {
+        const list = pendingByTenant.get(row.tenant_id) ?? [];
+        list.push(String(row.id));
+        pendingByTenant.set(row.tenant_id, list);
+      }
+    }
+    for (const [tenantId, ids] of pendingByTenant) {
+      await enqueueGeocodeJobs(db, tenantId, ids);
     }
 
     return createdRows;
