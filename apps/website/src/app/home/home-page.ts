@@ -175,7 +175,7 @@ export class HomePage {
     {
       icon: 'megaphone',
       title: 'Newsletters that land',
-      body: 'Write once, send to the 1,284 people it’s actually for. Segments come from your real list.',
+      body: 'Write once, send to the 1,284 people it’s actually for. An AI deliverability check scores every send before it leaves, so spam-filter surprises get caught while they’re still fixable.',
     },
     {
       icon: 'map-pin',

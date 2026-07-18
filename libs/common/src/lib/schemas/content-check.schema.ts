@@ -83,9 +83,9 @@ export type RunPreflightType = z.infer<typeof RunPreflightObj>;
 
 /**
  * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
- * no API key or the API errored — so the score is partial ('unavailable'); or policy didn't call
- * for it ('not_required' — the send-time gate skips the AI re-check for established paid tenants,
- * while user-initiated checks always include it).
+ * no API key or the API errored — so the score is partial ('unavailable'); or the check didn't
+ * include an AI review by design ('not_required' — today only the composer's local quick check;
+ * every server-side check, interactive or send-time, includes the AI review).
  */
 export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
 export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];

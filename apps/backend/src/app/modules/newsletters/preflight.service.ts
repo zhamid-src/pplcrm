@@ -13,7 +13,6 @@ import {
   preflightBand,
   preflightHashInput,
   type AiPreflightVerdict,
-  type AiReviewStatus,
   type PreflightFinding,
   type PreflightResult,
   type RunPreflightType,
@@ -24,7 +23,6 @@ import { PreconditionFailedError } from '../../errors/app-errors';
 import { logger } from '../../logger';
 import { checkRateLimit } from '../../lib/rate-limiter';
 import { htmlToPlainText } from '../../lib/mail/newsletter-render';
-import { loadSendingTenant } from './send-guards';
 
 /**
  * Newsletter preflight: assembles the deliverability score from the shared deterministic lint,
@@ -36,22 +34,14 @@ import { loadSendingTenant } from './send-guards';
  * lint alone and `aiStatus` is 'unavailable' — the engagement tripwires in send-guards remain the
  * backstop. Only the score itself gates sending (band 'blocked' → PreconditionFailedError).
  *
- * The AI review is risk-targeted at the gate: it runs while a tenant is unproven (free plan, or
- * first AI_GATE_FIRST_SENDS completed sends on any plan) and is skipped for established paid
- * tenants (`aiStatus` 'not_required'). Interactive checks include it on every plan — and when one
- * did, the cached result carries its AI-inclusive score into the gate for free.
+ * Every check includes the AI review, deliberately even for long-established tenants: the threat
+ * it uniquely stops pre-send is a compromised account blasting semantically-clean-linked phishing
+ * through shared sending infrastructure, and that risk grows (not shrinks) with tenure and list
+ * size. Per-check cost is cents and bounded by the interactive rate limit + send caps.
  */
 
 type Db = Kysely<Models> | Transaction<Models>;
 
-/**
- * The send-time gate includes the AI review only while a tenant is unproven: always on the free
- * plan, and until this many newsletters have completed sending on any plan (covers fresh paid
- * signups, e.g. a stolen card buying its way past scrutiny). Established paid tenants skip the
- * automatic AI re-check — their sends gate on the lint score alone (or on a cached full check).
- * User-initiated checks ("Check deliverability") always include the AI review on every plan.
- */
-const AI_GATE_FIRST_SENDS = 3;
 /** Interactive AI checks per tenant per hour (the send-time gate is not rate limited). */
 const AI_CHECKS_PER_HOUR = 30;
 const HOUR_MS = 60 * 60 * 1000;
@@ -85,9 +75,6 @@ interface CheckOptions {
   newsletterId?: string;
   /** Postmark spamcheck runs only on interactive checks — never in the send gate (network-free). */
   includeSpamAssassin: boolean;
-  /** Run the AI review at all — false when the send gate deems the tenant established (see
-   * AI_GATE_FIRST_SENDS); interactive checks always pass true. */
-  includeAi: boolean;
   /** Rate-limit the AI layer (interactive checks only). */
   rateLimitAi: boolean;
 }
@@ -138,12 +125,7 @@ export class NewsletterPreflightService {
         db,
         tenantId,
         { subject, html, plainText: newsletter.plain_text_content ?? undefined },
-        {
-          newsletterId: newsletter.id,
-          includeSpamAssassin: false,
-          includeAi: await this.aiRequiredAtGate(db, tenantId),
-          rateLimitAi: false,
-        },
+        { newsletterId: newsletter.id, includeSpamAssassin: false, rateLimitAi: false },
       );
       score = result.score;
       band = result.band;
@@ -158,21 +140,7 @@ export class NewsletterPreflightService {
 
   /** Interactive preflight behind the composer's "Check deliverability" button. */
   public async runPreflight(db: Db, tenantId: string, input: RunPreflightType): Promise<PreflightResult> {
-    return this.check(db, tenantId, input, { includeSpamAssassin: true, includeAi: true, rateLimitAi: true });
-  }
-
-  /** Whether the send gate should spend an AI review on this tenant: yes while unproven (free
-   * plan, or fewer than AI_GATE_FIRST_SENDS completed sends), no once established and paid. */
-  private async aiRequiredAtGate(db: Db, tenantId: string): Promise<boolean> {
-    const tenant = await loadSendingTenant(db, tenantId);
-    if (tenant.plan === 'free') return true;
-    const row = await db
-      .selectFrom('newsletters')
-      .select((eb) => eb.fn.countAll().as('total'))
-      .where('tenant_id', '=', tenantId)
-      .where('status', '=', 'sent')
-      .executeTakeFirst();
-    return Number(row?.total ?? 0) < AI_GATE_FIRST_SENDS;
+    return this.check(db, tenantId, input, { includeSpamAssassin: true, rateLimitAi: true });
   }
 
   /** One Claude content review; null (= skipped, fail-open) when the key is unset or the call
@@ -242,16 +210,11 @@ export class NewsletterPreflightService {
       }
     }
 
-    let ai: AiPreflightVerdict | null = null;
-    let aiStatus: AiReviewStatus = 'not_required';
-    if (opts.includeAi) {
-      if (opts.rateLimitAi && env.anthropicApiKey) {
-        checkRateLimit(`newsletterPreflightAi:${tenantId}`, AI_CHECKS_PER_HOUR, HOUR_MS);
-      }
-      ai = await this.aiReview(subject, bodyText, linkHostsOf(html));
-      aiStatus = ai ? 'reviewed' : 'unavailable';
-      if (ai) findings.push(...buildAiFindings(ai));
+    if (opts.rateLimitAi && env.anthropicApiKey) {
+      checkRateLimit(`newsletterPreflightAi:${tenantId}`, AI_CHECKS_PER_HOUR, HOUR_MS);
     }
+    const ai = await this.aiReview(subject, bodyText, linkHostsOf(html));
+    if (ai) findings.push(...buildAiFindings(ai));
 
     const score = computeScore(findings);
     const band = preflightBand(score);
@@ -261,7 +224,7 @@ export class NewsletterPreflightService {
       findings,
       spamAssassinScore,
       ai,
-      aiStatus,
+      aiStatus: ai ? 'reviewed' : 'unavailable',
       checkedAt: new Date().toISOString(),
     };
 

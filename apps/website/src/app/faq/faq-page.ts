@@ -93,7 +93,7 @@ export class FaqPage {
       items: [
         {
           q: 'Will my newsletter land in spam?',
-          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. That is the biggest difference from shared email platforms, where thousands of senders pool one reputation.',
+          a: 'Your mail goes out from your own verified domain, so inbox providers judge you on your own sending record, not on the worst spammer sharing your pipe. And before every send, an AI deliverability check scores your draft 0–100 against spam patterns and shows you exactly what to fix — on every plan, including Free.',
         },
         {
           q: 'Why do I verify a domain before sending?',

@@ -177,6 +177,7 @@ export const PLANS: readonly PlanDef[] = [
       '2 staff seats · 1 GB storage',
       'Shared inbox, people CRM & CSV import/export',
       'Newsletters, templates, scheduling & dynamic content',
+      'AI deliverability check on every newsletter',
       'Custom reports, role-based access & 300+ integrations',
       'Community support',
     ],

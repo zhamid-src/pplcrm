@@ -40,7 +40,7 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
    - Free plan and tenant younger than 7 days → warm-up cap: ≤100 emails per rolling 24h
      (`warmupDailyCap`, summed from `newsletter_send_log`).
      1b. **Content gate (newsletter preflight)** — `newsletterPreflight.assertNewsletterContentSendable(db,
-   tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called in
+tenantId, newsletterRow)` (`modules/newsletters/preflight.service.ts`), called in
      `NewslettersController.sendNewsletter` directly after `assertTenantMaySendNewsletter`. A
      deliverability score 0–100 is assembled from explainable deductions: the shared deterministic
      lint (`libs/common/src/lib/preflight-lint.ts` — subject patterns, base64/oversize HTML,
@@ -57,14 +57,14 @@ All constants (caps, rates, messages) live at the top of that file. Enforcement 
      scores); the Postmark spamcheck runs ONLY in the interactive check, never the send gate (keeps
      tests network-free). AI verdicts `scam_or_phishing` / `pure_commercial_marketing` (confidence
      ≥0.6) carry a 90-point deduction — blocked by construction. Fundraising/auctions/events are
-     explicitly allowed in the prompt. **Risk-targeted at the gate:** the send-time AI review runs
-     only while a tenant is unproven — free plan always, or `< AI_GATE_FIRST_SENDS` (3) newsletters
-     with `status='sent'` on any plan (`aiRequiredAtGate` in `preflight.service.ts`); established
-     paid tenants gate on the lint score alone unless a cached interactive check (which always
-     includes AI, any plan) covers the content hash. `PreflightResult.aiStatus`:
-     'reviewed' | 'unavailable' (wanted, key unset/API error) | 'not_required' (policy). Composer
-     UI: score gauge + findings card on Review & send, "Check deliverability" next to Send test
-     email.
+     explicitly allowed in the prompt. **Every check includes the AI review** — the send gate and
+     interactive checks alike, on every plan (deliberate 2026-07-17 decision, reversing a brief
+     risk-scoped design: the pre-send threat the AI uniquely stops is a compromised established
+     account blasting clean-linked phishing through shared sending infrastructure, and that risk
+     grows with tenure and list size; per-check cost is cents and marketing states the always-on
+     claim). `PreflightResult.aiStatus`: 'reviewed' | 'unavailable' (key unset/API error,
+     fail-open) | 'not_required' (only the composer's local quick check). Composer UI: score
+     gauge + findings card on Review & send, "Check deliverability" next to Send test email.
 2. **Per batch, in the worker** — `handleSendNewsletter` (`lib/jobs/handlers/newsletter.handlers.ts`)
    re-loads the tenant every batch:
    - Paused/suspended mid-send → newsletter `status = 'paused'`, resume point saved in

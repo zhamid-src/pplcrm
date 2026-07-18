@@ -164,7 +164,7 @@ describe('NewsletterPreflightService', () => {
   });
 });
 
-describe('NewsletterPreflightService send-gate AI eligibility', () => {
+describe('NewsletterPreflightService send-gate AI policy', () => {
   const service = new NewsletterPreflightService();
   const db = (BaseRepository as any)._db;
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -172,8 +172,10 @@ describe('NewsletterPreflightService send-gate AI eligibility', () => {
   let userId: string;
   let campaignId: string;
 
-  // The gate spends an AI review only on unproven tenants: free plan always, any plan until
-  // AI_GATE_FIRST_SENDS (3) newsletters have completed. Interactive checks always include it.
+  // Every send-time check includes the AI review — deliberately even for long-established paid
+  // tenants, because compromised accounts (the pre-send threat the AI uniquely catches) get more
+  // dangerous with tenure and list size, not less. This seed builds the "most trusted" tenant
+  // shape so a regression back to risk-scoped gating fails here.
   async function seedTenant(plan: string | null, sentNewsletters: number): Promise<void> {
     await db
       .insertInto('tenants')
@@ -249,32 +251,10 @@ describe('NewsletterPreflightService send-gate AI eligibility', () => {
     vi.restoreAllMocks();
   });
 
-  it('skips the AI review at the gate for an established paid tenant (3+ completed sends)', async () => {
+  it('runs the AI review at the gate even for an established paid tenant (every send is checked)', async () => {
     await seedTenant('movement', 3);
     const aiSpy = vi.spyOn(NewsletterPreflightService.prototype, 'aiReview');
     await expect(gateOn('7001')).resolves.toBeUndefined();
-    expect(aiSpy).not.toHaveBeenCalled();
-  });
-
-  it('still runs the AI review at the gate for a paid tenant with fewer than 3 completed sends', async () => {
-    await seedTenant('movement', 2);
-    const aiSpy = vi.spyOn(NewsletterPreflightService.prototype, 'aiReview');
-    await expect(gateOn('7002')).resolves.toBeUndefined();
     expect(aiSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('always runs the AI review at the gate on the free plan, regardless of send history', async () => {
-    await seedTenant(null, 3); // no subscription_plan resolves to free (fail closed)
-    const aiSpy = vi.spyOn(NewsletterPreflightService.prototype, 'aiReview');
-    await expect(gateOn('7003')).resolves.toBeUndefined();
-    expect(aiSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it('interactive checks include the AI review even for established paid tenants', async () => {
-    await seedTenant('movement', 3);
-    const aiSpy = vi.spyOn(NewsletterPreflightService.prototype, 'aiReview');
-    const result = await service.runPreflight(db, tenantId, { subject: 'October update', html: CLEAN_HTML });
-    expect(aiSpy).toHaveBeenCalledTimes(1);
-    expect(result.aiStatus).toBe('unavailable'); // spy resolves null — wanted but couldn't run
   });
 });
