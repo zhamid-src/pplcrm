@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  annualPriceForQuantity,
   bracketForQuantity,
+  cadenceLabel,
+  monthlyEquivalentUsd,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
   bracketIndexForSubscribers,
   emailCapForQuantity,
   getPlanDef,
@@ -66,6 +71,45 @@ describe('priceForQuantity', () => {
   });
 });
 
+describe('annual pricing', () => {
+  it('is exactly 10× monthly ("2 months free") at every bracket of both paid tiers', () => {
+    expect(ANNUAL_PRICE_MULTIPLIER).toBe(12 - ANNUAL_MONTHS_FREE);
+    for (const key of PURCHASABLE_PLAN_KEYS) {
+      const pricing = PLANS_BY_KEY[key].pricing;
+      if (!pricing) throw new Error(`expected pricing for ${key}`);
+      pricing.brackets.forEach((bracket, i) => {
+        expect(annualPriceForQuantity(key, i + 1)).toBe(bracket.price * 10);
+      });
+    }
+  });
+
+  it('annual spot checks: Grassroots $290/yr and Movement $550/yr at the first bracket', () => {
+    expect(annualPriceForQuantity('grassroots', 1)).toBe(290);
+    expect(annualPriceForQuantity('movement', 1)).toBe(550);
+    expect(annualPriceForQuantity('movement', 11)).toBe(6_650);
+  });
+
+  it('monthlyEquivalentUsd rounds the annual total to cents', () => {
+    expect(monthlyEquivalentUsd(290)).toBe(24.17);
+    expect(monthlyEquivalentUsd(550)).toBe(45.83);
+    expect(monthlyEquivalentUsd(690)).toBe(57.5);
+    expect(monthlyEquivalentUsd(0)).toBe(0);
+  });
+});
+
+describe('cadenceLabel', () => {
+  it('paid plans switch cadence with the billing interval', () => {
+    expect(cadenceLabel(PLANS_BY_KEY.grassroots, 'month')).toBe('per month');
+    expect(cadenceLabel(PLANS_BY_KEY.grassroots, 'year')).toBe('per month, billed annually');
+    expect(cadenceLabel(PLANS_BY_KEY.movement, 'year')).toBe('per month, billed annually');
+  });
+
+  it('non-purchasable plans keep their static cadence on either interval', () => {
+    expect(cadenceLabel(PLANS_BY_KEY.free, 'year')).toBe('forever');
+    expect(cadenceLabel(PLANS_BY_KEY.enterprise, 'year')).toBe('contact us');
+  });
+});
+
 describe('emailCapForQuantity', () => {
   it('is 12x the subscriber cap on paid tiers', () => {
     expect(emailCapForQuantity('grassroots', 1)).toBe(1_000 * 12);
@@ -84,6 +128,13 @@ describe('startingPriceLabel', () => {
     expect(startingPriceLabel(PLANS_BY_KEY.movement)).toBe('From $55');
     expect(startingPriceLabel(PLANS_BY_KEY.enterprise)).toBe('Custom');
   });
+
+  it('shows the monthly-equivalent of the annual price on the year interval', () => {
+    expect(startingPriceLabel(PLANS_BY_KEY.grassroots, 'year')).toBe('From $24.17');
+    expect(startingPriceLabel(PLANS_BY_KEY.movement, 'year')).toBe('From $45.83');
+    expect(startingPriceLabel(PLANS_BY_KEY.free, 'year')).toBe('$0');
+    expect(startingPriceLabel(PLANS_BY_KEY.enterprise, 'year')).toBe('Custom');
+  });
 });
 
 describe('priceLabelAt', () => {
@@ -99,6 +150,13 @@ describe('priceLabelAt', () => {
 
   it('returns "Custom" for enterprise regardless of count', () => {
     expect(priceLabelAt(PLANS_BY_KEY.enterprise, 5)).toBe('Custom');
+  });
+
+  it('year interval shows the monthly-equivalent of the annual price', () => {
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 10_000, 'year')).toBe('$74.17'); // $890/yr
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 5_000, 'year')).toBe('$57.50'); // $690/yr
+    expect(priceLabelAt(PLANS_BY_KEY.movement, 100_000, 'year')).toBe('$470.83'); // $5,650/yr
+    expect(priceLabelAt(PLANS_BY_KEY.grassroots, 100_001, 'year')).toBe('Contact us');
   });
 });
 

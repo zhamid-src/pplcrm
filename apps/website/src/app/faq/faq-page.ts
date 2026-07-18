@@ -130,6 +130,10 @@ export class FaqPage {
           a: 'Grassroots starts at $29/month and Movement at $55/month, each covering your first 1,000 emailable subscribers. The price steps up in brackets as your list grows, and the pricing page always shows you the exact price at your subscriber count.',
         },
         {
+          q: 'Can I pay annually?',
+          a: 'Yes. Annual billing costs exactly 10× the monthly price — 2 months free — at every subscriber bracket, paid up front for the year. Monthly stays the default: campaigns that wrap up mid-year shouldn’t prepay twelve months. If your list grows into a higher bracket mid-year on an annual plan, the prorated difference for the rest of your year is charged right away instead of waiting for renewal.',
+        },
+        {
           q: 'How is pricing metered?',
           a: 'On emailable subscribers, not total contacts. You can store your entire voter or canvassing universe for free and only pay for the people you can actually email; most tools charge you for every contact.',
         },
@@ -143,7 +147,7 @@ export class FaqPage {
         },
         {
           q: 'What happens when my list grows?',
-          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins, and the new bracket price applies from your next billing cycle. If your list shrinks, the price drops at the next cycle automatically.',
+          a: 'Nothing surprising. When your emailable subscribers cross into a new bracket we email your admins. On monthly billing the new bracket price applies from your next billing cycle; on annual billing the prorated difference for the rest of your year is charged right away. If your list shrinks, the price drops at the next renewal automatically.',
         },
         {
           q: 'Do you have a plan for larger organizations?',

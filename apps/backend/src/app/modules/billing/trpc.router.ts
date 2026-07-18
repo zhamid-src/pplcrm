@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
+import { BILLING_INTERVALS, maxQuantity, PURCHASABLE_PLAN_KEYS } from '@common';
 import { adminOrOwnerProcedure, router } from '../../../trpc';
 import { BillingController } from './controller';
 
@@ -17,8 +17,8 @@ export const BillingRouter = router({
   getUsage: adminOrOwnerProcedure.query(({ ctx }) => controller.getUsage(ctx.auth)),
 
   createCheckout: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS) }))
-    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan)),
+    .input(z.object({ plan: z.enum(PURCHASABLE_PLAN_KEYS), interval: z.enum(BILLING_INTERVALS).default('month') }))
+    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan, input.interval)),
 
   createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
 
@@ -28,9 +28,10 @@ export const BillingRouter = router({
       z.object({
         plan: z.enum(PURCHASABLE_PLAN_KEYS),
         quantity: z.number().int().min(1).max(MAX_BRACKET_QUANTITY).optional(),
+        interval: z.enum(BILLING_INTERVALS).default('month'),
       }),
     )
-    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity)),
+    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan, input.quantity, input.interval)),
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
 });

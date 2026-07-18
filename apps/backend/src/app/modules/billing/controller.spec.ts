@@ -10,6 +10,8 @@ vi.mock('../../../env', async (importOriginal) => {
       stripeWebhookSecret: 'whsec_test_secret',
       stripePlanGrassrootsPriceId: 'price_test_grassroots',
       stripePlanMovementPriceId: 'price_test_movement',
+      stripePlanGrassrootsAnnualPriceId: 'price_test_grassroots_annual',
+      stripePlanMovementAnnualPriceId: 'price_test_movement_annual',
     },
   };
 });
@@ -199,10 +201,37 @@ describe('BillingController.processWebhookEvent — subscription_quantity persis
 
     const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
     expect(tenant.subscription_quantity).toBe(4);
+    // Unknown price id → interval falls back to the stored value ('month' seed default).
+    expect(tenant.subscription_interval).toBe('month');
   });
 
-  it('resets subscription_quantity to 1 on customer.subscription.deleted', async () => {
-    ({ tenantId, customerId } = await seedBillingTenant(db, { subscription_quantity: 7 }));
+  it('persists the annual interval when the Stripe price is an annual price id', async () => {
+    ({ tenantId, customerId } = await seedBillingTenant(db));
+
+    await controller.processWebhookEvent({
+      id: 'evt_sub_updated_annual',
+      type: 'customer.subscription.updated',
+      data: {
+        object: {
+          id: `sub_${tenantId}`,
+          customer: customerId,
+          status: 'active',
+          items: { data: [{ price: { id: 'price_test_grassroots_annual' }, quantity: 2, current_period_end: null }] },
+        },
+      },
+    } as any);
+
+    const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
+    expect(tenant.subscription_plan).toBe('grassroots');
+    expect(tenant.subscription_quantity).toBe(2);
+    expect(tenant.subscription_interval).toBe('year');
+  });
+
+  it('resets subscription_quantity to 1 and the interval to month on customer.subscription.deleted', async () => {
+    ({ tenantId, customerId } = await seedBillingTenant(db, {
+      subscription_quantity: 7,
+      subscription_interval: 'year',
+    }));
 
     await controller.processWebhookEvent({
       id: 'evt_sub_deleted',
@@ -213,6 +242,7 @@ describe('BillingController.processWebhookEvent — subscription_quantity persis
     const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', tenantId).executeTakeFirst();
     expect(tenant.subscription_quantity).toBe(1);
     expect(tenant.subscription_plan).toBe('free');
+    expect(tenant.subscription_interval).toBe('month');
   });
 
   it('downgrades the billed quantity on invoice.paid when the emailable count has dropped', async () => {
@@ -317,6 +347,45 @@ describe('syncSubscriptionQuantity (live mode) — idempotency + proration_behav
     await syncSubscriptionQuantity(tenantId, 8);
     expect(stripeSubscriptionsUpdate).toHaveBeenCalledTimes(1);
   });
+
+  it('invoices a quantity INCREASE on an annual subscription immediately (proration always_invoice)', async () => {
+    stripeSubscriptionsRetrieve.mockResolvedValue({
+      items: { data: [{ id: 'si_1', quantity: 2, price: { recurring: { interval: 'year' } } }] },
+    });
+
+    await syncSubscriptionQuantity(tenantId, 6);
+
+    expect(stripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_' + tenantId, {
+      items: [{ id: 'si_1', quantity: 6 }],
+      proration_behavior: 'always_invoice',
+    });
+  });
+
+  it('keeps proration "none" for a quantity DECREASE on an annual subscription', async () => {
+    stripeSubscriptionsRetrieve.mockResolvedValue({
+      items: { data: [{ id: 'si_1', quantity: 6, price: { recurring: { interval: 'year' } } }] },
+    });
+
+    await syncSubscriptionQuantity(tenantId, 2);
+
+    expect(stripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_' + tenantId, {
+      items: [{ id: 'si_1', quantity: 2 }],
+      proration_behavior: 'none',
+    });
+  });
+
+  it('keeps proration "none" for a quantity increase on a monthly subscription', async () => {
+    stripeSubscriptionsRetrieve.mockResolvedValue({
+      items: { data: [{ id: 'si_1', quantity: 2, price: { recurring: { interval: 'month' } } }] },
+    });
+
+    await syncSubscriptionQuantity(tenantId, 6);
+
+    expect(stripeSubscriptionsUpdate).toHaveBeenCalledWith('sub_' + tenantId, {
+      items: [{ id: 'si_1', quantity: 6 }],
+      proration_behavior: 'none',
+    });
+  });
 });
 
 describe('BillingController.createCheckoutSession — Stripe Tax parameters', () => {
@@ -355,6 +424,18 @@ describe('BillingController.createCheckoutSession — Stripe Tax parameters', ()
         billing_address_collection: 'required',
         customer_update: { address: 'auto', name: 'auto' },
         tax_id_collection: { enabled: true },
+      }),
+    );
+  });
+
+  it('uses the annual price id when checkout is created with the year interval', async () => {
+    stripeCheckoutSessionsCreate.mockResolvedValue({ url: 'https://checkout.stripe.example/session' });
+
+    await controller.createCheckoutSession({ tenant_id: tenantId, user_id: tenantId }, 'movement', 'year');
+
+    expect(stripeCheckoutSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [{ price: 'price_test_movement_annual', quantity: 1 }],
       }),
     );
   });

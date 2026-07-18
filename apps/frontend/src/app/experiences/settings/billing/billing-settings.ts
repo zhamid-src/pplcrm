@@ -6,12 +6,16 @@ import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import {
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
   PLANS,
   PURCHASABLE_PLAN_KEYS,
+  annualPriceForQuantity,
   bracketIndexForSubscribers,
   maxQuantity,
   planDisplayName,
   priceLabelAt,
+  type BillingInterval,
   type PlanDef,
   type PlanKey,
   type PurchasablePlanKey,
@@ -22,6 +26,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 export interface BillingDetailsSnapshot {
   plan: string;
   status: string;
+  interval: BillingInterval;
   endsAt: Date | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
@@ -37,6 +42,7 @@ export interface BillingUsageSnapshot {
   subscriberCap: number;
   emailCap: number;
   monthlyPrice: number;
+  interval: BillingInterval;
   tierMax: number;
 }
 
@@ -71,6 +77,11 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   protected readonly plans: readonly PlanDef[] = PLANS.filter((p) => p.purchasable);
   protected readonly enterpriseMailto = 'mailto:hello@pplcrm.com?subject=Enterprise%20Inquiry';
 
+  /** Billing interval for the upgrade cards. Monthly is the deliberate default — electoral
+   * campaigns often end mid-year and shouldn't be nudged into annual prepay. */
+  protected readonly billingInterval = signal<BillingInterval>('month');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
   protected readonly sliderStops = SUBSCRIBER_SLIDER_STOPS;
   protected readonly sliderIndex = signal(0);
   protected readonly sliderValue = computed(() => this.sliderStops[this.sliderIndex()] ?? this.sliderStops[0]);
@@ -78,8 +89,9 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     () => this.sliderStops[this.sliderStops.length - 1] ?? this.sliderStops[0],
   );
 
-  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" — omits the billed
-   * clause for plans with no meaningful bracket (free, enterprise). */
+  /** "12,340 emailable subscribers · billed for up to 15,000 at $89/mo" (or "at $890/yr" on
+   * annual billing) — omits the billed clause for plans with no meaningful bracket (free,
+   * enterprise). */
   protected readonly usageSummary = computed<string | null>(() => {
     const snapshot = this.usage();
     const planKey = this.details()?.plan;
@@ -89,7 +101,11 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     if (planKey === 'free' || planKey === 'enterprise') return subscribers;
 
     const cap = this.formatCount(snapshot.subscriberCap);
-    return `${subscribers} · billed for up to ${cap} at $${snapshot.monthlyPrice}/mo`;
+    const price =
+      snapshot.interval === 'year'
+        ? `$${snapshot.monthlyPrice * ANNUAL_PRICE_MULTIPLIER}/yr`
+        : `$${snapshot.monthlyPrice}/mo`;
+    return `${subscribers} · billed for up to ${cap} at ${price}`;
   });
 
   protected planLabel(plan: string | null | undefined): string {
@@ -97,7 +113,20 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   }
 
   protected priceLabel(plan: PlanDef): string {
-    return priceLabelAt(plan, this.sliderValue());
+    return priceLabelAt(plan, this.sliderValue(), this.billingInterval());
+  }
+
+  /** "billed annually as $290" under an annual card price (null on monthly, out-of-ladder, or
+   * ladderless plans — the card falls back to its plain monthly presentation). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.billingInterval() !== 'year' || !plan.pricing) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.sliderValue());
+    if (index === null) return null;
+    return `billed annually as $${this.formatCount(annualPriceForQuantity(plan.key, index))}`;
+  }
+
+  protected setBillingInterval(interval: BillingInterval): void {
+    this.billingInterval.set(interval);
   }
 
   protected formatCount(n: number): string {
@@ -154,7 +183,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
 
   private async handleQueryParams(params: Record<string, string>): Promise<void> {
     if (params['mock_checkout_success'] && isPurchasablePlan(params['plan'])) {
-      await this.handleMockActivation(params['plan']);
+      await this.handleMockActivation(params['plan'], params['interval'] === 'year' ? 'year' : 'month');
     } else if (params['checkout_success']) {
       this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
       this.clearQueryParams();
@@ -169,7 +198,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     const planKey = plan.key;
     this.actionPending.set(true);
     try {
-      const res = await this.api.billing.createCheckout.mutate({ plan: planKey });
+      const res = await this.api.billing.createCheckout.mutate({ plan: planKey, interval: this.billingInterval() });
       if (res?.url) {
         window.location.href = res.url;
       } else {
@@ -196,11 +225,11 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 
-  private async handleMockActivation(plan: PurchasablePlanKey) {
+  private async handleMockActivation(plan: PurchasablePlanKey, interval: BillingInterval = 'month') {
     const end = this._loading.begin();
     try {
       const quantity = this.mockQuantityFor(plan);
-      await this.api.billing.activateMockPlan.mutate({ plan, quantity });
+      await this.api.billing.activateMockPlan.mutate({ plan, quantity, interval });
       this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
       await this.loadBilling();
     } catch (err) {
@@ -237,6 +266,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       queryParams: {
         mock_checkout_success: null,
         plan: null,
+        interval: null,
         checkout_success: null,
         mock_portal_success: null,
       },

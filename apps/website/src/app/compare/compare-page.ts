@@ -73,7 +73,7 @@ export class ComparePage {
     },
     {
       title: 'No contracts, no exit fee',
-      body: 'Month to month, and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
+      body: 'Pay month to month — or annually for 2 months free, your choice — and everything exports to plain CSV on every plan. A tool you can leave anytime is a tool you can trust with your list.',
     },
     {
       title: 'Try before you trust',

@@ -1,10 +1,13 @@
 import { sql } from 'kysely';
 import type Stripe from 'stripe';
 import {
+  BILLING_INTERVALS,
   bracketIndexForSubscribers,
   getPlanDef,
   maxQuantity,
   PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  type BillingInterval,
   type PlanKey,
   type PurchasablePlanKey,
 } from '@common';
@@ -20,19 +23,31 @@ import { getStripe, isMockMode, stripe } from '../../lib/stripe-platform-client'
 import { syncSubscriptionQuantity } from './subscription-sync';
 import { countEmailableSubscribers, getPlanLimits } from './usage-limits';
 
-/** Stripe price ID configured for each self-serve plan (undefined in mock mode / when unset). */
-const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, string | undefined> = {
-  grassroots: env.stripePlanGrassrootsPriceId,
-  movement: env.stripePlanMovementPriceId,
+/** Stripe price ID configured for each self-serve plan × billing interval (undefined in mock
+ * mode / when unset). The annual prices are exactly 10× the monthly unit amounts — see the
+ * Stripe ops comment in libs/common/src/lib/billing/plans.ts. */
+const PRICE_ID_BY_PLAN: Record<PurchasablePlanKey, Record<BillingInterval, string | undefined>> = {
+  grassroots: { month: env.stripePlanGrassrootsPriceId, year: env.stripePlanGrassrootsAnnualPriceId },
+  movement: { month: env.stripePlanMovementPriceId, year: env.stripePlanMovementAnnualPriceId },
 };
 
-/** Reverse-map a Stripe price ID back to our internal plan key. */
-function planForPriceId(priceId: string | undefined | null): PurchasablePlanKey | null {
+/** Reverse-map a Stripe price ID back to our internal plan key + billing interval. */
+function planForPriceId(
+  priceId: string | undefined | null,
+): { plan: PurchasablePlanKey; interval: BillingInterval } | null {
   if (!priceId) return null;
-  for (const [plan, id] of Object.entries(PRICE_ID_BY_PLAN)) {
-    if (id && id === priceId) return plan as PurchasablePlanKey;
+  for (const plan of PURCHASABLE_PLAN_KEYS) {
+    for (const interval of BILLING_INTERVALS) {
+      const id = PRICE_ID_BY_PLAN[plan][interval];
+      if (id && id === priceId) return { plan, interval };
+    }
   }
   return null;
+}
+
+/** Narrow a stored `tenants.subscription_interval` value (or any unknown) to a BillingInterval. */
+function asBillingInterval(value: unknown): BillingInterval {
+  return value === 'year' ? 'year' : 'month';
 }
 
 /**
@@ -89,6 +104,7 @@ interface TenantBillingRow {
   admin_id: string | null;
   subscription_plan: string | null;
   subscription_quantity: number | null;
+  subscription_interval: BillingInterval;
 }
 
 function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
@@ -100,6 +116,7 @@ function asTenantBillingRow(row: unknown): TenantBillingRow | undefined {
     admin_id: typeof r['admin_id'] === 'string' ? r['admin_id'] : null,
     subscription_plan: typeof r['subscription_plan'] === 'string' ? r['subscription_plan'] : null,
     subscription_quantity: typeof r['subscription_quantity'] === 'number' ? r['subscription_quantity'] : null,
+    subscription_interval: asBillingInterval(r['subscription_interval']),
   };
 }
 
@@ -148,6 +165,7 @@ export class BillingController {
     return {
       plan: tenant.subscription_plan || 'free',
       status: tenant.subscription_status || 'inactive',
+      interval: asBillingInterval(tenant.subscription_interval),
       endsAt: tenant.subscription_ends_at ? new Date(tenant.subscription_ends_at) : null,
       stripeCustomerId: tenant.stripe_customer_id || null,
       stripeSubscriptionId: tenant.stripe_subscription_id || null,
@@ -165,6 +183,7 @@ export class BillingController {
     subscriberCap: number;
     emailCap: number;
     monthlyPrice: number;
+    interval: BillingInterval;
     tierMax: number;
   }> {
     const tenant = asTenantBillingRow(
@@ -188,11 +207,16 @@ export class BillingController {
       subscriberCap: limits.subscribers,
       emailCap: limits.emails,
       monthlyPrice: plan.pricing ? (plan.pricing.brackets[billedQuantity - 1]?.price ?? 0) : 0,
+      interval: tenant.subscription_interval,
       tierMax: plan.pricing ? maxQuantity(plan.key) : Number.POSITIVE_INFINITY,
     };
   }
 
-  public async createCheckoutSession(auth: { tenant_id: string; user_id: string }, plan: PurchasablePlanKey) {
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    plan: PurchasablePlanKey,
+    interval: BillingInterval = 'month',
+  ) {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
       value: auth.tenant_id,
@@ -213,7 +237,7 @@ export class BillingController {
 
     if (isMockMode) {
       // In Mock Mode, direct them to a simulated callback
-      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}`;
+      const mockSuccessUrl = `${frontendUrl}/workspace/billing?mock_checkout_success=true&plan=${plan}&qty=${quantity}&interval=${interval}`;
       return { url: mockSuccessUrl };
     }
 
@@ -238,10 +262,10 @@ export class BillingController {
     }
 
     // Determine Stripe Price ID
-    const priceId = PRICE_ID_BY_PLAN[plan];
+    const priceId = PRICE_ID_BY_PLAN[plan][interval];
 
     if (!priceId) {
-      throw new Error(`Stripe Price ID is not configured for plan: ${plan}`);
+      throw new Error(`Stripe Price ID is not configured for plan: ${plan} (${interval})`);
     }
 
     // Stripe Tax: `customer_update.address: 'auto'` saves the checkout billing address onto the
@@ -354,7 +378,9 @@ export class BillingController {
         if (tenantId && subscriptionId) {
           const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
           const item = subscription.items.data[0];
-          const planName: PlanKey = planForPriceId(item?.price.id) ?? 'free';
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: PlanKey = priceMatch?.plan ?? 'free';
+          const interval: BillingInterval = priceMatch?.interval ?? 'month';
           const quantity = item?.quantity ?? 1;
 
           await tenantsRepo.update({
@@ -367,11 +393,12 @@ export class BillingController {
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
               subscription_quantity: quantity,
+              subscription_interval: interval,
             },
           });
           logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
           try {
-            await this.handleSubscriptionChange(tenantId, planName, quantity);
+            await this.handleSubscriptionChange(tenantId, planName, quantity, false, interval);
           } catch (mailErr) {
             logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
           }
@@ -393,7 +420,9 @@ export class BillingController {
 
         if (dbTenant) {
           const item = subscription.items.data[0];
-          const planName: string = planForPriceId(item?.price.id) ?? dbTenant.subscription_plan;
+          const priceMatch = planForPriceId(item?.price.id);
+          const planName: string = priceMatch?.plan ?? dbTenant.subscription_plan;
+          const interval: BillingInterval = priceMatch?.interval ?? asBillingInterval(dbTenant.subscription_interval);
           const quantity = item?.quantity ?? 1;
 
           await tenantsRepo.update({
@@ -405,11 +434,12 @@ export class BillingController {
               subscription_status: subscription.status,
               subscription_ends_at: subscriptionPeriodEnd(subscription),
               subscription_quantity: quantity,
+              subscription_interval: interval,
             },
           });
           logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
           try {
-            await this.handleSubscriptionChange(dbTenant.id, planName, quantity);
+            await this.handleSubscriptionChange(dbTenant.id, planName, quantity, false, interval);
           } catch (mailErr) {
             logger.error(
               { err: mailErr },
@@ -439,6 +469,7 @@ export class BillingController {
               subscription_plan: 'free',
               subscription_ends_at: new Date().toISOString(),
               subscription_quantity: 1,
+              subscription_interval: 'month',
             },
           });
           logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
@@ -604,13 +635,22 @@ export class BillingController {
     }
   }
 
-  public async activateMockPlan(auth: { tenant_id: string }, plan: PurchasablePlanKey, quantity = 1) {
+  public async activateMockPlan(
+    auth: { tenant_id: string },
+    plan: PurchasablePlanKey,
+    quantity = 1,
+    interval: BillingInterval = 'month',
+  ) {
     if (!isMockMode) {
       throw new Error('This helper is only available in local Mock Mode');
     }
 
     const expiry = new Date();
-    expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
+    if (interval === 'year') {
+      expiry.setFullYear(expiry.getFullYear() + 1); // 1 year from now
+    } else {
+      expiry.setMonth(expiry.getMonth() + 1); // 1 month from now
+    }
     const clampedQuantity = Math.min(Math.max(Math.trunc(quantity) || 1, 1), maxQuantity(plan));
 
     await tenantsRepo.update({
@@ -623,11 +663,12 @@ export class BillingController {
         subscription_status: 'active',
         subscription_ends_at: expiry.toISOString(),
         subscription_quantity: clampedQuantity,
+        subscription_interval: interval,
       },
     });
 
     try {
-      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true);
+      await this.handleSubscriptionChange(auth.tenant_id, plan, clampedQuantity, true, interval);
     } catch (mailErr) {
       logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
     }
@@ -649,6 +690,7 @@ export class BillingController {
         subscription_status: 'inactive',
         subscription_ends_at: null,
         subscription_quantity: 1,
+        subscription_interval: 'month',
       },
     });
 
@@ -666,6 +708,7 @@ export class BillingController {
     planName: string,
     quantity: number,
     isMock = false,
+    interval: BillingInterval = 'month',
   ): Promise<void> {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: tenantId,
@@ -691,7 +734,7 @@ export class BillingController {
       .executeTakeFirst();
 
     if (admin && admin.email) {
-      const planLimits = getPlanLimits(planName, quantity);
+      const planLimits = getPlanLimits(planName, quantity, interval);
       const billingPageUrl = `${env.appUrl}/workspace/billing`;
       const mockPrefix = isMock ? '[MOCK] ' : '';
       const fmt = (n: number): string => (Number.isFinite(n) ? n.toLocaleString() : 'Unlimited');

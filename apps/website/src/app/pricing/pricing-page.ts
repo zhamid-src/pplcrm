@@ -1,7 +1,16 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { bracketIndexForSubscribers, FEATURE_MATRIX, GB, PLANS, priceForQuantity } from '@common';
-import type { FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
+import {
+  ANNUAL_MONTHS_FREE,
+  annualPriceForQuantity,
+  bracketIndexForSubscribers,
+  cadenceLabel,
+  FEATURE_MATRIX,
+  GB,
+  PLANS,
+  priceForQuantity,
+} from '@common';
+import type { BillingInterval, FeatureMatrixGroup, FeatureMatrixRow, PlanDef } from '@common';
 
 import { CurrencyService } from '../ui/currency.service';
 import { SiteFooter } from '../ui/site-footer';
@@ -70,6 +79,11 @@ export class PricingPage {
     rows: group.rows.filter((row) => !isAllTrueRow(row)),
   })).filter((group) => group.rows.length > 0);
 
+  /** Billing interval the cards and comparison table price at. Monthly is the deliberate
+   * default — electoral campaigns often end mid-year and shouldn't be nudged into prepay. */
+  protected readonly interval = signal<BillingInterval>('month');
+  protected readonly annualBadge = `${ANNUAL_MONTHS_FREE} months free`;
+
   protected readonly maxStopIndex = SLIDER_STOPS.length - 1;
   protected readonly stopIndex = signal(DEFAULT_STOP_INDEX);
   protected readonly subscribers = computed<number>(() => SLIDER_STOPS[this.stopIndex()] ?? DEFAULT_STOP);
@@ -82,11 +96,35 @@ export class PricingPage {
     }
   }
 
-  /** Live price at the slider's subscriber count, formatted in the active display currency. */
+  protected setInterval(interval: BillingInterval): void {
+    this.interval.set(interval);
+  }
+
+  /** Live price at the slider's subscriber count, formatted in the active display currency.
+   * On annual, paid tiers show the monthly-equivalent of the annual total with cents
+   * (`$24.17`); Free keeps its plain `$0` (nothing to bill annually). */
   protected priceLabel(plan: PlanDef): string {
     const index = bracketIndexForSubscribers(plan.key, this.subscribers());
     if (index === null) return 'Contact us';
+    if (this.interval() === 'year' && plan.purchasable) {
+      return this.currency.formatMonthlyEquivalent(annualPriceForQuantity(plan.key, index));
+    }
     return this.currency.format(priceForQuantity(plan.key, index));
+  }
+
+  /** The card's cadence line ('per month' / 'per month, billed annually' / 'forever'). */
+  protected cadence(plan: PlanDef): string {
+    return cadenceLabel(plan, this.interval());
+  }
+
+  /** "Billed annually as $290 · 2 months free" under an annual paid-tier price; null whenever
+   * the plain monthly presentation applies (monthly interval, Free, out-of-ladder). */
+  protected annualNote(plan: PlanDef): string | null {
+    if (this.interval() !== 'year' || !plan.purchasable) return null;
+    const index = bracketIndexForSubscribers(plan.key, this.subscribers());
+    if (index === null) return null;
+    const total = this.currency.format(annualPriceForQuantity(plan.key, index));
+    return `Billed annually as ${total} · ${this.annualBadge}`;
   }
 
   /** The Free tier's $0, formatted in the active currency (shown when the slider sits above 1,000). */

@@ -167,6 +167,16 @@ describe('Usage Limits System', () => {
       expect(ent.subscribers).toBe(Number.POSITIVE_INFINITY);
       expect(ent.emails).toBe(Number.POSITIVE_INFINITY);
     });
+
+    it('formats the annual price (10× monthly) on the year interval, with caps unchanged', () => {
+      const g1 = getPlanLimits('grassroots', 1, 'year');
+      expect(g1.price).toBe('$290/year');
+      expect(g1.subscribers).toBe(1_000);
+      expect(g1.emails).toBe(12_000); // email caps stay monthly regardless of billing interval
+
+      expect(getPlanLimits('movement', 8, 'year').price).toBe('$3650/year');
+      expect(getPlanLimits('free', 1, 'year').price).toBe('$0/month');
+    });
   });
 
   it('triggers a storage capacity alert when uploaded files exceed the plan quota', async () => {

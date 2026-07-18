@@ -1,6 +1,7 @@
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import {
+  annualPriceForQuantity,
   bracketForQuantity,
   bracketIndexForSubscribers,
   emailCapForQuantity,
@@ -11,6 +12,7 @@ import {
   PLANS_BY_KEY,
   startingPriceLabel,
   subscriberCapForQuantity,
+  type BillingInterval,
   type PlanKey,
 } from '@common';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -43,9 +45,15 @@ function orUnlimited(value: number | null): number {
  * Bracket-aware plan limits at a given Stripe `quantity` (defaults to 1 — the lowest bracket).
  * Seats/storage stay flat per tier (unrelated to subscriber count); subscribers/emails/price
  * come from the bracket the quantity resolves to. Enterprise (`pricing: null`) has no ladder —
- * subscribers/emails/price fall back to "unlimited"/"Custom" as before.
+ * subscribers/emails/price fall back to "unlimited"/"Custom" as before. The caps themselves are
+ * interval-independent (email caps are always monthly) — `interval` only changes the price
+ * string ('$29/month' vs '$290/year').
  */
-export function getPlanLimits(planName: string | null | undefined, quantity = 1): PlanLimits {
+export function getPlanLimits(
+  planName: string | null | undefined,
+  quantity = 1,
+  interval: BillingInterval = 'month',
+): PlanLimits {
   const plan = getPlanDef(planName) ?? PLANS_BY_KEY.free;
 
   if (!plan.pricing) {
@@ -59,8 +67,14 @@ export function getPlanLimits(planName: string | null | undefined, quantity = 1)
   }
 
   const bracket = bracketForQuantity(plan.key, quantity);
+  const price =
+    bracket.price === 0
+      ? '$0/month'
+      : interval === 'year'
+        ? `$${annualPriceForQuantity(plan.key, quantity)}/year`
+        : `$${bracket.price}/month`;
   return {
-    price: bracket.price === 0 ? '$0/month' : `$${bracket.price}/month`,
+    price,
     subscribers: subscriberCapForQuantity(plan.key, quantity),
     seats: orUnlimited(plan.seats),
     emails: emailCapForQuantity(plan.key, quantity),
@@ -278,13 +292,23 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
         await syncSubscriptionQuantity(tenantId, clamped);
       }
     } else if (targetQuantity > billedQuantity) {
-      // List grew into a higher bracket — notify, then adjust Stripe immediately
-      // (proration_behavior: 'none' — the new amount bills starting next cycle).
+      // List grew into a higher bracket — notify, then adjust Stripe immediately. On monthly,
+      // the new amount bills starting next cycle (proration 'none'); on annual, the prorated
+      // difference for the rest of the year is invoiced right away (see subscription-sync.ts).
+      const billingInterval: BillingInterval = tenant['subscription_interval'] === 'year' ? 'year' : 'month';
       const flag = bracketUpFlag(targetQuantity);
       if (!alertSettings[flag]) {
         alertSettings[flag] = true;
         settingsChanged = true;
-        await sendBracketUpEmail(tenantId, tenant['name'] as string, plan.key, targetQuantity, adminsList, db);
+        await sendBracketUpEmail(
+          tenantId,
+          tenant['name'] as string,
+          plan.key,
+          targetQuantity,
+          billingInterval,
+          adminsList,
+          db,
+        );
       }
       await syncSubscriptionQuantity(tenantId, targetQuantity);
     } else if (targetQuantity < billedQuantity) {
@@ -409,12 +433,15 @@ The pplCRM team`;
   await sendToAdmins(admins, subject, text, html, tenantId, db);
 }
 
-/** "Your list grew into the next bracket" email — sent once per bracket via the `bracket_up_N` dedup flag. */
+/** "Your list grew into the next bracket" email — sent once per bracket via the `bracket_up_N`
+ * dedup flag. Wording follows the billing interval: monthly bills the new bracket next cycle;
+ * annual invoices the prorated difference for the rest of the year immediately. */
 async function sendBracketUpEmail(
   tenantId: string,
   tenantName: string,
   planKey: PlanKey,
   targetQuantity: number,
+  interval: BillingInterval,
   adminsCache: { email: string; first_name: string }[],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- BigInt tenant_id filter needs an untyped handle; see pplcrm-any-exceptions
   db: Kysely<any>,
@@ -424,10 +451,17 @@ async function sendBracketUpEmail(
   const bracket = bracketForQuantity(planKey, targetQuantity);
   const billingPageUrl = `${env.appUrl}/workspace/billing`;
 
+  const priceText =
+    interval === 'year' ? `$${annualPriceForQuantity(planKey, targetQuantity)}/year` : `$${bracket.price}/month`;
+  const timingText =
+    interval === 'year'
+      ? `you'll now be billed ${priceText} for up to ${bracket.upTo.toLocaleString()} emailable subscribers, and the prorated difference for the remainder of your current year has been charged`
+      : `starting next billing cycle, you'll be billed ${priceText} for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle`;
+
   const subject = `Your ${plan.name} plan is moving to a new price bracket`;
   const text = `Hi,
 
-Your organization "${tenantName}" has grown past your current bracket on the ${plan.name} plan. Starting next billing cycle, you'll be billed $${bracket.price}/month for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle.
+Your organization "${tenantName}" has grown past your current bracket on the ${plan.name} plan. As a result, ${timingText}.
 
 Manage your subscription here: ${billingPageUrl}
 
@@ -436,7 +470,7 @@ The pplCRM team`;
 
   const html = `<h2>Your plan is moving to a new price bracket</h2>
 <p>Hi,</p>
-<p>Your organization <strong>${tenantName}</strong> has grown past your current bracket on the <strong>${plan.name}</strong> plan. Starting next billing cycle, you'll be billed <strong>$${bracket.price}/month</strong> for up to ${bracket.upTo.toLocaleString()} emailable subscribers. Nothing changes mid-cycle.</p>
+<p>Your organization <strong>${tenantName}</strong> has grown past your current bracket on the <strong>${plan.name}</strong> plan. As a result, ${timingText.replace(priceText, `<strong>${priceText}</strong>`)}.</p>
 <div class="btn-container">
   <a href="${billingPageUrl}" class="btn">Manage billing</a>
 </div>`;

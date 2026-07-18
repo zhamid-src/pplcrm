@@ -40,6 +40,7 @@ describe('BillingRouter', () => {
       subscriberCap: 2500,
       emailCap: 30000,
       monthlyPrice: 29,
+      interval: 'month' as const,
       tierMax: 11,
     };
     const spy = vi.spyOn(BillingController.prototype, 'getUsage').mockResolvedValue(mockUsage);
@@ -63,8 +64,39 @@ describe('BillingRouter', () => {
     } as any);
     const result = await caller.createCheckout({ plan: 'grassroots' });
 
-    expect(spy).toHaveBeenCalledWith({ tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' }, 'grassroots');
+    expect(spy).toHaveBeenCalledWith(
+      { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
+      'grassroots',
+      'month', // interval defaults to monthly when omitted
+    );
     expect(result).toEqual({ url: 'https://checkout.example.com' });
+  });
+
+  it('should pass the annual interval through to createCheckoutSession', async () => {
+    const spy = vi
+      .spyOn(BillingController.prototype, 'createCheckoutSession')
+      .mockResolvedValue({ url: 'https://checkout.example.com' } as any);
+
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+    await caller.createCheckout({ plan: 'movement', interval: 'year' });
+
+    expect(spy).toHaveBeenCalledWith(
+      { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
+      'movement',
+      'year',
+    );
+  });
+
+  it('should reject createCheckout with an invalid interval', async () => {
+    const caller = BillingRouter.createCaller({
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
+    } as any);
+
+    await expect(caller.createCheckout({ plan: 'grassroots', interval: 'week' } as any)).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
   });
 
   it('should reject createCheckout with an invalid plan', async () => {
@@ -118,6 +150,15 @@ describe('BillingRouter', () => {
       { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
       'grassroots',
       3,
+      'month',
+    );
+
+    await caller.activateMockPlan({ plan: 'grassroots', quantity: 3, interval: 'year' });
+    expect(activateSpy).toHaveBeenLastCalledWith(
+      { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
+      'grassroots',
+      3,
+      'year',
     );
 
     await caller.cancelMockPlan();
@@ -138,6 +179,7 @@ describe('BillingRouter', () => {
       { tenant_id: '1', user_id: '1', session_id: 's1', role: 'owner' },
       'movement',
       undefined,
+      'month',
     );
   });
 

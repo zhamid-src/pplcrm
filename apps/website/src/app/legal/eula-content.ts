@@ -11,7 +11,7 @@ export const EULA_DOC: LegalDoc = {
   title: 'End user license agreement',
   intro:
     'The agreement between you and pplCRM when you use the service. Plain language where the law allows it, and no surprises hiding in the numbered clauses.',
-  updated: 'July 17, 2026',
+  updated: 'July 18, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -49,7 +49,8 @@ export const EULA_DOC: LegalDoc = {
       kind: 'list',
       items: [
         'Current plans, prices and limits are on the [pricing page](/pricing). Paid plans are billed in US dollars through Stripe; prices shown in other currencies are estimates only. Applicable sales taxes are calculated at checkout.',
-        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins and the new bracket price applies from your next billing cycle. If your count shrinks, the price drops at the next cycle automatically.',
+        'Paid plans can be billed monthly or annually. Annual billing is paid up front for the year at 10× the monthly price — two months free — and renews yearly unless canceled.',
+        'Paid plans are metered on emailable subscribers, not stored contacts. When your subscriber count crosses into a new bracket, we email your admins. On monthly billing the new bracket price applies from your next billing cycle; on annual billing we charge the prorated difference for the remainder of your year right away. If your count shrinks, the price drops at the next renewal automatically.',
         'The free plan is free indefinitely, within its published limits (subscriber, sending, seat and storage caps). We may adjust free-plan limits with notice; we will never retroactively charge you.',
         'We may change paid pricing with at least 30 days’ notice; changes take effect at your next billing cycle, and you can cancel before they do.',
         'Downgrading or lapsing never locks your data. Reading and exporting stay available regardless of plan; features above your plan simply stop being editable.',

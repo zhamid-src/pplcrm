@@ -35,6 +35,21 @@
       <span>1,000</span>
       <span>200,000</span>
     </div>
+
+    <!-- Monthly / Annual billing toggle -->
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-line pt-4">
+      <div role="tablist" class="tabs tabs-boxed tabs-sm">
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'month'" (click)="setInterval('month')">
+          Monthly
+        </button>
+        <button role="tab" class="tab" [class.tab-active]="interval() === 'year'" (click)="setInterval('year')">
+          Annual
+        </button>
+      </div>
+      <span class="rounded-full bg-success/12 px-2.5 py-1 text-[11px] font-semibold text-success">
+        Annual billing: {{ annualBadge }}
+      </span>
+    </div>
   </div>
 
   <!-- Plan cards -->
@@ -54,9 +69,11 @@
         @if (!overMax(tier)) {
         <div class="text-[30px] font-bold tabular-nums leading-none">{{ priceLabel(tier) }}</div>
         <div class="mt-1.5 text-[12px] text-base-content/50">
-          {{ tier.cadence }} · at {{ subscribersLabel() }} subscribers
+          {{ cadence(tier) }} · at {{ subscribersLabel() }} subscribers
         </div>
-        } @else if (tier.key === 'free') {
+        @if (annualNote(tier); as note) {
+        <div class="mt-1 text-[12px] font-medium text-success">{{ note }}</div>
+        } } @else if (tier.key === 'free') {
         <div class="text-[30px] font-bold tabular-nums leading-none text-base-content/35">{{ zeroPrice() }}</div>
         <div class="mt-1.5 text-[12px] text-base-content/50">Covers up to 1,000 subscribers</div>
         } @else {
@@ -119,7 +136,7 @@
           >
             <div class="text-[15px] font-semibold">{{ tier.name }}</div>
             <div class="mt-0.5 text-[12.5px] font-normal tabular-nums text-base-content/60">
-              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ tier.cadence }} } @else if (tier.key === 'free') { Up to
+              @if (!overMax(tier)) { {{ priceLabel(tier) }} {{ cadence(tier) }} } @else if (tier.key === 'free') { Up to
               1,000 subscribers } @else { Contact us }
             </div>
           </th>

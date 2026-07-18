@@ -156,12 +156,16 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
         text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
       },
       { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
       {
         kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified. On **monthly** billing the new amount takes effect on your **next billing cycle**, never mid-cycle. On **annual** billing the prorated difference for the remainder of your year is charged right away — otherwise a year-long prepay would make growth free until renewal. If your list shrinks back below a bracket, the lower price reconciles at the next renewal on either interval rather than refunding the current period.',
       },
       {
         kind: 'callout',

@@ -25,9 +25,13 @@ function asTenantSubscriptionRow(row: unknown): TenantSubscriptionRow | undefine
  *   `tenants.subscription_quantity` directly.
  * - **Live mode:** fetches the live subscription; if its single item's quantity already equals
  *   `quantity`, this is an idempotent no-op. Otherwise it calls `stripe.subscriptions.update`
- *   with `proration_behavior: 'none'` (the new amount bills starting next cycle, never
- *   mid-cycle) and writes the column optimistically — the `customer.subscription.updated`
- *   webhook re-syncs it authoritatively afterward.
+ *   and writes the column optimistically — the `customer.subscription.updated` webhook
+ *   re-syncs it authoritatively afterward. Proration depends on the billing interval:
+ *   - **Monthly** (and every decrease): `proration_behavior: 'none'` — the new amount bills
+ *     starting next cycle, never mid-cycle. Next cycle is at most a month away.
+ *   - **Annual quantity increase**: `proration_behavior: 'always_invoice'` — Stripe invoices
+ *     the prorated difference for the remainder of the year immediately. Deferring to renewal
+ *     would let a tenant buy annual at the lowest bracket, then grow for up to a year free.
  *
  * Split out of `controller.ts` into its own module (rather than exported from there) so
  * `usage-limits.ts` can import it without creating an import cycle with `controller.ts` (which
@@ -67,9 +71,11 @@ export async function syncSubscriptionQuantity(tenantId: string, quantity: numbe
     return; // Already in sync — idempotent no-op.
   }
 
+  const isAnnualIncrease = item.price?.recurring?.interval === 'year' && quantity > (item.quantity ?? 0);
+
   await getStripe().subscriptions.update(subscriptionId, {
     items: [{ id: item.id, quantity }],
-    proration_behavior: 'none',
+    proration_behavior: isAnnualIncrease ? 'always_invoice' : 'none',
   });
 
   await tenantsRepo.update({

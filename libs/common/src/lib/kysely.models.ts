@@ -706,6 +706,9 @@ interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
   /** Billed Stripe quantity (1-based bracket index — see libs/common/src/lib/billing/plans.ts).
    * Authoritatively synced from the Stripe webhook; defaults to 1. */
   subscription_quantity: number;
+  /** Billing interval of the current subscription: 'month' (default) or 'year' (annual = 10×
+   * monthly, "2 months free"). Synced from the Stripe price on webhooks. */
+  subscription_interval: string;
   subscription_ends_at: Timestamp | null;
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;

@@ -8187,6 +8187,17 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
   const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
   return `${currencyPriceSymbol(code)}${number}`;
 }
+
+/** Format an amount as a price with exactly two fractional digits (e.g. `$24.17`, `C$33.08`).
+ * Used for annual billing's monthly-equivalent display, where the cents are the honest part of
+ * the number — everything else on the site stays whole-unit via `formatCurrency`. */
+export function formatCurrencyExact(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
 ````
 
 ## File: libs/common/src/lib/help/articles/contacts.ts
@@ -12253,6 +12264,9 @@ interface Tenants extends Omit<RecordType, 'createdby_id'>, AddressType {
   /** Billed Stripe quantity (1-based bracket index — see libs/common/src/lib/billing/plans.ts).
    * Authoritatively synced from the Stripe webhook; defaults to 1. */
   subscription_quantity: number;
+  /** Billing interval of the current subscription: 'month' (default) or 'year' (annual = 10×
+   * monthly, "2 months free"). Synced from the Stripe price on webhooks. */
+  subscription_interval: string;
   subscription_ends_at: Timestamp | null;
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;
@@ -13029,12 +13043,16 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
         text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
       },
       { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
       {
         kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, and the new amount takes effect on your **next billing cycle**, never mid-cycle. If your list shrinks back below a bracket, the lower price also reconciles at the next cycle boundary rather than refunding the current one.',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified. On **monthly** billing the new amount takes effect on your **next billing cycle**, never mid-cycle. On **annual** billing the prorated difference for the remainder of your year is charged right away — otherwise a year-long prepay would make growth free until renewal. If your list shrinks back below a bracket, the lower price reconciles at the next renewal on either interval rather than refunding the current period.',
       },
       {
         kind: 'callout',
@@ -14327,9 +14345,15 @@ export {
   subscriberCapForQuantity,
   emailCapForQuantity,
   priceForQuantity,
+  annualPriceForQuantity,
+  monthlyEquivalentUsd,
   startingPriceLabel,
   startingPriceUsd,
   priceLabelAt,
+  cadenceLabel,
+  BILLING_INTERVALS,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
   GATED_FEATURES,
   planAllowsFeature,
   DATA_RESIDENCY_REGIONS,
@@ -14339,6 +14363,7 @@ export type {
   PlanKey,
   GatedFeature,
   PurchasablePlanKey,
+  BillingInterval,
   PlanDef,
   PriceBracket,
   TierPricing,
@@ -14354,6 +14379,7 @@ export {
   currencyForCountry,
   convertFromUsd,
   formatCurrency,
+  formatCurrencyExact,
   currencyPriceSymbol,
 } from './lib/billing/currency';
 export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
@@ -14447,6 +14473,15 @@ export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
  *  - Enterprise is dropped as a priced column (contact-us footnote only); the `enterprise`
  *    PlanKey stays valid internally for custom/negotiated tenants — `pricing: null` marks it.
  *  - All prices are USD.
+ *  - Annual billing (added 2026-07-18): each purchasable tier also has a yearly Stripe price at
+ *    exactly 10× the monthly unit amounts — "2 months free" (`ANNUAL_PRICE_MULTIPLIER`). The
+ *    graduated ladder is linear in quantity, so 10× holds at every bracket and the whole
+ *    quantity-as-bracket-index mechanism carries over unchanged. Display is monthly-equivalent
+ *    with cents ("$24.17 per month, billed annually as $290") so every number stays checkable;
+ *    monthly remains the default toggle state everywhere (electoral campaigns end in November —
+ *    don't nudge them into prepay). Mid-year bracket GROWTH on an annual subscription is
+ *    invoiced prorated immediately (see backend subscription-sync.ts); downgrades still defer
+ *    to renewal on both intervals. Send/usage caps stay MONTHLY regardless of billing interval.
  *
  * Market calibration (competitive research 2026-07-14; final ladder locked 2026-07-15, monthly
  * billing): Grassroots beats every full-suite competitor at every count — $69 vs $75 (Mailchimp
@@ -14464,6 +14499,14 @@ export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
  *  - Movement: [{ up_to: 1, unit_amount: 5500 }, { up_to: 7, unit_amount: 3500 }, { up_to: 'inf', unit_amount: 10000 }]
  *    → qty 1 = $55, qty 2–7 add $35/step (→ $265), qty 8–11 add $100/step (→ $665; same
  *    piecewise step change at the 25,000-subscriber boundary — see MOVEMENT_BRACKETS below).
+ *  - Grassroots annual (interval = year): [{ up_to: 1, unit_amount: 29000 }, { up_to: 7, unit_amount: 20000 }, { up_to: 'inf', unit_amount: 70000 }]
+ *  - Movement annual (interval = year): [{ up_to: 1, unit_amount: 55000 }, { up_to: 7, unit_amount: 35000 }, { up_to: 'inf', unit_amount: 100000 }]
+ *    (exactly 10× the monthly unit amounts. Same graduated shape, same quantity semantics,
+ *    exclusive tax on the price. Created 2026-07-18 in BOTH modes — test-mode IDs are set in
+ *    .env.production, live-mode IDs are in its comments for the launch swap. A default billing
+ *    portal configuration with subscription_update enabled (price switches only, proration
+ *    always_invoice) exists in test mode so monthly customers can self-switch to annual; the
+ *    live-mode portal needs the same configuration at launch alongside the sk_live swap.)
  *
  * Internal plan keys are persisted in `tenants.subscription_plan` and mapped to Stripe
  * price IDs. Display names are intentionally allowed to differ from keys, but here they are
@@ -14481,12 +14524,24 @@ export type PlanKey = 'free' | 'grassroots' | 'movement' | 'enterprise';
 export const PURCHASABLE_PLAN_KEYS = ['grassroots', 'movement'] as const;
 export type PurchasablePlanKey = (typeof PURCHASABLE_PLAN_KEYS)[number];
 
+/** Billing intervals a purchasable plan can be bought on. Monthly is the default everywhere;
+ * annual is 10× the monthly bracket price — "2 months free". */
+export const BILLING_INTERVALS = ['month', 'year'] as const;
+export type BillingInterval = (typeof BILLING_INTERVALS)[number];
+
+/** Months a customer doesn't pay for on annual billing — the marketing claim "2 months free". */
+export const ANNUAL_MONTHS_FREE = 2;
+
+/** Annual price = monthly bracket price × this. Derived from ANNUAL_MONTHS_FREE so the
+ * marketing claim and the multiplier can't drift apart. */
+export const ANNUAL_PRICE_MULTIPLIER = 12 - ANNUAL_MONTHS_FREE;
+
 /** One row of a tier's price ladder. `upTo` is the inclusive emailable-subscriber cap; the
  * bracket's position in `TierPricing.brackets` (1-based) is the Stripe `quantity` billed for it. */
 export interface PriceBracket {
   /** Emailable-subscriber cap of this bracket (inclusive). */
   readonly upTo: number;
-  /** USD/month at this bracket. */
+  /** USD/month at this bracket (annual billing charges ×`ANNUAL_PRICE_MULTIPLIER` per year). */
   readonly price: number;
 }
 
@@ -14606,6 +14661,7 @@ export const PLANS: readonly PlanDef[] = [
     features: [
       'Everything in Free, plus:',
       'Scales smoothly from $29/month as your list grows',
+      'Save 2 months with annual billing',
       'Up to 100,000 email subscribers · 12× emails/month',
       '5 staff seats · 10 GB storage',
       'Forms & donations',
@@ -14629,6 +14685,7 @@ export const PLANS: readonly PlanDef[] = [
     features: [
       'Everything in Grassroots, plus:',
       'Scales smoothly from $55/month as your list grows',
+      'Save 2 months with annual billing',
       'Up to 200,000 email subscribers · 12× emails/month',
       'Unlimited staff seats & volunteers · 200 GB storage',
       'Canvassing & deliveries companion apps',
@@ -14751,39 +14808,68 @@ export function priceForQuantity(key: PlanKey, qty: number): number {
   return bracketForQuantity(key, qty).price;
 }
 
+/** USD/year price for a Stripe quantity on a plan — exactly `ANNUAL_PRICE_MULTIPLIER`× the
+ * monthly bracket price ("2 months free"). */
+export function annualPriceForQuantity(key: PlanKey, qty: number): number {
+  return priceForQuantity(key, qty) * ANNUAL_PRICE_MULTIPLIER;
+}
+
+/** Monthly-equivalent of an annual USD total, rounded to cents (290 → 24.17). The
+ * customer-facing framing for annual prices: "$24.17 per month, billed annually as $290". */
+export function monthlyEquivalentUsd(annualUsd: number): number {
+  return Math.round((annualUsd / 12) * 100) / 100;
+}
+
+/** "$29" for whole dollars, "$24.17" for cent amounts (monthly-equivalents). */
+function usdLabel(amount: number): string {
+  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`;
+}
+
+/** Cadence line for surfaces with a monthly/annual toggle. Non-purchasable plans keep their
+ * static cadence ('forever' / 'contact us'); paid plans read 'per month' or
+ * 'per month, billed annually'. */
+export function cadenceLabel(plan: PlanDef, interval: BillingInterval): string {
+  if (!plan.purchasable) return plan.cadence;
+  return interval === 'year' ? 'per month, billed annually' : plan.cadence;
+}
+
 /** Short "starting at" label for a plan card, e.g. '$0' (free), 'From $29' (grassroots),
- * 'From $55' (movement), 'Custom' (enterprise). */
-export function startingPriceLabel(plan: PlanDef): string {
-  if (!plan.pricing) return 'Custom';
-  const first = plan.pricing.brackets[0];
-  if (!first) {
-    // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
-    throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
-  }
-  return first.price === 0 ? '$0' : `From $${first.price}`;
+ * 'From $55' (movement), 'Custom' (enterprise). With `interval: 'year'`, paid plans show the
+ * monthly-equivalent of the annual price, e.g. 'From $24.17'. */
+export function startingPriceLabel(plan: PlanDef, interval: BillingInterval = 'month'): string {
+  const usd = startingPriceUsd(plan, interval);
+  if (usd === null) return 'Custom';
+  return usd === 0 ? '$0' : `From ${usdLabel(usd)}`;
 }
 
 /** Numeric USD "starting at" price for a plan (0 = free, `null` = enterprise/custom, no ladder).
  * The numeric sibling of `startingPriceLabel`, for surfaces that convert prices to another
- * display currency (the marketing site's home teaser). */
-export function startingPriceUsd(plan: PlanDef): number | null {
+ * display currency (the marketing site's home teaser). With `interval: 'year'`, returns the
+ * monthly-equivalent of the annual price. */
+export function startingPriceUsd(plan: PlanDef, interval: BillingInterval = 'month'): number | null {
   if (!plan.pricing) return null;
   const first = plan.pricing.brackets[0];
   if (!first) {
     // Unreachable: every non-null TierPricing in PLANS has at least one bracket.
     throw new Error(`unreachable: plan "${plan.key}" pricing has no brackets`);
   }
+  if (interval === 'year') return monthlyEquivalentUsd(first.price * ANNUAL_PRICE_MULTIPLIER);
   return first.price;
 }
 
 /** Live price label for a plan at a given emailable-subscriber count, e.g. '$69' (in-ladder),
- * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). Used by the
- * website pricing slider and the frontend billing upgrade cards. */
-export function priceLabelAt(plan: PlanDef, subscribers: number): string {
+ * 'Contact us' (past the tier's max bracket), 'Custom' (enterprise, no ladder). With
+ * `interval: 'year'`, the label is the monthly-equivalent of the annual price ('$57.50').
+ * Used by the website pricing slider and the frontend billing upgrade cards. */
+export function priceLabelAt(plan: PlanDef, subscribers: number, interval: BillingInterval = 'month'): string {
   if (!plan.pricing) return 'Custom';
   const index = bracketIndexForSubscribers(plan.key, subscribers);
   if (index === null) return 'Contact us';
-  return `$${priceForQuantity(plan.key, index)}`;
+  const monthly = priceForQuantity(plan.key, index);
+  if (interval === 'year') {
+    return usdLabel(monthlyEquivalentUsd(monthly * ANNUAL_PRICE_MULTIPLIER));
+  }
+  return usdLabel(monthly);
 }
 
 /** Capability ordering of the tiers — used by `planAllowsFeature` for min-plan gating. */

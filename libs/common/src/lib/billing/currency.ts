@@ -113,3 +113,14 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
   const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
   return `${currencyPriceSymbol(code)}${number}`;
 }
+
+/** Format an amount as a price with exactly two fractional digits (e.g. `$24.17`, `C$33.08`).
+ * Used for annual billing's monthly-equivalent display, where the cents are the honest part of
+ * the number — everything else on the site stays whole-unit via `formatCurrency`. */
+export function formatCurrencyExact(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
