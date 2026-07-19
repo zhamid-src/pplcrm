@@ -358,9 +358,12 @@
     } }
   </div>
   }
+  <!-- Refetch (filter/sort/page) dims the stale rows under the progress bar; first load has nothing to dim -->
   <div
     #scroller
-    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl"
+    class="flex-1 overflow-auto border border-base-300 rounded relative rounded-xl transition-opacity duration-300"
+    [class.opacity-50]="isLoading() && hasLoaded()"
+    [class.pointer-events-none]="isLoading() && hasLoaded()"
     (scroll)="onScroll($event)"
   >
     <table #gridTable class="table pc-table w-full">
@@ -546,7 +549,15 @@
         </tr>
       </thead>
       <tbody class="bg-base-100">
-        @if (hasLoaded() && hasActiveFilters() && !visibleTableRows().length) {
+        <!-- First-load skeleton rows (design §4: skeleton for first paint); refetches keep
+             the stale rows dimmed instead -->
+        @if (!hasLoaded()) { @for (i of skeletonRowList; track i) {
+        <tr>
+          <td [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)" class="px-3 py-2">
+            <div class="skeleton h-6 w-full"></div>
+          </td>
+        </tr>
+        } } @if (hasLoaded() && hasActiveFilters() && !visibleTableRows().length) {
         <tr>
           <td
             [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"

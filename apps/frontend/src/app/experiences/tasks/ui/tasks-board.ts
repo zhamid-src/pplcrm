@@ -51,6 +51,12 @@ export class TasksBoard implements OnInit {
   protected readonly columns = TASK_BOARD_STATUSES;
   protected readonly statusLabels = TASK_STATUS_LABELS;
 
+  /** True once the first board fetch has settled — guards the column skeletons. */
+  protected readonly loaded = signal(false);
+
+  /** Placeholder cards for the first-load skeleton, per column. */
+  protected readonly skeletonCards = Array.from({ length: 3 }, (_, i) => i);
+
   protected readonly tasks = signal<BoardTask[]>([]);
   protected readonly usersById = signal<Map<string, string>>(new Map());
   protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
@@ -135,6 +141,8 @@ export class TasksBoard implements OnInit {
       this.tasks.set(items);
     } catch (err) {
       this.alerts.showError(getUserErrorMessage(err, 'Could not load the task board. Please try again.'));
+    } finally {
+      this.loaded.set(true);
     }
   }
 

@@ -25,6 +25,9 @@ export class EmailFoldersStore {
 
   public isLoading = this._loading.visible;
 
+  /** Ungated fetch-in-flight flag — drives skeleton-vs-empty in the email list. */
+  public isFetching = this._loading.active;
+
   public async loadAllFolders(): Promise<EmailFolderType[]> {
     const folders = (await this.svc.getFolders()) as EmailFolderType[];
     this.emailFolders.set(folders);

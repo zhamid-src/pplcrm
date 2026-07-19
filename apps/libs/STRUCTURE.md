@@ -222,6 +222,1031 @@ libs/
 
 # Files
 
+## File: libs/common/src/lib/help/articles/data-management.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const DATA_ARTICLES: HelpArticle[] = [
+  {
+    id: 'import',
+    category: 'data',
+    title: 'Import from CSV',
+    summary:
+      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps. Matched, tagged, and deduplicated.',
+    keywords: [
+      'import',
+      'csv',
+      'spreadsheet',
+      'upload data',
+      'migrate',
+      'bulk add',
+      'excel',
+      'wizard',
+      'companies',
+      'households',
+      'tasks',
+    ],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+    blocks: [
+      {
+        kind: 'p',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars. Either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
+      },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'list',
+        items: [
+          'Use a CSV with a header row. Column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
+          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
+          'For companies and tasks the wizard needs a mapped **name** column. Rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
+        ],
+      },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
+          },
+          {
+            title: 'Map columns',
+            detail:
+              'Each column gets a best-guess field match. Review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
+          },
+          {
+            title: 'Review',
+            detail:
+              'For people, duplicates are matched by email, the same identity rule used everywhere in pplCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works. It lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid (or just your selection) as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it, filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready. The export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export. The CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping. They split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Read the confidence and the why-flagged reason',
+            detail:
+              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
+          },
+          {
+            title: 'Merge into one, or Not duplicates',
+            detail:
+              'Merging fills blanks on the record you keep from the one you remove (it never overwrites a value that is already there), and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good. The confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar. Same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/grids.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const GRIDS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'grid-basics',
+    category: 'grids',
+    title: 'Working in grids',
+    summary: 'Every list in pplCRM is the same powerful grid. Learn it once and you know it everywhere.',
+    keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
+    related: ['filters', 'bulk-actions', 'import', 'export'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'People, companies, tasks, donations. Every collection in pplCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
+      },
+      { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
+      {
+        kind: 'list',
+        items: [
+          '**Refresh**: reload the grid without touching your filters.',
+          '**Undo / Redo**: step your inline edits backward and forward.',
+          '**Import CSV / Export CSV**: see [Import from CSV](/help/import) and [Export your data](/help/export).',
+          '**Tag, issue, and list filters**: narrow to matching rows; see [Filters and the query builder](/help/filters).',
+          '**Advanced filters and the query builder**: per-column conditions or full and/or logic.',
+          '**Columns**: choose which columns are visible.',
+          '**Archive** (where offered): flip between active and archived records.',
+          '**New {record}** ("New person", "New household", …): the solid button at the far right creates a record of this type.',
+        ],
+      },
+      { kind: 'h2', id: 'open-detail', text: 'Opening records' },
+      {
+        kind: 'p',
+        text: 'The first column is always a link. Click the name to open the full record. The grid remembers your filters, page, and scroll position, so the breadcrumb back returns you exactly where you left off, and the record page gains previous/next arrows for the same filtered set.',
+      },
+      { kind: 'h2', id: 'inline-edit', text: 'Edit without leaving the grid' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Double-click an editable cell', detail: 'Or move to it with the arrow keys and press `Enter`.' },
+          {
+            title: 'Change the value and confirm',
+            detail: 'The cell saves immediately and flashes green so you know it landed.',
+          },
+          {
+            title: 'Change your mind?',
+            detail: 'The toolbar’s undo arrow reverses your last inline edit; redo brings it back.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cell not editable?',
+        text: 'Some columns are read-only on purpose: computed values, or fields that need the full form. Open the record to change those.',
+      },
+      { kind: 'h2', id: 'columns', text: 'Make the grid yours' },
+      {
+        kind: 'list',
+        items: [
+          'Hide columns you never use from the **Columns** menu: fewer columns, faster scanning.',
+          'Drag a column edge to resize it.',
+          'An empty grid always tells you why it is empty and what to do next. For example, “No results match these filters” with a one-click **Clear all filters**.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'filters',
+    category: 'grids',
+    title: 'Filters and the query builder',
+    summary:
+      'From one-click tag filters to full and/or queries, and how active filters always stay visible as removable chips.',
+    keywords: ['filter', 'query builder', 'advanced filter', 'chips', 'conditions', 'segment', 'and or', 'narrow'],
+    related: ['grid-basics', 'lists', 'tags-issues', 'search'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Filters narrow a grid to the rows you care about, and pplCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
+      },
+      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: the dashed pills' },
+      {
+        kind: 'list',
+        items: [
+          '**+ Add filter**: pick a field, an operator, and a value; the condition lands as one removable chip.',
+          '**Tags**: check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
+          '**Issues**: same mechanics as tags, for issue interests.',
+          '**Lists**: show only the members of one [list](/help/lists).',
+        ],
+      },
+      { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
+      {
+        kind: 'p',
+        text: '**Advanced Filters** opens a filter row under the column headers: type a condition per column (a name fragment here, a city there), and the grid narrows to rows matching all of them.',
+      },
+      { kind: 'h2', id: 'builder', text: 'The query builder' },
+      {
+        kind: 'p',
+        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups: “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why is one of the filter buttons disabled?',
+        text: 'Per-column filters and the query builder are mutually exclusive. Mixing both would make the result impossible to reason about. Clear one to use the other.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filters follow you into records',
+        text: 'Open a record from a filtered grid and the pager reads “N of M filtered”. `J`/`K` walk exactly the set you filtered, in order.',
+      },
+    ],
+  },
+  {
+    id: 'bulk-actions',
+    category: 'grids',
+    title: 'Selection, bulk actions, and merging',
+    summary:
+      'Select rows to reveal the bulk action bar: tag, export, delete, clone, or merge many records in one motion.',
+    keywords: ['bulk', 'selection', 'select all', 'mass update', 'batch', 'clone', 'merge', 'delete many', 'bulk tag'],
+    related: ['grid-basics', 'duplicates', 'export', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tick the checkbox on one or more rows and a bulk action bar appears, always stating how many rows it will affect. No action is ever a mystery about scale.',
+      },
+      { kind: 'h2', id: 'select-all', text: 'Selecting beyond one page' },
+      {
+        kind: 'p',
+        text: 'The header checkbox selects the visible page. If more rows match your filters, the grid offers **Select all N rows**. One click extends the selection to every match, and the bar confirms “All N rows are selected.”',
+      },
+      { kind: 'h2', id: 'actions', text: 'What you can do with a selection' },
+      {
+        kind: 'list',
+        items: [
+          '**Add tag**: type a tag name and apply it to every selected row at once.',
+          '**Export**: download the selected rows as CSV.',
+          '**Delete**: remove the selected rows, after a confirmation that states the count.',
+          '**Clone**: available with exactly one row selected; duplicates it as a starting point.',
+          '**Merge**: available with exactly two rows selected; combines them into one record.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Bulk delete is permanent',
+        text: 'The confirmation dialog tells you exactly how many records are about to go. Read the number. There is no undo for delete.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Merging more than a pair?',
+        text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database, better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/segmentation.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const SEGMENTATION_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tags-issues',
+    category: 'segmentation',
+    title: 'Tags and issues',
+    summary:
+      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
+    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
+    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tags are free-form labels (**community-leader**, **major-donor**, **lawn-sign**) that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags. They are first-class status fields on the person; set them from the person’s standing card.)',
+      },
+      { kind: 'h2', id: 'apply', text: 'Apply tags' },
+      {
+        kind: 'list',
+        items: [
+          'On a profile: add or remove tags directly on the record.',
+          'In bulk: select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
+          'On import: tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
+        ],
+      },
+      { kind: 'h2', id: 'use', text: 'Put them to work' },
+      {
+        kind: 'p',
+        text: 'Every grid has a tag filter and an issue filter. Check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
+      },
+      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
+      {
+        kind: 'p',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary: how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Rename** updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
+          '**Merge into another tag/issue** ("Move everyone to…") folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
+          '**Delete**: the confirmation names how many applications would be affected, so you never delete a label blind.',
+          'The PEOPLE / PEOPLE INTERESTED count on each row is a door. Click it to open the People grid pre-filtered to that exact tag or issue.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about, not to describe who someone is, which is what tags are for.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'A tag taxonomy that stays useful',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people. Merge the stragglers into one instead of deleting and re-tagging.',
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    category: 'segmentation',
+    title: 'Smart and static lists',
+    summary:
+      'Lists are reusable audiences: smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+    keywords: [
+      'list',
+      'audience',
+      'segment',
+      'static list',
+      'smart list',
+      'dynamic list',
+      'snapshot',
+      'membership',
+      'rule',
+      'query',
+    ],
+    related: ['tags-issues', 'filters', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A list is a saved group of people or households you can reuse anywhere: as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+      },
+      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
+      {
+        kind: 'p',
+        text: 'A smart list is defined by rules in the query builder: “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
+      },
+      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
+      {
+        kind: 'p',
+        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot. Today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Lists](/lists) and click +',
+            detail: 'Name the list something your teammates will recognize in a dropdown.',
+          },
+          {
+            title: 'Pick Smart or Static',
+            detail:
+              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
+          },
+          {
+            title: 'Choose People or Households',
+            detail: 'A list targets one or the other. Pick what you are grouping.',
+          },
+          {
+            title: 'Build the rule',
+            detail:
+              'Compose conditions in the query builder: match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
+          },
+          {
+            title: 'Create it',
+            detail:
+              'The button carries the scale it will act on: “Create smart list (1,284 now)” or “Create static list (snapshot 1,284)”.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
+      {
+        kind: 'list',
+        items: [
+          '**List**: the name is a door. Click it to open People or Households with that list applied as a removable filter chip.',
+          '**Type**: a Smart or Static chip.',
+          '**Of**: People or Households.',
+          '**Definition**: the rule written as a plain sentence.',
+          '**Members**: how many records are in the list right now.',
+          '**Last used in**: the most recent newsletter, form, or turf that used this list.',
+          '**Updated**: when the list last changed.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Deleting a list names what it will affect',
+        text: 'If a list is in use, the delete confirmation names its consumers (the newsletters, forms, and turfs that reference it), so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Lists are how good newsletters start',
+        text: 'A newsletter audience built on a smart list is accurate on send day by definition. See [Create and send a newsletter](/help/newsletters).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/help-content.ts
+````typescript
+import { ADMIN_ARTICLES } from './articles/administration';
+import { CONTACTS_ARTICLES } from './articles/contacts';
+import { DATA_ARTICLES } from './articles/data-management';
+import { ENGAGEMENT_ARTICLES } from './articles/engagement';
+import { GETTING_STARTED_ARTICLES } from './articles/getting-started';
+import { GRIDS_ARTICLES } from './articles/grids';
+import { OUTREACH_ARTICLES } from './articles/outreach';
+import { PRODUCTIVITY_ARTICLES } from './articles/productivity';
+import { SEGMENTATION_ARTICLES } from './articles/segmentation';
+
+import type { HelpArticle, HelpCategory, HelpCategoryId } from './help-types';
+
+/** Display order of the help center's categories. */
+export const HELP_CATEGORIES: HelpCategory[] = [
+  {
+    id: 'getting-started',
+    label: 'Getting started',
+    blurb: 'Your first session: the tour, navigation habits, search, and shortcuts.',
+    icon: 'map',
+  },
+  {
+    id: 'contacts',
+    label: 'People & relationships',
+    blurb: 'People, households, companies, and teams: the heart of the CRM.',
+    icon: 'identification',
+  },
+  {
+    id: 'grids',
+    label: 'Grids & data entry',
+    blurb: 'One grid everywhere: filters, inline editing, selection, and bulk work.',
+    icon: 'table-cells',
+  },
+  {
+    id: 'segmentation',
+    label: 'Tags, issues & lists',
+    blurb: 'Describe people, capture what they care about, and build reusable audiences.',
+    icon: 'label',
+  },
+  {
+    id: 'outreach',
+    label: 'Newsletters & email',
+    blurb: 'Campaigns, the shared inbox, and automations that follow through for you.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'engagement',
+    label: 'Donations, events & forms',
+    blurb: 'Raise money, run events and shifts, and collect signups from the web.',
+    icon: 'currency-dollar',
+  },
+  {
+    id: 'productivity',
+    label: 'Tasks & files',
+    blurb: 'Track the work on a board and keep shared documents one search away.',
+    icon: 'task',
+  },
+  {
+    id: 'data',
+    label: 'Import, export & data quality',
+    blurb: 'Move data in and out by CSV and keep the database free of duplicates.',
+    icon: 'arrow-up-tray',
+  },
+  {
+    id: 'admin',
+    label: 'Account & administration',
+    blurb: 'Profiles, roles and access, workspace configuration, and the audit trail.',
+    icon: 'cog-6-tooth',
+  },
+];
+
+/** Every article, in category display order. */
+export const HELP_ARTICLES: HelpArticle[] = [
+  ...GETTING_STARTED_ARTICLES,
+  ...CONTACTS_ARTICLES,
+  ...GRIDS_ARTICLES,
+  ...SEGMENTATION_ARTICLES,
+  ...OUTREACH_ARTICLES,
+  ...ENGAGEMENT_ARTICLES,
+  ...PRODUCTIVITY_ARTICLES,
+  ...DATA_ARTICLES,
+  ...ADMIN_ARTICLES,
+];
+
+/** Shown as quick links under the search box on the help home page. */
+export const POPULAR_ARTICLE_IDS: string[] = [
+  'welcome',
+  'grid-basics',
+  'filters',
+  'newsletters',
+  'import',
+  'shortcuts',
+];
+
+const ARTICLES_BY_ID: ReadonlyMap<string, HelpArticle> = new Map(HELP_ARTICLES.map((a) => [a.id, a]));
+const CATEGORIES_BY_ID: ReadonlyMap<HelpCategoryId, HelpCategory> = new Map(HELP_CATEGORIES.map((c) => [c.id, c]));
+
+export function getHelpArticle(id: string): HelpArticle | undefined {
+  return ARTICLES_BY_ID.get(id);
+}
+
+export function getHelpCategory(id: HelpCategoryId): HelpCategory | undefined {
+  return CATEGORIES_BY_ID.get(id);
+}
+
+export function articlesInCategory(id: HelpCategoryId): HelpArticle[] {
+  return HELP_ARTICLES.filter((a) => a.category === id);
+}
+
+/**
+ * Related reading for an article: its hand-picked `related` ids first,
+ * topped up with neighbors from the same category, capped at `limit`.
+ */
+export function relatedArticles(article: HelpArticle, limit = 3): HelpArticle[] {
+  const picked: HelpArticle[] = [];
+  const seen = new Set<string>([article.id]);
+
+  for (const id of article.related ?? []) {
+    const found = ARTICLES_BY_ID.get(id);
+    if (found && !seen.has(found.id)) {
+      picked.push(found);
+      seen.add(found.id);
+    }
+  }
+  for (const neighbor of articlesInCategory(article.category)) {
+    if (picked.length >= limit) break;
+    if (!seen.has(neighbor.id)) {
+      picked.push(neighbor);
+      seen.add(neighbor.id);
+    }
+  }
+  return picked.slice(0, limit);
+}
+
+/** Previous/next article within the same category, in display order. */
+export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; prev?: HelpArticle } {
+  const siblings = articlesInCategory(article.category);
+  const index = siblings.findIndex((a) => a.id === article.id);
+  if (index === -1) return {};
+  return {
+    prev: index > 0 ? siblings[index - 1] : undefined,
+    next: index < siblings.length - 1 ? siblings[index + 1] : undefined,
+  };
+}
+````
+
+## File: libs/common/src/lib/help/help-links.ts
+````typescript
+/**
+ * Route classification shared by both apps' rich-text renderers.
+ *
+ * `parseHelpInline` only emits links whose target starts with `/`, so every
+ * route reaching `classifyHelpRoute` is an internal one. This splits those
+ * into in-help article links versus any other in-app route, letting each app
+ * route them through its own navigation (in-help router vs. cross-app link).
+ */
+
+export type HelpRouteTarget =
+  | { kind: 'help'; id: string } // an in-help article link, e.g. /help/dashboard -> id 'dashboard'
+  | { kind: 'app'; path: string }; // any other internal app route, e.g. /people
+
+const HELP_ROUTE = /^\/help\/(.+)$/;
+
+/**
+ * Classifies an internal route (always starting with `/`): `/help/:id` links
+ * become `{ kind: 'help', id }`, everything else `{ kind: 'app', path }`.
+ */
+export function classifyHelpRoute(route: string): HelpRouteTarget {
+  const id = HELP_ROUTE.exec(route)?.[1];
+  if (id !== undefined) {
+    return { kind: 'help', id };
+  }
+  return { kind: 'app', path: route };
+}
+````
+
+## File: libs/common/src/lib/help/help-markdown.ts
+````typescript
+import type { HelpArticle, HelpBlock } from './help-types';
+
+/**
+ * GitHub-flavored Markdown serialization of the typed help content, for the
+ * website's AI-agent surface. Unlike `blockToPlainText`, the inline mini-markup
+ * (`**bold**`, `` `code` ``, `[label](/route)`) is preserved verbatim — agents
+ * benefit from the links and emphasis, so nothing is stripped.
+ */
+
+const KEYS_TABLE_HEADER = ['| Keys | Action |', '| --- | --- |'];
+
+/** One content block as a Markdown fragment. */
+export function blockToMarkdown(block: HelpBlock): string {
+  switch (block.kind) {
+    case 'p':
+      return block.text;
+    case 'h2':
+      return `## ${block.text}`;
+    case 'list':
+      return block.items.map((item, index) => (block.ordered ? `${index + 1}. ${item}` : `- ${item}`)).join('\n');
+    case 'steps':
+      return block.items
+        .map((step, index) => `${index + 1}. **${step.title}**${step.detail ? ` — ${step.detail}` : ''}`)
+        .join('\n');
+    case 'callout':
+      return `> **${block.title}** — ${block.text}`;
+    case 'keys':
+      return [
+        ...KEYS_TABLE_HEADER,
+        ...block.rows.map((row) => `| ${row.keys.map((key) => `\`${key}\``).join(' ')} | ${row.action} |`),
+      ].join('\n');
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
+  }
+}
+
+/** A whole article as Markdown: `# title`, the summary intro, then each block. */
+export function articleToMarkdown(article: HelpArticle): string {
+  return [`# ${article.title}`, article.summary, ...article.blocks.map(blockToMarkdown)].join('\n\n');
+}
+````
+
+## File: libs/common/src/lib/help/help-search.ts
+````typescript
+import { getHelpCategory, HELP_ARTICLES } from './help-content';
+import { articleToPlainText } from './help-types';
+
+import type { HelpArticle } from './help-types';
+
+/**
+ * Client-side search over the static help content. The corpus is ~30
+ * articles, so a straightforward scored scan is instant and dependency-free.
+ */
+
+/** A run of text, flagged when it matched a search term (for highlighting). */
+export interface HelpHighlightSegment {
+  hit: boolean;
+  text: string;
+}
+
+export interface HelpSearchResult {
+  article: HelpArticle;
+  score: number;
+  /** Summary or body excerpt around the first match, ready to highlight. */
+  snippet: HelpHighlightSegment[];
+  title: HelpHighlightSegment[];
+}
+
+const SCORE_TITLE = 40;
+const SCORE_TITLE_WORD_START = 10;
+const SCORE_KEYWORD = 25;
+const SCORE_SUMMARY = 15;
+const SCORE_CATEGORY = 10;
+const SCORE_BODY = 8;
+const SCORE_PHRASE_IN_TITLE = 30;
+const SNIPPET_RADIUS = 90;
+
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function termsOf(query: string): string[] {
+  return normalize(query).split(' ').filter(Boolean);
+}
+
+/** Does `haystack` contain `term` starting at a word boundary? */
+function hasWordStart(haystack: string, term: string): boolean {
+  const at = haystack.indexOf(term);
+  if (at === -1) return false;
+  if (at === 0) return true;
+  return !/[a-z0-9]/.test(haystack.charAt(at - 1));
+}
+
+/** Splits `text` into plain/hit segments for every occurrence of any term. */
+export function highlightTerms(text: string, terms: string[]): HelpHighlightSegment[] {
+  if (terms.length === 0 || text.length === 0) return [{ hit: false, text }];
+
+  const lower = text.toLowerCase();
+  const segments: HelpHighlightSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let hitStart = -1;
+    let hitLength = 0;
+    for (const term of terms) {
+      const at = lower.indexOf(term, cursor);
+      if (at !== -1 && (hitStart === -1 || at < hitStart || (at === hitStart && term.length > hitLength))) {
+        hitStart = at;
+        hitLength = term.length;
+      }
+    }
+    if (hitStart === -1) {
+      segments.push({ hit: false, text: text.slice(cursor) });
+      break;
+    }
+    if (hitStart > cursor) {
+      segments.push({ hit: false, text: text.slice(cursor, hitStart) });
+    }
+    segments.push({ hit: true, text: text.slice(hitStart, hitStart + hitLength) });
+    cursor = hitStart + hitLength;
+  }
+  return segments;
+}
+
+/** A short window of `text` around the first occurrence of any term. */
+function excerptAround(text: string, terms: string[]): string {
+  const lower = text.toLowerCase();
+  let first = -1;
+  for (const term of terms) {
+    const at = lower.indexOf(term);
+    if (at !== -1 && (first === -1 || at < first)) first = at;
+  }
+  if (first === -1) return text.slice(0, SNIPPET_RADIUS * 2);
+
+  let start = Math.max(0, first - SNIPPET_RADIUS);
+  let end = Math.min(text.length, first + SNIPPET_RADIUS);
+  // Snap to word boundaries so the excerpt doesn't shear words in half.
+  if (start > 0) {
+    const space = text.indexOf(' ', start);
+    if (space !== -1 && space < first) start = space + 1;
+  }
+  if (end < text.length) {
+    const space = text.lastIndexOf(' ', end);
+    if (space > first) end = space;
+  }
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return `${prefix}${text.slice(start, end)}${suffix}`;
+}
+
+/**
+ * Ranked search: every term must match somewhere in an article (title,
+ * keywords, summary, category label, or body) for it to be a result.
+ */
+export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLES): HelpSearchResult[] {
+  const terms = termsOf(query);
+  if (terms.length === 0) return [];
+  const phrase = normalize(query);
+
+  const results: HelpSearchResult[] = [];
+
+  for (const article of articles) {
+    const title = normalize(article.title);
+    const summary = normalize(article.summary);
+    const keywords = article.keywords.map(normalize);
+    const category = normalize(getHelpCategory(article.category)?.label ?? '');
+    const body = normalize(articleToPlainText(article));
+
+    let score = 0;
+    let everyTermMatched = true;
+
+    for (const term of terms) {
+      let termScore = 0;
+      if (title.includes(term)) {
+        termScore = SCORE_TITLE + (hasWordStart(title, term) ? SCORE_TITLE_WORD_START : 0);
+      } else if (keywords.some((k) => k.includes(term))) {
+        termScore = SCORE_KEYWORD;
+      } else if (summary.includes(term)) {
+        termScore = SCORE_SUMMARY;
+      } else if (category.includes(term)) {
+        termScore = SCORE_CATEGORY;
+      } else if (body.includes(term)) {
+        termScore = SCORE_BODY;
+      }
+      if (termScore === 0) {
+        everyTermMatched = false;
+        break;
+      }
+      score += termScore;
+    }
+    if (!everyTermMatched) continue;
+    if (terms.length > 1 && title.includes(phrase)) score += SCORE_PHRASE_IN_TITLE;
+
+    // Prefer the summary; fall back to a body excerpt around the first hit.
+    // Keyword/category-only matches keep the summary (no arbitrary body slice).
+    const summaryHasTerm = terms.some((t) => summary.includes(t));
+    const bodyHasTerm = terms.some((t) => body.includes(t));
+    const snippetSource = summaryHasTerm
+      ? article.summary
+      : bodyHasTerm
+        ? excerptAround(articleToPlainText(article), terms)
+        : article.summary;
+
+    results.push({
+      article,
+      score,
+      snippet: highlightTerms(snippetSource, terms),
+      title: highlightTerms(article.title, terms),
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score || a.article.title.localeCompare(b.article.title));
+}
+````
+
+## File: libs/common/src/lib/help/help-types.ts
+````typescript
+/**
+ * Content model for the in-app help center.
+ *
+ * Articles are plain data (no HTML) rendered through typed blocks, so the
+ * help content is searchable, type-checked, and immune to XSS by design.
+ */
+
+export type HelpCategoryId =
+  | 'getting-started'
+  | 'contacts'
+  | 'grids'
+  | 'segmentation'
+  | 'outreach'
+  | 'engagement'
+  | 'productivity'
+  | 'data'
+  | 'admin';
+
+export interface HelpCategory {
+  /** One-sentence description shown on the category card. */
+  blurb: string;
+  /** Heroicon name; each consuming app maps this to its own icon component. */
+  icon: string;
+  id: HelpCategoryId;
+  label: string;
+}
+
+export interface HelpStep {
+  detail?: string;
+  title: string;
+}
+
+export interface HelpKeyRow {
+  action: string;
+  keys: string[];
+}
+
+/**
+ * A single content block. Inline text in `text`, `items`, and step fields
+ * supports the mini-markup parsed by `parseHelpInline`:
+ * `**bold**`, `` `code` `` and `[label](/internal/route)`.
+ */
+export type HelpBlock =
+  | { kind: 'callout'; tone: 'info' | 'tip' | 'warning'; title: string; text: string }
+  | { kind: 'h2'; id: string; text: string }
+  | { kind: 'keys'; rows: HelpKeyRow[] }
+  | { kind: 'list'; items: string[]; ordered?: boolean }
+  | { kind: 'p'; text: string }
+  | { kind: 'steps'; items: HelpStep[] };
+
+export interface HelpArticle {
+  blocks: HelpBlock[];
+  category: HelpCategoryId;
+  /** Stable slug used in the /help/:id route. */
+  id: string;
+  /** Extra search terms that don't appear verbatim in the copy. */
+  keywords: string[];
+  /** Ids of hand-picked related articles. */
+  related?: string[];
+  summary: string;
+  title: string;
+}
+
+export interface HelpInlineSegment {
+  kind: 'bold' | 'code' | 'link' | 'text';
+  /** Internal route, present only when kind === 'link'. */
+  route?: string;
+  text: string;
+}
+
+const INLINE_TOKEN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
+
+/**
+ * Parses the help mini-markup into typed segments. Unknown or unterminated
+ * markers are left as plain text; only internal routes (starting with `/`)
+ * become links, anything else stays literal text.
+ */
+export function parseHelpInline(text: string): HelpInlineSegment[] {
+  const segments: HelpInlineSegment[] = [];
+  let cursor = 0;
+
+  INLINE_TOKEN.lastIndex = 0;
+  for (let match = INLINE_TOKEN.exec(text); match !== null; match = INLINE_TOKEN.exec(text)) {
+    if (match.index > cursor) {
+      segments.push({ kind: 'text', text: text.slice(cursor, match.index) });
+    }
+
+    const [, bold, code, linkLabel, linkTarget] = match;
+    if (bold !== undefined) {
+      segments.push({ kind: 'bold', text: bold });
+    } else if (code !== undefined) {
+      segments.push({ kind: 'code', text: code });
+    } else if (linkLabel !== undefined && linkTarget !== undefined && linkTarget.startsWith('/')) {
+      segments.push({ kind: 'link', route: linkTarget, text: linkLabel });
+    } else {
+      // Non-internal link targets are rendered as-is so nothing silently 404s.
+      segments.push({ kind: 'text', text: match[0] });
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: 'text', text: text.slice(cursor) });
+  }
+  return segments;
+}
+
+/** Plain text of one inline-markup string (markers stripped) for search. */
+export function stripHelpInline(text: string): string {
+  return parseHelpInline(text)
+    .map((s) => s.text)
+    .join('');
+}
+
+/** All searchable plain text of a block, headings included. */
+export function blockToPlainText(block: HelpBlock): string {
+  switch (block.kind) {
+    case 'p':
+    case 'h2':
+      return stripHelpInline(block.text);
+    case 'list':
+      return block.items.map(stripHelpInline).join(' ');
+    case 'steps':
+      return block.items.map((s) => [s.title, s.detail ?? ''].map(stripHelpInline).join(' ')).join(' ');
+    case 'callout':
+      return `${stripHelpInline(block.title)} ${stripHelpInline(block.text)}`;
+    case 'keys':
+      return block.rows.map((r) => `${r.keys.join(' ')} ${stripHelpInline(r.action)}`).join(' ');
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Whole-article plain text used for search indexing. */
+export function articleToPlainText(article: HelpArticle): string {
+  return article.blocks.map(blockToPlainText).join(' ');
+}
+
+const WORDS_PER_MINUTE = 200;
+
+/** Estimated reading time in whole minutes (always at least 1). */
+export function readingMinutes(article: HelpArticle): number {
+  const words = `${article.title} ${article.summary} ${articleToPlainText(article)}`
+    .split(/\s+/)
+    .filter(Boolean).length;
+  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+}
+````
+
 ## File: libs/common/src/lib/schemas/activity.schema.ts
 ````typescript
 import { z } from 'zod';
@@ -826,50 +1851,6 @@ export interface CompanionVolunteerRow {
   approved_by_name: string | null;
   created_at: string;
 }
-````
-
-## File: libs/common/src/lib/schemas/connections.schema.ts
-````typescript
-import { z } from 'zod';
-import { idSchema, notesSchema } from './core.schema';
-
-export const RELATION_TYPES = [
-  'referred_by',
-  'referred_to',
-  'close_friend',
-  'family_member',
-  'spouse',
-  'colleague',
-  'org_affiliation',
-  'introduced_by',
-  'introduced_to',
-  'custom',
-] as const;
-
-export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], string> = {
-  referred_by: 'Referred By',
-  referred_to: 'Referred To',
-  close_friend: 'Close Friend',
-  family_member: 'Family Member',
-  spouse: 'Spouse / Partner',
-  colleague: 'Colleague',
-  org_affiliation: 'Org. Affiliation',
-  introduced_by: 'Introduced By',
-  introduced_to: 'Introduced To',
-  custom: 'Custom',
-};
-
-export const relationTypeSchema = z.enum(RELATION_TYPES);
-
-export const AddConnectionObj = z.object({
-  to_person_id: idSchema,
-  relation_type: relationTypeSchema,
-  custom_label: z.string().trim().min(1).max(100).nullable().optional(),
-  is_mutual: z.boolean().default(false).optional(),
-  notes: notesSchema,
-});
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/emails.schema.ts
@@ -6895,6 +7876,15 @@ export type loadingGate = {
    */
   loaded: Signal<boolean>;
 
+  /**
+   * True while at least one operation is in flight — immediate and ungated,
+   * unlike `visible`. Use it to choose skeleton-vs-empty on surfaces that
+   * refetch after their first load (an empty list only means "no data" when
+   * nothing is fetching). Never bind it to spinners; that is what the
+   * delayed `visible` is for.
+   */
+  active: Signal<boolean>;
+
   begin(): () => void;
 };
 
@@ -6904,6 +7894,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   const visible = signal(false);
   const loaded = signal(false);
+  const active = signal(false);
   let pendingCount = 0;
   let showTimer: ReturnType<typeof setTimeout> | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -6945,6 +7936,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   function begin() {
     pendingCount++;
+    active.set(true);
     if (pendingCount === 1) {
       // First operation: start the delayed show
       scheduleShow();
@@ -6958,6 +7950,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
       loaded.set(true); // an operation has completed — its result is now in place
       if (pendingCount <= 0) {
         pendingCount = 0;
+        active.set(false);
         // If we never showed, cancel the show timer so _loading never appears
         clearShowTimer();
         scheduleHide(); // hides now or after minDuration
@@ -6965,7 +7958,7 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
     };
   }
 
-  return { begin, visible, loaded };
+  return { begin, visible, loaded, active };
 }
 ````
 
@@ -7192,1029 +8185,406 @@ Run `nx test uxcommon` to execute the unit tests.
 }
 ````
 
-## File: libs/common/src/lib/help/articles/data-management.ts
+## File: libs/common/src/lib/help/articles/contacts.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
 
-export const DATA_ARTICLES: HelpArticle[] = [
+export const CONTACTS_ARTICLES: HelpArticle[] = [
   {
-    id: 'import',
-    category: 'data',
-    title: 'Import from CSV',
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
     summary:
-      'One guided wizard imports people, companies, households, or tasks from a spreadsheet in four steps. Matched, tagged, and deduplicated.',
-    keywords: [
-      'import',
-      'csv',
-      'spreadsheet',
-      'upload data',
-      'migrate',
-      'bulk add',
-      'excel',
-      'wizard',
-      'companies',
-      'households',
-      'tasks',
-    ],
-    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
     blocks: [
       {
         kind: 'p',
-        text: '**Import / export** in the DATA section of the sidebar is history for both directions. To start an import, use **Import CSV** at the top of that page, or **Import CSV** in the People, Companies, Households, or Tasks toolbars. Either opens the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. The upload step asks **what you are importing** (people, companies, households, or tasks); coming from a grid preselects its type. Nothing is written to your database until the last step.',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
       },
-      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
+      },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
       {
         kind: 'list',
         items: [
-          'Use a CSV with a header row. Column names like “First name”, “Email”, “Phone”, “Company”, or “Tags” are preselected automatically on the mapping step.',
-          'For people: a **Company** column links each person to a company, creating the company if no existing one matches its name. Addresses do the same for households. A **Tags** column applies its comma-separated tags to just that person.',
-          'For companies and tasks the wizard needs a mapped **name** column. Rows without one are skipped. For households, rows matching an address you already have (or repeated in the file) are skipped, and new addresses are queued for geocoding.',
-          'Both UTF-8 and Excel-exported CSVs work as-is.',
+          '**Household**: everyone at the same address.',
+          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
+          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer**: their shift history and hours.',
+          '**Events**: event registrations and attendance.',
+          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
         ],
       },
-      { kind: 'h2', id: 'steps', text: 'The four steps' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Upload',
-            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
-          },
-          {
-            title: 'Map columns',
-            detail:
-              'Each column gets a best-guess field match. Review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
-          },
-          {
-            title: 'Review',
-            detail:
-              'For people, duplicates are matched by email, the same identity rule used everywhere in pplCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too (tags also apply to household imports). Other types show a plain recap: how many rows will import and how many will be skipped, and why.',
-          },
-          {
-            title: 'Import',
-            detail:
-              'Confirm the recap and click **Import N people** (or companies, households, tasks). The import runs in the background, so you can navigate away while it works. It lands in import history and the Activity log either way. If you stay, the done screen offers **View imported records**, **Import another file**, or **Back to import history**.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'after', text: 'After the import' },
-      {
-        kind: 'list',
-        items: [
-          'Spot-check a few records against the source file.',
-          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
-          'The import history row shows what type each import was and keeps the original file downloadable for 90 days; for people imports, skipped rows are downloadable with the reason each was skipped.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test with a small file first',
-        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
-      },
-    ],
-  },
-  {
-    id: 'export',
-    category: 'data',
-    title: 'Export your data',
-    summary: 'Download any grid (or just your selection) as CSV, and collect finished exports from one page.',
-    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
-    related: ['import', 'bulk-actions', 'filters'],
-    blocks: [
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
       {
         kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it, filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
-      },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
-      {
-        kind: 'p',
-        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready. The export-ready notification tells you the moment it is done, so there is no need to wait around. Files stay downloadable for 30 days, and every export lands in the Activity log. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export. The CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Exports leave the safety of the app',
-        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
-      },
-    ],
-  },
-  {
-    id: 'duplicates',
-    category: 'data',
-    title: 'Find and merge duplicates',
-    summary:
-      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
-    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
-    related: ['import', 'bulk-actions', 'households', 'companies'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping. They split a person’s history across two half-records. A nightly sweep hunts them down across people, households, and companies (imports catch most on the way in; this queue is for what slips through), and the [Duplicates](/duplicates) page is where you review what it found.',
-      },
-      { kind: 'h2', id: 'review', text: 'Review and merge' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
-          {
-            title: 'Read the confidence and the why-flagged reason',
-            detail:
-              'Each pair is labeled High confidence or Possible match, with a sentence naming what matched (same email, same name at the same address, and so on) and a side-by-side comparison of the fields that differ.',
-          },
-          {
-            title: 'Merge into one, or Not duplicates',
-            detail:
-              'Merging fills blanks on the record you keep from the one you remove (it never overwrites a value that is already there), and you confirm before anything happens. Genuinely two different people? Choose Not duplicates and the sweep will not flag that pair again.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good. The confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
-      },
-      {
-        kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar. Same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy, far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/grids.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const GRIDS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'grid-basics',
-    category: 'grids',
-    title: 'Working in grids',
-    summary: 'Every list in pplCRM is the same powerful grid. Learn it once and you know it everywhere.',
-    keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
-    related: ['filters', 'bulk-actions', 'import', 'export'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'People, companies, tasks, donations. Every collection in pplCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
-      },
-      { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
-      {
-        kind: 'list',
-        items: [
-          '**Refresh**: reload the grid without touching your filters.',
-          '**Undo / Redo**: step your inline edits backward and forward.',
-          '**Import CSV / Export CSV**: see [Import from CSV](/help/import) and [Export your data](/help/export).',
-          '**Tag, issue, and list filters**: narrow to matching rows; see [Filters and the query builder](/help/filters).',
-          '**Advanced filters and the query builder**: per-column conditions or full and/or logic.',
-          '**Columns**: choose which columns are visible.',
-          '**Archive** (where offered): flip between active and archived records.',
-          '**New {record}** ("New person", "New household", …): the solid button at the far right creates a record of this type.',
-        ],
-      },
-      { kind: 'h2', id: 'open-detail', text: 'Opening records' },
-      {
-        kind: 'p',
-        text: 'The first column is always a link. Click the name to open the full record. The grid remembers your filters, page, and scroll position, so the breadcrumb back returns you exactly where you left off, and the record page gains previous/next arrows for the same filtered set.',
-      },
-      { kind: 'h2', id: 'inline-edit', text: 'Edit without leaving the grid' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Double-click an editable cell', detail: 'Or move to it with the arrow keys and press `Enter`.' },
-          {
-            title: 'Change the value and confirm',
-            detail: 'The cell saves immediately and flashes green so you know it landed.',
-          },
-          {
-            title: 'Change your mind?',
-            detail: 'The toolbar’s undo arrow reverses your last inline edit; redo brings it back.',
-          },
-        ],
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Cell not editable?',
-        text: 'Some columns are read-only on purpose: computed values, or fields that need the full form. Open the record to change those.',
-      },
-      { kind: 'h2', id: 'columns', text: 'Make the grid yours' },
-      {
-        kind: 'list',
-        items: [
-          'Hide columns you never use from the **Columns** menu: fewer columns, faster scanning.',
-          'Drag a column edge to resize it.',
-          'An empty grid always tells you why it is empty and what to do next. For example, “No results match these filters” with a one-click **Clear all filters**.',
-        ],
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
       },
     ],
   },
   {
-    id: 'filters',
-    category: 'grids',
-    title: 'Filters and the query builder',
-    summary:
-      'From one-click tag filters to full and/or queries, and how active filters always stay visible as removable chips.',
-    keywords: ['filter', 'query builder', 'advanced filter', 'chips', 'conditions', 'segment', 'and or', 'narrow'],
-    related: ['grid-basics', 'lists', 'tags-issues', 'search'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Filters narrow a grid to the rows you care about, and pplCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
-      },
-      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: the dashed pills' },
-      {
-        kind: 'list',
-        items: [
-          '**+ Add filter**: pick a field, an operator, and a value; the condition lands as one removable chip.',
-          '**Tags**: check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
-          '**Issues**: same mechanics as tags, for issue interests.',
-          '**Lists**: show only the members of one [list](/help/lists).',
-        ],
-      },
-      { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
-      {
-        kind: 'p',
-        text: '**Advanced Filters** opens a filter row under the column headers: type a condition per column (a name fragment here, a city there), and the grid narrows to rows matching all of them.',
-      },
-      { kind: 'h2', id: 'builder', text: 'The query builder' },
-      {
-        kind: 'p',
-        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups: “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why is one of the filter buttons disabled?',
-        text: 'Per-column filters and the query builder are mutually exclusive. Mixing both would make the result impossible to reason about. Clear one to use the other.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filters follow you into records',
-        text: 'Open a record from a filtered grid and the pager reads “N of M filtered”. `J`/`K` walk exactly the set you filtered, in order.',
-      },
-    ],
-  },
-  {
-    id: 'bulk-actions',
-    category: 'grids',
-    title: 'Selection, bulk actions, and merging',
-    summary:
-      'Select rows to reveal the bulk action bar: tag, export, delete, clone, or merge many records in one motion.',
-    keywords: ['bulk', 'selection', 'select all', 'mass update', 'batch', 'clone', 'merge', 'delete many', 'bulk tag'],
-    related: ['grid-basics', 'duplicates', 'export', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tick the checkbox on one or more rows and a bulk action bar appears, always stating how many rows it will affect. No action is ever a mystery about scale.',
-      },
-      { kind: 'h2', id: 'select-all', text: 'Selecting beyond one page' },
-      {
-        kind: 'p',
-        text: 'The header checkbox selects the visible page. If more rows match your filters, the grid offers **Select all N rows**. One click extends the selection to every match, and the bar confirms “All N rows are selected.”',
-      },
-      { kind: 'h2', id: 'actions', text: 'What you can do with a selection' },
-      {
-        kind: 'list',
-        items: [
-          '**Add tag**: type a tag name and apply it to every selected row at once.',
-          '**Export**: download the selected rows as CSV.',
-          '**Delete**: remove the selected rows, after a confirmation that states the count.',
-          '**Clone**: available with exactly one row selected; duplicates it as a starting point.',
-          '**Merge**: available with exactly two rows selected; combines them into one record.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Bulk delete is permanent',
-        text: 'The confirmation dialog tells you exactly how many records are about to go. Read the number. There is no undo for delete.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Merging more than a pair?',
-        text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database, better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/segmentation.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const SEGMENTATION_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tags-issues',
-    category: 'segmentation',
-    title: 'Tags and issues',
-    summary:
-      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
-    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
-    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tags are free-form labels (**community-leader**, **major-donor**, **lawn-sign**) that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful. (Volunteer and staff are not tags. They are first-class status fields on the person; set them from the person’s standing card.)',
-      },
-      { kind: 'h2', id: 'apply', text: 'Apply tags' },
-      {
-        kind: 'list',
-        items: [
-          'On a profile: add or remove tags directly on the record.',
-          'In bulk: select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
-          'On import: tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
-        ],
-      },
-      { kind: 'h2', id: 'use', text: 'Put them to work' },
-      {
-        kind: 'p',
-        text: 'Every grid has a tag filter and an issue filter. Check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
-      },
-      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
-      {
-        kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section. Both pages open with a sentence naming the whole vocabulary: how many tags/issues exist, how many applications, and (on Tags) how many have not been used in 90 days.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Rename** updates the label everywhere it is referenced: on people, in saved lists, and on forms. One rename, one pass.',
-          '**Merge into another tag/issue** ("Move everyone to…") folds a duplicate label into the one you pick; everyone carrying the old label ends up carrying the new one, and the old label is deleted.',
-          '**Delete**: the confirmation names how many applications would be affected, so you never delete a label blind.',
-          'The PEOPLE / PEOPLE INTERESTED count on each row is a door. Click it to open the People grid pre-filtered to that exact tag or issue.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'The [Issues](/issues) page additionally ranks by interest with a trend (new applications in the last 30 days) and a top ward, since issues exist to tell the policy team what people care about, not to describe who someone is, which is what tags are for.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If donor, Donors, and dnr-2024 all exist, filters and audiences quietly miss people. Merge the stragglers into one instead of deleting and re-tagging.',
-      },
-    ],
-  },
-  {
-    id: 'lists',
-    category: 'segmentation',
-    title: 'Smart and static lists',
-    summary:
-      'Lists are reusable audiences: smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
     keywords: [
-      'list',
-      'audience',
-      'segment',
-      'static list',
-      'smart list',
-      'dynamic list',
-      'snapshot',
-      'membership',
-      'rule',
-      'query',
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
     ],
-    related: ['tags-issues', 'filters', 'newsletters'],
+    related: ['add-people', 'person-profile', 'duplicates'],
     blocks: [
       {
         kind: 'p',
-        text: 'A list is a saved group of people or households you can reuse anywhere: as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
       },
-      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
-      {
-        kind: 'p',
-        text: 'A smart list is defined by rules in the query builder: “everyone tagged lawn-sign in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
-      },
-      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
-      {
-        kind: 'p',
-        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot. Today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a list' },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Lists](/lists) and click +',
-            detail: 'Name the list something your teammates will recognize in a dropdown.',
-          },
-          {
-            title: 'Pick Smart or Static',
+            title: 'Open [Households](/households)',
             detail:
-              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
+              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
           },
-          {
-            title: 'Choose People or Households',
-            detail: 'A list targets one or the other. Pick what you are grouping.',
-          },
-          {
-            title: 'Build the rule',
-            detail:
-              'Compose conditions in the query builder: match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
-          },
-          {
-            title: 'Create it',
-            detail:
-              'The button carries the scale it will act on: “Create smart list (1,284 now)” or “Create static list (snapshot 1,284)”.',
-          },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
         ],
-      },
-      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
-      {
-        kind: 'list',
-        items: [
-          '**List**: the name is a door. Click it to open People or Households with that list applied as a removable filter chip.',
-          '**Type**: a Smart or Static chip.',
-          '**Of**: People or Households.',
-          '**Definition**: the rule written as a plain sentence.',
-          '**Members**: how many records are in the list right now.',
-          '**Last used in**: the most recent newsletter, form, or turf that used this list.',
-          '**Updated**: when the list last changed.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Deleting a list names what it will affect',
-        text: 'If a list is in use, the delete confirmation names its consumers (the newsletters, forms, and turfs that reference it), so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Lists are how good newsletters start',
-        text: 'A newsletter audience built on a smart list is accurate on send day by definition. See [Create and send a newsletter](/help/newsletters).',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
+      },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
       },
     ],
   },
 ];
 ````
 
-## File: libs/common/src/lib/help/help-content.ts
+## File: libs/common/src/lib/help/articles/productivity.ts
 ````typescript
-import { ADMIN_ARTICLES } from './articles/administration';
-import { CONTACTS_ARTICLES } from './articles/contacts';
-import { DATA_ARTICLES } from './articles/data-management';
-import { ENGAGEMENT_ARTICLES } from './articles/engagement';
-import { GETTING_STARTED_ARTICLES } from './articles/getting-started';
-import { GRIDS_ARTICLES } from './articles/grids';
-import { OUTREACH_ARTICLES } from './articles/outreach';
-import { PRODUCTIVITY_ARTICLES } from './articles/productivity';
-import { SEGMENTATION_ARTICLES } from './articles/segmentation';
+import type { HelpArticle } from '../help-types';
 
-import type { HelpArticle, HelpCategory, HelpCategoryId } from './help-types';
-
-/** Display order of the help center's categories. */
-export const HELP_CATEGORIES: HelpCategory[] = [
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
   {
-    id: 'getting-started',
-    label: 'Getting started',
-    blurb: 'Your first session: the tour, navigation habits, search, and shortcuts.',
-    icon: 'map',
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks: list and board',
+    summary:
+      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
+      },
+      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
+          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
+      },
+      {
+        kind: 'p',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
   },
   {
-    id: 'contacts',
-    label: 'People & relationships',
-    blurb: 'People, households, companies, and teams: the heart of the CRM.',
-    icon: 'identification',
-  },
-  {
-    id: 'grids',
-    label: 'Grids & data entry',
-    blurb: 'One grid everywhere: filters, inline editing, selection, and bulk work.',
-    icon: 'table-cells',
-  },
-  {
-    id: 'segmentation',
-    label: 'Tags, issues & lists',
-    blurb: 'Describe people, capture what they care about, and build reusable audiences.',
-    icon: 'label',
-  },
-  {
-    id: 'outreach',
-    label: 'Newsletters & email',
-    blurb: 'Campaigns, the shared inbox, and automations that follow through for you.',
-    icon: 'megaphone',
-  },
-  {
-    id: 'engagement',
-    label: 'Donations, events & forms',
-    blurb: 'Raise money, run events and shifts, and collect signups from the web.',
-    icon: 'currency-dollar',
-  },
-  {
-    id: 'productivity',
-    label: 'Tasks & files',
-    blurb: 'Track the work on a board and keep shared documents one search away.',
-    icon: 'task',
-  },
-  {
-    id: 'data',
-    label: 'Import, export & data quality',
-    blurb: 'Move data in and out by CSV and keep the database free of duplicates.',
-    icon: 'arrow-up-tray',
-  },
-  {
-    id: 'admin',
-    label: 'Account & administration',
-    blurb: 'Profiles, roles and access, workspace configuration, and the audit trail.',
-    icon: 'cog-6-tooth',
+    id: 'files',
+    category: 'productivity',
+    title: 'Storage & attachments',
+    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
+    related: ['grid-basics', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
+      },
+      { kind: 'h2', id: 'attach', text: 'Attach a file' },
+      {
+        kind: 'p',
+        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
+      },
+      { kind: 'h2', id: 'storage', text: 'Check total usage' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Workspace settings → Storage](/workspace/storage)',
+            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
+          },
+          {
+            title: 'Delete a large file',
+            detail:
+              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Quota affects newsletter sending',
+        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
+      },
+    ],
   },
 ];
-
-/** Every article, in category display order. */
-export const HELP_ARTICLES: HelpArticle[] = [
-  ...GETTING_STARTED_ARTICLES,
-  ...CONTACTS_ARTICLES,
-  ...GRIDS_ARTICLES,
-  ...SEGMENTATION_ARTICLES,
-  ...OUTREACH_ARTICLES,
-  ...ENGAGEMENT_ARTICLES,
-  ...PRODUCTIVITY_ARTICLES,
-  ...DATA_ARTICLES,
-  ...ADMIN_ARTICLES,
-];
-
-/** Shown as quick links under the search box on the help home page. */
-export const POPULAR_ARTICLE_IDS: string[] = [
-  'welcome',
-  'grid-basics',
-  'filters',
-  'newsletters',
-  'import',
-  'shortcuts',
-];
-
-const ARTICLES_BY_ID: ReadonlyMap<string, HelpArticle> = new Map(HELP_ARTICLES.map((a) => [a.id, a]));
-const CATEGORIES_BY_ID: ReadonlyMap<HelpCategoryId, HelpCategory> = new Map(HELP_CATEGORIES.map((c) => [c.id, c]));
-
-export function getHelpArticle(id: string): HelpArticle | undefined {
-  return ARTICLES_BY_ID.get(id);
-}
-
-export function getHelpCategory(id: HelpCategoryId): HelpCategory | undefined {
-  return CATEGORIES_BY_ID.get(id);
-}
-
-export function articlesInCategory(id: HelpCategoryId): HelpArticle[] {
-  return HELP_ARTICLES.filter((a) => a.category === id);
-}
-
-/**
- * Related reading for an article: its hand-picked `related` ids first,
- * topped up with neighbors from the same category, capped at `limit`.
- */
-export function relatedArticles(article: HelpArticle, limit = 3): HelpArticle[] {
-  const picked: HelpArticle[] = [];
-  const seen = new Set<string>([article.id]);
-
-  for (const id of article.related ?? []) {
-    const found = ARTICLES_BY_ID.get(id);
-    if (found && !seen.has(found.id)) {
-      picked.push(found);
-      seen.add(found.id);
-    }
-  }
-  for (const neighbor of articlesInCategory(article.category)) {
-    if (picked.length >= limit) break;
-    if (!seen.has(neighbor.id)) {
-      picked.push(neighbor);
-      seen.add(neighbor.id);
-    }
-  }
-  return picked.slice(0, limit);
-}
-
-/** Previous/next article within the same category, in display order. */
-export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; prev?: HelpArticle } {
-  const siblings = articlesInCategory(article.category);
-  const index = siblings.findIndex((a) => a.id === article.id);
-  if (index === -1) return {};
-  return {
-    prev: index > 0 ? siblings[index - 1] : undefined,
-    next: index < siblings.length - 1 ? siblings[index + 1] : undefined,
-  };
-}
 ````
 
-## File: libs/common/src/lib/help/help-links.ts
+## File: libs/common/src/lib/schemas/connections.schema.ts
 ````typescript
-/**
- * Route classification shared by both apps' rich-text renderers.
- *
- * `parseHelpInline` only emits links whose target starts with `/`, so every
- * route reaching `classifyHelpRoute` is an internal one. This splits those
- * into in-help article links versus any other in-app route, letting each app
- * route them through its own navigation (in-help router vs. cross-app link).
- */
+import { z } from 'zod';
+import { idSchema, notesSchema } from './core.schema';
 
-export type HelpRouteTarget =
-  | { kind: 'help'; id: string } // an in-help article link, e.g. /help/dashboard -> id 'dashboard'
-  | { kind: 'app'; path: string }; // any other internal app route, e.g. /people
+export const RELATION_TYPES = [
+  'referred_by',
+  'referred_to',
+  'close_friend',
+  'family_member',
+  'spouse',
+  'colleague',
+  'org_affiliation',
+  'introduced_by',
+  'introduced_to',
+  'custom',
+] as const;
 
-const HELP_ROUTE = /^\/help\/(.+)$/;
+export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], string> = {
+  referred_by: 'Referred By',
+  referred_to: 'Referred To',
+  close_friend: 'Close Friend',
+  family_member: 'Family Member',
+  spouse: 'Spouse / Partner',
+  colleague: 'Colleague',
+  org_affiliation: 'Org. Affiliation',
+  introduced_by: 'Introduced By',
+  introduced_to: 'Introduced To',
+  custom: 'Custom',
+};
 
-/**
- * Classifies an internal route (always starting with `/`): `/help/:id` links
- * become `{ kind: 'help', id }`, everything else `{ kind: 'app', path }`.
- */
-export function classifyHelpRoute(route: string): HelpRouteTarget {
-  const id = HELP_ROUTE.exec(route)?.[1];
-  if (id !== undefined) {
-    return { kind: 'help', id };
-  }
-  return { kind: 'app', path: route };
-}
-````
+export const relationTypeSchema = z.enum(RELATION_TYPES);
 
-## File: libs/common/src/lib/help/help-markdown.ts
-````typescript
-import type { HelpArticle, HelpBlock } from './help-types';
+export const AddConnectionObj = z.object({
+  to_person_id: idSchema,
+  relation_type: relationTypeSchema,
+  custom_label: z.string().trim().min(1).max(100).nullable().optional(),
+  is_mutual: z.boolean().default(false).optional(),
+  notes: notesSchema,
+});
 
-/**
- * GitHub-flavored Markdown serialization of the typed help content, for the
- * website's AI-agent surface. Unlike `blockToPlainText`, the inline mini-markup
- * (`**bold**`, `` `code` ``, `[label](/route)`) is preserved verbatim — agents
- * benefit from the links and emphasis, so nothing is stripped.
- */
-
-const KEYS_TABLE_HEADER = ['| Keys | Action |', '| --- | --- |'];
-
-/** One content block as a Markdown fragment. */
-export function blockToMarkdown(block: HelpBlock): string {
-  switch (block.kind) {
-    case 'p':
-      return block.text;
-    case 'h2':
-      return `## ${block.text}`;
-    case 'list':
-      return block.items.map((item, index) => (block.ordered ? `${index + 1}. ${item}` : `- ${item}`)).join('\n');
-    case 'steps':
-      return block.items
-        .map((step, index) => `${index + 1}. **${step.title}**${step.detail ? ` — ${step.detail}` : ''}`)
-        .join('\n');
-    case 'callout':
-      return `> **${block.title}** — ${block.text}`;
-    case 'keys':
-      return [
-        ...KEYS_TABLE_HEADER,
-        ...block.rows.map((row) => `| ${row.keys.map((key) => `\`${key}\``).join(' ')} | ${row.action} |`),
-      ].join('\n');
-    default: {
-      const _exhaustive: never = block;
-      return _exhaustive;
-    }
-  }
-}
-
-/** A whole article as Markdown: `# title`, the summary intro, then each block. */
-export function articleToMarkdown(article: HelpArticle): string {
-  return [`# ${article.title}`, article.summary, ...article.blocks.map(blockToMarkdown)].join('\n\n');
-}
-````
-
-## File: libs/common/src/lib/help/help-search.ts
-````typescript
-import { getHelpCategory, HELP_ARTICLES } from './help-content';
-import { articleToPlainText } from './help-types';
-
-import type { HelpArticle } from './help-types';
-
-/**
- * Client-side search over the static help content. The corpus is ~30
- * articles, so a straightforward scored scan is instant and dependency-free.
- */
-
-/** A run of text, flagged when it matched a search term (for highlighting). */
-export interface HelpHighlightSegment {
-  hit: boolean;
-  text: string;
-}
-
-export interface HelpSearchResult {
-  article: HelpArticle;
-  score: number;
-  /** Summary or body excerpt around the first match, ready to highlight. */
-  snippet: HelpHighlightSegment[];
-  title: HelpHighlightSegment[];
-}
-
-const SCORE_TITLE = 40;
-const SCORE_TITLE_WORD_START = 10;
-const SCORE_KEYWORD = 25;
-const SCORE_SUMMARY = 15;
-const SCORE_CATEGORY = 10;
-const SCORE_BODY = 8;
-const SCORE_PHRASE_IN_TITLE = 30;
-const SNIPPET_RADIUS = 90;
-
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function termsOf(query: string): string[] {
-  return normalize(query).split(' ').filter(Boolean);
-}
-
-/** Does `haystack` contain `term` starting at a word boundary? */
-function hasWordStart(haystack: string, term: string): boolean {
-  const at = haystack.indexOf(term);
-  if (at === -1) return false;
-  if (at === 0) return true;
-  return !/[a-z0-9]/.test(haystack.charAt(at - 1));
-}
-
-/** Splits `text` into plain/hit segments for every occurrence of any term. */
-export function highlightTerms(text: string, terms: string[]): HelpHighlightSegment[] {
-  if (terms.length === 0 || text.length === 0) return [{ hit: false, text }];
-
-  const lower = text.toLowerCase();
-  const segments: HelpHighlightSegment[] = [];
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    let hitStart = -1;
-    let hitLength = 0;
-    for (const term of terms) {
-      const at = lower.indexOf(term, cursor);
-      if (at !== -1 && (hitStart === -1 || at < hitStart || (at === hitStart && term.length > hitLength))) {
-        hitStart = at;
-        hitLength = term.length;
-      }
-    }
-    if (hitStart === -1) {
-      segments.push({ hit: false, text: text.slice(cursor) });
-      break;
-    }
-    if (hitStart > cursor) {
-      segments.push({ hit: false, text: text.slice(cursor, hitStart) });
-    }
-    segments.push({ hit: true, text: text.slice(hitStart, hitStart + hitLength) });
-    cursor = hitStart + hitLength;
-  }
-  return segments;
-}
-
-/** A short window of `text` around the first occurrence of any term. */
-function excerptAround(text: string, terms: string[]): string {
-  const lower = text.toLowerCase();
-  let first = -1;
-  for (const term of terms) {
-    const at = lower.indexOf(term);
-    if (at !== -1 && (first === -1 || at < first)) first = at;
-  }
-  if (first === -1) return text.slice(0, SNIPPET_RADIUS * 2);
-
-  let start = Math.max(0, first - SNIPPET_RADIUS);
-  let end = Math.min(text.length, first + SNIPPET_RADIUS);
-  // Snap to word boundaries so the excerpt doesn't shear words in half.
-  if (start > 0) {
-    const space = text.indexOf(' ', start);
-    if (space !== -1 && space < first) start = space + 1;
-  }
-  if (end < text.length) {
-    const space = text.lastIndexOf(' ', end);
-    if (space > first) end = space;
-  }
-  const prefix = start > 0 ? '…' : '';
-  const suffix = end < text.length ? '…' : '';
-  return `${prefix}${text.slice(start, end)}${suffix}`;
-}
-
-/**
- * Ranked search: every term must match somewhere in an article (title,
- * keywords, summary, category label, or body) for it to be a result.
- */
-export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLES): HelpSearchResult[] {
-  const terms = termsOf(query);
-  if (terms.length === 0) return [];
-  const phrase = normalize(query);
-
-  const results: HelpSearchResult[] = [];
-
-  for (const article of articles) {
-    const title = normalize(article.title);
-    const summary = normalize(article.summary);
-    const keywords = article.keywords.map(normalize);
-    const category = normalize(getHelpCategory(article.category)?.label ?? '');
-    const body = normalize(articleToPlainText(article));
-
-    let score = 0;
-    let everyTermMatched = true;
-
-    for (const term of terms) {
-      let termScore = 0;
-      if (title.includes(term)) {
-        termScore = SCORE_TITLE + (hasWordStart(title, term) ? SCORE_TITLE_WORD_START : 0);
-      } else if (keywords.some((k) => k.includes(term))) {
-        termScore = SCORE_KEYWORD;
-      } else if (summary.includes(term)) {
-        termScore = SCORE_SUMMARY;
-      } else if (category.includes(term)) {
-        termScore = SCORE_CATEGORY;
-      } else if (body.includes(term)) {
-        termScore = SCORE_BODY;
-      }
-      if (termScore === 0) {
-        everyTermMatched = false;
-        break;
-      }
-      score += termScore;
-    }
-    if (!everyTermMatched) continue;
-    if (terms.length > 1 && title.includes(phrase)) score += SCORE_PHRASE_IN_TITLE;
-
-    // Prefer the summary; fall back to a body excerpt around the first hit.
-    // Keyword/category-only matches keep the summary (no arbitrary body slice).
-    const summaryHasTerm = terms.some((t) => summary.includes(t));
-    const bodyHasTerm = terms.some((t) => body.includes(t));
-    const snippetSource = summaryHasTerm
-      ? article.summary
-      : bodyHasTerm
-        ? excerptAround(articleToPlainText(article), terms)
-        : article.summary;
-
-    results.push({
-      article,
-      score,
-      snippet: highlightTerms(snippetSource, terms),
-      title: highlightTerms(article.title, terms),
-    });
-  }
-
-  return results.sort((a, b) => b.score - a.score || a.article.title.localeCompare(b.article.title));
-}
-````
-
-## File: libs/common/src/lib/help/help-types.ts
-````typescript
-/**
- * Content model for the in-app help center.
- *
- * Articles are plain data (no HTML) rendered through typed blocks, so the
- * help content is searchable, type-checked, and immune to XSS by design.
- */
-
-export type HelpCategoryId =
-  | 'getting-started'
-  | 'contacts'
-  | 'grids'
-  | 'segmentation'
-  | 'outreach'
-  | 'engagement'
-  | 'productivity'
-  | 'data'
-  | 'admin';
-
-export interface HelpCategory {
-  /** One-sentence description shown on the category card. */
-  blurb: string;
-  /** Heroicon name; each consuming app maps this to its own icon component. */
-  icon: string;
-  id: HelpCategoryId;
-  label: string;
-}
-
-export interface HelpStep {
-  detail?: string;
-  title: string;
-}
-
-export interface HelpKeyRow {
-  action: string;
-  keys: string[];
-}
-
-/**
- * A single content block. Inline text in `text`, `items`, and step fields
- * supports the mini-markup parsed by `parseHelpInline`:
- * `**bold**`, `` `code` `` and `[label](/internal/route)`.
- */
-export type HelpBlock =
-  | { kind: 'callout'; tone: 'info' | 'tip' | 'warning'; title: string; text: string }
-  | { kind: 'h2'; id: string; text: string }
-  | { kind: 'keys'; rows: HelpKeyRow[] }
-  | { kind: 'list'; items: string[]; ordered?: boolean }
-  | { kind: 'p'; text: string }
-  | { kind: 'steps'; items: HelpStep[] };
-
-export interface HelpArticle {
-  blocks: HelpBlock[];
-  category: HelpCategoryId;
-  /** Stable slug used in the /help/:id route. */
-  id: string;
-  /** Extra search terms that don't appear verbatim in the copy. */
-  keywords: string[];
-  /** Ids of hand-picked related articles. */
-  related?: string[];
-  summary: string;
-  title: string;
-}
-
-export interface HelpInlineSegment {
-  kind: 'bold' | 'code' | 'link' | 'text';
-  /** Internal route, present only when kind === 'link'. */
-  route?: string;
-  text: string;
-}
-
-const INLINE_TOKEN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
-
-/**
- * Parses the help mini-markup into typed segments. Unknown or unterminated
- * markers are left as plain text; only internal routes (starting with `/`)
- * become links, anything else stays literal text.
- */
-export function parseHelpInline(text: string): HelpInlineSegment[] {
-  const segments: HelpInlineSegment[] = [];
-  let cursor = 0;
-
-  INLINE_TOKEN.lastIndex = 0;
-  for (let match = INLINE_TOKEN.exec(text); match !== null; match = INLINE_TOKEN.exec(text)) {
-    if (match.index > cursor) {
-      segments.push({ kind: 'text', text: text.slice(cursor, match.index) });
-    }
-
-    const [, bold, code, linkLabel, linkTarget] = match;
-    if (bold !== undefined) {
-      segments.push({ kind: 'bold', text: bold });
-    } else if (code !== undefined) {
-      segments.push({ kind: 'code', text: code });
-    } else if (linkLabel !== undefined && linkTarget !== undefined && linkTarget.startsWith('/')) {
-      segments.push({ kind: 'link', route: linkTarget, text: linkLabel });
-    } else {
-      // Non-internal link targets are rendered as-is so nothing silently 404s.
-      segments.push({ kind: 'text', text: match[0] });
-    }
-    cursor = match.index + match[0].length;
-  }
-
-  if (cursor < text.length) {
-    segments.push({ kind: 'text', text: text.slice(cursor) });
-  }
-  return segments;
-}
-
-/** Plain text of one inline-markup string (markers stripped) for search. */
-export function stripHelpInline(text: string): string {
-  return parseHelpInline(text)
-    .map((s) => s.text)
-    .join('');
-}
-
-/** All searchable plain text of a block, headings included. */
-export function blockToPlainText(block: HelpBlock): string {
-  switch (block.kind) {
-    case 'p':
-    case 'h2':
-      return stripHelpInline(block.text);
-    case 'list':
-      return block.items.map(stripHelpInline).join(' ');
-    case 'steps':
-      return block.items.map((s) => [s.title, s.detail ?? ''].map(stripHelpInline).join(' ')).join(' ');
-    case 'callout':
-      return `${stripHelpInline(block.title)} ${stripHelpInline(block.text)}`;
-    case 'keys':
-      return block.rows.map((r) => `${r.keys.join(' ')} ${stripHelpInline(r.action)}`).join(' ');
-    default: {
-      const _exhaustive: never = block;
-      return _exhaustive;
-    }
-  }
-}
-
-/** Whole-article plain text used for search indexing. */
-export function articleToPlainText(article: HelpArticle): string {
-  return article.blocks.map(blockToPlainText).join(' ');
-}
-
-const WORDS_PER_MINUTE = 200;
-
-/** Estimated reading time in whole minutes (always at least 1). */
-export function readingMinutes(article: HelpArticle): number {
-  const words = `${article.title} ${article.summary} ${articleToPlainText(article)}`
-    .split(/\s+/)
-    .filter(Boolean).length;
-  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
-}
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/core.schema.ts
@@ -9023,300 +9393,6 @@ export const NewsletterTemplateObj = z.object({
 export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
 export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
 export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
-````
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-/**
- * Canonical task status vocabulary (spec §4). This is the single source of truth —
- * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
- * derives from this list. Do not hand-roll a parallel status array anywhere.
- *
- * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
- * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
- * state — a canceled task is, in practice, a task nobody is coming back to, which is
- * exactly what "archived" already means in this app (hidden from the active views,
- * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
- * normalizes existing rows to this vocabulary.
- */
-export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
-export type TaskStatus = (typeof TASK_STATUSES)[number];
-
-/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
-export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
-export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
-
-/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
-export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
-
-export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'To do',
-  in_progress: 'In progress',
-  waiting: 'Waiting',
-  done: 'Done',
-  archived: 'Archived',
-};
-
-/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
-export function isTaskStatus(value: unknown): value is TaskStatus {
-  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
-}
-
-/** Type guard for the four board columns specifically (excludes `archived`). */
-export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
-  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
-}
-
-const taskStatusEnum = z.enum(TASK_STATUSES);
-const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.default('todo').optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: taskStatusEnum.nullable().optional(),
-  priority: taskPriorityEnum.nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-  person_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: taskStatusEnum.optional(),
-  priority: taskPriorityEnum.optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-  person_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-/**
- * Board drag-and-drop persistence (spec §4). One drop touches one or two board
- * columns: dragging within a column re-seats that single column; dragging across
- * two columns re-seats the source and target. Each column lists its cards in the
- * new top-to-bottom order — the backend writes `position = index` per id and sets
- * every id's `status` to its column, all in one transaction. `archived` is not a
- * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
- */
-export const ReorderTasksObj = z.object({
-  columns: z
-    .array(
-      z.object({
-        status: z.enum(TASK_BOARD_STATUSES),
-        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
-      }),
-    )
-    .min(1, 'At least one column is required')
-    .max(2, 'A single drop touches at most two columns'),
-});
-
-/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
-export const ReorderSubtasksObj = z.object({
-  task_id: idSchema,
-  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
-});
-
-export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
-export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
-````
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-````typescript
-import { z } from 'zod';
-import { queryBuilderNodeSchema } from './core.schema';
-
-// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
-// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` stays in the
-// enum for saved-row back-compat but has no picker card: no backend fires it yet, and a
-// dead card is dishonest UI. `task_sla_breach` is fired by the hourly
-// detect_task_sla_breaches cron (spec §4 → §16), which enrolls the breached task's linked
-// person. `supporter_lapsed` is fired by the daily detect_lapsed_supporters cron; its
-// trigger_event_id holds the inactivity threshold in days (default 90).
-export const WORKFLOW_TRIGGER_TYPES = [
-  'manual',
-  'web_form_submitted',
-  'contact_created',
-  'tag_added',
-  'list_joined',
-  'donation_recorded',
-  'payment_event',
-  'volunteer_shift_status',
-  'task_sla_breach',
-  'new_subscriber',
-  'new_unsubscriber',
-  'supporter_lapsed',
-  'date_arrives',
-  'volunteer_signup',
-] as const;
-
-export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
-
-const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
-
-// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
-export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
-
-export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
-
-const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
-
-// Engagement condition on a send_email step: gate the send on what the recipient did with the
-// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
-// with a wait step so people have time to engage). Absent/null = always send. A click also
-// stamps an open, so "not opened" implies "not clicked" was true as well.
-export const WORKFLOW_SEND_CONDITIONS = [
-  'previous_not_opened',
-  'previous_not_clicked',
-  'previous_opened',
-  'previous_clicked',
-] as const;
-
-export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
-
-// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
-// each time the enrollment comes due, before any step runs.
-export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
-
-export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
-
-// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
-// at the schema boundary; the controller maps each kind's meaningful fields when executing.
-export const WorkflowStepConfigObj = z
-  .object({
-    // add_tag
-    tag_id: z.string().nullable().optional(),
-    tag_name: z.string().nullable().optional(),
-    // create_task
-    task_title: z.string().nullable().optional(),
-    // notify_team
-    notify_user_id: z.string().nullable().optional(),
-    notify_user_name: z.string().nullable().optional(),
-    notify_message: z.string().nullable().optional(),
-    // send_email
-    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
-  })
-  .strict();
-
-export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-// Input shape for saveSteps — order is implied by array position, so no step_number here.
-export const AddWorkflowStepObj = z.object({
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative().default(0),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const WorkflowRunObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  enrollment_id: z.string().nullable().optional(),
-  person_id: z.string().nullable().optional(),
-  step_number: z.number().int().nullable().optional(),
-  step_kind: z.string().nullable().optional(),
-  status: z.enum(['success', 'failed', 'skipped']),
-  error: z.string().nullable().optional(),
-  opened_at: z.coerce.date().nullable().optional(),
-  clicked_at: z.coerce.date().nullable().optional(),
-  created_at: z.coerce.date(),
-});
-
-export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
 ````
 
 ## File: libs/common/src/lib/models.ts
@@ -10658,619 +10734,6 @@ export default defineConfig(() => ({
 }));
 ````
 
-## File: libs/common/src/lib/help/articles/contacts.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      {
-        kind: 'p',
-        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
-      },
-      {
-        kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
-      },
-      {
-        kind: 'p',
-        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Household**: everyone at the same address.',
-          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
-          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
-          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
-          '**Volunteer**: their shift history and hours.',
-          '**Events**: event registrations and attendance.',
-          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: [
-      'household',
-      'family',
-      'address',
-      'members',
-      'assign household',
-      'home',
-      'map',
-      'ward',
-      'district',
-      'precinct',
-      'geocode',
-      'door notes',
-    ],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Households](/households)',
-            detail:
-              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
-          },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
-      },
-      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
-      {
-        kind: 'p',
-        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
-      },
-      {
-        kind: 'p',
-        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: [
-      'company',
-      'organization',
-      'employer',
-      'business',
-      'sponsor',
-      'corporate',
-      'enrich',
-      'google',
-      'google places',
-    ],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail:
-              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
-      {
-        kind: 'p',
-        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
-      },
-      {
-        kind: 'p',
-        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Deleting a company keeps the people',
-        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      {
-        kind: 'p',
-        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/help/articles/productivity.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks: list and board',
-    summary:
-      'Track the work: assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
-    related: ['dashboard', 'teams', 'automations'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tasks capture commitments: call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
-      },
-      { kind: 'h2', id: 'views', text: 'List or board: one dataset, two views' },
-      {
-        kind: 'list',
-        items: [
-          '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
-          'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly. A card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
-      },
-      {
-        kind: 'p',
-        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'A task with no assignee shows a dashed Unassigned pill. One click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          "If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar's Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup. See [The dashboard and SLA health](/help/dashboard).",
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one; "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Storage & attachments',
-    summary: 'Files live attached to the record they belong to; track total usage from Workspace settings.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'quota'],
-    related: ['grid-basics', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Files no longer live in their own standalone library. A file is attached directly to the record it belongs to (for example, a PDF flyer attached to a newsletter). This keeps every upload tied to why it was added, instead of sitting in an unsorted pile.',
-      },
-      { kind: 'h2', id: 'attach', text: 'Attach a file' },
-      {
-        kind: 'p',
-        text: 'Open the record that should carry the file (e.g. a draft or scheduled newsletter) and use its "Attach file" button. Attachments can only be added or removed before the record has sent.',
-      },
-      { kind: 'h2', id: 'storage', text: 'Check total usage' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Workspace settings → Storage](/workspace/storage)',
-            detail: 'Shows how much of your plan quota is used, and which files are the largest.',
-          },
-          {
-            title: 'Delete a large file',
-            detail:
-              'Removing it from the Storage tab detaches it from whatever it was attached to and frees the space.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Quota affects newsletter sending',
-        text: 'If your workspace is at 100% of its storage quota, newsletters still send but skip their attachments. Free up space first if attachments matter for that send.',
-      },
-    ],
-  },
-];
-````
-
-## File: libs/common/src/lib/schemas/content-check.schema.ts
-````typescript
-import { z } from 'zod';
-
-/**
- * Newsletter preflight ("deliverability check") shared contracts.
- *
- * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
- * from explainable per-finding deductions. The band thresholds live here — not in backend
- * send-guards — because the composer gauge and the server-side send gate must agree on where the
- * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
- * is mostly sender reputation + engagement, which no pre-send check can compute.
- */
-
-/** Scores at or above this are "good — ready to send". */
-export const PREFLIGHT_GOOD = 80;
-/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
-export const PREFLIGHT_BLOCK = 50;
-
-export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
-export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
-
-/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
-export function preflightBand(score: number): PreflightBand {
-  if (score < PREFLIGHT_BLOCK) return 'blocked';
-  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
-}
-
-export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
-export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
-
-export const PreflightFindingObj = z.object({
-  /** Stable machine code, e.g. "subject-caps", "base64-image". */
-  code: z.string(),
-  severity: z.enum(PREFLIGHT_SEVERITIES),
-  /** What was found, user-facing. */
-  message: z.string(),
-  /** How to fix it, user-facing. */
-  hint: z.string(),
-  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
-  deduction: z.number(),
-});
-export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
-
-/**
- * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
- * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
- * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
- */
-export const AI_CONTENT_TYPES = [
-  'newsletter_update',
-  'fundraising_appeal',
-  'event_promotion',
-  'auction_or_sale',
-  'advocacy',
-  'pure_commercial_marketing',
-  'scam_or_phishing',
-  'other',
-] as const;
-export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
-
-/** Structured verdict returned by the Claude content review (also its output-format schema). */
-export const AiPreflightVerdictObj = z.object({
-  contentType: z.enum(AI_CONTENT_TYPES),
-  /** 0 (clean) to 100 (reads like spam). */
-  spamRiskScore: z.number().min(0).max(100),
-  /** Short reasons behind the risk score, user-facing. */
-  reasons: z.array(z.string()),
-  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
-  deceptionFlags: z.array(z.string()),
-  /** Concrete copy rewrites for the worst offenders, user-facing. */
-  suggestions: z.array(z.string()),
-  /** The model's confidence in this verdict, 0–1. */
-  confidence: z.number().min(0).max(1),
-});
-export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
-
-/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
-export const RunPreflightObj = z.object({
-  subject: z.string().max(500),
-  html: z.string().max(500_000),
-  plainText: z.string().max(200_000).optional(),
-});
-export type RunPreflightType = z.infer<typeof RunPreflightObj>;
-
-/**
- * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
- * no API key or the API errored — so the score is partial ('unavailable'); or the check didn't
- * include an AI review by design ('not_required' — today only the composer's local quick check;
- * every server-side check, interactive or send-time, includes the AI review).
- */
-export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
-export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
-
-/** Full preflight outcome: the score, its band, and every finding that shaped it. */
-export const PreflightResultObj = z.object({
-  score: z.number(),
-  band: z.enum(PREFLIGHT_BANDS),
-  findings: z.array(PreflightFindingObj),
-  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
-  spamAssassinScore: z.number().nullable(),
-  ai: AiPreflightVerdictObj.nullable(),
-  aiStatus: z.enum(AI_REVIEW_STATUSES),
-  checkedAt: z.string(),
-});
-export type PreflightResult = z.infer<typeof PreflightResultObj>;
-````
-
-## File: libs/common/src/lib/schema.ts
-````typescript
-export * from './schemas/core.schema';
-export * from './schemas/activity.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/newsletter-templates.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-export * from './schemas/campaigns.schema';
-export * from './schemas/canvassing.schema';
-export * from './schemas/deliveries.schema';
-export * from './schemas/donations.schema';
-export * from './schemas/companion-access.schema';
-export * from './schemas/content-check.schema';
-````
-
-## File: libs/common/src/lib/billing/currency.ts
-````typescript
-/**
- * Display-currency helpers for the marketing website.
- *
- * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
- * marketing site *show* those USD prices converted to a handful of local currencies at live
- * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
- * page carries that disclaimer whenever a non-USD currency is shown.
- *
- * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
- * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
- * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
- * the "billed in USD" note.
- */
-
-/** The currencies the marketing site can display prices in. USD is the billing currency. */
-export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
-export type CurrencyCode = (typeof CURRENCY_CODES)[number];
-
-export interface CurrencyDef {
-  readonly code: CurrencyCode;
-  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
-  readonly symbol: string;
-  /** Human label for the switcher menu. */
-  readonly label: string;
-}
-
-/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
- * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
-export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
-  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
-  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
-  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
-  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
-};
-
-/** Locale used for number grouping in formatted prices (fixed for consistent English
- * presentation on the marketing site). */
-const FORMAT_LOCALE = 'en-US';
-
-/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
- * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
- * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
-const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  CAD: 'C$',
-};
-
-/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
-export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
-
-/** Type guard: is a string one of our supported currency codes? */
-export function isCurrencyCode(value: string): value is CurrencyCode {
-  return (CURRENCY_CODES as readonly string[]).includes(value);
-}
-
-/**
- * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
- * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
- */
-export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
-  GB: 'GBP',
-  CA: 'CAD',
-  // Eurozone (the 20 EUR members).
-  AT: 'EUR',
-  BE: 'EUR',
-  HR: 'EUR',
-  CY: 'EUR',
-  EE: 'EUR',
-  FI: 'EUR',
-  FR: 'EUR',
-  DE: 'EUR',
-  GR: 'EUR',
-  IE: 'EUR',
-  IT: 'EUR',
-  LV: 'EUR',
-  LT: 'EUR',
-  LU: 'EUR',
-  MT: 'EUR',
-  NL: 'EUR',
-  PT: 'EUR',
-  SK: 'EUR',
-  SI: 'EUR',
-  ES: 'EUR',
-};
-
-/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
-export function currencyForCountry(country: string | null | undefined): CurrencyCode {
-  if (!country) return 'USD';
-  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
-}
-
-/**
- * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
- * Falls back to the original amount when the rate for `code` is missing (treated as USD).
- */
-export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
-  const rate = code === 'USD' ? 1 : rates[code];
-  if (rate == null) return Math.round(usd);
-  return Math.round(usd * rate);
-}
-
-/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
- * inline — kept consistent with `formatCurrency`'s output. */
-export function currencyPriceSymbol(code: CurrencyCode): string {
-  return PRICE_SYMBOLS[code];
-}
-
-/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
- * (e.g. `$69`, `C$95`, `€65`, `£55`). */
-export function formatCurrency(amount: number, code: CurrencyCode): string {
-  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
-  return `${currencyPriceSymbol(code)}${number}`;
-}
-````
-
 ## File: libs/common/src/lib/help/articles/getting-started.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -11680,6 +11143,555 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/schemas/content-check.schema.ts
+````typescript
+import { z } from 'zod';
+
+/**
+ * Newsletter preflight ("deliverability check") shared contracts.
+ *
+ * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
+ * from explainable per-finding deductions. The band thresholds live here — not in backend
+ * send-guards — because the composer gauge and the server-side send gate must agree on where the
+ * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
+ * is mostly sender reputation + engagement, which no pre-send check can compute.
+ */
+
+/** Scores at or above this are "good — ready to send". */
+export const PREFLIGHT_GOOD = 80;
+/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
+export const PREFLIGHT_BLOCK = 50;
+
+export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
+export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
+
+/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
+export function preflightBand(score: number): PreflightBand {
+  if (score < PREFLIGHT_BLOCK) return 'blocked';
+  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
+}
+
+export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
+export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
+
+export const PreflightFindingObj = z.object({
+  /** Stable machine code, e.g. "subject-caps", "base64-image". */
+  code: z.string(),
+  severity: z.enum(PREFLIGHT_SEVERITIES),
+  /** What was found, user-facing. */
+  message: z.string(),
+  /** How to fix it, user-facing. */
+  hint: z.string(),
+  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
+  deduction: z.number(),
+});
+export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
+
+/**
+ * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
+ * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
+ * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
+ */
+export const AI_CONTENT_TYPES = [
+  'newsletter_update',
+  'fundraising_appeal',
+  'event_promotion',
+  'auction_or_sale',
+  'advocacy',
+  'pure_commercial_marketing',
+  'scam_or_phishing',
+  'other',
+] as const;
+export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
+
+/** Structured verdict returned by the Claude content review (also its output-format schema). */
+export const AiPreflightVerdictObj = z.object({
+  contentType: z.enum(AI_CONTENT_TYPES),
+  /** 0 (clean) to 100 (reads like spam). */
+  spamRiskScore: z.number().min(0).max(100),
+  /** Short reasons behind the risk score, user-facing. */
+  reasons: z.array(z.string()),
+  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
+  deceptionFlags: z.array(z.string()),
+  /** Concrete copy rewrites for the worst offenders, user-facing. */
+  suggestions: z.array(z.string()),
+  /** The model's confidence in this verdict, 0–1. */
+  confidence: z.number().min(0).max(1),
+});
+export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
+
+/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
+export const RunPreflightObj = z.object({
+  subject: z.string().max(500),
+  html: z.string().max(500_000),
+  plainText: z.string().max(200_000).optional(),
+});
+export type RunPreflightType = z.infer<typeof RunPreflightObj>;
+
+/**
+ * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
+ * no API key or the API errored — so the score is partial ('unavailable'); or the check didn't
+ * include an AI review by design ('not_required' — today only the composer's local quick check;
+ * every server-side check, interactive or send-time, includes the AI review).
+ */
+export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
+export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
+
+/** Full preflight outcome: the score, its band, and every finding that shaped it. */
+export const PreflightResultObj = z.object({
+  score: z.number(),
+  band: z.enum(PREFLIGHT_BANDS),
+  findings: z.array(PreflightFindingObj),
+  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
+  spamAssassinScore: z.number().nullable(),
+  ai: AiPreflightVerdictObj.nullable(),
+  aiStatus: z.enum(AI_REVIEW_STATUSES),
+  checkedAt: z.string(),
+});
+export type PreflightResult = z.infer<typeof PreflightResultObj>;
+````
+
+## File: libs/common/src/lib/schemas/tasks.schema.ts
+````typescript
+import { z } from 'zod';
+import { nameSchema, notesSchema, idSchema } from './core.schema';
+
+/**
+ * Canonical task status vocabulary (spec §4). This is the single source of truth —
+ * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
+ * derives from this list. Do not hand-roll a parallel status array anywhere.
+ *
+ * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
+ * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
+ * state — a canceled task is, in practice, a task nobody is coming back to, which is
+ * exactly what "archived" already means in this app (hidden from the active views,
+ * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
+ * normalizes existing rows to this vocabulary.
+ */
+export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
+export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
+export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
+
+/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
+export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
+
+/** Type guard for the four board columns specifically (excludes `archived`). */
+export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
+  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
+}
+
+const taskStatusEnum = z.enum(TASK_STATUSES);
+const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
+
+export const AddTaskObj = z.object({
+  name: nameSchema('Task name', 200),
+  details: z.string().trim().max(10000, 'Details too long').optional(),
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.default('todo').optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+export const TasksObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  details: z.string().optional(),
+  due_at: z.coerce.date().optional(),
+  status: taskStatusEnum.nullable().optional(),
+  priority: taskPriorityEnum.nullable().optional(),
+  completed_at: z.coerce.date().optional(),
+  position: z.number().int().optional(),
+  assigned_to: z.string().nullable().optional(),
+  team_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+});
+
+export const UpdateTaskObj = z.object({
+  name: nameSchema('Task name', 200).optional(),
+  details: notesSchema,
+  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  status: taskStatusEnum.optional(),
+  priority: taskPriorityEnum.optional(),
+  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
+  position: z.number().int().optional(),
+  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  team_id: idSchema.or(z.literal('')).nullable().optional(),
+  person_id: idSchema.or(z.literal('')).nullable().optional(),
+});
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
+````
+
+## File: libs/common/src/lib/schemas/workflows.schema.ts
+````typescript
+import { z } from 'zod';
+import { queryBuilderNodeSchema } from './core.schema';
+
+// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
+// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
+// volunteer-events controller) but is not offered as a card. `date_arrives` stays in the
+// enum for saved-row back-compat but has no picker card: no backend fires it yet, and a
+// dead card is dishonest UI. `task_sla_breach` is fired by the hourly
+// detect_task_sla_breaches cron (spec §4 → §16), which enrolls the breached task's linked
+// person. `supporter_lapsed` is fired by the daily detect_lapsed_supporters cron; its
+// trigger_event_id holds the inactivity threshold in days (default 90).
+export const WORKFLOW_TRIGGER_TYPES = [
+  'manual',
+  'web_form_submitted',
+  'contact_created',
+  'tag_added',
+  'list_joined',
+  'donation_recorded',
+  'payment_event',
+  'volunteer_shift_status',
+  'task_sla_breach',
+  'new_subscriber',
+  'new_unsubscriber',
+  'supporter_lapsed',
+  'date_arrives',
+  'volunteer_signup',
+] as const;
+
+export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
+
+const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
+
+// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
+export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
+
+export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
+
+const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
+
+// Engagement condition on a send_email step: gate the send on what the recipient did with the
+// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
+// with a wait step so people have time to engage). Absent/null = always send. A click also
+// stamps an open, so "not opened" implies "not clicked" was true as well.
+export const WORKFLOW_SEND_CONDITIONS = [
+  'previous_not_opened',
+  'previous_not_clicked',
+  'previous_opened',
+  'previous_clicked',
+] as const;
+
+export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
+
+// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
+// each time the enrollment comes due, before any step runs.
+export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
+
+export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
+
+// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
+// at the schema boundary; the controller maps each kind's meaningful fields when executing.
+export const WorkflowStepConfigObj = z
+  .object({
+    // add_tag
+    tag_id: z.string().nullable().optional(),
+    tag_name: z.string().nullable().optional(),
+    // create_task
+    task_title: z.string().nullable().optional(),
+    // notify_team
+    notify_user_id: z.string().nullable().optional(),
+    notify_user_name: z.string().nullable().optional(),
+    notify_message: z.string().nullable().optional(),
+    // send_email
+    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
+  })
+  .strict();
+
+export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
+
+export const WorkflowObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft'),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const AddWorkflowObj = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+});
+
+export const UpdateWorkflowObj = AddWorkflowObj.partial();
+
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+
+export const WorkflowStepObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  step_number: z.number().int().positive(),
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative(),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+// Input shape for saveSteps — order is implied by array position, so no step_number here.
+export const AddWorkflowStepObj = z.object({
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative().default(0),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+});
+
+export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
+
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+
+export const WorkflowEnrollmentObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  person_id: z.string(),
+  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
+  current_step_number: z.number().int().nonnegative(),
+  next_run_at: z.coerce.date().nullable().optional(),
+  enrolled_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const WorkflowRunObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  enrollment_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+  step_number: z.number().int().nullable().optional(),
+  step_kind: z.string().nullable().optional(),
+  status: z.enum(['success', 'failed', 'skipped']),
+  error: z.string().nullable().optional(),
+  opened_at: z.coerce.date().nullable().optional(),
+  clicked_at: z.coerce.date().nullable().optional(),
+  created_at: z.coerce.date(),
+});
+
+export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
+````
+
+## File: libs/common/src/lib/schema.ts
+````typescript
+export * from './schemas/core.schema';
+export * from './schemas/activity.schema';
+export * from './schemas/auth.schema';
+export * from './schemas/tags.schema';
+export * from './schemas/lists.schema';
+export * from './schemas/teams.schema';
+export * from './schemas/emails.schema';
+export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
+export * from './schemas/persons.schema';
+export * from './schemas/settings.schema';
+export * from './schemas/tasks.schema';
+export * from './schemas/volunteer.schema';
+export * from './schemas/web-forms.schema';
+export * from './schemas/workflows.schema';
+export * from './schemas/companies.schema';
+export * from './schemas/events.schema';
+export * from './schemas/connections.schema';
+export * from './schemas/campaigns.schema';
+export * from './schemas/canvassing.schema';
+export * from './schemas/deliveries.schema';
+export * from './schemas/donations.schema';
+export * from './schemas/companion-access.schema';
+export * from './schemas/content-check.schema';
+````
+
+## File: libs/common/src/lib/billing/currency.ts
+````typescript
+/**
+ * Display-currency helpers for the marketing website.
+ *
+ * The single source of truth for prices is USD ({@link ./plans.ts}). These helpers let the
+ * marketing site *show* those USD prices converted to a handful of local currencies at live
+ * exchange rates, purely for the visitor's convenience. Billing is always in USD — the pricing
+ * page carries that disclaimer whenever a non-USD currency is shown.
+ *
+ * Everything here is framework-agnostic (no Angular): the Angular service that fetches rates and
+ * detects the visitor's region lives in the website app (ui/currency.service.ts). Conversion is
+ * rounded to whole currency units — these are estimates, and whole numbers read cleanly next to
+ * the "billed in USD" note.
+ */
+
+/** The currencies the marketing site can display prices in. USD is the billing currency. */
+export const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'CAD'] as const;
+export type CurrencyCode = (typeof CURRENCY_CODES)[number];
+
+export interface CurrencyDef {
+  readonly code: CurrencyCode;
+  /** The symbol shown in the switcher trigger, disambiguated across currencies (CA$ vs $). */
+  readonly symbol: string;
+  /** Human label for the switcher menu. */
+  readonly label: string;
+}
+
+/** Per-currency display metadata, keyed by code. The symbol is the plain currency glyph; the
+ * ISO code disambiguates the shared `$` (USD vs CAD), shown alongside the symbol. */
+export const SUPPORTED_CURRENCIES: Readonly<Record<CurrencyCode, CurrencyDef>> = {
+  USD: { code: 'USD', symbol: '$', label: 'US dollar' },
+  EUR: { code: 'EUR', symbol: '€', label: 'Euro' },
+  GBP: { code: 'GBP', symbol: '£', label: 'British pound' },
+  CAD: { code: 'CAD', symbol: '$', label: 'Canadian dollar' },
+};
+
+/** Locale used for number grouping in formatted prices (fixed for consistent English
+ * presentation on the marketing site). */
+const FORMAT_LOCALE = 'en-US';
+
+/** Symbols used when formatting a *price* (e.g. `C$41` in the pricing table). CAD uses `C$` to
+ * distinguish it from USD's `$`. This is separate from `SUPPORTED_CURRENCIES[code].symbol`, which
+ * is the switcher-menu symbol paired with the ISO code there (`$ CAD`). */
+const PRICE_SYMBOLS: Readonly<Record<CurrencyCode, string>> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  CAD: 'C$',
+};
+
+/** Rates relative to USD (USD is always 1). Absent codes mean "rate not loaded yet". */
+export type ExchangeRates = Partial<Record<CurrencyCode, number>>;
+
+/** Type guard: is a string one of our supported currency codes? */
+export function isCurrencyCode(value: string): value is CurrencyCode {
+  return (CURRENCY_CODES as readonly string[]).includes(value);
+}
+
+/**
+ * ISO-3166 alpha-2 country codes that map to a non-USD display currency. Eurozone members map to
+ * EUR; GB → GBP; CA → CAD. Every country not listed falls back to USD (see `currencyForCountry`).
+ */
+export const COUNTRY_TO_CURRENCY: Readonly<Record<string, CurrencyCode>> = {
+  GB: 'GBP',
+  CA: 'CAD',
+  // Eurozone (the 20 EUR members).
+  AT: 'EUR',
+  BE: 'EUR',
+  HR: 'EUR',
+  CY: 'EUR',
+  EE: 'EUR',
+  FI: 'EUR',
+  FR: 'EUR',
+  DE: 'EUR',
+  GR: 'EUR',
+  IE: 'EUR',
+  IT: 'EUR',
+  LV: 'EUR',
+  LT: 'EUR',
+  LU: 'EUR',
+  MT: 'EUR',
+  NL: 'EUR',
+  PT: 'EUR',
+  SK: 'EUR',
+  SI: 'EUR',
+  ES: 'EUR',
+};
+
+/** Resolve a country code (from geo-IP or a locale region) to a display currency; default USD. */
+export function currencyForCountry(country: string | null | undefined): CurrencyCode {
+  if (!country) return 'USD';
+  return COUNTRY_TO_CURRENCY[country.toUpperCase()] ?? 'USD';
+}
+
+/**
+ * Convert a whole-dollar USD amount to `code` at the given rates, rounded to whole units.
+ * Falls back to the original amount when the rate for `code` is missing (treated as USD).
+ */
+export function convertFromUsd(usd: number, code: CurrencyCode, rates: ExchangeRates): number {
+  const rate = code === 'USD' ? 1 : rates[code];
+  if (rate == null) return Math.round(usd);
+  return Math.round(usd * rate);
+}
+
+/** The price symbol for a currency (e.g. `C$` for CAD), for copy that references the currency
+ * inline — kept consistent with `formatCurrency`'s output. */
+export function currencyPriceSymbol(code: CurrencyCode): string {
+  return PRICE_SYMBOLS[code];
+}
+
+/** Format a whole-unit amount as a price with a disambiguated symbol and no fractional part
+ * (e.g. `$69`, `C$95`, `€65`, `£55`). */
+export function formatCurrency(amount: number, code: CurrencyCode): string {
+  const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
+  return `${currencyPriceSymbol(code)}${number}`;
+}
+````
+
 ## File: libs/common/src/lib/help/articles/engagement.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -12048,6 +12060,331 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/help/articles/administration.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      {
+        kind: 'p',
+        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
+      },
+      { kind: 'h2', id: 'user-page', text: 'The user page' },
+      {
+        kind: 'p',
+        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
+      },
+      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
+      {
+        kind: 'p',
+        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
+          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
+          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization**: your name, contact details, and mailing address.',
+          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
+          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & access**: default role for invitations and the MFA requirement.',
+          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance**: default theme and date format for the workspace.',
+          '**Billing**: your plan, live usage, and payment details.',
+        ],
+      },
+      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
+      {
+        kind: 'p',
+        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
+          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
+          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
+          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
+      },
+      {
+        kind: 'p',
+        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
+      },
+      {
+        kind: 'p',
+        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
+      },
+      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
+      {
+        kind: 'p',
+        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'volunteer-access',
+    category: 'admin',
+    title: 'Volunteer access approvals',
+    summary:
+      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
+    keywords: [
+      'volunteer',
+      'access',
+      'approve',
+      'companion',
+      'canvass',
+      'delivery',
+      'link',
+      'verify',
+      'revoke',
+      'code',
+    ],
+    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
+      },
+      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
+      {
+        kind: 'p',
+        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
+      },
+      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
+      {
+        kind: 'p',
+        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Verification needs a contact on file',
+        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
+      {
+        kind: 'p',
+        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'p',
+        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
+      },
+    ],
+  },
+  {
+    id: 'campaigns-contexts',
+    category: 'admin',
+    title: 'Campaigns and contexts',
+    summary:
+      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
+    keywords: [
+      'campaigns',
+      'campaign',
+      'context',
+      'office',
+      'election',
+      'switcher',
+      'archive',
+      'workspace',
+      'constituency',
+    ],
+    related: ['users-roles', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
+      },
+      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
+      {
+        kind: 'p',
+        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
+      },
+      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
+      {
+        kind: 'list',
+        items: [
+          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
+          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
+          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
+          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
+          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
+        ],
+      },
+      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
+      {
+        kind: 'list',
+        items: [
+          '**Create** a campaign before the race, with a start date and election day.',
+          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
+          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
+          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'The office cannot be archived or deleted',
+        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
       },
     ],
   },
@@ -13414,331 +13751,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
-## File: libs/common/src/lib/help/articles/administration.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary: 'Your photo, your details, and your account facts, plus a snapshot of your own activity.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app, or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Notification preferences live in **Settings** (avatar menu → Settings), not on the Profile page. Choose, per event, whether you are alerted by email and in-app: mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries. Every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email. Some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace, a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the Admin section, visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      {
-        kind: 'p',
-        text: 'The page opens with a one-line summary: how many users, how many are active or invited, and how many plan seats are in use. Each row shows a **Status** chip: **Active**, **Invited** (account created, not yet signed in), or **Deactivated**. It also has an **MFA** column showing who has multi-factor sign-in turned on and a **Last active** column based on real sign-in sessions. Change someone’s role right in the row with the role dropdown; your own role is locked, which prevents an accidental self-lockout. The **⋯** menu on each row opens the profile or sends a password reset email.',
-      },
-      { kind: 'h2', id: 'user-page', text: 'The user page' },
-      {
-        kind: 'p',
-        text: 'Click a name to open the user’s page. Everything is managed right there, with no separate edit screen. The **Profile** card edits their name and email in place with an explicit **Save user** (changing an email sends a confirmation to the new address first). The **Access** card changes the role (it applies immediately, and locked roles say why) and shows two-factor status, last activity, and email verification. **Send password reset** sits in the header; for an **Invited** user who hasn’t signed in yet, the Access card offers **Resend invite** with a fresh activation link. **Deactivate user** and **Delete user** live in the **⋯** menu.',
-      },
-      { kind: 'h2', id: 'invite', text: 'Inviting someone' },
-      {
-        kind: 'p',
-        text: '**Invite user** opens a dialog asking for the person’s email, first and last name, and role. The invitation arrives by email with an activation link that **expires after 7 days**, and it takes a plan seat right away. The dialog tells you how many seats remain. If an invitation lapses, open the person’s page and click **Resend invite** to issue a fresh link and temporary password. When every seat is in use, the button explains that too; free a seat or upgrade under **Settings → Billing**.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer**: read-only. Sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor**: the working role. Manages contacts, sends newsletters, runs the daily work.',
-          '**Admin**: everything, plus the Admin area, which holds users, workspace configuration, and the workspace-wide activity log.',
-          '**Owner**: everything an admin can do, plus billing and workspace lifecycle. Every workspace keeps at least one owner, and only an owner can change another owner’s role.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job. You can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, open their user page and pick **Deactivate user** from the **⋯** menu. Sign-in stops immediately and their sessions end, but their seat frees up and their history stays attributed to them in the activity log. If they return, **Reactivate user** restores access. Deactivated accounts keep their role.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'pplCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly. There is nothing to save. The [Workspace](/workspace) settings (administrators only, under **Admin** in the sidebar) set policy for everyone and use a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications**: a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance**: Theme is Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys**: the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization**: your name, contact details, and mailing address.',
-          '**App**: how the volunteer-facing apps behave, including whether volunteer route links expire after 30 days. Expiry is the secure default (a forwarded or long-lost link goes dead on its own), but you can turn it off if your delivery routes run longer. Volunteers still verify a code and need a one-time approval either way.',
-          '**Communications**: default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications**: workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & access**: default role for invitations and the MFA requirement.',
-          '**Service levels**: response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance**: default theme and date format for the workspace.',
-          '**Billing**: your plan, live usage, and payment details.',
-        ],
-      },
-      { kind: 'h2', id: 'billing', text: 'Plans and billing' },
-      {
-        kind: 'p',
-        text: 'pplCRM has three feature tiers: **Free**, **Grassroots**, and **Movement**. Which tier you are on decides which features you have. Within a paid tier, the price scales smoothly with your emailable-subscriber count instead of jumping between price points, so growing your list never means a sudden shock to the bill.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**Free**: $0 forever. Up to 1,000 emailable subscribers, 2,000 emails a month, 2 staff seats, and 1 GB of storage. Includes the full people CRM and newsletters. No companion volunteers.',
-          '**Grassroots**: starts at $29 a month for up to 1,000 emailable subscribers, then rises in steps as your list grows, up to $359 a month at its 100,000-subscriber ceiling. Adds web forms, donations, automations, lists, and volunteer management (teams and events).',
-          '**Movement**: starts at $55 a month for up to 1,000 emailable subscribers, then rises in steps up to $665 a month at its 200,000-subscriber ceiling. Adds the canvassing and deliveries companion apps with unlimited companion volunteers: turf cutting, walk lists and routes, field reports, yard signs, and route optimization, plus priority support.',
-          '**Enterprise**: for federations, parties, and multi-office operations with custom needs. Pricing is negotiated directly. Reach out from the [Billing](/workspace/billing) page.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every plan meters **emailable subscribers**, not total contacts. Your whole voter or canvassing universe stays free to store; you only pay for the people you can actually email.',
-      },
-      {
-        kind: 'p',
-        text: 'Paid plans can be billed **monthly or annually**. Annual billing costs exactly 10× the monthly price at every bracket — **2 months free** — paid up front for the year. Pick the interval with the Monthly/Annual toggle on the [Billing](/workspace/billing) page before upgrading; existing subscribers can switch interval from the Stripe billing portal (**Manage subscription**). Monthly is the default — if your campaign wraps up mid-year, don’t prepay twelve months.',
-      },
-      {
-        kind: 'p',
-        text: 'Plan prices exclude tax. Where your jurisdiction requires it, sales tax, VAT, or GST is calculated and added at checkout based on the billing address you enter there, and appears as its own line on every invoice and receipt. If your organization has a business tax number (VAT, GST, or similar), you can enter it at checkout so it appears on your invoices and any business-to-business tax treatment applies automatically.',
-      },
-      { kind: 'h2', id: 'billing-bumps', text: 'What happens when your list grows or shrinks' },
-      {
-        kind: 'p',
-        text: 'When your emailable-subscriber count crosses into a higher price bracket, every admin and owner is notified, the subscription moves to the new bracket, and the prorated difference for the remainder of your current billing period is charged right away — on **either** interval. Growth never interrupts sending, and your monthly email allowance rises with the new bracket the moment it applies. If your list shrinks back below a bracket, the lower price reconciles at the next renewal rather than refunding the current period. If a payment fails, newsletter sending goes on hold until the payment method is updated on the [Billing](/workspace/billing) page — everything else keeps working.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator. See [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours. Everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'volunteer-access',
-    category: 'admin',
-    title: 'Volunteer access approvals',
-    summary:
-      'Companion links are personal. Volunteers verify a code sent to their contact on file, and new volunteers need a one-time admin approval.',
-    keywords: [
-      'volunteer',
-      'access',
-      'approve',
-      'companion',
-      'canvass',
-      'delivery',
-      'link',
-      'verify',
-      'revoke',
-      'code',
-    ],
-    related: ['users-roles', 'canvassing', 'deliveries', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Canvassing turfs and delivery routes reach volunteers as personal links: no account, nothing to install. To keep a forwarded or leaked link from exposing voter data, opening one takes two steps: the volunteer verifies a one-time code sent to the email or mobile on their person record, and a first-time volunteer waits for an admin to approve them. Approval happens once per volunteer, not per link. After that, every current and future assignment just works.',
-      },
-      { kind: 'h2', id: 'approve', text: 'Approving a volunteer' },
-      {
-        kind: 'p',
-        text: 'When someone verifies for the first time, every admin gets an email, an in-app notification in the bell menu, and a badge on [Volunteer access](/volunteer-access) in the Admin section. Opening the notification takes you straight there. Each row shows the volunteer, their contact on file, and a status chip: **Invited** (link sent, not yet verified), **Awaiting approval**, **Approved**, or **Revoked**. Click **Approve** and their open Companion page unlocks by itself within seconds. They never re-enter a code.',
-      },
-      { kind: 'h2', id: 'revoke', text: 'Revoking access' },
-      {
-        kind: 'p',
-        text: '**Revoke** signs the volunteer out of every phone they ever verified, effective on their next request, and dead-ends their links. Use it when someone leaves the campaign or a phone is lost. You can approve them again later. They’ll verify a fresh code first. Every approval and revocation is recorded in the [activity log](/activity).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Verification needs a contact on file',
-        text: 'Codes go to the email or mobile number on the volunteer’s person record. If neither is on file, the link tells them to ask you. Add a contact to their record and have them reopen the link.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what and when, on every record page and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history. Open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'log-interaction', text: 'Log an interaction' },
-      {
-        kind: 'p',
-        text: 'The history is not only automatic. On any person, household, or company page, use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is attributed to you and joins that record’s Activity immediately, so a phone call or a conversation at the door leaves the same durable trail as an edit.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'p',
-        text: 'Filter by **Actor**, **Item type**, or **Action** to narrow the trail, and events are grouped by day (Today, Yesterday, then dated) so a busy stretch stays scannable. Actions taken through a public token, like a delivery volunteer following their link, are labelled **via volunteer link** rather than pinned on a signed-in teammate. Use **Export log** to download the filtered trail as `activity-log.csv`. The workspace log keeps the last **90 days**; older events are pruned automatically.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption. Now you know who to sync with.',
-      },
-    ],
-  },
-  {
-    id: 'campaigns-contexts',
-    category: 'admin',
-    title: 'Campaigns and contexts',
-    summary:
-      'One shared contact list, separate campaign workspaces: how the office and election campaigns coexist without mixing supporter data.',
-    keywords: [
-      'campaigns',
-      'campaign',
-      'context',
-      'office',
-      'election',
-      'switcher',
-      'archive',
-      'workspace',
-      'constituency',
-    ],
-    related: ['users-roles', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your workspace always has one permanent **office** context, the constituency office’s day-to-day home. When an election comes, create an **election campaign** alongside it under [Campaigns](/campaigns) in the Admin section. People, households, and companies are shared across every context: one contact list, no duplicates. What stays separate per campaign is what you learn and are permitted to do in it: supporter data, email consent, and outreach.',
-      },
-      { kind: 'h2', id: 'switching', text: 'Switching contexts' },
-      {
-        kind: 'p',
-        text: 'The switcher at the top of the sidebar shows which context you are working in. Click it to jump between the office and any campaign. The choice is yours alone (teammates can be working in a different context at the same time) and it follows you across devices.',
-      },
-      { kind: 'h2', id: 'separate', text: 'What is separate per campaign' },
-      {
-        kind: 'list',
-        items: [
-          '**Support level**: Strong, Leaning, Neutral, Leaning against, Against, Undecided; “Unknown” simply means never asked. Someone can back your office work and oppose the campaign, or vice versa.',
-          '**Voting status**: Will vote, Voted (advance or election day), Not voting, Ineligible. Once someone has voted in advance they drop out of later call and knock lists.',
-          '**Email consent**: subscribing to the office newsletter is not consent for campaign email, and unsubscribing from one never touches the other. A hard bounce or spam complaint suppresses the address everywhere, and **do-not-contact** on a person overrides every context.',
-          '**Newsletters, donations, forms, lists, events, canvassing turfs, and deliveries**: each belongs to the context it was created in, so campaign funds and office funds never mix.',
-          '**The Inbox and its email connection**: each campaign connects its own Office 365 or Gmail account and has its own Inbox. Switching context switches both the connected mailbox and the mail you see; connecting an account under one campaign never affects another. See [The shared inbox](/help/inbox).',
-        ],
-      },
-      { kind: 'h2', id: 'lifecycle', text: 'Campaign lifecycle' },
-      {
-        kind: 'list',
-        items: [
-          '**Create** a campaign before the race, with a start date and election day.',
-          '**Carry over** support levels from the office or a previous campaign as a starting assumption. Email subscriptions copy only behind an explicit confirmation. Consent judgment stays with you. Voting status never carries over.',
-          '**Work** in it during the campaign. Data recorded there never bleeds into the office.',
-          '**Archive** it after the race: everything stays viewable as read-only history, and you can unarchive if late data needs to be entered.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'The office cannot be archived or deleted',
-        text: 'It is the permanent workspace. Election campaigns cannot be deleted either. Archive them instead, so their history and attribution stay intact.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/outreach.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -14133,6 +14145,525 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     ],
   },
 ];
+````
+
+## File: libs/common/src/index.ts
+````typescript
+export type {
+  IAuthKeyPayload,
+  IAuthUser,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  IUserStatsSnapshot,
+  IToken,
+  signInInputType,
+  signUpInputType,
+} from './lib/auth';
+
+export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
+
+export type {
+  INow,
+  AddTagType,
+  AddListType,
+  AddMarketingEmailType,
+  AddTaskType,
+  AddTeamType,
+  AddCampaignType,
+  UpdateCampaignType,
+  UpsertCampaignPersonFactType,
+  SetCampaignSubscriptionType,
+  CarryOverCampaignType,
+  InviteAuthUserType,
+  Verify2FAType,
+  PERSONINHOUSEHOLDTYPE,
+  PersonsType,
+  MarketingEmailType,
+  MarketingEmailTopLinkType,
+  NewsletterReportType,
+  NewsletterReportBounceType,
+  NewsletterReportEngagedType,
+  NewsletterReportLinkType,
+  NewsletterReportPreviousSendType,
+  CreateClickersListResultType,
+  TasksType,
+  ListsType,
+  SettingsType,
+  SettingsEntryType,
+  UpsertSettingsInputType,
+  SortModelType,
+  UpdateHouseholdsType,
+  UpdatePersonsType,
+  UpdateTagType,
+  UpdateListType,
+  UpdateTeamType,
+  UpdateAuthUserType,
+  ProfilePreferencesType,
+  UpdateMarketingEmailType,
+  UpdateTaskType,
+  getAllOptionsType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  QueueExportInputType,
+  LogInstantExportInputType,
+  DataExportRecordType,
+  ImportListItem,
+  AddVolunteerEventType,
+  VolunteerEventsType,
+  UpdateVolunteerEventType,
+  AddVolunteerShiftType,
+  VolunteerShiftsType,
+  UpdateVolunteerShiftType,
+  AddWebFormType,
+  UpdateWebFormType,
+  WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
+  QueryBuilderRuleNode,
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  WorkflowsType,
+  AddWorkflowType,
+  UpdateWorkflowType,
+  WorkflowStepsType,
+  AddWorkflowStepType,
+  UpdateWorkflowStepType,
+  WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  ReorderTicketTypesType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
+  AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
+} from './lib/models';
+
+export {
+  cloneQueryBuilderNode,
+  AddTagObj,
+  AddListObj,
+  AddMarketingEmailObj,
+  AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
+  AddTeamObj,
+  AddCampaignObj,
+  UpdateCampaignObj,
+  UpsertCampaignPersonFactObj,
+  SetCampaignSubscriptionObj,
+  CarryOverCampaignObj,
+  SUBSCRIPTION_STATUSES,
+  CONSENT_SOURCES,
+  CAMPAIGN_KINDS,
+  CAMPAIGN_STATUSES,
+  SUPPORT_LEVELS,
+  SUPPORT_LEVEL_LABELS,
+  VOTING_STATUSES,
+  VOTING_STATUS_LABELS,
+  FACT_SOURCES,
+  DNC_CHANNELS,
+  VOLUNTEER_STATUSES,
+  VOLUNTEER_STATUS_LABELS,
+  STAFF_STATUSES,
+  STAFF_STATUS_LABELS,
+  InviteAuthUserObj,
+  Verify2FAObj,
+  PersonsObj,
+  MarketingEmailObj,
+  marketingEmailTopLinkObj,
+  TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
+  ListsObj,
+  SettingsObj,
+  SettingsEntryObj,
+  UpsertSettingsInputObj,
+  UpdateHouseholdsObj,
+  UpdatePersonsObj,
+  UpdateTagObj,
+  UpdateListObj,
+  UpdateTeamObj,
+  UpdateAuthUserObj,
+  NotificationPreferencesObj,
+  ProfilePreferencesObj,
+  UpdateMarketingEmailObj,
+  UpdateTaskObj,
+  sortModelItem,
+  getAllOptions,
+  exportCsvInput,
+  exportCsvResponse,
+  queueExportInput,
+  logInstantExportInput,
+  dataExportRecord,
+  ImportListItemObj,
+  dbIdSchema,
+  uuidSchema,
+  addressSchema,
+  idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
+  nameSchema,
+  descriptionSchema,
+  emailSchema,
+  phoneSchema,
+  notesSchema,
+  AddVolunteerEventObj,
+  VolunteerEventsObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  VolunteerShiftsObj,
+  UpdateVolunteerShiftObj,
+  AddWebFormObj,
+  UpdateWebFormObj,
+  WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
+  WorkflowObj,
+  AddWorkflowObj,
+  UpdateWorkflowObj,
+  WorkflowStepObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowStepObj,
+  WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
+  CompanyInputObj,
+  CompanyEnrichmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  KNOCK_RESPONSE_LABELS,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
+  CompanionSurveyObj,
+  CompanionPersonResultObj,
+  CompanionDoorOutcomeObj,
+  CompanionClearOutcomeObj,
+  CompanionPersonCreateObj,
+  CompanionOpObj,
+  CompanionResultsObj,
+  UpdateCompanionSettingsObj,
+  AddDeliveryRequestObj,
+  UpdateDeliveryRequestObj,
+  SetDeliveryRequestStatusObj,
+  PlanDeliveriesObj,
+  CommitDeliveriesObj,
+  UpdateDeliveryRouteObj,
+  AssignVolunteerObj,
+  SetDeliveryRouteStatusObj,
+  ReorderStopObj,
+  ReorderStopsObj,
+  StopActionObj,
+  RouteIdObj,
+  MintShareLinkObj,
+  PublicStopActionObj,
+  GetSignStatusObj,
+  DELIVERY_REQUEST_STATUSES,
+  DELIVERY_REQUEST_STATUS_LABELS,
+  DELIVERY_ROUTE_STATUSES,
+  DELIVERY_STOP_STATUSES,
+  DELIVERY_SOURCES,
+  DELIVERY_SKIP_REASONS,
+  DONATION_METHODS,
+  DONATION_METHOD_LABELS,
+  donationMethodSchema,
+  RecordDonationObj,
+  INTERACTION_TYPES,
+  INTERACTION_TYPE_LABELS,
+  interactionTypeSchema,
+  LogInteractionObj,
+  CompanionAccessQueryObj,
+  CompanionVerifyStartObj,
+  CompanionVerifyConfirmObj,
+  COMPANION_LINK_KINDS,
+  COMPANION_VERIFY_CHANNELS,
+  COMPANION_VOLUNTEER_STATUSES,
+  COMPANION_ACCESS_STATES,
+} from './lib/schema';
+
+export type {
+  CompanionLinkKind,
+  CompanionVerifyChannel,
+  CompanionVolunteerStatus,
+  CompanionAccessState,
+  CompanionContact,
+  CompanionAccessPayload,
+  CompanionVerifyConfirmResult,
+  CompanionVolunteerRow,
+} from './lib/schemas/companion-access.schema';
+
+export type {
+  CampaignKind,
+  CampaignStatus,
+  SupportLevel,
+  VotingStatus,
+  FactSource,
+  SubscriptionStatus,
+  ConsentSource,
+} from './lib/schemas/campaigns.schema';
+export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
+export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
+
+export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
+
+export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
+export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
+} from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
+export type {
+  TurfStatus,
+  KnockOutcome,
+  KnockResponse,
+  CompanionSurveyType,
+  CompanionOpType,
+  CompanionResultsType,
+  CompanionOpAck,
+  CompanionSurveyPrefill,
+  CompanionPersonResult,
+  CompanionPerson,
+  CompanionDoorOutcome,
+  CompanionHousehold,
+  CompanionTurfPayload,
+  UpdateCompanionSettingsType,
+} from './lib/schemas/canvassing.schema';
+export type {
+  AddDeliveryRequestType,
+  UpdateDeliveryRequestType,
+  SetDeliveryRequestStatusType,
+  PlanDeliveriesType,
+  CommitDeliveriesType,
+  UpdateDeliveryRouteType,
+  AssignVolunteerType,
+  SetDeliveryRouteStatusType,
+  ReorderStopType,
+  ReorderStopsType,
+  StopActionType,
+  MintShareLinkType,
+  PublicStopActionType,
+  GetSignStatusType,
+  DeliveryRequestStatus,
+  DeliveryRouteStatus,
+  DeliveryStopStatus,
+  DeliverySource,
+  DeliverySkipReason,
+} from './lib/schemas/deliveries.schema';
+
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
+export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
+
+export {
+  AI_CONTENT_TYPES,
+  AI_REVIEW_STATUSES,
+  AiPreflightVerdictObj,
+  PREFLIGHT_BANDS,
+  PREFLIGHT_BLOCK,
+  PREFLIGHT_GOOD,
+  PREFLIGHT_SEVERITIES,
+  PreflightFindingObj,
+  PreflightResultObj,
+  RunPreflightObj,
+  preflightBand,
+} from './lib/schemas/content-check.schema';
+export type {
+  AiContentType,
+  AiPreflightVerdict,
+  AiReviewStatus,
+  PreflightBand,
+  PreflightFinding,
+  PreflightResult,
+  PreflightSeverity,
+  RunPreflightType,
+} from './lib/schemas/content-check.schema';
+export {
+  buildAiFindings,
+  buildSpamAssassinFinding,
+  computeScore,
+  lintNewsletterContent,
+  preflightHashInput,
+} from './lib/preflight-lint';
+export type { PreflightInput } from './lib/preflight-lint';
+
+export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
+
+export type { EmailStatus, EmailFolderConfig } from './lib/emails';
+
+export {
+  GB,
+  PLANS,
+  PLANS_BY_KEY,
+  PURCHASABLE_PLAN_KEYS,
+  LEGACY_PLAN_ALIASES,
+  FEATURE_MATRIX,
+  getPlanDef,
+  planDisplayName,
+  bracketIndexForSubscribers,
+  maxQuantity,
+  bracketForQuantity,
+  subscriberCapForQuantity,
+  emailCapForQuantity,
+  priceForQuantity,
+  annualPriceForQuantity,
+  monthlyEquivalentUsd,
+  startingPriceLabel,
+  startingPriceUsd,
+  priceLabelAt,
+  cadenceLabel,
+  BILLING_INTERVALS,
+  ANNUAL_MONTHS_FREE,
+  ANNUAL_PRICE_MULTIPLIER,
+  GATED_FEATURES,
+  planAllowsFeature,
+  GEOCODING_MIN_PLAN,
+  planAllowsGeocoding,
+} from './lib/billing/plans';
+export type {
+  PlanKey,
+  GatedFeature,
+  PurchasablePlanKey,
+  BillingInterval,
+  PlanDef,
+  PriceBracket,
+  TierPricing,
+  FeatureMatrixRow,
+  FeatureMatrixGroup,
+} from './lib/billing/plans';
+export {
+  CURRENCY_CODES,
+  SUPPORTED_CURRENCIES,
+  COUNTRY_TO_CURRENCY,
+  isCurrencyCode,
+  currencyForCountry,
+  convertFromUsd,
+  formatCurrency,
+  currencyPriceSymbol,
+} from './lib/billing/currency';
+export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
+
+export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
+
+export type {
+  JSend,
+  JSendSuccessInterface as JSendSuccess,
+  JSendFailInterface as JSendFail,
+  JSendStatus,
+  JSendErrorInterface as JSendError,
+} from './lib/jsend';
+
+export type {
+  HelpArticle,
+  HelpBlock,
+  HelpCategory,
+  HelpCategoryId,
+  HelpStep,
+  HelpKeyRow,
+  HelpInlineSegment,
+} from './lib/help/help-types';
+export {
+  parseHelpInline,
+  stripHelpInline,
+  blockToPlainText,
+  articleToPlainText,
+  readingMinutes,
+} from './lib/help/help-types';
+
+export {
+  HELP_CATEGORIES,
+  HELP_ARTICLES,
+  POPULAR_ARTICLE_IDS,
+  getHelpArticle,
+  getHelpCategory,
+  articlesInCategory,
+  relatedArticles,
+  categoryNeighbors,
+} from './lib/help/help-content';
+
+export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
+export { searchHelp, highlightTerms } from './lib/help/help-search';
+
+export type { HelpRouteTarget } from './lib/help/help-links';
+export { classifyHelpRoute } from './lib/help/help-links';
+
+export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 ````
 
 ## File: libs/common/src/lib/billing/plans.ts
@@ -14723,523 +15254,4 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
     ],
   },
 ];
-````
-
-## File: libs/common/src/index.ts
-````typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { AUTH_ROLE_LABELS, GENERIC_SIGNIN_ERROR, authRoleLabel, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  AddCampaignType,
-  UpdateCampaignType,
-  UpsertCampaignPersonFactType,
-  SetCampaignSubscriptionType,
-  CarryOverCampaignType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  NewsletterReportType,
-  NewsletterReportBounceType,
-  NewsletterReportEngagedType,
-  NewsletterReportLinkType,
-  NewsletterReportPreviousSendType,
-  CreateClickersListResultType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  LogInstantExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  ReorderTicketTypesType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-  AddTurfType,
-  UpdateTurfType,
-  CutTurfsType,
-  AssignTurfType,
-  FieldReportRangeType,
-  LogKnockType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  TASK_STATUSES,
-  TASK_BOARD_STATUSES,
-  TASK_OPEN_STATUSES,
-  TASK_STATUS_LABELS,
-  isTaskStatus,
-  isTaskBoardStatus,
-  AddTeamObj,
-  AddCampaignObj,
-  UpdateCampaignObj,
-  UpsertCampaignPersonFactObj,
-  SetCampaignSubscriptionObj,
-  CarryOverCampaignObj,
-  SUBSCRIPTION_STATUSES,
-  CONSENT_SOURCES,
-  CAMPAIGN_KINDS,
-  CAMPAIGN_STATUSES,
-  SUPPORT_LEVELS,
-  SUPPORT_LEVEL_LABELS,
-  VOTING_STATUSES,
-  VOTING_STATUS_LABELS,
-  FACT_SOURCES,
-  DNC_CHANNELS,
-  VOLUNTEER_STATUSES,
-  VOLUNTEER_STATUS_LABELS,
-  STAFF_STATUSES,
-  STAFF_STATUS_LABELS,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ReorderTasksObj,
-  ReorderSubtasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  logInstantExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  WorkflowRunObj,
-  WorkflowStepConfigObj,
-  WORKFLOW_TRIGGER_TYPES,
-  WORKFLOW_STEP_KINDS,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  ReorderTicketTypesObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-  AddTurfObj,
-  UpdateTurfObj,
-  CutTurfsObj,
-  AssignTurfObj,
-  FieldReportRangeObj,
-  LogKnockObj,
-  TURF_STATUSES,
-  KNOCK_OUTCOMES,
-  KNOCK_RESPONSES,
-  KNOCK_RESPONSE_LABELS,
-  DOORS_PER_TURF_PRESETS,
-  turfStatusSchema,
-  knockOutcomeSchema,
-  knockResponseSchema,
-  isTurfStatus,
-  isKnockOutcome,
-  CompanionSurveyObj,
-  CompanionPersonResultObj,
-  CompanionDoorOutcomeObj,
-  CompanionClearOutcomeObj,
-  CompanionPersonCreateObj,
-  CompanionOpObj,
-  CompanionResultsObj,
-  UpdateCompanionSettingsObj,
-  AddDeliveryRequestObj,
-  UpdateDeliveryRequestObj,
-  SetDeliveryRequestStatusObj,
-  PlanDeliveriesObj,
-  CommitDeliveriesObj,
-  UpdateDeliveryRouteObj,
-  AssignVolunteerObj,
-  SetDeliveryRouteStatusObj,
-  ReorderStopObj,
-  ReorderStopsObj,
-  StopActionObj,
-  RouteIdObj,
-  MintShareLinkObj,
-  PublicStopActionObj,
-  GetSignStatusObj,
-  DELIVERY_REQUEST_STATUSES,
-  DELIVERY_REQUEST_STATUS_LABELS,
-  DELIVERY_ROUTE_STATUSES,
-  DELIVERY_STOP_STATUSES,
-  DELIVERY_SOURCES,
-  DELIVERY_SKIP_REASONS,
-  DONATION_METHODS,
-  DONATION_METHOD_LABELS,
-  donationMethodSchema,
-  RecordDonationObj,
-  INTERACTION_TYPES,
-  INTERACTION_TYPE_LABELS,
-  interactionTypeSchema,
-  LogInteractionObj,
-  CompanionAccessQueryObj,
-  CompanionVerifyStartObj,
-  CompanionVerifyConfirmObj,
-  COMPANION_LINK_KINDS,
-  COMPANION_VERIFY_CHANNELS,
-  COMPANION_VOLUNTEER_STATUSES,
-  COMPANION_ACCESS_STATES,
-} from './lib/schema';
-
-export type {
-  CompanionLinkKind,
-  CompanionVerifyChannel,
-  CompanionVolunteerStatus,
-  CompanionAccessState,
-  CompanionContact,
-  CompanionAccessPayload,
-  CompanionVerifyConfirmResult,
-  CompanionVolunteerRow,
-} from './lib/schemas/companion-access.schema';
-
-export type {
-  CampaignKind,
-  CampaignStatus,
-  SupportLevel,
-  VotingStatus,
-  FactSource,
-  SubscriptionStatus,
-  ConsentSource,
-} from './lib/schemas/campaigns.schema';
-export type { DncChannel, VolunteerStatus, StaffStatus } from './lib/schemas/persons.schema';
-export type { GridColumnFilter, GridFilterModel } from './lib/schemas/core.schema';
-
-export type { InteractionType, LogInteractionType } from './lib/schemas/activity.schema';
-
-export type { DonationMethod, RecordDonationType, StripeConnectCountry } from './lib/schemas/donations.schema';
-export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
-export type {
-  WorkflowTriggerType,
-  WorkflowStepKind,
-  WorkflowStepConfigType,
-  WorkflowRunType,
-  WorkflowSendCondition,
-  WorkflowExitCondition,
-} from './lib/schemas/workflows.schema';
-export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
-export type {
-  TurfStatus,
-  KnockOutcome,
-  KnockResponse,
-  CompanionSurveyType,
-  CompanionOpType,
-  CompanionResultsType,
-  CompanionOpAck,
-  CompanionSurveyPrefill,
-  CompanionPersonResult,
-  CompanionPerson,
-  CompanionDoorOutcome,
-  CompanionHousehold,
-  CompanionTurfPayload,
-  UpdateCompanionSettingsType,
-} from './lib/schemas/canvassing.schema';
-export type {
-  AddDeliveryRequestType,
-  UpdateDeliveryRequestType,
-  SetDeliveryRequestStatusType,
-  PlanDeliveriesType,
-  CommitDeliveriesType,
-  UpdateDeliveryRouteType,
-  AssignVolunteerType,
-  SetDeliveryRouteStatusType,
-  ReorderStopType,
-  ReorderStopsType,
-  StopActionType,
-  MintShareLinkType,
-  PublicStopActionType,
-  GetSignStatusType,
-  DeliveryRequestStatus,
-  DeliveryRouteStatus,
-  DeliveryStopStatus,
-  DeliverySource,
-  DeliverySkipReason,
-} from './lib/schemas/deliveries.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export {
-  CROCKFORD_ALPHABET,
-  PUBLIC_ID_LENGTH,
-  encodeCrockford,
-  normalizeCrockford,
-  extractPublicIdFromSlug,
-  buildPersonSlug,
-} from './lib/public-id';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export {
-  AddNewsletterTemplateObj,
-  NewsletterTemplateObj,
-  UpdateNewsletterTemplateObj,
-} from './lib/schemas/newsletter-templates.schema';
-export type {
-  AddNewsletterTemplateType,
-  NewsletterTemplateType,
-  UpdateNewsletterTemplateType,
-} from './lib/schemas/newsletter-templates.schema';
-
-export {
-  AI_CONTENT_TYPES,
-  AI_REVIEW_STATUSES,
-  AiPreflightVerdictObj,
-  PREFLIGHT_BANDS,
-  PREFLIGHT_BLOCK,
-  PREFLIGHT_GOOD,
-  PREFLIGHT_SEVERITIES,
-  PreflightFindingObj,
-  PreflightResultObj,
-  RunPreflightObj,
-  preflightBand,
-} from './lib/schemas/content-check.schema';
-export type {
-  AiContentType,
-  AiPreflightVerdict,
-  AiReviewStatus,
-  PreflightBand,
-  PreflightFinding,
-  PreflightResult,
-  PreflightSeverity,
-  RunPreflightType,
-} from './lib/schemas/content-check.schema';
-export {
-  buildAiFindings,
-  buildSpamAssassinFinding,
-  computeScore,
-  lintNewsletterContent,
-  preflightHashInput,
-} from './lib/preflight-lint';
-export type { PreflightInput } from './lib/preflight-lint';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export {
-  GB,
-  PLANS,
-  PLANS_BY_KEY,
-  PURCHASABLE_PLAN_KEYS,
-  LEGACY_PLAN_ALIASES,
-  FEATURE_MATRIX,
-  getPlanDef,
-  planDisplayName,
-  bracketIndexForSubscribers,
-  maxQuantity,
-  bracketForQuantity,
-  subscriberCapForQuantity,
-  emailCapForQuantity,
-  priceForQuantity,
-  annualPriceForQuantity,
-  monthlyEquivalentUsd,
-  startingPriceLabel,
-  startingPriceUsd,
-  priceLabelAt,
-  cadenceLabel,
-  BILLING_INTERVALS,
-  ANNUAL_MONTHS_FREE,
-  ANNUAL_PRICE_MULTIPLIER,
-  GATED_FEATURES,
-  planAllowsFeature,
-  GEOCODING_MIN_PLAN,
-  planAllowsGeocoding,
-} from './lib/billing/plans';
-export type {
-  PlanKey,
-  GatedFeature,
-  PurchasablePlanKey,
-  BillingInterval,
-  PlanDef,
-  PriceBracket,
-  TierPricing,
-  FeatureMatrixRow,
-  FeatureMatrixGroup,
-} from './lib/billing/plans';
-export {
-  CURRENCY_CODES,
-  SUPPORTED_CURRENCIES,
-  COUNTRY_TO_CURRENCY,
-  isCurrencyCode,
-  currencyForCountry,
-  convertFromUsd,
-  formatCurrency,
-  currencyPriceSymbol,
-} from './lib/billing/currency';
-export type { CurrencyCode, CurrencyDef, ExchangeRates } from './lib/billing/currency';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-
-export type {
-  HelpArticle,
-  HelpBlock,
-  HelpCategory,
-  HelpCategoryId,
-  HelpStep,
-  HelpKeyRow,
-  HelpInlineSegment,
-} from './lib/help/help-types';
-export {
-  parseHelpInline,
-  stripHelpInline,
-  blockToPlainText,
-  articleToPlainText,
-  readingMinutes,
-} from './lib/help/help-types';
-
-export {
-  HELP_CATEGORIES,
-  HELP_ARTICLES,
-  POPULAR_ARTICLE_IDS,
-  getHelpArticle,
-  getHelpCategory,
-  articlesInCategory,
-  relatedArticles,
-  categoryNeighbors,
-} from './lib/help/help-content';
-
-export type { HelpHighlightSegment, HelpSearchResult } from './lib/help/help-search';
-export { searchHelp, highlightTerms } from './lib/help/help-search';
-
-export type { HelpRouteTarget } from './lib/help/help-links';
-export { classifyHelpRoute } from './lib/help/help-links';
-
-export { blockToMarkdown, articleToMarkdown } from './lib/help/help-markdown';
 ````

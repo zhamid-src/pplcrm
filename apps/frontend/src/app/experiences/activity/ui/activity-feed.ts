@@ -88,6 +88,9 @@ export class ActivityFeed implements OnInit {
 
   protected readonly isLoading = computed(() => this.activitiesResource.isLoading());
 
+  /** Placeholder cards for the first-load skeleton (mirrors pc-table's default of 5). */
+  protected readonly skeletonRows = Array.from({ length: 5 }, (_, i) => i);
+
   constructor() {
     effect(() => {
       const res = this.activitiesResource.value() as any;

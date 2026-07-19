@@ -72,6 +72,7 @@ export class EmailsStore {
     return this.state.emailsInFolderWithFlags(fid)();
   });
   public readonly emailsLoading = this.folders.isLoading;
+  public readonly emailsFetching = this.folders.isFetching;
 
   // ----------------- Cache computed factories -----------------
   public readonly getEmailBodyById = this.cache.getEmailBodyById;

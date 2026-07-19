@@ -2,7 +2,14 @@ import type { ApplicationConfig } from '@angular/core';
 import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
 import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import {
+  PreloadAllModules,
+  RouteReuseStrategy,
+  TitleStrategy,
+  provideRouter,
+  withComponentInputBinding,
+  withPreloading,
+} from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
 import { environment } from '../environments/environment';
@@ -43,7 +50,9 @@ export const appConfig: ApplicationConfig = {
       provide: TitleStrategy,
       useClass: AppTitleStrategy,
     },
-    provideRouter(appRoutes, withComponentInputBinding()),
+    // Preload lazy route chunks in the background after first paint so slow
+    // connections don't stall on chunk download at click time.
+    provideRouter(appRoutes, withComponentInputBinding(), withPreloading(PreloadAllModules)),
 
     provideZonelessChangeDetection(),
 
