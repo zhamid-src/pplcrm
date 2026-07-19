@@ -14,6 +14,8 @@ import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
 import { VolunteerAccessService } from '@experiences/volunteer-access/services/volunteer-access-service';
+import { EmailsService } from '@experiences/emails/services/emails-service';
+import { EmailFoldersStore } from '@experiences/emails/services/store/email-folders.store';
 
 @Component({
   selector: 'pc-sidebar',
@@ -36,6 +38,8 @@ export class Sidebar {
   private readonly duplicatesSvc = inject(DuplicatesService);
   private readonly deliveriesSvc = inject(DeliveriesRequestsService);
   private readonly volunteerAccessSvc = inject(VolunteerAccessService);
+  private readonly emailsSvc = inject(EmailsService);
+  private readonly emailFoldersStore = inject(EmailFoldersStore);
 
   /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
    *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
@@ -52,6 +56,18 @@ export class Sidebar {
   /** Volunteers awaiting companion-access approval, for the Volunteer access badge.
    *  Same one-shot-per-session loading shape as the badges above. */
   protected readonly volunteerAccessPending = signal<number | null>(null);
+
+  /** One-shot fetched fallback for the Inbox badge — covers sessions where the Inbox page
+   *  (and thus its folders store) never loads. */
+  private readonly inboxAssignedOpenFetched = signal<number | null>(null);
+
+  /** Open Inbox conversations assigned to the current user, for the Inbox badge. Prefers the
+   *  live "Mine" count from the email folders store — refreshed on every assign/close/delete —
+   *  so reassignments in the Inbox move the badge immediately; falls back to the one-shot
+   *  fetch until the store has counts. */
+  protected readonly inboxAssignedOpen = computed(
+    () => this.emailFoldersStore.assignedOpenCount() ?? this.inboxAssignedOpenFetched(),
+  );
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -132,6 +148,17 @@ export class Sidebar {
     void this.loadDuplicatesQueueCount();
     void this.loadDeliveriesReadyCount();
     void this.loadVolunteerAccessPending();
+    void this.loadInboxAssignedOpen();
+  }
+
+  /** Inbox badge fallback = open conversations assigned to the current user. One fetch per
+   *  session; superseded by the folders store's live count once the Inbox loads. */
+  private async loadInboxAssignedOpen(): Promise<void> {
+    try {
+      this.inboxAssignedOpenFetched.set(await this.emailsSvc.countAssignedOpen());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
   }
 
   /** Volunteer access badge = volunteers awaiting approval. One fetch per session. */
@@ -170,15 +197,19 @@ export class Sidebar {
     }
   }
 
-  /** Stamps the live `badgeCount` onto the Tasks and Duplicates entries — every other item is
-   *  untouched. */
+  /** Stamps the live `badgeCount` onto the badge-bearing entries (Inbox, Tasks, Duplicates,
+   *  Deliveries, Volunteer access) — every other item is untouched. */
   private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
     const breaches = this.taskSlaBreaches();
     const duplicatesQueue = this.duplicatesQueueCount();
     const deliveriesReady = this.deliveriesReadyCount();
     const volunteerPending = this.volunteerAccessPending();
+    const inboxAssigned = this.inboxAssignedOpen();
     return items.map((item) => {
       const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/inbox') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: inboxAssigned };
+      }
       if (item.route === '/tasks') {
         return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
       }

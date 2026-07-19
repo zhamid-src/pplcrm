@@ -122,6 +122,15 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 
+  /** Sidebar Inbox badge: open Inbox conversations assigned to this user. */
+  public async countAssignedOpen(user_id: string, tenant_id: string, campaign_id: string) {
+    try {
+      return await this.getRepo().countAssignedOpen(user_id, tenant_id, campaign_id);
+    } catch (err) {
+      throw new InternalError('Failed to count assigned open emails', undefined, { cause: err });
+    }
+  }
+
   public async getActivitiesForEmail(tenant_id: string, email_id: string) {
     try {
       const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);

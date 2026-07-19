@@ -23,6 +23,12 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
     if (!id) throw new Error('No active campaign selected');
     return id;
   }
+  /** Open Inbox conversations assigned to the current user — feeds the sidebar Inbox badge. */
+  public async countAssignedOpen(): Promise<number> {
+    const campaignId = await this.campaignId();
+    return this.api.emails.countAssignedOpen.query({ campaignId });
+  }
+
   public addComment(id: string, author_id: string, comment: string) {
     return this.api.emails.addComment.mutate({ id, author_id, comment });
   }

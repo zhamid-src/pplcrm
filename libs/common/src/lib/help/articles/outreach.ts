@@ -296,6 +296,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           'Answer oldest first. Each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
           'Scan the list by status. Each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          'Watch your own queue. The **Inbox** entry in the sidebar carries a badge with the open conversations assigned to you — the same count as the **Mine** triage folder.',
           '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
           'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
           'Notifications alert you to activity that needs you. Tune them under **Settings** in the avatar menu.',

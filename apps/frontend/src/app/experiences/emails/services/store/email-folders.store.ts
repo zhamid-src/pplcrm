@@ -3,7 +3,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { EmailsService } from '../emails-service';
 import { EmailStateStore } from './email-state.store';
-import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import { ServerEmail, SPECIAL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
 import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 /** Rows fetched when a folder is opened or refreshed — the first page. */
@@ -13,13 +13,21 @@ const NEXT_PAGE_SIZE = 25;
 
 @Service()
 export class EmailFoldersStore {
-  private readonly emailFolders = signal<EmailFolderType[]>([]);
+  private readonly emailFolders = signal<(EmailFolderType & { email_count?: number })[]>([]);
   private readonly state = inject(EmailStateStore);
   private readonly svc = inject(EmailsService);
 
   private _loading = createLoadingGate();
 
   public readonly allFolders = computed(() => this.emailFolders());
+
+  /** Live "Mine" triage count — open conversations assigned to the current user. Null until
+   *  counts have loaded; recomputes on every refreshFolderCounts (assign/close/delete), which
+   *  is what keeps the sidebar Inbox badge in step with reassignments. */
+  public readonly assignedOpenCount = computed<number | null>(() => {
+    const mine = this.emailFolders().find((f) => f.id === SPECIAL_FOLDERS.ASSIGNED_TO_ME);
+    return mine?.email_count ?? null;
+  });
 
   public readonly currentSelectedFolderId = signal<string | null>(null);
 

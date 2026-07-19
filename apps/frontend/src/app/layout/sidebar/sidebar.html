@@ -18,7 +18,10 @@
       } @if (nav.badgeCount) {
       <span
         class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
-        [attr.title]="nav.badgeCount + (nav.route === '/tasks' ? ' breaching SLA' : ' waiting')"
+        [attr.title]="
+          nav.badgeCount +
+          (nav.route === '/tasks' ? ' breaching SLA' : nav.route === '/inbox' ? ' open assigned to you' : ' waiting')
+        "
         >{{ nav.badgeCount }}</span
       >
       }

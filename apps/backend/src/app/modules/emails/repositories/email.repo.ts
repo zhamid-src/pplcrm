@@ -22,6 +22,20 @@ export class EmailRepo extends BaseRepository<'emails'> {
     super('emails');
   }
 
+  /** Open Inbox conversations assigned to this user — the "Mine" triage count,
+   *  as a single cheap scalar for the sidebar badge. */
+  public async countAssignedOpen(user_id: string, tenant_id: string, campaign_id: string): Promise<number> {
+    const row = await this.getSelect()
+      .select((eb) => eb.fn.countAll().as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .where('campaign_id', '=', campaign_id)
+      .where('assigned_to', '=', user_id)
+      .where('status', '=', 'open')
+      .where('folder_id', '=', ALL_FOLDERS.INBOX)
+      .executeTakeFirst();
+    return Number(row?.count ?? 0);
+  }
+
   public async emptyTrash(tenantId: string) {
     return this.transaction().execute(async (trx) => {
       const trashId = ALL_FOLDERS.TRASH;

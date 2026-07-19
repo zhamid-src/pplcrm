@@ -70,8 +70,8 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/inbox',
         icon: 'envelope',
         shortcut: 'i',
-        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
-        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
+        // badgeCount is populated at runtime by Sidebar from `emails.countAssignedOpen`
+        // (open conversations assigned to me — the triage "Mine" count) — see sidebar.ts.
       },
       {
         name: `Tasks`,

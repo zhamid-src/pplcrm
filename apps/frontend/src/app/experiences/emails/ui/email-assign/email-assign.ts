@@ -4,6 +4,7 @@ import { Icon } from '@uxcommon/components/icons/icon';
 
 import { IAuthUser } from '../../../../../../../../libs/common/src';
 import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '../../../../auth/auth-service';
 import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
 
@@ -39,7 +40,7 @@ let nextEmailAssignId = 0;
     >
       @for (user of users(); track user.id) {
         <li>
-          <button type="button" (click)="assign(user.id)">{{ user.first_name }}</button>
+          <button type="button" (click)="assign(user.id)">{{ isMe(user.id) ? 'Me' : user.first_name }}</button>
         </li>
       }
       @if (assignedTo()) {
@@ -57,6 +58,7 @@ let nextEmailAssignId = 0;
 })
 export class EmailAssign {
   private alertSvc = inject(AlertService);
+  private auth = inject(AuthService);
   private readonly menu = viewChild.required<ElementRef<HTMLElement>>('menu');
   private store = inject(EmailsStore);
   private userService = inject(UserService);
@@ -105,6 +107,13 @@ export class EmailAssign {
 
   public getUserName(id: string | null = null) {
     if (!id) return 'Noone';
+    if (this.isMe(id)) return 'Me';
     return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
+  }
+
+  /** The current user sees themselves as "Me" — the activity log still records the real name. */
+  public isMe(id: string | number | null | undefined) {
+    const currentId = this.auth.getUser()?.id;
+    return id != null && currentId != null && String(id) === String(currentId);
   }
 }

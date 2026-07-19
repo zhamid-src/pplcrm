@@ -109,6 +109,12 @@ function getEmails() {
     );
 }
 
+function countAssignedOpen() {
+  return authProcedure
+    .input(z.object({ campaignId: idSchema }))
+    .query(({ input, ctx }) => emails.countAssignedOpen(ctx.auth.user_id, ctx.auth.tenant_id, input.campaignId));
+}
+
 function getFolders() {
   return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
 }
@@ -195,6 +201,7 @@ function setEmailReadStatus() {
 const emails = new EmailsController();
 
 export const EmailsRouter = router({
+  countAssignedOpen: countAssignedOpen(),
   getFolders: getFolders(),
   getFoldersWithCounts: getFoldersWithCounts(),
   getEmails: getEmails(),
