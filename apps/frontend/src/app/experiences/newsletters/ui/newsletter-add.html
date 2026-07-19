@@ -64,27 +64,72 @@
         <button
           type="button"
           class="overflow-hidden rounded-xl border text-left transition-colors"
-          [class.border-primary]="selectedTemplate() === t.id"
-          [class.bg-primary/5]="selectedTemplate() === t.id"
-          [class.border-base-300]="selectedTemplate() !== t.id"
-          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
+          [class.border-primary]="isPresetSelected(t.id)"
+          [class.bg-primary/5]="isPresetSelected(t.id)"
+          [class.border-base-300]="!isPresetSelected(t.id)"
+          [class.hover:border-primary/50]="!isPresetSelected(t.id)"
           (click)="selectTemplate(t.id)"
         >
-          <div
-            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
-          >
-            template preview
+          <div class="h-40 overflow-hidden border-b border-base-200 bg-base-200/40">
+            <pc-template-thumb [html]="presetPreviewHtml(t.id)"></pc-template-thumb>
           </div>
-          <div class="flex items-start gap-3 p-4">
-            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
-            <div>
-              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
-              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
-            </div>
+          <div class="p-4">
+            <h4 class="flex items-center gap-1.5 text-[15px] font-semibold text-base-content">
+              <pc-icon [name]="t.icon" [size]="4" class="text-primary"></pc-icon>
+              {{ t.name }}
+            </h4>
+            <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
           </div>
         </button>
         }
       </div>
+
+      <!-- Your templates — hidden entirely while the tenant has none (the presets are the empty case) -->
+      @if (templatesLoading()) {
+      <section>
+        <h3 class="mb-3 pc-eyebrow">Your templates</h3>
+        <div class="grid gap-5 sm:grid-cols-2">
+          <div class="skeleton h-40 rounded-xl"></div>
+          <div class="skeleton h-40 rounded-xl"></div>
+        </div>
+      </section>
+      } @else if (savedTemplates().length) {
+      <section>
+        <h3 class="mb-3 pc-eyebrow">Your templates</h3>
+        <div class="grid gap-5 sm:grid-cols-2">
+          @for (tpl of savedTemplates(); track tpl.id) {
+          <div
+            class="relative overflow-hidden rounded-xl border transition-colors"
+            [class.border-primary]="isSavedSelected(tpl.id)"
+            [class.bg-primary/5]="isSavedSelected(tpl.id)"
+            [class.border-base-300]="!isSavedSelected(tpl.id)"
+            [class.hover:border-primary/50]="!isSavedSelected(tpl.id)"
+          >
+            <button type="button" class="block w-full text-left" (click)="selectSavedTemplate(tpl)">
+              <div class="h-40 overflow-hidden border-b border-base-200 bg-base-200/40">
+                <pc-template-thumb [html]="tpl.html_content"></pc-template-thumb>
+              </div>
+              <div class="p-4 pr-12">
+                <h4 class="flex items-center gap-1.5 text-[15px] font-semibold text-base-content">
+                  <pc-icon name="bookmark" [size]="4" class="text-primary"></pc-icon>
+                  {{ tpl.name }}
+                </h4>
+                <p class="mt-0.5 text-xs text-base-content/60">{{ savedTemplateSubtitle(tpl) }}</p>
+              </div>
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs btn-circle absolute bottom-3 right-3 text-error"
+              [title]="'Delete template ' + tpl.name"
+              (click)="deleteSavedTemplate(tpl)"
+            >
+              <pc-icon name="trash" [size]="4"></pc-icon>
+            </button>
+          </div>
+          }
+        </div>
+      </section>
+      }
 
       <!-- Cross-link: per-person triggered email is the Automations page's job, not a newsletter. -->
       <div class="rounded-lg border border-base-200 bg-base-200/40 p-4">
@@ -109,6 +154,10 @@
             <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
           </p>
           <div class="flex items-center gap-2">
+            <button type="button" class="btn btn-sm btn-outline btn-secondary" (click)="openSaveTemplate()">
+              <pc-icon name="bookmark" [size]="4"></pc-icon>
+              Save as template
+            </button>
             <button
               type="button"
               class="btn btn-sm btn-outline btn-secondary"
@@ -638,4 +687,27 @@
     </span>
     }
   </footer>
+
+  <!-- Save as template: the house modal with the one field the action needs -->
+  <pc-modal-shell title="Save as template" icon="bookmark" [open]="saveTemplateOpen()" (closed)="closeSaveTemplate()">
+    <p class="mb-3 text-xs text-base-content/60">
+      Saves the current design to <span class="font-medium">Your templates</span> so any newsletter can start from it.
+    </p>
+    <label class="mb-1 block text-xs font-medium" for="templateName">Template name</label>
+    <input
+      id="templateName"
+      class="input input-bordered input-sm w-full"
+      placeholder="For example, Monthly update"
+      [formField]="templateNameForm.name"
+    />
+    @if (templateNameInvalid()) {
+    <p class="mt-1 text-xs text-error">Give the template a name so you can find it later.</p>
+    }
+    <div pc-modal-footer>
+      <button type="button" class="btn btn-sm btn-outline btn-accent" (click)="closeSaveTemplate()">Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" [disabled]="savingTemplate()" (click)="saveAsTemplate()">
+        @if (savingTemplate()) { <span class="loading loading-spinner loading-xs"></span> } Save template
+      </button>
+    </div>
+  </pc-modal-shell>
 </div>

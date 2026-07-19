@@ -6,6 +6,7 @@ export * from './schemas/lists.schema';
 export * from './schemas/teams.schema';
 export * from './schemas/emails.schema';
 export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
 export * from './schemas/persons.schema';
 export * from './schemas/settings.schema';
 export * from './schemas/tasks.schema';

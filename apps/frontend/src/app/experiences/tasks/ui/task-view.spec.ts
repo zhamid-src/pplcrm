@@ -42,6 +42,7 @@ describe('TaskView', () => {
       }),
       update: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue(true),
+      reorderSubtasks: vi.fn().mockResolvedValue({ ok: true }),
       triggerRefresh: vi.fn(),
       api: {
         tasks: {
@@ -109,6 +110,47 @@ describe('TaskView', () => {
     expect(mockTasks.update).toHaveBeenCalledWith('t1', { name: 'Updated Task Name' });
     expect(mockTasks.triggerRefresh).toHaveBeenCalled();
     expect(mockAlert.showSuccess).toHaveBeenCalledWith('Task updated successfully');
+  });
+
+  it('should reorder subtasks optimistically and persist the new order', async () => {
+    await new Promise((r) => setTimeout(r, 10));
+
+    component['subtasks'].set([
+      { id: 's1', name: 'A', status: 'todo', position: 0 },
+      { id: 's2', name: 'B', status: 'todo', position: 1 },
+      { id: 's3', name: 'C', status: 'todo', position: 2 },
+    ]);
+
+    // Move the first subtask to the last slot.
+    await component['onSubtaskDrop']({ previousIndex: 0, currentIndex: 2 } as any);
+
+    expect(component['subtasks']().map((s: any) => s.id)).toEqual(['s2', 's3', 's1']);
+    expect(mockTasks.reorderSubtasks).toHaveBeenCalledWith('t1', ['s2', 's3', 's1']);
+  });
+
+  it('should roll back the subtask order when persistence fails', async () => {
+    await new Promise((r) => setTimeout(r, 10));
+
+    const original = [
+      { id: 's1', name: 'A', status: 'todo', position: 0 },
+      { id: 's2', name: 'B', status: 'todo', position: 1 },
+    ];
+    component['subtasks'].set(original);
+    mockTasks.reorderSubtasks.mockRejectedValueOnce(new Error('nope'));
+
+    await component['onSubtaskDrop']({ previousIndex: 0, currentIndex: 1 } as any);
+
+    expect(component['subtasks']().map((s: any) => s.id)).toEqual(['s1', 's2']);
+    expect(mockAlert.showError).toHaveBeenCalled();
+  });
+
+  it('should no-op a subtask drop that lands in the same slot', async () => {
+    await new Promise((r) => setTimeout(r, 10));
+
+    component['subtasks'].set([{ id: 's1', name: 'A', status: 'todo', position: 0 }]);
+    await component['onSubtaskDrop']({ previousIndex: 0, currentIndex: 0 } as any);
+
+    expect(mockTasks.reorderSubtasks).not.toHaveBeenCalled();
   });
 
   it('should delete task and trigger refresh', async () => {

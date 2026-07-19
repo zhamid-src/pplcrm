@@ -27,6 +27,8 @@ import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
 import { logger } from '../../logger';
 import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import type { ReorderTasksType } from '../../../../../../libs/common/src';
+import { NotFoundError } from '../../errors/app-errors';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class TasksController extends BaseController<'tasks', TasksRepo> {
@@ -217,6 +219,75 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       }
     }
     return updated;
+  }
+
+  /**
+   * Board drag-and-drop persistence (spec §4). Re-seats one or two board columns
+   * in a single transaction: every listed id gets `position = index`, and its
+   * `status` is set to the column it now lives in. Ids are verified to belong to
+   * the tenant first (a foreign or unknown id rejects the whole drop).
+   *
+   * `completed_at` note: the single-task update path (`updateTask` → BaseController)
+   * has NO automatic completed_at behavior — it only writes completed_at when the
+   * client explicitly sends it, and there is no DB trigger on tasks.status. So a
+   * status change here (including to/from `done`) intentionally writes no
+   * completed_at, matching the chevron/setStatus path exactly. The one real status
+   * side effect the single-write path has is the activity-log entry, which we
+   * replicate below for each card whose status actually changed.
+   */
+  public async reorderTasks(auth: IAuthKeyPayload, input: ReorderTasksType) {
+    const allIds = input.columns.flatMap((c) => c.ids);
+    const repo = this.getRepo();
+    return repo.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom('tasks')
+        .select(['id', 'status', 'name'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', allIds)
+        .execute();
+      const byId = new Map(existing.map((r) => [String(r.id), r]));
+      for (const id of allIds) {
+        if (!byId.has(String(id))) throw new NotFoundError('One or more tasks were not found');
+      }
+
+      for (const col of input.columns) {
+        let index = 0;
+        for (const id of col.ids) {
+          await trx
+            .updateTable('tasks')
+            .set({
+              position: index,
+              status: col.status,
+              updatedby_id: auth.user_id,
+            } as OperationDataType<'tasks', 'update'>)
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', id)
+            .execute();
+
+          const before = byId.get(String(id));
+          if (before && before.status !== col.status) {
+            await this.userActivity.log(
+              {
+                tenant_id: auth.tenant_id,
+                user_id: auth.user_id,
+                activity: 'update',
+                entity: 'tasks',
+                entity_id: String(id),
+                quantity: 1,
+                metadata: {
+                  task_name: before.name,
+                  changes: { status: { from: before.status ?? null, to: col.status } },
+                },
+              },
+              trx,
+            );
+          }
+          index += 1;
+        }
+      }
+
+      return { ok: true as const, updated: allIds.length };
+    });
   }
 
   public override async exportCsv(

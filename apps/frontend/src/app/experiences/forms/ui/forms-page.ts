@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import type { PcIconNameType } from '@icons/icons.index';
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { FORM_TEMPLATES, FormField, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
 import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
@@ -111,6 +113,10 @@ const BUILDER_CARDS: readonly BuilderCard[] = [
     GridHeaderComponent,
     EmptyState,
     ModalShell,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    CdkDragPlaceholder,
   ],
   templateUrl: './forms-page.html',
 })
@@ -408,6 +414,20 @@ export class FormsPageComponent implements OnInit {
       return;
     }
     const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
+    this.patch({ fields });
+  }
+
+  /**
+   * Reorder the field list by drag. Array order is render order on the public page and the embed,
+   * so this saves through the same debounced patch path as the on/required toggles. Email may be
+   * moved freely: normForm() keeps a field's stored position and only re-asserts the on+required
+   * invariant, so reordering never breaks the identity key.
+   */
+  protected reorderField(event: CdkDragDrop<FormField[]>): void {
+    const form = this.selected();
+    if (!form || event.previousIndex === event.currentIndex) return;
+    const fields = [...form.fields];
+    moveItemInArray(fields, event.previousIndex, event.currentIndex);
     this.patch({ fields });
   }
 

@@ -6,6 +6,7 @@ import {
   MintShareLinkObj,
   PlanDeliveriesObj,
   ReorderStopObj,
+  ReorderStopsObj,
   RouteIdObj,
   SetDeliveryRequestStatusObj,
   SetDeliveryRouteStatusObj,
@@ -75,6 +76,9 @@ export const DeliveriesRouter = router({
   reorderStop: authProcedure
     .input(ReorderStopObj)
     .mutation(({ ctx, input }) => controller.reorderStop(ctx.auth, input)),
+  reorderStops: authProcedure
+    .input(ReorderStopsObj)
+    .mutation(({ ctx, input }) => controller.reorderStops(ctx.auth, input)),
   mintShareLink: authProcedure
     .input(MintShareLinkObj)
     .mutation(({ ctx, input }) => controller.mintShareLink(ctx.auth, input)),

@@ -27,12 +27,17 @@ import {
   type PreflightSeverity,
 } from '@common';
 
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
 import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { SettingsService } from '../../settings/services/settings-service';
+import { TemplateThumbComponent } from './template-thumb';
 import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
 import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
 import { NewslettersService } from '../services/newsletters-service';
+import type { SavedNewsletterTemplate } from '../services/newsletters-service';
 
 /** Sentence-case, heroicon-backed metadata for the four starting templates. */
 const TEMPLATE_OPTIONS: ReadonlyArray<{
@@ -95,7 +100,7 @@ const EMPTY_REGULAR_PAYLOAD: RegularNewsletterPayload = {
 
 @Component({
   selector: 'pc-newsletter-add',
-  imports: [FormField, RouterLink, Icon, VisualNewsletterEditorComponent],
+  imports: [FormField, RouterLink, Icon, ModalShell, TemplateThumbComponent, VisualNewsletterEditorComponent],
   templateUrl: './newsletter-add.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
@@ -148,7 +153,7 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly loadingLists = signal<boolean>(false);
   protected readonly loadingTags = signal<boolean>(false);
   protected readonly saving = signal(false);
-  protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
+  protected readonly selectedTemplate = signal<TemplateSelection>({ kind: 'preset', id: 'welcome' });
   protected readonly showDatePicker = signal(false);
   /** Set true once the user has changed anything in the wizard, so the leave guard only fires on real work. */
   protected readonly dirty = signal(false);
@@ -251,6 +256,7 @@ export class NewsletterAddComponent implements OnInit {
     void this.loadTags();
     void this.loadCommsDefaults();
     void this.loadSendQuota();
+    void this.loadSavedTemplates();
     // Land directly in the wizard with the default template applied; not a user edit.
     this.applyTemplate('welcome');
     this.dirty.set(false);
@@ -320,7 +326,132 @@ export class NewsletterAddComponent implements OnInit {
   }
 
   protected selectedTemplateName(): string {
-    return TEMPLATE_OPTIONS.find((t) => t.id === this.selectedTemplate())?.name ?? 'Template';
+    const selection = this.selectedTemplate();
+    if (selection.kind === 'preset') {
+      return TEMPLATE_OPTIONS.find((t) => t.id === selection.id)?.name ?? 'Template';
+    }
+    return this.savedTemplates().find((t) => t.id === selection.id)?.name ?? 'Saved template';
+  }
+
+  protected isPresetSelected(preset: TemplatePreset): boolean {
+    const selection = this.selectedTemplate();
+    return selection.kind === 'preset' && selection.id === preset;
+  }
+
+  protected isSavedSelected(id: string): boolean {
+    const selection = this.selectedTemplate();
+    return selection.kind === 'saved' && selection.id === id;
+  }
+
+  /** Compiled preset previews for the template cards — pure functions, compiled once and cached. */
+  private readonly presetPreviewCache = new Map<TemplatePreset, string>();
+
+  protected presetPreviewHtml(preset: TemplatePreset): string {
+    const cached = this.presetPreviewCache.get(preset);
+    if (cached !== undefined) return cached;
+    const compiled = compileTemplateHtml(preset);
+    this.presetPreviewCache.set(preset, compiled);
+    return compiled;
+  }
+
+  // --- Saved templates ("Your templates") -----------------------------------
+
+  protected readonly savedTemplates = signal<SavedNewsletterTemplate[]>([]);
+  private readonly _templatesLoading = createLoadingGate();
+  protected readonly templatesLoading = this._templatesLoading.visible;
+
+  /** Applies a saved template's stored content — same overwrite semantics as the presets. */
+  protected selectSavedTemplate(template: SavedNewsletterTemplate): void {
+    this.selectedTemplate.set({ kind: 'saved', id: template.id });
+    this.regularPayload.update((p) => ({
+      ...p,
+      htmlContent: template.html_content,
+      plainTextContent: template.plain_text_content,
+    }));
+    this.markDirty();
+  }
+
+  protected savedTemplateSubtitle(template: SavedNewsletterTemplate): string {
+    return template.updated_at ? `Saved ${this.dateFormatter.format(template.updated_at)}` : 'Saved template';
+  }
+
+  protected async deleteSavedTemplate(template: SavedNewsletterTemplate): Promise<void> {
+    const confirmed = await this.confirmDlg.confirm({
+      title: `Delete template "${template.name}"?`,
+      message: `"${template.name}" will be removed from your saved templates for everyone in this workspace. Newsletters already created from it keep their content.`,
+      variant: 'danger',
+      confirmText: 'Delete template',
+      cancelText: 'Keep template',
+    });
+    if (!confirmed) return;
+    try {
+      await this.newslettersSvc.deleteTemplate(template.id);
+      this.savedTemplates.update((list) => list.filter((t) => t.id !== template.id));
+      this.alertSvc.showSuccess(`Deleted template "${template.name}"`);
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not delete this template. Try again.'));
+    }
+  }
+
+  private async loadSavedTemplates(): Promise<void> {
+    const end = this._templatesLoading.begin();
+    try {
+      this.savedTemplates.set(await this.newslettersSvc.getTemplates());
+    } catch {
+      // Non-fatal: the presets still serve; the section simply stays hidden.
+    } finally {
+      end();
+    }
+  }
+
+  // --- Save as template -----------------------------------------------------
+
+  protected readonly saveTemplateOpen = signal(false);
+  protected readonly savingTemplate = signal(false);
+  protected readonly templateNamePayload = signal({ name: '' });
+  protected readonly templateNameForm = form(this.templateNamePayload, (p) => {
+    required(p.name);
+  });
+
+  protected openSaveTemplate(): void {
+    this.templateNamePayload.set({ name: '' });
+    this.templateNameForm().reset();
+    this.saveTemplateOpen.set(true);
+  }
+
+  protected closeSaveTemplate(): void {
+    this.saveTemplateOpen.set(false);
+  }
+
+  protected templateNameInvalid(): boolean {
+    const state = this.templateNameForm.name();
+    return state.invalid() && (state.touched() || state.dirty());
+  }
+
+  /** Saves the wizard's current html/plain content verbatim under the chosen name. */
+  protected async saveAsTemplate(): Promise<void> {
+    if (this.savingTemplate()) return;
+    this.templateNameForm().markAsTouched();
+    if (this.templateNameForm().invalid()) return;
+    const name = this.templateNamePayload().name.trim();
+    const raw = this.regularPayload();
+    this.savingTemplate.set(true);
+    try {
+      const created = await this.newslettersSvc.saveTemplate({
+        name,
+        html_content: raw.htmlContent,
+        plain_text_content: raw.plainTextContent,
+      });
+      this.savedTemplates.update((list) =>
+        [...list.filter((t) => t.id !== created.id), created].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      this.saveTemplateOpen.set(false);
+      this.alertSvc.showSuccess('Template saved');
+    } catch (err) {
+      this.alertSvc.showError(this.errorMessage(err, 'We could not save this template. Try again.'));
+    } finally {
+      this.savingTemplate.set(false);
+    }
   }
 
   // --- Audience: add / remove -----------------------------------------------
@@ -662,7 +793,7 @@ export class NewsletterAddComponent implements OnInit {
   // --- Internals ------------------------------------------------------------
 
   private applyTemplate(preset: TemplatePreset): void {
-    this.selectedTemplate.set(preset);
+    this.selectedTemplate.set({ kind: 'preset', id: preset });
     this.regularPayload.update((p) => ({
       ...p,
       htmlContent: compileTemplateHtml(preset),
@@ -939,6 +1070,9 @@ type StepIndex = 1 | 2 | 3 | 4;
 type WizardStepId = 'template' | 'content' | 'audience' | 'review';
 
 type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
+
+/** What the Template step has selected: a built-in preset or a user-saved template. */
+type TemplateSelection = { kind: 'preset'; id: TemplatePreset } | { kind: 'saved'; id: string };
 
 type TimingMode = 'now' | 'schedule';
 

@@ -1,7 +1,11 @@
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { Component, OnInit, computed, model, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
+import type { PcIconNameType } from '@icons/icons.index';
 import { TabBar, type PcTabOption } from '@uxcommon/components/tabs/tabs';
 
+import { createBlock, insertBlockAt, isEmailBlockType, moveBlock, type EmailBlockType } from './newsletter-block-ops';
 import {
   EmailBlock,
   socialSvgPaths,
@@ -12,9 +16,17 @@ import {
   compileBlocksToPlainText,
 } from './newsletter-templates';
 
+/** One palette entry: the tile in the Blocks tab and the "+" insert menu both render from this. */
+interface PaletteEntry {
+  type: EmailBlockType;
+  label: string;
+  icon: PcIconNameType;
+  iconClass: string;
+}
+
 @Component({
   selector: 'pc-visual-newsletter-editor',
-  imports: [Icon, TabBar],
+  imports: [Icon, TabBar, CdkDropList, CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkScrollable],
   templateUrl: './visual-newsletter-editor.html',
 })
 export class VisualNewsletterEditorComponent implements OnInit {
@@ -26,6 +38,21 @@ export class VisualNewsletterEditorComponent implements OnInit {
   protected readonly previewMode = signal<'desktop' | 'mobile'>('desktop');
   protected readonly editorMode = signal<'visual' | 'code'>('visual');
   protected readonly activeTab = signal<'blocks' | 'edit'>('blocks');
+
+  /** Seam index whose "+" insert picker is open, or null when closed. */
+  protected readonly insertMenuIndex = signal<number | null>(null);
+
+  /** The 8 block types: palette tiles and the "+" insert menu share this list. */
+  protected readonly paletteTypes: readonly PaletteEntry[] = [
+    { type: 'heading', label: 'Heading', icon: 'document-text', iconClass: 'text-primary' },
+    { type: 'text', label: 'Paragraph', icon: 'document-text', iconClass: 'text-success' },
+    { type: 'image', label: 'Image', icon: 'file-image', iconClass: 'text-warning' },
+    { type: 'button', label: 'CTA Button', icon: 'star-filled', iconClass: 'text-info' },
+    { type: 'divider', label: 'Divider', icon: 'bars-3', iconClass: 'text-neutral-content' },
+    { type: 'spacer', label: 'Spacer', icon: 'arrows-pointing-out', iconClass: '' },
+    { type: 'social', label: 'Social Links', icon: 'user-group', iconClass: 'text-primary' },
+    { type: 'footer', label: 'Email Footer', icon: 'home', iconClass: 'text-secondary' },
+  ];
 
   protected readonly panelTabs: PcTabOption[] = [
     { id: 'blocks', label: 'Blocks' },
@@ -140,8 +167,17 @@ export class VisualNewsletterEditorComponent implements OnInit {
     if (event) {
       event.stopPropagation();
     }
+    this.insertMenuIndex.set(null);
     this.selectedBlockId.set(id);
     this.activeTab.set('edit');
+  }
+
+  /** Toggles the "+" insert picker at the given seam index. */
+  protected toggleInsertMenu(index: number, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.insertMenuIndex.set(this.insertMenuIndex() === index ? null : index);
   }
 
   protected toggleEditorMode(): void {
@@ -155,66 +191,35 @@ export class VisualNewsletterEditorComponent implements OnInit {
     }
   }
 
-  protected addBlock(type: 'heading' | 'text' | 'image' | 'button' | 'divider' | 'spacer' | 'social' | 'footer'): void {
-    const id = Math.random().toString(36).substring(2, 9);
-    const styles: NonNullable<EmailBlock['styles']> = {
-      textAlign: 'center',
-      paddingTop: '16',
-      paddingBottom: '16',
-    };
+  /** Click-to-add path: inserts after the selected block, or appends when nothing is selected. */
+  protected addBlock(type: EmailBlockType): void {
+    const selectedId = this.selectedBlockId();
+    const selectedIdx = selectedId === null ? -1 : this.blocks().findIndex((b) => b.id === selectedId);
+    const index = selectedIdx === -1 ? this.blocks().length : selectedIdx + 1;
+    this.addBlockAt(type, index);
+  }
 
-    const newBlock: EmailBlock = {
-      id,
-      type,
-      styles,
-    };
-
-    // Set block defaults
-    if (type === 'heading') {
-      newBlock.content = 'Heading Title';
-      styles.fontSize = '24px';
-      styles.color = '#1f2937';
-    } else if (type === 'text') {
-      newBlock.content = 'Write your custom message paragraph here. Support multiple paragraphs and inline styling.';
-      styles.fontSize = '16px';
-      styles.color = '#4b5563';
-      styles.textAlign = 'left';
-    } else if (type === 'image') {
-      newBlock.imageUrl = 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=600&q=80';
-      newBlock.imageAlt = 'Banner image';
-      newBlock.imageWidth = '100%';
-    } else if (type === 'button') {
-      newBlock.content = 'Click Here';
-      newBlock.linkUrl = 'https://example.com';
-      styles.backgroundColor = '#2563eb';
-      styles.color = '#ffffff';
-      styles.borderRadius = '6';
-      styles.fontSize = '16px';
-    } else if (type === 'divider') {
-      styles.borderColor = '#e5e7eb';
-      styles.borderWidth = '1';
-    } else if (type === 'spacer') {
-      styles.height = '20';
-    } else if (type === 'social') {
-      newBlock.socialIconStyle = 'circular-solid';
-      newBlock.socials = [
-        { platform: 'facebook', url: 'https://facebook.com' },
-        { platform: 'twitter', url: 'https://twitter.com' },
-        { platform: 'linkedin', url: 'https://linkedin.com' },
-        { platform: 'instagram', url: 'https://instagram.com' },
-      ];
-    } else if (type === 'footer') {
-      newBlock.footerCompany = 'pplCRM Inc.';
-      newBlock.footerAddress = '123 Main St, Suite 400, San Francisco, CA 94105';
-      newBlock.footerUnsubscribeUrl = 'https://example.com/unsubscribe';
-      styles.backgroundColor = '#f9fafb';
-      styles.color = '#9ca3af';
-    }
-
-    const currentBlocks = [...this.blocks(), newBlock];
-    this.blocks.set(currentBlocks);
-    this.selectBlock(id);
+  /** Inserts a fresh block of the given type at the given index, selects it, and closes any insert menu. */
+  protected addBlockAt(type: EmailBlockType, index: number): void {
+    const newBlock = createBlock(type);
+    this.blocks.set(insertBlockAt(this.blocks(), newBlock, index));
+    this.selectBlock(newBlock.id);
     this.updateBlocks();
+  }
+
+  /** Handles drops on the canvas: reorder within it, or copy-insert a type dragged from the palette. */
+  protected onCanvasDrop(event: CdkDragDrop<EmailBlock[]>): void {
+    if (event.previousContainer === event.container) {
+      if (event.previousIndex === event.currentIndex) return;
+      this.blocks.set(moveBlock(this.blocks(), event.previousIndex, event.currentIndex));
+      this.updateBlocks();
+      return;
+    }
+    // Palette tile dropped onto the canvas: copy semantics — the tile itself stays in the palette.
+    const data: unknown = event.item.data;
+    if (isEmailBlockType(data)) {
+      this.addBlockAt(data, event.currentIndex);
+    }
   }
 
   protected deleteBlock(id: string, event?: Event): void {
@@ -224,7 +229,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     const filtered = this.blocks().filter((b) => b.id !== id);
     this.blocks.set(filtered);
     if (this.selectedBlockId() === id) {
-      this.selectedBlockId.set(filtered.length > 0 ? filtered[0]!.id : null);
+      this.selectedBlockId.set(filtered[0]?.id ?? null);
     }
     this.updateBlocks();
   }
@@ -240,9 +245,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     const clone: EmailBlock = JSON.parse(JSON.stringify(block));
     clone.id = id;
 
-    const list = [...this.blocks()];
-    list.splice(idx + 1, 0, clone);
-    this.blocks.set(list);
+    this.blocks.set(insertBlockAt(this.blocks(), clone, idx + 1));
     this.selectBlock(id);
     this.updateBlocks();
   }
@@ -252,11 +255,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
       event.stopPropagation();
     }
     if (idx <= 0) return;
-    const list = [...this.blocks()];
-    const temp = list[idx]!;
-    list[idx] = list[idx - 1]!;
-    list[idx - 1] = temp;
-    this.blocks.set(list);
+    this.blocks.set(moveBlock(this.blocks(), idx, idx - 1));
     this.updateBlocks();
   }
 
@@ -265,11 +264,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
       event.stopPropagation();
     }
     if (idx >= this.blocks().length - 1) return;
-    const list = [...this.blocks()];
-    const temp = list[idx]!;
-    list[idx] = list[idx + 1]!;
-    list[idx + 1] = temp;
-    this.blocks.set(list);
+    this.blocks.set(moveBlock(this.blocks(), idx, idx + 1));
     this.updateBlocks();
   }
 

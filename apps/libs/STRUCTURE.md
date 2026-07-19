@@ -75,6 +75,7 @@ libs/
           events.schema.ts
           lists.schema.ts
           marketing.schema.ts
+          newsletter-templates.schema.ts
           persons.schema.ts
           settings.schema.ts
           tags.schema.ts
@@ -972,6 +973,13 @@ export const ReorderStopObj = z.object({
   direction: z.enum(['up', 'down']),
 });
 
+// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
+// movable and keep their seq; the backend reassigns only the pending slots to this order.
+export const ReorderStopsObj = z.object({
+  route_id: idSchema,
+  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
+});
+
 // Staff act on a stop from the route detail page. Same transitions as the public path.
 export const StopActionObj = z.object({
   route_id: idSchema,
@@ -1004,6 +1012,7 @@ export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
 export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
 export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
 export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
 export type StopActionType = z.infer<typeof StopActionObj>;
 export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;
@@ -1184,6 +1193,13 @@ export const UpdateTicketTypeObj = z.object({
   sort_order: z.number().int().min(0).optional(),
 });
 
+// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
+// writes each id's sort_order to its index, so the order shown to attendees matches the form.
+export const ReorderTicketTypesObj = z.object({
+  event_id: idSchema,
+  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
+});
+
 const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
 
 export const AddRegistrationObj = z.object({
@@ -1295,184 +1311,54 @@ export const ImportListItemObj = z.object({
 });
 ````
 
-## File: libs/common/src/lib/schemas/marketing.schema.ts
+## File: libs/common/src/lib/schemas/newsletter-templates.schema.ts
 ````typescript
 import { z } from 'zod';
 
-import { idSchema } from './core.schema';
+import { nameSchema } from './core.schema';
 
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
+/** Generous ceiling for a compiled email document (the presets are ~15 KB). */
+const MAX_TEMPLATE_HTML_LENGTH = 500_000;
+const MAX_TEMPLATE_TEXT_LENGTH = 200_000;
+
+/**
+ * Create payload for a user-saved newsletter template.
+ *
+ * html_content is deliberately NOT trimmed or transformed: the wizard stores the
+ * compiled document verbatim so the PPLCRM_VISUAL_BLOCKS_DATA comment survives
+ * the round-trip back into the visual editor. Emptiness is checked on the
+ * trimmed view only.
+ */
+export const AddNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+  html_content: z
+    .string()
+    .max(MAX_TEMPLATE_HTML_LENGTH)
+    .refine((value) => value.trim().length > 0, 'Template content is required'),
+  plain_text_content: z.string().max(MAX_TEMPLATE_TEXT_LENGTH).optional(),
 });
 
-export const MarketingEmailObj = z.object({
+/** Rename-only edit payload; the content of a saved template is immutable. */
+export const UpdateNewsletterTemplateObj = z.object({
+  name: nameSchema('Name', 120),
+});
+
+/** Read shape returned by newsletters.templates.getAll. */
+export const NewsletterTemplateObj = z.object({
   id: z.string(),
   tenant_id: z.string(),
   name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
-  resend_of_id: z.string().nullable().optional(),
-  updated_at: z.coerce.date(),
+  html_content: z.string(),
+  plain_text_content: z.string(),
   created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
 });
 
-export const AddMarketingEmailObj = z.object({
-  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
-  campaign_id: idSchema.optional(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-
-/* ------------------------------------------------------------------ */
-/* Newsletter report — the shape of newsletters.getReport             */
-/* ------------------------------------------------------------------ */
-
-/** A CRM person matched by email — enough to render a link to their record. */
-export const NewsletterReportPersonObj = z.object({
-  id: z.string(),
-  /** Opaque public id — the canonical /people/:id route key. */
-  public_id: z.string().nullable(),
-  name: z.string(),
-});
-
-export const NewsletterReportBounceObj = z.object({
-  email: z.string(),
-  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
-  kind: z.enum(['hard', 'soft', 'dropped']),
-  reason: z.string().nullable(),
-  occurred_at: z.coerce.date().nullable(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportEngagedObj = z.object({
-  email: z.string(),
-  opens: z.number().int().nonnegative(),
-  clicks: z.number().int().nonnegative(),
-  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
-  links: z.number().int().nonnegative(),
-  person: NewsletterReportPersonObj.nullable(),
-});
-
-export const NewsletterReportLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-  /** Unique clickers of this link — null when unknown (raw events already pruned). */
-  people: z.number().int().nonnegative().nullable(),
-});
-
-export const NewsletterReportPreviousSendObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  send_date: z.coerce.date().nullable(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unsubscribe_rate: z.number(),
-  bounce_rate: z.number(),
-});
-
-export const NewsletterReportObj = z.object({
-  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
-  timeline: z.array(
-    z.object({
-      time: z.string(),
-      opens: z.number().int().nonnegative(),
-      clicks: z.number().int().nonnegative(),
-    }),
-  ),
-  /** Share of all opens that landed within 24h of send — null when not computable. */
-  opens_in_24h_pct: z.number().nullable(),
-  bounces: z.object({
-    total: z.number().int().nonnegative(),
-    hard: z.number().int().nonnegative(),
-    soft: z.number().int().nonnegative(),
-    dropped: z.number().int().nonnegative(),
-    rows: z.array(NewsletterReportBounceObj),
-  }),
-  top_links: z.array(NewsletterReportLinkObj),
-  tracked_links: z.number().int().nonnegative(),
-  total_clicks: z.number().int().nonnegative(),
-  unique_clickers: z.number().int().nonnegative(),
-  most_engaged: z.array(NewsletterReportEngagedObj),
-  unsubscribes: z.object({
-    total: z.number().int().nonnegative(),
-    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
-    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
-  }),
-  spam_reports: z.object({
-    total: z.number().int().nonnegative(),
-    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
-  }),
-  audience: z.object({
-    lists: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        mode: z.enum(['include', 'exclude']),
-        members: z.number().int().nonnegative(),
-      }),
-    ),
-    /** Members in more than one included list, counted once. */
-    overlap_removed: z.number().int().nonnegative(),
-    /** Included members whose address is on the suppression list. */
-    suppressed_skipped: z.number().int().nonnegative(),
-  }),
-  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
-  previous_sends: z.array(NewsletterReportPreviousSendObj),
-  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
-});
-
-export const CreateClickersListResultObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  members: z.number().int().nonnegative(),
-});
+export type AddNewsletterTemplateType = z.infer<typeof AddNewsletterTemplateObj>;
+export type UpdateNewsletterTemplateType = z.infer<typeof UpdateNewsletterTemplateObj>;
+export type NewsletterTemplateType = z.infer<typeof NewsletterTemplateObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/persons.schema.ts
@@ -1703,6 +1589,35 @@ export const UpdateTaskObj = z.object({
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;
 ````
 
 ## File: libs/common/src/lib/schemas/teams.schema.ts
@@ -2120,181 +2035,6 @@ export const FormSubmissionObj = z.object({
   answers: z.record(z.string(), z.unknown()),
   created_at: z.union([z.date(), z.string()]),
 });
-````
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-````typescript
-import { z } from 'zod';
-import { queryBuilderNodeSchema } from './core.schema';
-
-// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
-// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card. `date_arrives` and
-// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
-// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
-// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
-// threshold in days (default 90).
-export const WORKFLOW_TRIGGER_TYPES = [
-  'manual',
-  'web_form_submitted',
-  'contact_created',
-  'tag_added',
-  'list_joined',
-  'donation_recorded',
-  'payment_event',
-  'volunteer_shift_status',
-  'task_sla_breach',
-  'new_subscriber',
-  'new_unsubscriber',
-  'supporter_lapsed',
-  'date_arrives',
-  'volunteer_signup',
-] as const;
-
-export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
-
-const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
-
-// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
-export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
-
-export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
-
-const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
-
-// Engagement condition on a send_email step: gate the send on what the recipient did with the
-// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
-// with a wait step so people have time to engage). Absent/null = always send. A click also
-// stamps an open, so "not opened" implies "not clicked" was true as well.
-export const WORKFLOW_SEND_CONDITIONS = [
-  'previous_not_opened',
-  'previous_not_clicked',
-  'previous_opened',
-  'previous_clicked',
-] as const;
-
-export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
-
-// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
-// each time the enrollment comes due, before any step runs.
-export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
-
-export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
-
-// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
-// at the schema boundary; the controller maps each kind's meaningful fields when executing.
-export const WorkflowStepConfigObj = z
-  .object({
-    // add_tag
-    tag_id: z.string().nullable().optional(),
-    tag_name: z.string().nullable().optional(),
-    // create_task
-    task_title: z.string().nullable().optional(),
-    // notify_team
-    notify_user_id: z.string().nullable().optional(),
-    notify_user_name: z.string().nullable().optional(),
-    notify_message: z.string().nullable().optional(),
-    // send_email
-    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
-  })
-  .strict();
-
-export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: triggerTypeSchema.default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-  conditions: queryBuilderNodeSchema.nullable().optional(),
-  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-// Input shape for saveSteps — order is implied by array position, so no step_number here.
-export const AddWorkflowStepObj = z.object({
-  kind: stepKindSchema,
-  config: WorkflowStepConfigObj.nullable().optional(),
-  delay_days: z.number().int().nonnegative().default(0),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const WorkflowRunObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  enrollment_id: z.string().nullable().optional(),
-  person_id: z.string().nullable().optional(),
-  step_number: z.number().int().nullable().optional(),
-  step_kind: z.string().nullable().optional(),
-  status: z.enum(['success', 'failed', 'skipped']),
-  error: z.string().nullable().optional(),
-  opened_at: z.coerce.date().nullable().optional(),
-  clicked_at: z.coerce.date().nullable().optional(),
-  created_at: z.coerce.date(),
-});
-
-export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
 ````
 
 ## File: libs/common/src/lib/auth.ts
@@ -2820,6 +2560,7 @@ import type {
   AddTicketTypeObj,
   TicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
@@ -2967,6 +2708,7 @@ export type UpdateEventType = z.infer<typeof UpdateEventObj>;
 export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
 export type TicketTypeType = z.infer<typeof TicketTypeObj>;
 export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
 
 export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
 export type RegistrationType = z.infer<typeof RegistrationObj>;
@@ -8500,7 +8242,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '[Tasks](/tasks) is the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
-          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          '[Task board](/tasks/board) shows one column per status: To do, In progress, Waiting, Done. Drag a card to another column to change its status, or drag it up and down within a column to set the order you want; the order sticks. Prefer the keyboard? The ‹ › buttons on a card still move it one column and dim at either end of the row. Jump to the board anytime with `g` then `b`.',
           'Every header carries a swap button (Open board / Open list), so you never have to hunt for the sidebar to switch.',
         ],
       },
@@ -8510,7 +8252,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
-        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
+        text: 'Opening a task shows its full record: subtasks, discussion, attachments, and the activity history. Break the work into subtasks and drag them by the handle on the left of each row to reorder them. The header carries Archive and a ⋯ menu with **Rename task**, **Open task board**, and **Delete task**; the breadcrumb takes you back to the list, and opening from the list adds previous/next arrows (`J`/`K`) through the same filtered set.',
       },
       { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
       {
@@ -9558,6 +9300,361 @@ export const stripeConnectCountrySchema = z.enum(STRIPE_CONNECT_COUNTRY_CODES);
 export type StripeConnectCountry = z.infer<typeof stripeConnectCountrySchema>;
 ````
 
+## File: libs/common/src/lib/schemas/marketing.schema.ts
+````typescript
+import { z } from 'zod';
+
+import { idSchema } from './core.schema';
+
+export const marketingEmailTopLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+});
+
+export const MarketingEmailObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative(),
+  delivered_count: z.number().int().nonnegative(),
+  bounce_count: z.number().int().nonnegative(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unique_opens: z.number().int().nonnegative(),
+  unique_clicks: z.number().int().nonnegative(),
+  unsubscribe_count: z.number().int().nonnegative(),
+  spam_complaint_count: z.number().int().nonnegative(),
+  reply_count: z.number().int().nonnegative(),
+  send_date: z.coerce.date().nullable(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
+  resend_of_id: z.string().nullable().optional(),
+  updated_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+});
+
+export const AddMarketingEmailObj = z.object({
+  /** Campaigns §15 — the context this newsletter sends within; backend defaults to the office. */
+  campaign_id: idSchema.optional(),
+  name: z.string(),
+  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  audience_description: z.string().nullable().optional(),
+  target_lists: z.string().nullable().optional(),
+  segments: z.string().nullable().optional(),
+  total_recipients: z.number().int().nonnegative().default(0).optional(),
+  delivered_count: z.number().int().nonnegative().default(0).optional(),
+  bounce_count: z.number().int().nonnegative().default(0).optional(),
+  open_rate: z.number().min(0).max(100).default(0).optional(),
+  click_rate: z.number().min(0).max(100).default(0).optional(),
+  unique_opens: z.number().int().nonnegative().default(0).optional(),
+  unique_clicks: z.number().int().nonnegative().default(0).optional(),
+  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
+  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
+  reply_count: z.number().int().nonnegative().default(0).optional(),
+  send_date: z.coerce.date().nullable().optional(),
+  last_engagement_at: z.coerce.date().nullable().optional(),
+  summary: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+});
+
+export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
+
+/* ------------------------------------------------------------------ */
+/* Newsletter report — the shape of newsletters.getReport             */
+/* ------------------------------------------------------------------ */
+
+/** A CRM person matched by email — enough to render a link to their record. */
+export const NewsletterReportPersonObj = z.object({
+  id: z.string(),
+  /** Opaque public id — the canonical /people/:id route key. */
+  public_id: z.string().nullable(),
+  name: z.string(),
+});
+
+export const NewsletterReportBounceObj = z.object({
+  email: z.string(),
+  /** hard = permanent, soft = provider deferral ('blocked'), dropped = never attempted. */
+  kind: z.enum(['hard', 'soft', 'dropped']),
+  reason: z.string().nullable(),
+  occurred_at: z.coerce.date().nullable(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportEngagedObj = z.object({
+  email: z.string(),
+  opens: z.number().int().nonnegative(),
+  clicks: z.number().int().nonnegative(),
+  /** Distinct links clicked — 0 when unknown (raw events already pruned). */
+  links: z.number().int().nonnegative(),
+  person: NewsletterReportPersonObj.nullable(),
+});
+
+export const NewsletterReportLinkObj = z.object({
+  url: z.string(),
+  clicks: z.number().int().nonnegative(),
+  /** Unique clickers of this link — null when unknown (raw events already pruned). */
+  people: z.number().int().nonnegative().nullable(),
+});
+
+export const NewsletterReportPreviousSendObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  send_date: z.coerce.date().nullable(),
+  open_rate: z.number(),
+  click_rate: z.number(),
+  unsubscribe_rate: z.number(),
+  bounce_rate: z.number(),
+});
+
+export const NewsletterReportObj = z.object({
+  /** Hourly opens/clicks buckets from raw events (empty once events are pruned). */
+  timeline: z.array(
+    z.object({
+      time: z.string(),
+      opens: z.number().int().nonnegative(),
+      clicks: z.number().int().nonnegative(),
+    }),
+  ),
+  /** Share of all opens that landed within 24h of send — null when not computable. */
+  opens_in_24h_pct: z.number().nullable(),
+  bounces: z.object({
+    total: z.number().int().nonnegative(),
+    hard: z.number().int().nonnegative(),
+    soft: z.number().int().nonnegative(),
+    dropped: z.number().int().nonnegative(),
+    rows: z.array(NewsletterReportBounceObj),
+  }),
+  top_links: z.array(NewsletterReportLinkObj),
+  tracked_links: z.number().int().nonnegative(),
+  total_clicks: z.number().int().nonnegative(),
+  unique_clickers: z.number().int().nonnegative(),
+  most_engaged: z.array(NewsletterReportEngagedObj),
+  unsubscribes: z.object({
+    total: z.number().int().nonnegative(),
+    /** Reason buckets; null reason = "No reason given" (no unsubscribe survey exists yet). */
+    reasons: z.array(z.object({ reason: z.string().nullable(), count: z.number().int().nonnegative() })),
+  }),
+  spam_reports: z.object({
+    total: z.number().int().nonnegative(),
+    rows: z.array(z.object({ email: z.string().nullable(), occurred_at: z.coerce.date().nullable() })),
+  }),
+  audience: z.object({
+    lists: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        mode: z.enum(['include', 'exclude']),
+        members: z.number().int().nonnegative(),
+      }),
+    ),
+    /** Members in more than one included list, counted once. */
+    overlap_removed: z.number().int().nonnegative(),
+    /** Included members whose address is on the suppression list. */
+    suppressed_skipped: z.number().int().nonnegative(),
+  }),
+  /** Up to the last 5 sent newsletters in this campaign, oldest → newest, ending with this send. */
+  previous_sends: z.array(NewsletterReportPreviousSendObj),
+  from: z.object({ name: z.string().nullable(), email: z.string().nullable() }).nullable(),
+});
+
+export const CreateClickersListResultObj = z.object({
+  id: z.string(),
+  name: z.string(),
+  members: z.number().int().nonnegative(),
+});
+````
+
+## File: libs/common/src/lib/schemas/workflows.schema.ts
+````typescript
+import { z } from 'zod';
+import { queryBuilderNodeSchema } from './core.schema';
+
+// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
+// backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
+// volunteer-events controller) but is not offered as a card. `date_arrives` and
+// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
+// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
+// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
+// threshold in days (default 90).
+export const WORKFLOW_TRIGGER_TYPES = [
+  'manual',
+  'web_form_submitted',
+  'contact_created',
+  'tag_added',
+  'list_joined',
+  'donation_recorded',
+  'payment_event',
+  'volunteer_shift_status',
+  'task_sla_breach',
+  'new_subscriber',
+  'new_unsubscriber',
+  'supporter_lapsed',
+  'date_arrives',
+  'volunteer_signup',
+] as const;
+
+export type WorkflowTriggerType = (typeof WORKFLOW_TRIGGER_TYPES)[number];
+
+const triggerTypeSchema = z.enum(WORKFLOW_TRIGGER_TYPES);
+
+// Spec §16 sequence editor — the five step kinds offered by the ADD A STEP menu.
+export const WORKFLOW_STEP_KINDS = ['wait', 'send_email', 'add_tag', 'create_task', 'notify_team'] as const;
+
+export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
+
+const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
+
+// Engagement condition on a send_email step: gate the send on what the recipient did with the
+// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
+// with a wait step so people have time to engage). Absent/null = always send. A click also
+// stamps an open, so "not opened" implies "not clicked" was true as well.
+export const WORKFLOW_SEND_CONDITIONS = [
+  'previous_not_opened',
+  'previous_not_clicked',
+  'previous_opened',
+  'previous_clicked',
+] as const;
+
+export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
+
+// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
+// each time the enrollment comes due, before any step runs.
+export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
+
+export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
+
+// Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
+// at the schema boundary; the controller maps each kind's meaningful fields when executing.
+export const WorkflowStepConfigObj = z
+  .object({
+    // add_tag
+    tag_id: z.string().nullable().optional(),
+    tag_name: z.string().nullable().optional(),
+    // create_task
+    task_title: z.string().nullable().optional(),
+    // notify_team
+    notify_user_id: z.string().nullable().optional(),
+    notify_user_name: z.string().nullable().optional(),
+    notify_message: z.string().nullable().optional(),
+    // send_email
+    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
+  })
+  .strict();
+
+export type WorkflowStepConfigType = z.infer<typeof WorkflowStepConfigObj>;
+
+export const WorkflowObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft'),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+  createdby_id: z.string(),
+  updatedby_id: z.string(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const AddWorkflowObj = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  description: z.string().nullable().optional(),
+  trigger_type: triggerTypeSchema.default('manual'),
+  trigger_event_id: z.string().nullable().optional(),
+  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
+  conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
+});
+
+export const UpdateWorkflowObj = AddWorkflowObj.partial();
+
+export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
+export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
+
+export const WorkflowStepObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  step_number: z.number().int().positive(),
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative(),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+// Input shape for saveSteps — order is implied by array position, so no step_number here.
+export const AddWorkflowStepObj = z.object({
+  kind: stepKindSchema,
+  config: WorkflowStepConfigObj.nullable().optional(),
+  delay_days: z.number().int().nonnegative().default(0),
+  delay_unit: z.enum(['days', 'hours']).default('days'),
+  subject: z.string().nullable().optional(),
+  preview_text: z.string().nullable().optional(),
+  html_content: z.string().nullable().optional(),
+  plain_text_content: z.string().nullable().optional(),
+});
+
+export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
+
+export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
+export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
+
+export const WorkflowEnrollmentObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  person_id: z.string(),
+  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
+  current_step_number: z.number().int().nonnegative(),
+  next_run_at: z.coerce.date().nullable().optional(),
+  enrolled_at: z.coerce.date(),
+  created_at: z.coerce.date(),
+  updated_at: z.coerce.date(),
+});
+
+export const WorkflowRunObj = z.object({
+  id: z.string(),
+  tenant_id: z.string(),
+  workflow_id: z.string(),
+  enrollment_id: z.string().nullable().optional(),
+  person_id: z.string().nullable().optional(),
+  step_number: z.number().int().nullable().optional(),
+  step_kind: z.string().nullable().optional(),
+  status: z.enum(['success', 'failed', 'skipped']),
+  error: z.string().nullable().optional(),
+  opened_at: z.coerce.date().nullable().optional(),
+  clicked_at: z.coerce.date().nullable().optional(),
+  created_at: z.coerce.date(),
+});
+
+export type WorkflowRunType = z.infer<typeof WorkflowRunObj>;
+````
+
 ## File: libs/common/src/lib/preflight-lint.ts
 ````typescript
 import type { AiPreflightVerdict, PreflightFinding, PreflightSeverity } from './schemas/content-check.schema';
@@ -10028,6 +10125,7 @@ export * from './schemas/lists.schema';
 export * from './schemas/teams.schema';
 export * from './schemas/emails.schema';
 export * from './schemas/marketing.schema';
+export * from './schemas/newsletter-templates.schema';
 export * from './schemas/persons.schema';
 export * from './schemas/settings.schema';
 export * from './schemas/tasks.schema';
@@ -11579,6 +11677,380 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 ];
 ````
 
+## File: libs/common/src/lib/help/articles/engagement.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: [
+      'donation',
+      'gift',
+      'pledge',
+      'fundraising',
+      'donate page',
+      'giving',
+      'contribution',
+      'donor',
+      'record donation',
+      'receipt',
+      'cash',
+      'check',
+      'stripe',
+      'processor',
+      'residency',
+      'paused',
+    ],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
+      },
+      {
+        kind: 'p',
+        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
+      },
+      {
+        kind: 'p',
+        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
+      },
+      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
+      {
+        kind: 'p',
+        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
+      },
+      {
+        kind: 'p',
+        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
+      },
+      {
+        kind: 'p',
+        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Donations are paused until you confirm residency',
+        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
+            detail: 'Build the giving page: your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
+          {
+            title: 'Add ticket tiers and set their order',
+            detail:
+              'On the event’s edit page, add ticket types under **Ticket types** (leave it empty for a free RSVP). Drag a ticket by its handle to set the order; the order you set is the order attendees see on the public page.',
+          },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
+          },
+          {
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Drag a field by its handle to reorder it; the order you set is the order people see on the public form. Changes apply to the live form instantly. There is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Donation forms show here too',
+        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
+      },
+    ],
+  },
+  {
+    id: 'canvassing',
+    category: 'engagement',
+    title: 'Canvassing: turfs, the Companion, and the field report',
+    summary:
+      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
+    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
+    related: ['teams', 'lists', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
+      },
+      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Cut new turfs**',
+            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
+          },
+          {
+            title: 'Choose doors per turf',
+            detail:
+              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
+          },
+          {
+            title: 'Confirm',
+            detail:
+              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Only located doors get cut',
+        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
+      {
+        kind: 'p',
+        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Before you assign',
+        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
+      },
+      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
+      {
+        kind: 'p',
+        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
+      },
+      {
+        kind: 'p',
+        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
+      },
+      {
+        kind: 'p',
+        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
+      },
+      { kind: 'h2', id: 'report', text: 'The field report' },
+      {
+        kind: 'p',
+        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
+      },
+      {
+        kind: 'p',
+        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
+      },
+    ],
+  },
+  {
+    id: 'deliveries',
+    category: 'engagement',
+    title: 'Deliveries and volunteer routes',
+    summary:
+      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
+    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
+    related: ['events-shifts', 'teams', 'forms', 'households'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
+      },
+      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
+      {
+        kind: 'p',
+        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Address problem?',
+        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
+      },
+      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click Plan routes · N ready',
+            detail:
+              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
+          },
+          {
+            title: 'Preview routes',
+            detail:
+              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
+          },
+          {
+            title: 'Create N routes',
+            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'assign', text: 'Assign and share' },
+      {
+        kind: 'p',
+        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reorder the stops that are still pending by dragging one by its handle, or use the up and down arrows for the same move by keyboard; delivered and skipped stops stay where they are. Either way the estimate recomputes for you. Revoke or regenerate the link any time from the ⋯ menu.',
+      },
+      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
+      {
+        kind: 'p',
+        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'One source of truth',
+        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
+      },
+      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
+      {
+        kind: 'p',
+        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
+      },
+      {
+        kind: 'p',
+        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
+      },
+    ],
+  },
+];
+````
+
 ## File: libs/common/src/lib/kysely.models.ts
 ````typescript
 // tsco:ignore
@@ -11643,6 +12115,7 @@ export interface Models {
   donation_pledges: DonationPledges;
   emails: Emails;
   newsletters: Newsletters;
+  newsletter_templates: NewsletterTemplates;
   newsletter_events: NewsletterEvents;
   newsletter_send_log: NewsletterSendLog;
   newsletter_content_checks: NewsletterContentChecks;
@@ -12359,6 +12832,15 @@ interface Newsletters extends RecordType {
   resend_of_id: string | null;
 }
 
+/** A user-saved newsletter design. Tenant-wide (no campaign_id — pure content, no audience or
+ * consent, so it is a shared asset per Campaigns §15). html_content stores the compiled document
+ * verbatim, including the PPLCRM_VISUAL_BLOCKS_DATA comment the visual editor round-trips on. */
+interface NewsletterTemplates extends RecordType {
+  name: string;
+  html_content: string;
+  plain_text_content: Generated<string>;
+}
+
 export interface NewsletterEvents {
   id: Generated<string>;
   tenant_id: string;
@@ -12921,375 +13403,6 @@ export type HouseholdWithExtras = SelectShape<Models['households']> & {
 };
 ````
 
-## File: libs/common/src/lib/help/articles/engagement.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: [
-      'donation',
-      'gift',
-      'pledge',
-      'fundraising',
-      'donate page',
-      'giving',
-      'contribution',
-      'donor',
-      'record donation',
-      'receipt',
-      'cash',
-      'check',
-      'stripe',
-      'processor',
-      'residency',
-      'paused',
-    ],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits. See [Working in grids](/help/grid-basics).',
-      },
-      {
-        kind: 'p',
-        text: 'Most gifts arrive on their own through a fundraising page. For cash, a check, or a bank transfer collected offline, click **Record donation** at the top of the Donations page: pick the donor, enter the amount, and choose a method (Card, Check, Cash, or Bank transfer). A receipt goes out automatically. Configure the sender and template in Workspace settings → Donations.',
-      },
-      {
-        kind: 'p',
-        text: 'If a card gift is later refunded or charged back through Stripe, the donation updates itself. It shows as **refunded** or **disputed** and stops counting toward the donor’s giving totals and contribution limits, so your reports stay honest without any manual cleanup. A chargeback you later win flips the gift back to succeeded automatically.',
-      },
-      { kind: 'h2', id: 'processor', text: 'Choose your payment processor' },
-      {
-        kind: 'p',
-        text: 'Online gifts are processed by **Stripe**, set up under [Workspace → Donations](/workspace/donations). Stripe handles both one-time and monthly (recurring) gifts, and processes and stores donor payment data in the United States.',
-      },
-      {
-        kind: 'p',
-        text: 'Setting up Stripe means **connecting your own Stripe account** — click **Connect with Stripe**, pick your campaign’s country, and Stripe walks you through verifying the campaign before returning you to pplCRM. There are no API keys or webhook URLs to copy. Donations are charged directly to your Stripe account, so your campaign stays the merchant of record for compliance and receipting, and you manage payouts, refunds, and disputes from your own Stripe dashboard (the **Open Stripe dashboard** button). pplCRM deducts a **1% platform fee** from each card donation; Stripe’s own processing fees also apply and are billed to your account by Stripe. If a gift is fully refunded, the platform fee is refunded too.',
-      },
-      {
-        kind: 'p',
-        text: 'Why your own account? Campaign finance rules generally require contributions to be received by the campaign itself, so donations settle directly into your campaign’s bank account and never pass through pplCRM. It also puts the money in the safest possible hands: Stripe is certified to PCI DSS Level 1, the industry’s highest payment-security standard, and card details never touch pplCRM’s servers. And the account stays yours; your processing history remains with you even if you stop using pplCRM.',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Donations are paused until you confirm residency',
-        text: 'A new organization cannot accept donations until you confirm your residency restrictions under [Workspace → Donations](/workspace/donations). Saving that card once lifts the pause, whether you restrict donors to certain places or allow everyone.',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest, and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create a fundraising form**',
-            detail: 'Build the giving page: your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people. No retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. Both are created from [Forms](/forms). Click **New form**, then choose the event or shift option instead of a standard template.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms), click **New form**, then **Create an event page**',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          {
-            title: 'Share the page',
-            detail:
-              'Every event gets a public link on your organization’s own web address. Copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
-          },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event, and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts from [Forms](/forms) (click **New form**, then **Create a volunteer shift**) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift. The link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab, which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically. The trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary:
-      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
-    keywords: [
-      'form',
-      'web form',
-      'signup form',
-      'survey',
-      'rsvp',
-      'pledge',
-      'embed',
-      'subscribe',
-      'submission',
-      'publish',
-      'archive',
-      'responses',
-    ],
-    related: ['newsletters', 'automations', 'import', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A form under [Forms](/forms) is a living page with a lifecycle: **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records, never a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create from a template' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click New form',
-            detail: 'Pick a starting template card, then name the form. It opens as a draft in edit mode.',
-          },
-          {
-            title: 'Turn fields on and set what’s required',
-            detail:
-              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly. There is nothing to save.',
-          },
-          {
-            title: 'Publish when it’s ready',
-            detail:
-              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Email is the identity key',
-        text: 'Every form always collects an email, always required. It’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
-      },
-      { kind: 'h2', id: 'responses', text: 'Responses are people' },
-      {
-        kind: 'p',
-        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags, including an automatic `Source: <form name>` tag, and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
-      },
-      { kind: 'h2', id: 'share', text: 'Share and embed' },
-      {
-        kind: 'list',
-        items: [
-          'Copy the public link or open the standalone page from the link row.',
-          'Use the `</>` embed to drop the form into any site: an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
-          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Archive, don’t delete',
-        text: 'A form with responses can be archived. Its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters: better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Donation forms show here too',
-        text: 'Donation pages appear in the [Forms](/forms) list with a **Donation** chip so you can see every form in one place. Because they collect card payments through your connected Stripe account, opening one takes you to the [Donations](/donations) fundraising builder to edit it — the amount and payment settings live there, not in the live editor.',
-      },
-    ],
-  },
-  {
-    id: 'canvassing',
-    category: 'engagement',
-    title: 'Canvassing: turfs, the Companion, and the field report',
-    summary:
-      'Cut a smart list into walkable turfs, send them to volunteers on the Canvass Companion, and watch every knock sync back live.',
-    keywords: ['canvass', 'canvassing', 'turf', 'door', 'knock', 'walk', 'field', 'companion', 'volunteer', 'gotv'],
-    related: ['teams', 'lists', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open [Canvassing](/canvassing) under **Field** in the sidebar. The header sentence sums up the whole operation at a glance: how many turfs exist, how many are in the field now, how many doors have been attempted, and how many turfs are still waiting for a canvasser.',
-      },
-      { kind: 'h2', id: 'cut', text: 'Cut turfs from a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Cut new turfs**',
-            detail: 'Pick a universe: any [smart list](/lists) of the people (or households) you want knocked.',
-          },
-          {
-            title: 'Choose doors per turf',
-            detail:
-              '30 for a short shift, 40 recommended, 50 for experienced canvassers, 60 for pairs. The preview does the math in the open and estimates the walk time.',
-          },
-          {
-            title: 'Confirm',
-            detail:
-              'Turfs are cut from your located households into contiguous, walkable groups that never cross a hard barrier like a highway, rail line, or river. New turfs land as Draft, unassigned.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Only located doors get cut',
-        text: 'A turf is built from households the app has geocoded. Addresses still being located are reported in the preview and join a turf once they resolve. Nothing is silently dropped.',
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign turfs to volunteers' },
-      {
-        kind: 'p',
-        text: '**Assign** opens a picker: choose the person the turf belongs to, and the app mints their personal Companion link and copies it. Text or email it to them. Links are personal on purpose: the volunteer proves it’s them with a one-time code sent to the email or mobile on their [person record](/people), and a brand-new volunteer needs a one-time admin approval on the Volunteer access page before the turf loads. Keep a turf in sync with its list any time with **Refresh from list**. It pulls in new matching doors without ever losing knock history.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Before you assign',
-        text: 'Make sure the volunteer’s person record has an email or mobile number. That’s where their verification code goes. No contact on file means the link can’t be opened.',
-      },
-      { kind: 'h2', id: 'companion', text: 'The Canvass Companion' },
-      {
-        kind: 'p',
-        text: 'The Companion is a web app, nothing to install. After verifying, the volunteer lands on their assignment, taps **Start walking**, and works the door list in the suggested walk order (any order works). At each door they survey the people on file (support level, top issues, follow-up flags, and notes) or record a one-tap result like not home or moved. Door-level outcomes (nobody home, inaccessible, refused) close a door with one tap and can be cleared just as fast, and “+ Add someone at this door” captures a new name on the spot. Every result syncs live to the person, the household, the turf’s progress, and the Activity log, attributed honestly as “via Canvass Companion”. No signal? Results queue on the phone and upload automatically when the volunteer is back online.',
-      },
-      {
-        kind: 'p',
-        text: 'Survey answers do real work: a support level updates the person’s support reading for the turf’s [campaign](/campaigns), **Wants a yard sign** drops a request straight into the [Deliveries](/deliveries) intake pool, **Wants to volunteer** sets their volunteer status to Prospective on the person record, contact details fill in blanks on the person record, and **Do not contact** suppresses them everywhere, immediately.',
-      },
-      {
-        kind: 'p',
-        text: '**Survey settings** (top of the Canvassing page) controls what canvassers see: the top-issues chips they can tag and the door script that opens every survey, both scoped to the campaign the turf was cut for.',
-      },
-      { kind: 'h2', id: 'report', text: 'The field report' },
-      {
-        kind: 'p',
-        text: 'The **Field report** tab turns those knocks into the picture of the operation: doors, conversations, contact rate and support IDs; what voters said at the door; doors knocked per day; performance by team; when doors answer best; and your top canvassers. Change the range or **Export CSV** for the raw numbers by team and by day. Every figure flows in from synced Companions. Nothing is entered by hand.',
-      },
-      {
-        kind: 'p',
-        text: 'The **Coverage** card shows where you have actually walked. On the **Street map** every door is a dot (green where a volunteer had a conversation, amber where they knocked and got no answer, and grey where no one has been yet), with each turf drawn as a dashed boundary. Flip to **By ward** for the same picture as a table: doors, how much of each ward has been knocked, and how many are still waiting. Like the rest of the report it follows the range you pick, and it appears as soon as turfs are cut, even before the first knock.',
-      },
-    ],
-  },
-  {
-    id: 'deliveries',
-    category: 'engagement',
-    title: 'Deliveries and volunteer routes',
-    summary:
-      'Collect delivery requests, turn approved ones into about-an-hour driving routes, and hand each route to a volunteer through a private link, no volunteer account needed.',
-    keywords: ['yard sign', 'delivery', 'route', 'volunteer', 'sign', 'drive', 'stops', 'plan routes', 'canvass drop'],
-    related: ['events-shifts', 'teams', 'forms', 'households'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Deliveries turns sign requests into optimized driving routes and hands each one to a volunteer. Open [Deliveries](/deliveries) under **Field** in the sidebar. The badge shows how many requests are approved and ready to route. A **Requests / Routes** switch at the top of the page flips between the incoming request pool and the routes you have already planned. The **Plan routes** button stays disabled until at least one request is approved and located. There is nothing to route before then.',
-      },
-      { kind: 'h2', id: 'requests', text: 'Requests: approve what comes in' },
-      {
-        kind: 'p',
-        text: 'Every request is tied to a household, so its map location comes from the household’s address. The **Readiness** chip tells you the geocode state (**Located**, **Locating…**, or **Address problem**), and a request must be approved and located to be routed. Select rows and use **Approve** or **Decline** in the selection bar; the count is repeated on every button.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Address problem?',
-        text: 'A request that can’t be located shows an **Edit household** link right on the row. Fixing the address there re-triggers geocoding automatically. The request becomes routable on its own.',
-      },
-      { kind: 'h2', id: 'plan', text: 'Plan routes (preview first)' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click Plan routes · N ready',
-            detail:
-              'Set the start address drivers leave from. Start typing and pick a suggested address. It’s remembered for next time.',
-          },
-          {
-            title: 'Preview routes',
-            detail:
-              'Preview is a pure calculation. It doesn’t save anything. You’ll see proposed routes, per-stop travel times, and an honest explanation of anything that couldn’t fit.',
-          },
-          {
-            title: 'Create N routes',
-            detail: 'Only now is anything saved. All the routes are created together and you land on the routes list.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'assign', text: 'Assign and share' },
-      {
-        kind: 'p',
-        text: 'On a route, assign the volunteer first. The link is personal to them. Click **Assign** next to Volunteer, search by name or email, and pick the person (use **Change** or **Remove volunteer** to swap or clear them later). Then **Copy volunteer link** mints a private link and copies it to your clipboard. It expires after 30 days as a security safeguard, unless an administrator turns expiry off under **Workspace → App** (handy when routes run longer than a month). You can do all of this without opening the route: the **Routes** list has an inline **Assign** on any unassigned row, and each row’s ⋯ menu covers assign/change volunteer, copy the link, and cancel or delete the route. Like the Canvass Companion, the volunteer verifies a one-time code sent to their email or mobile on file, and a first-time volunteer needs a one-time admin approval on the Volunteer access page. **Open in Google Maps** launches turn-by-turn for the whole route. Reordering stops recomputes the estimate for you. Revoke or regenerate the link any time from the ⋯ menu.',
-      },
-      { kind: 'h2', id: 'deliver', text: 'Volunteers deliver' },
-      {
-        kind: 'p',
-        text: 'The volunteer opens the link on their phone and works one stop at a time: **Mark delivered**, **Couldn’t deliver** (with a reason), or **Skip for now** (moves the house to the end). The page shows first name and address only, never a constituent’s email or phone. Undo is available on any delivered or skipped stop, even after closing and reopening the page. A house reported undeliverable returns to your planning pool automatically, and when every stop is handled the route finishes itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'One source of truth',
-        text: 'A request is “on a route” only while it has an active stop. There’s no separate flag to fall out of sync. Skip or remove a stop and the request is instantly back in the pool for the next batch.',
-      },
-      { kind: 'h2', id: 'standing', text: 'Yard sign standing on profiles' },
-      {
-        kind: 'p',
-        text: 'You don’t have to open Deliveries to check a sign. Every household page carries a **Yard sign** card, and every person page shows the same control inside the **Campaign standing** card, right next to support level and voting status. It reads straight from the request pool for the campaign you are working in: **None requested**, **Requested**, **Approved**, **Declined**, or **Delivered**, with who asked, where it came from, and a link to the route it is riding on.',
-      },
-      {
-        kind: 'p',
-        text: 'Flip the status yourself when reality happens outside the app. Pick **Delivered** if someone installed a sign by hand, or record a brand-new request for a household that asked in person. If the house is sitting on an active route when you mark it delivered, the route’s stop is marked delivered too, so volunteer progress stays truthful. The change lands in the household’s and requester’s activity history.',
-      },
-    ],
-  },
-];
-````
-
 ## File: libs/common/src/lib/help/articles/administration.ts
 ````typescript
 import type { HelpArticle } from '../help-types';
@@ -13636,6 +13749,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       'schedule',
       'resend',
       'template',
+      'saved templates',
+      'save as template',
       'audience',
       'unsubscribe',
       'deliverability',
@@ -13649,11 +13764,13 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
+            detail:
+              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
           },
           {
             title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+            detail:
+              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
           },
           {
             title: 'Name it clearly',
@@ -13666,6 +13783,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Personalize with merge fields',
         text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
+      {
+        kind: 'p',
+        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
       },
       { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
@@ -13973,7 +14095,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           },
           {
             title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+            detail:
+              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
           },
           {
             title: 'Name it and set it Active',
@@ -14092,6 +14215,7 @@ export type {
   AddTicketTypeType,
   TicketTypeType,
   UpdateTicketTypeType,
+  ReorderTicketTypesType,
   AddRegistrationType,
   RegistrationType,
   UpdateRegistrationType,
@@ -14142,6 +14266,8 @@ export {
   MarketingEmailObj,
   marketingEmailTopLinkObj,
   TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
   ListsObj,
   SettingsObj,
   SettingsEntryObj,
@@ -14215,6 +14341,7 @@ export {
   AddTicketTypeObj,
   TicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
@@ -14255,6 +14382,7 @@ export {
   AssignVolunteerObj,
   SetDeliveryRouteStatusObj,
   ReorderStopObj,
+  ReorderStopsObj,
   StopActionObj,
   RouteIdObj,
   MintShareLinkObj,
@@ -14312,7 +14440,7 @@ export type { DonationMethod, RecordDonationType, StripeConnectCountry } from '.
 export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
 export type {
   WorkflowTriggerType,
   WorkflowStepKind,
@@ -14348,6 +14476,7 @@ export type {
   AssignVolunteerType,
   SetDeliveryRouteStatusType,
   ReorderStopType,
+  ReorderStopsType,
   StopActionType,
   MintShareLinkType,
   PublicStopActionType,
@@ -14369,6 +14498,17 @@ export {
   buildPersonSlug,
 } from './lib/public-id';
 export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
 
 export {
   AI_CONTENT_TYPES,

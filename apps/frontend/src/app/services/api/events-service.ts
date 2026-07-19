@@ -25,6 +25,10 @@ export class EventsService extends TRPCService<'events'> {
     return this.api.events.deleteTicketType.mutate(id);
   }
 
+  public reorderTicketTypes(eventId: string, orderedIds: string[]) {
+    return this.api.events.reorderTicketTypes.mutate({ event_id: eventId, ordered_ids: orderedIds });
+  }
+
   public getRegistrations(eventId: string) {
     return this.api.events.getRegistrationsForEvent.query(eventId);
   }

@@ -1,5 +1,7 @@
 import {
   AddTaskObj,
+  ReorderSubtasksObj,
+  ReorderTasksObj,
   UpdateTaskObj,
   exportCsvInput,
   exportCsvResponse,
@@ -64,6 +66,10 @@ export const TasksRouter = router({
   update: authProcedure
     .input(z.object({ id: idSchema, data: UpdateTaskObj }))
     .mutation(({ input, ctx }) => tasks.updateTask(input.id, input.data, ctx.auth)),
+  reorder: authProcedure.input(ReorderTasksObj).mutation(({ input, ctx }) => tasks.reorderTasks(ctx.auth, input)),
+  reorderSubtasks: authProcedure
+    .input(ReorderSubtasksObj)
+    .mutation(({ input, ctx }) => new TaskSubtasksController().reorderSubtasks(ctx.auth, input)),
   getComments: authProcedure
     .input(idSchema)
     .query(({ input, ctx }) =>

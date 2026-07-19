@@ -314,6 +314,37 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
   }
 
+  /**
+   * Persist the drag-to-reorder of an event's ticket types. `ordered_ids` must be exactly the set of
+   * this event's ticket type ids (any foreign or missing id is rejected); each id's sort_order is
+   * written to its index so the public /e/:slug page shows tickets in the same order as the form.
+   */
+  public async reorderTicketTypes(payload: { event_id: string; ordered_ids: string[] }, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getTicketTypesForEvent({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+    });
+    const existingIds = new Set(existing.map((t) => String(t.id)));
+    const requested = payload.ordered_ids;
+    const sameMembers =
+      requested.length === existingIds.size &&
+      new Set(requested).size === requested.length &&
+      requested.every((id) => existingIds.has(id));
+    if (!sameMembers) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'The new order must list exactly this event’s ticket types.',
+      });
+    }
+    await this.getRepo().reorderTicketTypes({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      ordered_ids: requested,
+      user_id: auth.user_id,
+    });
+    return { reordered: requested.length };
+  }
+
   // Registrations
 
   public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {

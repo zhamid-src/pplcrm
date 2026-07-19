@@ -10,6 +10,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
 import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
@@ -52,6 +53,10 @@ import { EmptyState } from '@uxcommon/components/empty-state/empty-state';
     TimeAgoPipe,
     RecordActivities,
     UserAvatarComponent,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    CdkDragPlaceholder,
   ],
   templateUrl: './task-view.html',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -265,6 +270,30 @@ export class TaskView {
       this.refreshActivities();
     } finally {
       end();
+    }
+  }
+
+  /**
+   * Drag-to-reorder subtasks. Optimistically reorders the local list, then persists the
+   * full new order in one transaction; rolls back to the snapshot on failure.
+   */
+  protected async onSubtaskDrop(event: CdkDragDrop<any[]>): Promise<void> {
+    if (event.previousIndex === event.currentIndex) return;
+    const snapshot = this.subtasks();
+    const next = [...snapshot];
+    const [moved] = next.splice(event.previousIndex, 1);
+    if (!moved) return;
+    next.splice(event.currentIndex, 0, moved);
+    this.subtasks.set(next);
+    try {
+      await this.tasks.reorderSubtasks(
+        this.id(),
+        next.map((s) => String(s.id)),
+      );
+      this.refreshActivities();
+    } catch (err) {
+      this.subtasks.set(snapshot);
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not reorder subtasks. Please try again.'));
     }
   }
 

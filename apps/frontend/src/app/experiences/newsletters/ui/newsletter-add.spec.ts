@@ -21,6 +21,9 @@ describe('NewsletterAddComponent', () => {
     add: ReturnType<typeof vi.fn>;
     send: ReturnType<typeof vi.fn>;
     sendTest: ReturnType<typeof vi.fn>;
+    getTemplates: ReturnType<typeof vi.fn>;
+    saveTemplate: ReturnType<typeof vi.fn>;
+    deleteTemplate: ReturnType<typeof vi.fn>;
   };
   let mockRouter: { navigate: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn> };
   let mockActivatedRoute: unknown;
@@ -29,6 +32,14 @@ describe('NewsletterAddComponent', () => {
   let mockSettingsSvc: { load: ReturnType<typeof vi.fn>; getValue: ReturnType<typeof vi.fn> };
 
   const validDetails = { subject: 'Big News', fromName: 'Jane', fromAddress: 'jane@example.com' };
+
+  const savedTemplate = {
+    id: 'tpl-1',
+    name: 'Monthly update',
+    html_content: '<!DOCTYPE html><html><body>Saved body<!-- PPLCRM_VISUAL_BLOCKS_DATA: x --></body></html>',
+    plain_text_content: 'Saved body',
+    updated_at: new Date('2026-07-01T00:00:00Z'),
+  };
 
   /** Patches the signal-form payload the way a user filling the fields would. */
   function patchPayload(
@@ -61,6 +72,9 @@ describe('NewsletterAddComponent', () => {
       add: vi.fn().mockResolvedValue({ id: 'nl-1' }),
       send: vi.fn().mockResolvedValue({ success: true }),
       sendTest: vi.fn().mockResolvedValue({ to: 'me@example.com', delivered: 1 }),
+      getTemplates: vi.fn().mockResolvedValue([savedTemplate]),
+      saveTemplate: vi.fn().mockResolvedValue({ ...savedTemplate, id: 'tpl-2', name: 'My design' }),
+      deleteTemplate: vi.fn().mockResolvedValue(true),
     };
     mockRouter = { navigate: vi.fn(), navigateByUrl: vi.fn() };
     mockActivatedRoute = { snapshot: { paramMap: { get: () => null }, queryParamMap: { get: () => null } } };
@@ -106,7 +120,7 @@ describe('NewsletterAddComponent', () => {
   it('lands on the template step with the welcome template preselected', () => {
     expect(component['currentStep']()).toBe(1);
     expect(component['currentStepId']()).toBe('template');
-    expect(component['selectedTemplate']()).toBe('welcome');
+    expect(component['selectedTemplate']()).toEqual({ kind: 'preset', id: 'welcome' });
     // The auto-applied default is not a user edit, so the leave guard stays quiet.
     expect(component['dirty']()).toBe(false);
   });
@@ -114,7 +128,7 @@ describe('NewsletterAddComponent', () => {
   it('populates the html/plain text content when a template is selected', () => {
     component['selectTemplate']('product');
 
-    expect(component['selectedTemplate']()).toBe('product');
+    expect(component['selectedTemplate']()).toEqual({ kind: 'preset', id: 'product' });
     expect(component['regularPayload']().htmlContent).toContain('Introducing Visual Newsletters!');
     expect(component['regularPayload']().plainTextContent).toContain('Introducing Visual Newsletters!');
   });
@@ -122,6 +136,77 @@ describe('NewsletterAddComponent', () => {
   it('exposes sentence-case template names for the review step', () => {
     component['selectTemplate']('welcome');
     expect(component['selectedTemplateName']()).toBe('Welcome email');
+  });
+
+  it('loads saved templates on init', () => {
+    expect(mockNewslettersSvc.getTemplates).toHaveBeenCalled();
+    expect(component['savedTemplates']()).toEqual([savedTemplate]);
+  });
+
+  it('applies a saved template verbatim and shows its name on the review step', () => {
+    component['selectSavedTemplate'](savedTemplate);
+
+    expect(component['selectedTemplate']()).toEqual({ kind: 'saved', id: 'tpl-1' });
+    expect(component['regularPayload']().htmlContent).toBe(savedTemplate.html_content);
+    expect(component['regularPayload']().plainTextContent).toBe(savedTemplate.plain_text_content);
+    expect(component['selectedTemplateName']()).toBe('Monthly update');
+    expect(component['dirty']()).toBe(true);
+  });
+
+  it('compiles preset previews once and caches them', () => {
+    const first = component['presetPreviewHtml']('welcome');
+    expect(first).toContain('<!DOCTYPE html>');
+    expect(component['presetPreviewHtml']('welcome')).toBe(first);
+  });
+
+  it('saves the current content verbatim as a template and confirms with a toast', async () => {
+    patchPayload({ htmlContent: '<html>current</html>', plainTextContent: 'current' });
+    component['openSaveTemplate']();
+    component['templateNamePayload'].set({ name: 'My design' });
+
+    await component['saveAsTemplate']();
+
+    expect(mockNewslettersSvc.saveTemplate).toHaveBeenCalledWith({
+      name: 'My design',
+      html_content: '<html>current</html>',
+      plain_text_content: 'current',
+    });
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Template saved');
+    expect(component['saveTemplateOpen']()).toBe(false);
+    expect(component['savedTemplates']().some((t) => t.name === 'My design')).toBe(true);
+  });
+
+  it('does not save a template without a name', async () => {
+    component['openSaveTemplate']();
+
+    await component['saveAsTemplate']();
+
+    expect(mockNewslettersSvc.saveTemplate).not.toHaveBeenCalled();
+    expect(component['saveTemplateOpen']()).toBe(true);
+  });
+
+  it('deletes a saved template behind the danger confirm, naming the template', async () => {
+    await component['deleteSavedTemplate'](savedTemplate);
+
+    expect(mockConfirmDlg.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Delete template "Monthly update"?',
+        variant: 'danger',
+        confirmText: 'Delete template',
+      }),
+    );
+    expect(mockNewslettersSvc.deleteTemplate).toHaveBeenCalledWith('tpl-1');
+    expect(component['savedTemplates']()).toEqual([]);
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Deleted template "Monthly update"');
+  });
+
+  it('keeps a saved template when the danger confirm is cancelled', async () => {
+    mockConfirmDlg.confirm.mockResolvedValueOnce(false);
+
+    await component['deleteSavedTemplate'](savedTemplate);
+
+    expect(mockNewslettersSvc.deleteTemplate).not.toHaveBeenCalled();
+    expect(component['savedTemplates']()).toEqual([savedTemplate]);
   });
 
   it('does not advance past step 3 when required detail fields are invalid, and coaches', () => {

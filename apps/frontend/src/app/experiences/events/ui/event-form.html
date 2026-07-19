@@ -138,20 +138,36 @@
           <p class="text-sm text-base-content/40 italic">
             No ticket types defined. This event uses a simple free RSVP.
           </p>
-          } @else {
+          } @else { @if (ticketTypes().length > 1) {
+          <p class="text-[11px] text-base-content/50 mb-2">Drag the handle to set the order attendees see.</p>
+          }
           <div class="overflow-x-auto border border-base-300 rounded-lg">
             <table class="table pc-table w-full">
               <thead>
                 <tr class="bg-base-200 text-base-content/70">
+                  <th class="w-8"></th>
                   <th>Name</th>
                   <th>Price</th>
                   <th>Capacity</th>
                   <th class="w-16 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-base-200">
+              <tbody class="divide-y divide-base-200" cdkDropList (cdkDropListDropped)="onTicketDrop($event)">
                 @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
+                <tr class="hover:bg-base-200/40" cdkDrag>
+                  <td [attr.colspan]="5" *cdkDragPlaceholder class="p-0">
+                    <div class="pc-drop-indicator"></div>
+                  </td>
+                  <td class="text-center">
+                    <button
+                      type="button"
+                      cdkDragHandle
+                      class="btn btn-ghost btn-xs btn-square cursor-grab text-base-content/40 active:cursor-grabbing"
+                      aria-label="Drag to reorder ticket type"
+                    >
+                      <pc-icon name="bars-3" [size]="4"></pc-icon>
+                    </button>
+                  </td>
                   <td>
                     <div class="font-semibold">{{ ticket.name }}</div>
                     @if (ticket.description) {
@@ -168,6 +184,7 @@
                 </tr>
                 } @if (addingTicket()) {
                 <tr class="bg-base-200/30">
+                  <td></td>
                   <td>
                     <input
                       type="text"

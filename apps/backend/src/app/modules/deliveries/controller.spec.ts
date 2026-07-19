@@ -354,3 +354,118 @@ describe('DeliveriesController — public volunteer path', () => {
     await expect(controller.mintShareLink(staffAuth, { route_id: s.routeId })).rejects.toThrow(/assign a volunteer/i);
   });
 });
+
+describe('DeliveriesController — reorderStops (drag-to-reorder)', () => {
+  const controller = new DeliveriesController();
+  const db = BaseRepository.dbInstance;
+  let s: Seed;
+  let staffAuth: IAuthKeyPayload;
+
+  const seqOf = async (stopId: string): Promise<number> => {
+    const row = await db
+      .selectFrom('delivery_route_stops')
+      .select('seq')
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', stopId)
+      .executeTakeFirstOrThrow();
+    return Number(row.seq);
+  };
+
+  beforeEach(async () => {
+    s = await seed(db);
+    staffAuth = { tenant_id: s.tenantId, user_id: s.organizerId, name: 'Sam Staff', session_id: 'sess', role: 'user' };
+  });
+
+  afterEach(async () => {
+    await cleanup(db, s.tenantId);
+  });
+
+  it('reseats pending stops into the requested order, dodging the unique(route_id, seq) index', async () => {
+    const [a, b, c] = s.stopIds; // seq 1,2,3
+
+    // A full reversal forces overlapping seq targets — proves the temp-offset write is unique-safe.
+    const res = await controller.reorderStops(staffAuth, {
+      route_id: s.routeId,
+      ordered_stop_ids: [String(c), String(b), String(a)],
+    });
+    expect(res.stops.map((stop) => stop.id)).toEqual([String(c), String(b), String(a)]);
+    expect(await seqOf(String(c))).toBe(1);
+    expect(await seqOf(String(b))).toBe(2);
+    expect(await seqOf(String(a))).toBe(3);
+
+    // Exactly one reorder activity is logged for the resequence.
+    const activity = await db
+      .selectFrom('user_activity')
+      .select(['metadata'])
+      .where('tenant_id', '=', s.tenantId)
+      .where('entity', '=', 'delivery_routes')
+      .where('entity_id', '=', s.routeId)
+      .execute();
+    const reorders = activity.filter((r) => (r.metadata as { action?: string })?.action === 'stop_reordered');
+    expect(reorders).toHaveLength(1);
+  });
+
+  it('keeps delivered/skipped stops fixed and only permutes the pending stops', async () => {
+    const [a, b, c] = s.stopIds; // seq 1,2,3
+    // Mark the middle stop delivered — it must keep seq 2 and stay out of the movable set.
+    await db
+      .updateTable('delivery_route_stops')
+      .set({ status: 'delivered' })
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', String(b))
+      .execute();
+
+    // Swap the two pending stops (a<->c); b stays put.
+    await controller.reorderStops(staffAuth, { route_id: s.routeId, ordered_stop_ids: [String(c), String(a)] });
+    expect(await seqOf(String(c))).toBe(1);
+    expect(await seqOf(String(b))).toBe(2); // delivered stop unmoved
+    expect(await seqOf(String(a))).toBe(3);
+  });
+
+  it('rejects a non-pending id in the order', async () => {
+    const [a, b, c] = s.stopIds;
+    await db
+      .updateTable('delivery_route_stops')
+      .set({ status: 'delivered' })
+      .where('tenant_id', '=', s.tenantId)
+      .where('id', '=', String(b))
+      .execute();
+    // Including the delivered stop id (or all three) is not "exactly the pending set".
+    await expect(
+      controller.reorderStops(staffAuth, {
+        route_id: s.routeId,
+        ordered_stop_ids: [String(a), String(b), String(c)],
+      }),
+    ).rejects.toThrow(/pending stops/i);
+  });
+
+  it('rejects a stop id that belongs to another route', async () => {
+    const [a, b] = s.stopIds;
+    // A foreign id is not in this route's pending set → rejected.
+    await expect(
+      controller.reorderStops(staffAuth, {
+        route_id: s.routeId,
+        ordered_stop_ids: [String(a), String(b), '999999999'],
+      }),
+    ).rejects.toThrow(/pending stops/i);
+  });
+
+  it('rejects a route from another tenant (tenant scoping)', async () => {
+    const other = await seed(db);
+    const otherAuth: IAuthKeyPayload = {
+      tenant_id: other.tenantId,
+      user_id: other.organizerId,
+      name: 'Other',
+      session_id: 'sess2',
+      role: 'user',
+    };
+    try {
+      // s.routeId belongs to tenant s, not to otherAuth's tenant → route not found.
+      await expect(
+        controller.reorderStops(otherAuth, { route_id: s.routeId, ordered_stop_ids: s.stopIds.map(String) }),
+      ).rejects.toThrow(/route not found/i);
+    } finally {
+      await cleanup(db, other.tenantId);
+    }
+  });
+});

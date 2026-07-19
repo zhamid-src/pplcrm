@@ -215,6 +215,62 @@ describe('EventsController', () => {
     expect(listAfterDelete).toHaveLength(0);
   });
 
+  it('persists a drag-to-reorder of ticket types as sort_order and honors it on read', async () => {
+    const event = await controller.addEvent(eventPayload(), auth);
+    const eventId = String(event.id);
+    const a = await controller.addTicketType({ event_id: eventId, name: 'A', price_cents: 0 }, auth);
+    const b = await controller.addTicketType({ event_id: eventId, name: 'B', price_cents: 0 }, auth);
+    const c = await controller.addTicketType({ event_id: eventId, name: 'C', price_cents: 0 }, auth);
+    const ids = [String(a.id), String(b.id), String(c.id)];
+
+    // Reverse the order: C, B, A.
+    const reversed = [ids[2], ids[1], ids[0]] as string[];
+    const res = await controller.reorderTicketTypes({ event_id: eventId, ordered_ids: reversed }, auth);
+    expect(res).toEqual({ reordered: 3 });
+
+    // getTicketTypesForEvent orders by sort_order asc — the public read path uses the same order.
+    const listed = await controller.getTicketTypesForEvent(eventId, auth);
+    expect(listed.map((t) => String(t.id))).toEqual(reversed);
+    expect(listed.map((t) => t.sort_order)).toEqual([0, 1, 2]);
+
+    const publicList = await controller.getTicketTypesByEventId(eventId, tenantId);
+    expect(publicList.map((t) => t.name)).toEqual(['C', 'B', 'A']);
+  });
+
+  it('rejects a ticket reorder whose ids are not exactly the event’s ticket types', async () => {
+    const event = await controller.addEvent(eventPayload(), auth);
+    const eventId = String(event.id);
+    const a = await controller.addTicketType({ event_id: eventId, name: 'A', price_cents: 0 }, auth);
+    const b = await controller.addTicketType({ event_id: eventId, name: 'B', price_cents: 0 }, auth);
+
+    // A foreign id / missing id both fail the set-equality check.
+    await expect(
+      controller.reorderTicketTypes({ event_id: eventId, ordered_ids: [String(a.id), '999999999'] }, auth),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(
+      controller.reorderTicketTypes({ event_id: eventId, ordered_ids: [String(a.id)] }, auth),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    // A different tenant cannot see or reorder these tickets (its ticket set is empty here).
+    const seedB = await createTestSeed(db);
+    const authB: IAuthKeyPayload = {
+      tenant_id: seedB.tenantId,
+      user_id: seedB.userId,
+      name: 'Tenant B User',
+      session_id: 'session-b',
+    };
+    try {
+      await expect(
+        controller.reorderTicketTypes({ event_id: eventId, ordered_ids: [String(a.id), String(b.id)] }, authB),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      // The original order is untouched after the rejected foreign attempt.
+      const listed = await controller.getTicketTypesForEvent(eventId, auth);
+      expect(listed.map((t) => String(t.id))).toEqual([String(a.id), String(b.id)]);
+    } finally {
+      await cleanTenant(db, seedB.tenantId);
+    }
+  });
+
   it('adds a person, registers them, checks them in, and cleans up on delete', async () => {
     const event = await controller.addEvent(eventPayload({ capacity: 1 }), auth);
 

@@ -80,3 +80,32 @@ export const UpdateTaskObj = z.object({
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
   team_id: idSchema.or(z.literal('')).nullable().optional(),
 });
+
+/**
+ * Board drag-and-drop persistence (spec §4). One drop touches one or two board
+ * columns: dragging within a column re-seats that single column; dragging across
+ * two columns re-seats the source and target. Each column lists its cards in the
+ * new top-to-bottom order — the backend writes `position = index` per id and sets
+ * every id's `status` to its column, all in one transaction. `archived` is not a
+ * board column, so only the four `TASK_BOARD_STATUSES` are accepted.
+ */
+export const ReorderTasksObj = z.object({
+  columns: z
+    .array(
+      z.object({
+        status: z.enum(TASK_BOARD_STATUSES),
+        ids: z.array(idSchema).min(1, 'A column must list at least one task').max(1000, 'Too many tasks in one column'),
+      }),
+    )
+    .min(1, 'At least one column is required')
+    .max(2, 'A single drop touches at most two columns'),
+});
+
+/** Subtask drag-to-reorder (task detail): the full ordered id list for one task. */
+export const ReorderSubtasksObj = z.object({
+  task_id: idSchema,
+  ids: z.array(idSchema).min(1, 'At least one subtask is required').max(1000, 'Too many subtasks'),
+});
+
+export type ReorderTasksType = z.infer<typeof ReorderTasksObj>;
+export type ReorderSubtasksType = z.infer<typeof ReorderSubtasksObj>;

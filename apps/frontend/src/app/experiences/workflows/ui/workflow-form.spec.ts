@@ -124,6 +124,52 @@ describe('WorkflowFormComponent', () => {
     expect(component['steps']().length).toBe(1);
   });
 
+  it('should reorder steps by drag, moving an item within the sequence', async () => {
+    await createComponent();
+    component.ngOnInit();
+    component['selectTrigger']('manual');
+    component['steps'].set([]);
+    component['addStepAt'](0, 'send_email');
+    component['addStepAt'](1, 'wait');
+    component['addStepAt'](2, 'add_tag');
+
+    // Drag the add_tag step (index 2) up to the top.
+    component['reorderStep']({ previousIndex: 2, currentIndex: 0 } as any);
+
+    expect(component['steps']().map((s) => s.kind)).toEqual(['add_tag', 'send_email', 'wait']);
+  });
+
+  it('should reflect the dragged order in the save payload, so derived step_number follows the drag', async () => {
+    await createComponent();
+    component.ngOnInit();
+    component['selectTrigger']('manual');
+    component['steps'].set([]);
+    component['addStepAt'](0, 'send_email');
+    component['setStepEmailSubject'](0, 'Welcome');
+    component['addStepAt'](1, 'send_email');
+    component['setStepEmailSubject'](1, 'Nudge');
+
+    component['reorderStep']({ previousIndex: 1, currentIndex: 0 } as any);
+
+    // toStepPayload() is exactly what saveSteps persists; the backend assigns step_number = idx + 1,
+    // so the new array order is the new step ordering.
+    const payload = component['toStepPayload']();
+    expect(payload.map((p) => p.subject)).toEqual(['Nudge', 'Welcome']);
+  });
+
+  it('should leave the sequence untouched when a step is dropped in place', async () => {
+    await createComponent();
+    component.ngOnInit();
+    component['selectTrigger']('manual');
+    component['steps'].set([]);
+    component['addStepAt'](0, 'send_email');
+    component['addStepAt'](1, 'wait');
+
+    component['reorderStep']({ previousIndex: 0, currentIndex: 0 } as any);
+
+    expect(component['steps']().map((s) => s.kind)).toEqual(['send_email', 'wait']);
+  });
+
   it('should map steps to the kind-aware save payload (dropping the client uid)', async () => {
     await createComponent();
     component.ngOnInit();

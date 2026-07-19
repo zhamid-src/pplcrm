@@ -57,6 +57,11 @@ export class DeliveriesRoutesService extends AbstractAPIService<'delivery_routes
     return this.api.deliveries.reorderStop.mutate({ route_id, stop_id, direction });
   }
 
+  /** Drag-to-reorder: the full new order of the route's pending stop ids. */
+  public reorderStops(route_id: string, ordered_stop_ids: string[]) {
+    return this.api.deliveries.reorderStops.mutate({ route_id, ordered_stop_ids });
+  }
+
   public mintShareLink(route_id: string, regenerate = false) {
     return this.api.deliveries.mintShareLink.mutate({ route_id, regenerate });
   }

@@ -10,6 +10,7 @@ import type {
   IAuthKeyPayload,
   PlanDeliveriesType,
   ReorderStopType,
+  ReorderStopsType,
   SetDeliveryRequestStatusType,
   SetDeliveryRouteStatusType,
   StopActionType,
@@ -565,6 +566,61 @@ export class DeliveriesController {
         'Stop removed. Request returned to the pool',
       );
       return this.readRouteProgress(trx, auth.tenant_id, routeId);
+    });
+  }
+
+  /**
+   * Drag-to-reorder: reseat only the PENDING stops of a route into the given order. Delivered and
+   * skipped stops are not movable — they keep their exact seq, and the pending stops are permuted
+   * across the seq slots they already occupy. `ordered_stop_ids` must be exactly the set of the
+   * route's pending stop ids (any foreign, non-pending, or missing id is rejected). Seq writes go
+   * through `applySeqOrder`'s temp-offset trick to dodge the unique(route_id, seq) index, then legs
+   * and the route estimate are recomputed. One `stop_reordered` activity is logged, matching the
+   * adjacent-swap path.
+   */
+  public async reorderStops(auth: IAuthKeyPayload, input: ReorderStopsType) {
+    return this.routesRepo.transaction().execute(async (trx) => {
+      const route = await trx
+        .selectFrom('delivery_routes')
+        .select(['id'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', input.route_id)
+        .executeTakeFirst();
+      if (!route) throw new NotFoundError('Route not found');
+
+      const stops = await trx
+        .selectFrom('delivery_route_stops')
+        .select(['id', 'seq', 'status'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('route_id', '=', input.route_id)
+        .orderBy('seq', 'asc')
+        .execute();
+
+      const pendingIds = stops.filter((s) => s.status === 'pending').map((s) => String(s.id));
+      const requested = input.ordered_stop_ids;
+      // Exact set equality: same length + same members. This one check rejects a foreign/other-route
+      // stop, a delivered/skipped id, and a missing pending id all at once.
+      const pendingSet = new Set(pendingIds);
+      const sameMembers =
+        requested.length === pendingIds.length &&
+        new Set(requested).size === requested.length &&
+        requested.every((id) => pendingSet.has(id));
+      if (!sameMembers) {
+        throw new BadRequestError('The new order must list exactly the route’s pending stops.');
+      }
+      if (pendingIds.length < 2) {
+        // Nothing to permute — no-op, but return the current authoritative shape.
+        return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
+      }
+
+      // Drop the pending stops into the slots they currently occupy, in the requested order, while
+      // every non-pending stop stays exactly where it is (so it keeps its seq).
+      const queue = [...requested];
+      const finalOrder = stops.map((s) => (s.status === 'pending' ? (queue.shift() ?? String(s.id)) : String(s.id)));
+      await this.applySeqOrder(trx, auth.tenant_id, finalOrder);
+      await this.renumberAndRecompute(trx, auth, input.route_id);
+      await this.logRouteActivity(trx, auth, input.route_id, 'update', 'stop_reordered', 'Stops reordered');
+      return this.readRouteProgress(trx, auth.tenant_id, input.route_id);
     });
   }
 

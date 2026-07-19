@@ -46,6 +46,7 @@ describe('EventFormComponent', () => {
       getTicketTypes: vi.fn().mockResolvedValue([]),
       addTicketType: vi.fn(),
       deleteTicketType: vi.fn(),
+      reorderTicketTypes: vi.fn().mockResolvedValue({ reordered: 0 }),
     };
 
     mockAlertSvc = { showError: vi.fn(), showSuccess: vi.fn() };
@@ -246,6 +247,65 @@ describe('EventFormComponent', () => {
       await component['deleteTicketType']('t1');
 
       expect(mockEventsSvc.deleteTicketType).not.toHaveBeenCalled();
+    });
+
+    it('should optimistically reorder ticket types and persist the new order', async () => {
+      mockEventsFrontendSvc.getById.mockResolvedValue({ id: 'e-1', name: 'Town Hall' });
+      const initial = [
+        { id: 't1', name: 'A' },
+        { id: 't2', name: 'B' },
+        { id: 't3', name: 'C' },
+      ];
+      mockEventsSvc.getTicketTypes.mockResolvedValue(initial);
+
+      await createComponent('e-1');
+      await fixture.whenStable();
+      await component['loadTicketTypes']();
+
+      // The reload after a successful persist returns the server's authoritative new order.
+      mockEventsSvc.getTicketTypes.mockResolvedValue([
+        { id: 't2', name: 'B' },
+        { id: 't3', name: 'C' },
+        { id: 't1', name: 'A' },
+      ]);
+
+      // Drag the first ticket to the end: A,B,C -> B,C,A.
+      await component['onTicketDrop']({ previousIndex: 0, currentIndex: 2 } as any);
+
+      expect(mockEventsSvc.reorderTicketTypes).toHaveBeenCalledWith('e-1', ['t2', 't3', 't1']);
+      expect(component['ticketTypes']().map((t: any) => t.id)).toEqual(['t2', 't3', 't1']);
+    });
+
+    it('should ignore a no-op ticket drop', async () => {
+      mockEventsFrontendSvc.getById.mockResolvedValue({ id: 'e-1', name: 'Town Hall' });
+      mockEventsSvc.getTicketTypes.mockResolvedValue([{ id: 't1', name: 'A' }]);
+
+      await createComponent('e-1');
+      await fixture.whenStable();
+      await component['loadTicketTypes']();
+
+      await component['onTicketDrop']({ previousIndex: 0, currentIndex: 0 } as any);
+
+      expect(mockEventsSvc.reorderTicketTypes).not.toHaveBeenCalled();
+    });
+
+    it('should roll back the ticket order and show an error when persistence fails', async () => {
+      mockEventsFrontendSvc.getById.mockResolvedValue({ id: 'e-1', name: 'Town Hall' });
+      const initial = [
+        { id: 't1', name: 'A' },
+        { id: 't2', name: 'B' },
+      ];
+      mockEventsSvc.getTicketTypes.mockResolvedValue(initial);
+      mockEventsSvc.reorderTicketTypes.mockRejectedValue(new Error('nope'));
+
+      await createComponent('e-1');
+      await fixture.whenStable();
+      await component['loadTicketTypes']();
+
+      await component['onTicketDrop']({ previousIndex: 0, currentIndex: 1 } as any);
+
+      expect(mockAlertSvc.showError).toHaveBeenCalled();
+      expect(component['ticketTypes']().map((t: any) => t.id)).toEqual(['t1', 't2']);
     });
   });
 

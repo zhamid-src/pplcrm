@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { CdkDrag, CdkDragPlaceholder, CdkDropList, type CdkDragDrop } from '@angular/cdk/drag-drop';
 import { Router } from '@angular/router';
 import {
   TASK_BOARD_STATUSES,
@@ -26,13 +27,17 @@ interface BoardTask {
   created_at: string | null;
   details: string | null;
   team_name: string | null;
+  position: number;
 }
 
 const CARD_FLASH_MS = 1200;
 
+/** Prefix for each column's cdkDropList id — connected lists reference these by string. */
+const BOARD_COL_PREFIX = 'board-col-';
+
 @Component({
   selector: 'pc-tasks-board',
-  imports: [Icon],
+  imports: [Icon, CdkDropList, CdkDrag, CdkDragPlaceholder],
   templateUrl: './tasks-board.html',
 })
 export class TasksBoard implements OnInit {
@@ -61,8 +66,25 @@ export class TasksBoard implements OnInit {
     for (const t of this.tasks()) {
       map.get(t.status)?.push(t);
     }
+    // Deterministic within-column order: manual position first, oldest-first tiebreak.
+    for (const list of map.values()) {
+      list.sort((a, b) => a.position - b.position || this.createdAtCompare(a, b));
+    }
     return map;
   });
+
+  private createdAtCompare(a: BoardTask, b: BoardTask): number {
+    const av = a.created_at ?? '';
+    const bv = b.created_at ?? '';
+    return av < bv ? -1 : av > bv ? 1 : 0;
+  }
+
+  /** The four cdkDropList ids — every column is connected to all of them (CDK ignores self). */
+  protected readonly dropListIds = this.columns.map((c) => BOARD_COL_PREFIX + c);
+
+  protected dropListId(status: TaskBoardStatus): string {
+    return BOARD_COL_PREFIX + status;
+  }
 
   /** "12 open tasks · 2 breaching SLA · 4 assigned to you · 3 waiting for an owner" (spec §4). */
   protected readonly countSentence = computed(() => {
@@ -84,7 +106,23 @@ export class TasksBoard implements OnInit {
       const [res, users, counts] = await Promise.all([
         this.svc.getAll({
           limit: 1000,
-          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details', 'team_name'],
+          columns: [
+            'id',
+            'name',
+            'status',
+            'priority',
+            'assigned_to',
+            'due_at',
+            'created_at',
+            'details',
+            'team_name',
+            'position',
+          ],
+          // Deterministic board order: manual drag order first, oldest-first tiebreak.
+          sortModel: [
+            { colId: 'position', sort: 'asc' },
+            { colId: 'created_at', sort: 'asc' },
+          ],
         }),
         this.userService.getUsers(),
         this.svc.getSummaryCounts(),
@@ -113,6 +151,7 @@ export class TasksBoard implements OnInit {
       created_at: (r['created_at'] as string | null) ?? null,
       details: (r['details'] as string | null) ?? null,
       team_name: (r['team_name'] as string | null) ?? null,
+      position: r['position'] == null ? 0 : Number(r['position']),
     };
   }
 
@@ -203,6 +242,62 @@ export class TasksBoard implements OnInit {
       this.tasks.update((list) => list.map((t) => (t.id === task.id ? { ...t, status: prevStatus } : t)));
       this.alerts.showError(getUserErrorMessage(err, 'Could not move the task. Please try again.'));
     }
+  }
+
+  /**
+   * Drag-and-drop persistence. Same-column drag re-seats that one column; cross-column
+   * drag re-seats the source and target and changes the card's status. Optimistic:
+   * regroup/reorder locally, then persist; roll back to the snapshot on failure.
+   */
+  protected async onCardDrop(event: CdkDragDrop<BoardTask[]>, targetCol: TaskBoardStatus): Promise<void> {
+    const moved = event.item.data;
+    const sameColumn = event.previousContainer === event.container;
+    if (sameColumn && event.previousIndex === event.currentIndex) return; // dropped in place
+
+    const sourceCol = moved.status;
+    const snapshot = this.tasks();
+    const columnsPayload: Array<{ status: TaskBoardStatus; ids: string[] }> = [];
+
+    if (sameColumn) {
+      const ids = this.cardsFor(targetCol).map((c) => c.id);
+      const [id] = ids.splice(event.previousIndex, 1);
+      if (id === undefined) return;
+      ids.splice(event.currentIndex, 0, id);
+      columnsPayload.push({ status: targetCol, ids });
+    } else {
+      const targetIds = this.cardsFor(targetCol).map((c) => c.id);
+      targetIds.splice(event.currentIndex, 0, moved.id);
+      const sourceIds = this.cardsFor(sourceCol)
+        .map((c) => c.id)
+        .filter((id) => id !== moved.id);
+      columnsPayload.push({ status: targetCol, ids: targetIds });
+      if (sourceIds.length > 0) columnsPayload.push({ status: sourceCol, ids: sourceIds });
+    }
+
+    this.applyReorder(columnsPayload);
+
+    try {
+      await this.svc.reorder(columnsPayload);
+      this.svc.triggerRefresh();
+      this.flashCard(moved.id);
+    } catch (err) {
+      this.tasks.set(snapshot);
+      this.alerts.showError(getUserErrorMessage(err, 'Could not move the task. Please try again.'));
+    }
+  }
+
+  /** Apply a reorder payload to the local model: position = index, status = its column. */
+  private applyReorder(columnsPayload: Array<{ status: TaskBoardStatus; ids: string[] }>): void {
+    const next = new Map<string, { position: number; status: TaskBoardStatus }>();
+    for (const col of columnsPayload) {
+      col.ids.forEach((id, index) => next.set(id, { position: index, status: col.status }));
+    }
+    this.tasks.update((list) =>
+      list.map((t) => {
+        const u = next.get(t.id);
+        return u ? { ...t, position: u.position, status: u.status } : t;
+      }),
+    );
   }
 
   /** One-click "take" for an unassigned task — assigns it to the current user. */

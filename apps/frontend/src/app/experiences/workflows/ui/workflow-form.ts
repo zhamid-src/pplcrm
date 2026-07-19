@@ -1,5 +1,7 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormField, form, submit, validateStandardSchema } from '@angular/forms/signals';
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddWorkflowObj } from '@common';
@@ -86,6 +88,10 @@ interface EnrollmentRow {
     QueryBuilderComponent,
     NgTemplateOutlet,
     DatePipe,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    CdkDragPlaceholder,
   ],
   templateUrl: './workflow-form.html',
   providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService, TeamsService],
@@ -288,6 +294,19 @@ export class WorkflowFormComponent implements OnInit {
 
   protected removeStep(index: number): void {
     this.steps.set(this.steps().filter((_, i) => i !== index));
+  }
+
+  /**
+   * Reorder steps by drag. step_number is derived from array index on save (saveSteps assigns
+   * idx + 1), so moving an item in this signal is all that's needed — the new order is persisted
+   * the next time the automation is saved. The sequence stays editable in every status, so no
+   * status guard is needed here (add/remove aren't guarded either).
+   */
+  protected reorderStep(event: CdkDragDrop<SequenceStep[]>): void {
+    if (event.previousIndex === event.currentIndex) return;
+    const steps = [...this.steps()];
+    moveItemInArray(steps, event.previousIndex, event.currentIndex);
+    this.steps.set(steps);
   }
 
   protected setStepDelay(index: number, value: string): void {

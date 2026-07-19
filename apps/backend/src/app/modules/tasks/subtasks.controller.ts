@@ -1,6 +1,8 @@
 import type { Transaction, Selectable } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { IAuthKeyPayload, ReorderSubtasksType } from '../../../../../../libs/common/src';
 import { BaseController } from '../../lib/base.controller';
+import { NotFoundError } from '../../errors/app-errors';
 import { TaskSubtasksRepo } from './repositories/task-subtasks.repo';
 
 export class TaskSubtasksController extends BaseController<'task_subtasks', TaskSubtasksRepo> {
@@ -9,7 +11,43 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
   }
 
   public getByTaskId(input: { tenant_id: string; task_id: string }) {
-    return (this as any).getRepo().getManyBy('task_id', { tenant_id: input.tenant_id, value: input.task_id });
+    return this.getRepo().getByTaskIdOrdered(input.tenant_id, input.task_id);
+  }
+
+  /**
+   * Drag-to-reorder the subtasks of one task. `ids` is the full new top-to-bottom
+   * order; every id must belong to the tenant and to `task_id` (a foreign or
+   * unknown id rejects the whole drop). Writes `position = index` per id in one
+   * transaction — never a loop of single-row `updateSubtask` calls.
+   */
+  public async reorderSubtasks(auth: IAuthKeyPayload, input: ReorderSubtasksType) {
+    const repo = this.getRepo();
+    return repo.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom('task_subtasks')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('task_id', '=', input.task_id)
+        .where('id', 'in', input.ids)
+        .execute();
+      const found = new Set(existing.map((r) => String(r.id)));
+      if (found.size !== input.ids.length || input.ids.some((id) => !found.has(String(id)))) {
+        throw new NotFoundError('One or more subtasks were not found for this task');
+      }
+
+      let index = 0;
+      for (const id of input.ids) {
+        await trx
+          .updateTable('task_subtasks')
+          .set({ position: index, updatedby_id: auth.user_id } as OperationDataType<'task_subtasks', 'update'>)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .execute();
+        index += 1;
+      }
+
+      return { ok: true as const, updated: input.ids.length };
+    });
   }
 
   public override async add(row: OperationDataType<'task_subtasks', 'insert'>, trx?: Transaction<Models>) {

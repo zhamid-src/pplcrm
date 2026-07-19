@@ -1,6 +1,7 @@
 import { Service, inject } from '@angular/core';
 import {
   AddMarketingEmailType,
+  AddNewsletterTemplateType,
   CreateClickersListResultType,
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -14,6 +15,15 @@ import {
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { CampaignContextService } from '../../../services/campaign-context.service';
+
+/** Wizard-facing shape of a user-saved newsletter template. */
+export interface SavedNewsletterTemplate {
+  id: string;
+  name: string;
+  html_content: string;
+  plain_text_content: string;
+  updated_at: Date | null;
+}
 
 @Service()
 export class NewslettersService extends AbstractAPIService<'newsletters', UpdateMarketingEmailType> {
@@ -122,6 +132,48 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   /** Full deliverability check (lint + SpamAssassin + AI content review), cached server-side. */
   public runPreflight(input: RunPreflightType): Promise<PreflightResult> {
     return this.api.newsletters.runPreflight.mutate(input);
+  }
+
+  // --- User-saved templates (tenant-wide library; no campaign scoping) -------
+
+  /** Every saved template for the workspace, alphabetized by name. */
+  public async getTemplates(): Promise<SavedNewsletterTemplate[]> {
+    const rows = await this.api.newsletters.templates.getAll.query(undefined, { signal: this.ac.signal });
+    return (rows ?? []).map((row: unknown) => this.normalizeTemplate(row));
+  }
+
+  /** Saves the wizard's current html/plain content verbatim as a reusable template. */
+  public async saveTemplate(input: AddNewsletterTemplateType): Promise<SavedNewsletterTemplate> {
+    const created: unknown = await this.api.newsletters.templates.add.mutate(input);
+    return this.normalizeTemplate(created);
+  }
+
+  public deleteTemplate(id: string): Promise<boolean> {
+    return this.api.newsletters.templates.delete.mutate(id);
+  }
+
+  public renameTemplate(id: string, name: string): Promise<unknown> {
+    return this.api.newsletters.templates.rename.mutate({ id, data: { name } });
+  }
+
+  private normalizeTemplate(raw: unknown): SavedNewsletterTemplate {
+    // The wire row is an object; anything else normalizes to an empty template.
+    const row: Record<string, unknown> = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const updatedRaw = row['updated_at'];
+    let updated_at: Date | null = null;
+    if (updatedRaw instanceof Date) {
+      updated_at = updatedRaw;
+    } else if (typeof updatedRaw === 'string' || typeof updatedRaw === 'number') {
+      const parsed = new Date(updatedRaw);
+      updated_at = Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    return {
+      id: row['id'] != null ? String(row['id']) : '',
+      name: typeof row['name'] === 'string' ? row['name'] : '',
+      html_content: typeof row['html_content'] === 'string' ? row['html_content'] : '',
+      plain_text_content: typeof row['plain_text_content'] === 'string' ? row['plain_text_content'] : '',
+      updated_at,
+    };
   }
 
   private normalize(record: any) {

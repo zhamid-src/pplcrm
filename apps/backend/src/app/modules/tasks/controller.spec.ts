@@ -3,6 +3,7 @@ import { TasksController } from './controller';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TasksRepo } from './repositories/tasks.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
 
 describe('TasksController Notifications', () => {
   let controller: TasksController;
@@ -128,5 +129,109 @@ describe('TasksController SLA breach counting', () => {
     const result = await controller.getSummaryCounts(auth);
 
     expect(result).toEqual({ openTotal: 12, unassigned: 3, assignedToMe: 4, slaBreaches: 0 });
+  });
+});
+
+describe('TasksController board reorder', () => {
+  let controller: TasksController;
+  const auth = { tenant_id: 't1', user_id: 'u1' } as any;
+
+  beforeEach(() => {
+    controller = new TasksController();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * A minimal fake Kysely transaction that records the update `set`/`where` calls and
+   * returns the given rows from the ownership-verification select. jsdom-free, no DB.
+   */
+  function fakeTrx(existingRows: Array<{ id: string; status: string; name: string }>) {
+    const selectWheres: Array<[string, unknown]> = [];
+    const updateCalls: Array<{ set: any; wheres: Record<string, unknown> }> = [];
+    const trx: any = {
+      selectFrom: vi.fn(() => ({
+        select: vi.fn().mockReturnThis(),
+        where: vi.fn((col: string, _op: string, val: unknown) => {
+          selectWheres.push([col, val]);
+          return trx.selectFrom.mock.results.at(-1)?.value;
+        }),
+        execute: vi.fn().mockResolvedValue(existingRows),
+      })),
+      updateTable: vi.fn(() => {
+        const call = { set: undefined as any, wheres: {} as Record<string, unknown> };
+        const qb: any = {
+          set: vi.fn((v: any) => {
+            call.set = v;
+            return qb;
+          }),
+          where: vi.fn((col: string, _op: string, val: unknown) => {
+            call.wheres[col] = val;
+            return qb;
+          }),
+          execute: vi.fn().mockResolvedValue(undefined),
+        };
+        updateCalls.push(call);
+        return qb;
+      }),
+    };
+    return { trx, selectWheres, updateCalls };
+  }
+
+  function stubTransaction(trx: any) {
+    vi.spyOn(TasksRepo.prototype, 'transaction').mockReturnValue({
+      execute: (cb: any) => cb(trx),
+    } as any);
+  }
+
+  it('writes position = index per id in column order, tenant-scoped, and returns a count', async () => {
+    const { trx, selectWheres, updateCalls } = fakeTrx([
+      { id: '1', status: 'todo', name: 'A' },
+      { id: '2', status: 'todo', name: 'B' },
+    ]);
+    stubTransaction(trx);
+    const logSpy = vi.spyOn(UserActivityRepo.prototype, 'log').mockResolvedValue(undefined as any);
+
+    const res = await controller.reorderTasks(auth, { columns: [{ status: 'todo', ids: ['2', '1'] }] });
+
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[0]?.set).toMatchObject({ position: 0, status: 'todo', updatedby_id: 'u1' });
+    expect(updateCalls[0]?.wheres).toMatchObject({ tenant_id: 't1', id: '2' });
+    expect(updateCalls[1]?.set).toMatchObject({ position: 1, status: 'todo' });
+    expect(updateCalls[1]?.wheres.id).toBe('1');
+    // The ownership check is tenant-scoped.
+    expect(selectWheres).toContainEqual(['tenant_id', 't1']);
+    // Same-column move: no status changed, so no activity is logged.
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, updated: 2 });
+  });
+
+  it('changes status without ever writing completed_at (parity with the single-task path) and logs the change', async () => {
+    const { trx, updateCalls } = fakeTrx([{ id: '1', status: 'todo', name: 'A' }]);
+    stubTransaction(trx);
+    const logSpy = vi.spyOn(UserActivityRepo.prototype, 'log').mockResolvedValue(undefined as any);
+
+    await controller.reorderTasks(auth, { columns: [{ status: 'done', ids: ['1'] }] });
+
+    // completed_at parity: updateTask has no completed_at side effect and there is no
+    // DB trigger, so the reorder write must not invent one.
+    expect(updateCalls[0]?.set).toMatchObject({ position: 0, status: 'done' });
+    expect('completed_at' in (updateCalls[0]?.set ?? {})).toBe(false);
+    // The status transition is logged like the single-write path.
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: 'tasks',
+        entity_id: '1',
+        metadata: expect.objectContaining({ changes: { status: { from: 'todo', to: 'done' } } }),
+      }),
+      trx,
+    );
+  });
+
+  it('rejects the whole drop when an id does not belong to the tenant', async () => {
+    const { trx } = fakeTrx([{ id: '1', status: 'todo', name: 'A' }]); // '2' is foreign/unknown
+    stubTransaction(trx);
+    vi.spyOn(UserActivityRepo.prototype, 'log').mockResolvedValue(undefined as any);
+
+    await expect(controller.reorderTasks(auth, { columns: [{ status: 'todo', ids: ['1', '2'] }] })).rejects.toThrow();
   });
 });

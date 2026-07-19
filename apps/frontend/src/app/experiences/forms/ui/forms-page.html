@@ -504,34 +504,49 @@
       <!-- FIELDS -->
       <section class="flex flex-col gap-2">
         <h2 class="pc-eyebrow">Fields</h2>
-        @for (field of form.fields; track field.key) {
-        <div class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            [checked]="field.on"
-            [disabled]="field.key === 'email'"
-            (change)="toggleField(field.key, $any($event.target).checked)"
-          />
-          <span
-            class="flex-1 text-sm text-base-content"
-            [class.text-base-content]="field.on"
-            [class.text-base-content/40]="!field.on"
-          >
-            {{ field.label }}
-          </span>
-          <button
-            class="badge badge-sm"
-            [class.badge-primary]="field.required"
-            [class.badge-ghost]="!field.required"
-            (click)="toggleRequired(field.key)"
-            type="button"
-          >
-            {{ field.required ? 'Required' : 'Optional' }}
-          </button>
+        <div class="flex flex-col gap-2" cdkDropList (cdkDropListDropped)="reorderField($event)">
+          @for (field of form.fields; track field.key) {
+          <div class="flex items-center gap-2" cdkDrag>
+            <div class="pc-drop-indicator" *cdkDragPlaceholder></div>
+            <button
+              type="button"
+              cdkDragHandle
+              class="btn btn-ghost btn-xs btn-square cursor-grab text-base-content/40 hover:text-base-content active:cursor-grabbing"
+              aria-label="Drag to reorder field"
+              title="Drag to reorder. This order is the order people see on the public form."
+            >
+              <pc-icon name="bars-3" [size]="4"></pc-icon>
+            </button>
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="field.on"
+              [disabled]="field.key === 'email'"
+              (change)="toggleField(field.key, $any($event.target).checked)"
+            />
+            <span
+              class="flex-1 text-sm text-base-content"
+              [class.text-base-content]="field.on"
+              [class.text-base-content/40]="!field.on"
+            >
+              {{ field.label }}
+            </span>
+            <button
+              class="badge badge-sm"
+              [class.badge-primary]="field.required"
+              [class.badge-ghost]="!field.required"
+              (click)="toggleRequired(field.key)"
+              type="button"
+            >
+              {{ field.required ? 'Required' : 'Optional' }}
+            </button>
+          </div>
+          }
         </div>
-        }
-        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+        <p class="mt-1 text-xs text-base-content/50">
+          Drag the handle to reorder fields; the order matches the public form. Every response creates or updates a
+          person either way.
+        </p>
       </section>
 
       <!-- AUDIENCE -->

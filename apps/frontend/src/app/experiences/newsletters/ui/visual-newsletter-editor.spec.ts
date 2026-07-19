@@ -1,3 +1,4 @@
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -58,17 +59,47 @@ describe('VisualNewsletterEditorComponent', () => {
       await createComponent('');
     });
 
-    it('should add a new heading block with sensible defaults and select it', () => {
+    it('should add a new heading block right after the selected block and select it', () => {
       const before = component['blocks']().length;
+      // ngOnInit selected the first template block, so the insert lands at index 1.
+      expect(component['selectedBlockId']()).toBe(component['blocks']()[0]?.id);
 
       component['addBlock']('heading');
 
       const blocks = component['blocks']();
       expect(blocks).toHaveLength(before + 1);
-      const added = blocks.at(-1);
+      const added = blocks.at(1);
       expect(added?.type).toBe('heading');
       expect(added?.content).toBe('Heading Title');
       expect(component['selectedBlockId']()).toBe(added?.id);
+    });
+
+    it('should append the new block when no block is selected', () => {
+      const before = component['blocks']().length;
+      component['selectedBlockId'].set(null);
+
+      component['addBlock']('button');
+
+      const blocks = component['blocks']();
+      expect(blocks).toHaveLength(before + 1);
+      expect(blocks.at(-1)?.type).toBe('button');
+      expect(component['selectedBlockId']()).toBe(blocks.at(-1)?.id);
+    });
+
+    it('should insert a block at an explicit index, select it, and close the insert menu', () => {
+      const before = component['blocks']().map((b) => b.id);
+      component['insertMenuIndex'].set(1);
+
+      component['addBlockAt']('divider', 1);
+
+      const blocks = component['blocks']();
+      expect(blocks).toHaveLength(before.length + 1);
+      expect(blocks.at(1)?.type).toBe('divider');
+      expect(component['selectedBlockId']()).toBe(blocks.at(1)?.id);
+      expect(component['insertMenuIndex']()).toBeNull();
+      // Neighbors are untouched.
+      expect(blocks.at(0)?.id).toBe(before[0]);
+      expect(blocks.at(2)?.id).toBe(before[1]);
     });
 
     it('should delete a block and select the first remaining block if the deleted one was selected', () => {
@@ -139,6 +170,101 @@ describe('VisualNewsletterEditorComponent', () => {
       expect(component['selectedBlockId']()).toBe(targetId);
       expect(component['activeTab']()).toBe('edit');
       expect(component['selectedBlock']()?.id).toBe(targetId);
+    });
+
+    it('should close the insert menu when a block is selected', () => {
+      const firstBlock = component['blocks']().at(0);
+      if (!firstBlock) throw new Error('Expected the welcome template to seed at least one block');
+      component['insertMenuIndex'].set(2);
+
+      component['selectBlock'](firstBlock.id);
+
+      expect(component['insertMenuIndex']()).toBeNull();
+    });
+  });
+
+  describe('onCanvasDrop', () => {
+    beforeEach(async () => {
+      await createComponent('');
+    });
+
+    /** Hand-built CdkDragDrop stand-in: jsdom has no layout, so real drags cannot be simulated. */
+    function fakeDrop(overrides: Record<string, unknown>): CdkDragDrop<EmailBlock[]> {
+      return overrides as unknown as CdkDragDrop<EmailBlock[]>;
+    }
+
+    it('should reorder blocks when the drop stays within the canvas container', () => {
+      const before = component['blocks']().map((b) => b.id);
+      const container = { id: 'pc-canvas-drop-list' };
+
+      component['onCanvasDrop'](
+        fakeDrop({
+          previousContainer: container,
+          container,
+          previousIndex: 0,
+          currentIndex: 2,
+          item: { data: component['blocks']().at(0) },
+        }),
+      );
+
+      const after = component['blocks']().map((b) => b.id);
+      expect(after).toHaveLength(before.length);
+      expect(after.at(2)).toBe(before.at(0));
+      expect(after.at(0)).toBe(before.at(1));
+      // The reorder propagated to the compiled output.
+      expect(component.htmlContent()).toContain('PPLCRM_VISUAL_BLOCKS_DATA');
+    });
+
+    it('should leave the list untouched when dropped back on the same index', () => {
+      const before = component['blocks']().map((b) => b.id);
+      const container = { id: 'pc-canvas-drop-list' };
+
+      component['onCanvasDrop'](
+        fakeDrop({
+          previousContainer: container,
+          container,
+          previousIndex: 1,
+          currentIndex: 1,
+          item: { data: component['blocks']().at(1) },
+        }),
+      );
+
+      expect(component['blocks']().map((b) => b.id)).toEqual(before);
+    });
+
+    it('should copy-insert a new block when a palette type is dropped from another container', () => {
+      const before = component['blocks']().length;
+
+      component['onCanvasDrop'](
+        fakeDrop({
+          previousContainer: { id: 'palette' },
+          container: { id: 'pc-canvas-drop-list' },
+          previousIndex: 0,
+          currentIndex: 1,
+          item: { data: 'button' },
+        }),
+      );
+
+      const blocks = component['blocks']();
+      expect(blocks).toHaveLength(before + 1);
+      expect(blocks.at(1)?.type).toBe('button');
+      expect(component['selectedBlockId']()).toBe(blocks.at(1)?.id);
+    });
+
+    it('should ignore cross-container drops whose drag data is not a block type', () => {
+      const before = component['blocks']().map((b) => b.id);
+
+      component['onCanvasDrop'](
+        fakeDrop({
+          previousContainer: { id: 'palette' },
+          container: { id: 'pc-canvas-drop-list' },
+          previousIndex: 0,
+          currentIndex: 1,
+          item: { data: { unexpected: true } },
+        }),
+      );
+
+      expect(component['blocks']().map((b) => b.id)).toEqual(before);
     });
   });
 

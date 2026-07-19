@@ -1,16 +1,20 @@
 import {
   AddMarketingEmailObj,
+  AddNewsletterTemplateObj,
   RunPreflightObj,
   UpdateMarketingEmailObj,
+  UpdateNewsletterTemplateObj,
   idSchema,
 } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
 import { NewslettersController } from './controller';
+import { NewsletterTemplatesController } from './templates.controller';
 import { createCrudRouter } from '../../lib/crud-router';
 
 const newsletters = new NewslettersController();
+const templates = new NewsletterTemplatesController();
 
 const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
 
@@ -55,4 +59,19 @@ export const NewslettersRouter = router({
     .mutation(async ({ input, ctx }) => newsletters.runPreflight(ctx.auth.tenant_id, input)),
 
   sendQuota: authProcedure.query(({ ctx }) => newsletters.getSendQuota(ctx.auth.tenant_id)),
+
+  /** User-saved templates — the wizard's "Save as template" / "Your templates" library. */
+  templates: router({
+    getAll: authProcedure.query(({ ctx }) => templates.listTemplates(ctx.auth.tenant_id)),
+
+    add: authProcedure
+      .input(AddNewsletterTemplateObj)
+      .mutation(({ input, ctx }) => templates.addTemplate(ctx.auth, input)),
+
+    rename: authProcedure
+      .input(z.object({ id: idSchema, data: UpdateNewsletterTemplateObj }))
+      .mutation(({ input, ctx }) => templates.renameTemplate(ctx.auth, input.id, input.data)),
+
+    delete: authProcedure.input(idSchema).mutation(({ input, ctx }) => templates.deleteTemplate(ctx.auth, input)),
+  }),
 });

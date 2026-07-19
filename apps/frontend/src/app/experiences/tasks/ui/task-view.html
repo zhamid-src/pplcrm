@@ -117,25 +117,37 @@
         @if (showSubtasks()) {
         <div class="p-6 flex flex-col gap-4">
           @if (subtasks().length > 0) {
-          <div class="grid gap-2.5">
+          <div class="grid gap-2.5" cdkDropList (cdkDropListDropped)="onSubtaskDrop($event)">
             @for (s of subtasks(); track s.id) {
-            <label
-              class="flex items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-sm"
-                [checked]="s.status === 'done'"
-                (change)="toggleSubtask(s, $any($event.target).checked)"
-              />
-              <span
-                class="text-sm font-medium text-base-content"
-                [class.line-through]="s.status === 'done'"
-                [class.opacity-50]="s.status === 'done'"
+            <div class="flex items-center gap-2" cdkDrag [cdkDragData]="s">
+              <div class="pc-drop-indicator" *cdkDragPlaceholder></div>
+              <button
+                type="button"
+                cdkDragHandle
+                class="btn btn-ghost btn-xs btn-circle cursor-grab text-base-content/40 hover:text-base-content"
+                title="Drag to reorder"
+                aria-label="Drag to reorder subtask"
               >
-                {{ s.name }}
-              </span>
-            </label>
+                <pc-icon name="bars-3" [size]="4"></pc-icon>
+              </button>
+              <label
+                class="flex flex-1 items-center gap-3 p-2 hover:bg-base-200/40 rounded-lg cursor-pointer transition-colors border border-base-100 hover:border-base-200"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-primary checkbox-sm"
+                  [checked]="s.status === 'done'"
+                  (change)="toggleSubtask(s, $any($event.target).checked)"
+                />
+                <span
+                  class="text-sm font-medium text-base-content"
+                  [class.line-through]="s.status === 'done'"
+                  [class.opacity-50]="s.status === 'done'"
+                >
+                  {{ s.name }}
+                </span>
+              </label>
+            </div>
             }
           </div>
           } @else {

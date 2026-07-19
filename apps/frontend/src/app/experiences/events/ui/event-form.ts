@@ -1,6 +1,8 @@
 import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
@@ -34,6 +36,10 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
     PcCard,
     FieldsSelector,
     PublicLinkPanel,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    CdkDragPlaceholder,
   ],
   templateUrl: './event-form.html',
   providers: [EventsService],
@@ -192,6 +198,31 @@ export class EventFormComponent implements OnInit {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  /**
+   * Drag-to-reorder ticket types. Optimistically reorders the local list, persists the new order as
+   * each ticket's sort_order (index), then reconciles with a reload. On failure we roll back and
+   * surface the error. The order set here is the order attendees see on the public event page.
+   */
+  protected async onTicketDrop(event: CdkDragDrop<unknown[]>): Promise<void> {
+    const snapshot = this.ticketTypes();
+    const from = event.previousIndex;
+    const to = event.currentIndex;
+    if (from === to || from < 0 || to < 0 || from >= snapshot.length || to >= snapshot.length) return;
+
+    const reordered = [...snapshot];
+    moveItemInArray(reordered, from, to);
+    this.ticketTypes.set(reordered);
+    const orderedIds = reordered.map((t) => String(t.id));
+
+    try {
+      await this.eventsSvc.reorderTicketTypes(this.id()!, orderedIds);
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.ticketTypes.set(snapshot);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to reorder ticket types');
     }
   }
 

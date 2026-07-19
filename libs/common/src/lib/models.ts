@@ -82,6 +82,7 @@ import type {
   AddTicketTypeObj,
   TicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
@@ -229,6 +230,7 @@ export type UpdateEventType = z.infer<typeof UpdateEventObj>;
 export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
 export type TicketTypeType = z.infer<typeof TicketTypeObj>;
 export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+export type ReorderTicketTypesType = z.infer<typeof ReorderTicketTypesObj>;
 
 export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
 export type RegistrationType = z.infer<typeof RegistrationObj>;

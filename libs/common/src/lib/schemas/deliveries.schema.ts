@@ -96,6 +96,13 @@ export const ReorderStopObj = z.object({
   direction: z.enum(['up', 'down']),
 });
 
+// Drag-to-reorder: the full new order of a route's PENDING stops. Delivered/skipped stops are not
+// movable and keep their seq; the backend reassigns only the pending slots to this order.
+export const ReorderStopsObj = z.object({
+  route_id: idSchema,
+  ordered_stop_ids: z.array(idSchema).min(1, 'Provide the new stop order'),
+});
+
 // Staff act on a stop from the route detail page. Same transitions as the public path.
 export const StopActionObj = z.object({
   route_id: idSchema,
@@ -128,6 +135,7 @@ export type UpdateDeliveryRouteType = z.infer<typeof UpdateDeliveryRouteObj>;
 export type AssignVolunteerType = z.infer<typeof AssignVolunteerObj>;
 export type SetDeliveryRouteStatusType = z.infer<typeof SetDeliveryRouteStatusObj>;
 export type ReorderStopType = z.infer<typeof ReorderStopObj>;
+export type ReorderStopsType = z.infer<typeof ReorderStopsObj>;
 export type StopActionType = z.infer<typeof StopActionObj>;
 export type MintShareLinkType = z.infer<typeof MintShareLinkObj>;
 export type PublicStopActionType = z.infer<typeof PublicStopActionObj>;

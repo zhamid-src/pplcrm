@@ -7,6 +7,7 @@ import {
   UpdateEventObj,
   AddTicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   UpdateRegistrationObj,
 } from '../../../../../../libs/common/src';
@@ -50,6 +51,10 @@ export const EventsRouter = router({
     .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
 
   deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
+
+  reorderTicketTypes: authProcedure
+    .input(ReorderTicketTypesObj)
+    .mutation(({ input, ctx }) => ctrl.reorderTicketTypes(input, ctx.auth)),
 
   // Registrations
   getRegistrationsForEvent: authProcedure

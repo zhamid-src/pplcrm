@@ -11,6 +11,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { CdkDrag, CdkDragHandle, CdkDragPlaceholder, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -25,7 +27,11 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 
 import { AssignVolunteerDialog } from './assign-volunteer-dialog';
-import { DeliveriesRoutesService, type DeliveryRouteDetail } from '../services/deliveries-routes-service';
+import {
+  DeliveriesRoutesService,
+  type DeliveryRouteDetail,
+  type DeliveryRouteStop,
+} from '../services/deliveries-routes-service';
 
 type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
 
@@ -41,7 +47,18 @@ const ROUTE_TONE: Record<string, PcStatusType> = {
 @Component({
   selector: 'pc-deliveries-route-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, StatusBadge, Icon, DatePipe, RecordActivities, AssignVolunteerDialog],
+  imports: [
+    RouterLink,
+    StatusBadge,
+    Icon,
+    DatePipe,
+    RecordActivities,
+    AssignVolunteerDialog,
+    CdkDropList,
+    CdkDrag,
+    CdkDragHandle,
+    CdkDragPlaceholder,
+  ],
   templateUrl: './deliveries-route-detail.html',
 })
 export class DeliveriesRouteDetail {
@@ -245,6 +262,45 @@ export class DeliveriesRouteDetail {
       await this.router.navigate(['/deliveries/routes']);
     } catch (err) {
       this.alerts.showError(err instanceof Error ? err.message : 'Could not delete the route');
+    }
+  }
+
+  /**
+   * Drag-to-reorder handler for the pending stops. Every row is a CDK drag item but delivered/skipped
+   * rows are drag-disabled, so `previousIndex` always lands on a pending row; CDK's indices are over
+   * the FULL stop list. We move on a full-list copy, guard that the moved row is pending, then derive
+   * the new pending order. Delivered/skipped rows keep their seq (the backend enforces this, and the
+   * optimistic view leaves them in place). We persist, reconcile with a reload, and roll back on error.
+   */
+  protected async onStopDrop(event: CdkDragDrop<DeliveryRouteStop[]>): Promise<void> {
+    const snapshot = this.detail();
+    if (!snapshot) return;
+    const from = event.previousIndex;
+    const to = event.currentIndex;
+    const full = [...snapshot.stops];
+    if (from === to || from < 0 || to < 0 || from >= full.length || to >= full.length) return;
+    // Guard: only a pending row may move — never displace a delivered/skipped stop.
+    if (full[from]?.status !== 'pending') return;
+
+    moveItemInArray(full, from, to);
+    const newPendingOrder = full.filter((s) => s.status === 'pending');
+    const orderedIds = newPendingOrder.map((s) => s.id);
+
+    // Optimistic: keep non-pending rows in their original slots, drop the reordered pending stops
+    // into the pending slots, and renumber seq contiguously for display (mirrors the server).
+    let qi = 0;
+    const optimisticStops = snapshot.stops.map((s, i) => {
+      const base = s.status === 'pending' ? (newPendingOrder[qi++] ?? s) : s;
+      return { ...base, seq: i + 1 };
+    });
+    this.detail.set({ ...snapshot, stops: optimisticStops });
+
+    try {
+      await this.svc.reorderStops(this.id(), orderedIds);
+      await this.load();
+    } catch (err) {
+      this.detail.set(snapshot);
+      this.alerts.showError(err instanceof Error ? err.message : 'Could not reorder');
     }
   }
 

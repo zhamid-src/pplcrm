@@ -3,6 +3,7 @@ import {
   AddTaskType,
   ExportCsvInputType,
   ExportCsvResponseType,
+  TaskBoardStatus,
   UpdateTaskType,
   getAllOptionsType,
 } from '../../../../../../../libs/common/src';
@@ -73,6 +74,16 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 
   public update(id: string, data: UpdateTaskType) {
     return this.api.tasks.update.mutate({ id, data });
+  }
+
+  /** Persist a board drag: the new per-column order (1 column same-column, 2 columns cross-column). */
+  public reorder(columns: Array<{ status: TaskBoardStatus; ids: string[] }>) {
+    return this.api.tasks.reorder.mutate({ columns });
+  }
+
+  /** Persist a subtask drag: the full new top-to-bottom order of one task's subtasks. */
+  public reorderSubtasks(task_id: string, ids: string[]) {
+    return this.api.tasks.reorderSubtasks.mutate({ task_id, ids });
   }
 
   public import(input: RouterInputs['tasks']['import']): Promise<RouterOutputs['tasks']['import']> {

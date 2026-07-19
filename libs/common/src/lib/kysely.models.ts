@@ -60,6 +60,7 @@ export interface Models {
   donation_pledges: DonationPledges;
   emails: Emails;
   newsletters: Newsletters;
+  newsletter_templates: NewsletterTemplates;
   newsletter_events: NewsletterEvents;
   newsletter_send_log: NewsletterSendLog;
   newsletter_content_checks: NewsletterContentChecks;
@@ -774,6 +775,15 @@ interface Newsletters extends RecordType {
   /** The sent newsletter this row is a non-opener follow-up of; NULL for originals. At most
    * one resend per original (partial unique index). */
   resend_of_id: string | null;
+}
+
+/** A user-saved newsletter design. Tenant-wide (no campaign_id — pure content, no audience or
+ * consent, so it is a shared asset per Campaigns §15). html_content stores the compiled document
+ * verbatim, including the PPLCRM_VISUAL_BLOCKS_DATA comment the visual editor round-trips on. */
+interface NewsletterTemplates extends RecordType {
+  name: string;
+  html_content: string;
+  plain_text_content: Generated<string>;
 }
 
 export interface NewsletterEvents {

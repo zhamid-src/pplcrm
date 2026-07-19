@@ -106,6 +106,13 @@ export const UpdateTicketTypeObj = z.object({
   sort_order: z.number().int().min(0).optional(),
 });
 
+// Drag-to-reorder ticket types: the full new order of an event's ticket type ids. The backend
+// writes each id's sort_order to its index, so the order shown to attendees matches the form.
+export const ReorderTicketTypesObj = z.object({
+  event_id: idSchema,
+  ordered_ids: z.array(idSchema).min(1, 'Provide the new ticket order'),
+});
+
 const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
 
 export const AddRegistrationObj = z.object({

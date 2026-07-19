@@ -85,6 +85,7 @@ export type {
   AddTicketTypeType,
   TicketTypeType,
   UpdateTicketTypeType,
+  ReorderTicketTypesType,
   AddRegistrationType,
   RegistrationType,
   UpdateRegistrationType,
@@ -135,6 +136,8 @@ export {
   MarketingEmailObj,
   marketingEmailTopLinkObj,
   TasksObj,
+  ReorderTasksObj,
+  ReorderSubtasksObj,
   ListsObj,
   SettingsObj,
   SettingsEntryObj,
@@ -208,6 +211,7 @@ export {
   AddTicketTypeObj,
   TicketTypeObj,
   UpdateTicketTypeObj,
+  ReorderTicketTypesObj,
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
@@ -248,6 +252,7 @@ export {
   AssignVolunteerObj,
   SetDeliveryRouteStatusObj,
   ReorderStopObj,
+  ReorderStopsObj,
   StopActionObj,
   RouteIdObj,
   MintShareLinkObj,
@@ -305,7 +310,7 @@ export type { DonationMethod, RecordDonationType, StripeConnectCountry } from '.
 export { STRIPE_CONNECT_COUNTRIES } from './lib/schemas/donations.schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type { TaskStatus, TaskBoardStatus, ReorderTasksType, ReorderSubtasksType } from './lib/schemas/tasks.schema';
 export type {
   WorkflowTriggerType,
   WorkflowStepKind,
@@ -341,6 +346,7 @@ export type {
   AssignVolunteerType,
   SetDeliveryRouteStatusType,
   ReorderStopType,
+  ReorderStopsType,
   StopActionType,
   MintShareLinkType,
   PublicStopActionType,
@@ -362,6 +368,17 @@ export {
   buildPersonSlug,
 } from './lib/public-id';
 export { calculateWorkingTimeMs } from './lib/sla';
+
+export {
+  AddNewsletterTemplateObj,
+  NewsletterTemplateObj,
+  UpdateNewsletterTemplateObj,
+} from './lib/schemas/newsletter-templates.schema';
+export type {
+  AddNewsletterTemplateType,
+  NewsletterTemplateType,
+  UpdateNewsletterTemplateType,
+} from './lib/schemas/newsletter-templates.schema';
 
 export {
   AI_CONTENT_TYPES,

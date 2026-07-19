@@ -116,6 +116,8 @@
         <!-- Left: vertical sequence flow -->
         <div
           class="flex w-full flex-1 flex-col items-center gap-0 rounded-2xl border border-base-300 bg-base-200/40 p-8"
+          cdkDropList
+          (cdkDropListDropped)="reorderStep($event)"
         >
           <!-- Trigger card -->
           <div class="w-80 rounded-2xl border-l-4 border-l-primary border-y border-r border-base-300 bg-base-100 p-4">
@@ -165,7 +167,18 @@
           @if (step.kind === 'wait') {
           <div
             class="flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 px-4 py-2 text-xs font-medium text-warning-content"
+            cdkDrag
           >
+            <div class="pc-drop-slot w-48" *cdkDragPlaceholder></div>
+            <button
+              type="button"
+              cdkDragHandle
+              class="cursor-grab text-warning-content/50 hover:text-warning-content active:cursor-grabbing"
+              aria-label="Drag to reorder step"
+              title="Drag to reorder step"
+            >
+              <pc-icon name="bars-3" [size]="4"></pc-icon>
+            </button>
             <pc-icon name="arrow-path" [size]="4"></pc-icon>
             <span>Wait</span>
             <input
@@ -189,9 +202,19 @@
           </div>
           } @else {
           <!-- STEP card -->
-          <div class="w-80 pc-panel p-4">
+          <div class="w-80 pc-panel p-4" cdkDrag>
+            <div class="pc-drop-slot w-80" *cdkDragPlaceholder></div>
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  cdkDragHandle
+                  class="cursor-grab text-base-content/30 hover:text-base-content active:cursor-grabbing"
+                  aria-label="Drag to reorder step"
+                  title="Drag to reorder step"
+                >
+                  <pc-icon name="bars-3" [size]="4"></pc-icon>
+                </button>
                 <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <pc-icon [name]="stepMeta(step.kind).icon" [size]="4"></pc-icon>
                 </div>

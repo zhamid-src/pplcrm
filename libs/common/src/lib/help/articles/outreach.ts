@@ -15,6 +15,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       'schedule',
       'resend',
       'template',
+      'saved templates',
+      'save as template',
       'audience',
       'unsubscribe',
       'deliverability',
@@ -28,11 +30,13 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Newsletters](/newsletters) and click New newsletter',
-            detail: 'Start from a template or a blank canvas.',
+            detail:
+              'Start from a template or a blank canvas. Every template card shows a live preview of the design, so you can see what you are picking before you pick it.',
           },
           {
             title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually. What you see is what subscribers get.',
+            detail:
+              'Drag blocks from the Blocks panel onto the canvas, or click one to add it. Rearrange blocks by their drag handle, and use the plus button between blocks to insert one exactly where you want it. What you see is what subscribers get.',
           },
           {
             title: 'Name it clearly',
@@ -45,6 +49,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Personalize with merge fields',
         text: 'Drop a merge field like `{FirstName}` into your copy and each recipient sees their own value. Supported fields are `{FirstName}`, `{LastName}`, `{Name}`, `{Email}` and `{Phone}`. Add a fallback after a pipe for people missing that detail. `{FirstName|there}` becomes "there" when the first name is blank.',
+      },
+      { kind: 'h2', id: 'templates', text: 'Save and reuse your own templates' },
+      {
+        kind: 'p',
+        text: 'When a design is worth keeping, click **Save as template** on the Content step and give it a name. It joins the **Your templates** section of the Template step, live preview included, and is shared with everyone in your workspace; selecting it starts the next newsletter from that design. Delete a template from its card when it has outlived its usefulness. Newsletters already created from it keep their content. A workspace can hold up to 50 saved templates.',
       },
       { kind: 'h2', id: 'audience', text: 'Choose the audience' },
       {
@@ -352,7 +361,8 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
           },
           {
             title: 'Build the sequence',
-            detail: 'Use the + between steps to add a wait, an email, a tag, a task, or a team notification.',
+            detail:
+              'Use the + between steps to add a wait, an email, a tag, a task, or a team notification. Drag a step by its handle to reorder it; steps run top to bottom.',
           },
           {
             title: 'Name it and set it Active',

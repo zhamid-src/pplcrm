@@ -254,6 +254,46 @@ body {
   }
 }
 
+/* ── Shared drag-and-drop visual contract (Angular CDK) ────────────────────
+   One look for every drag surface (newsletter blocks, task board, subtasks,
+   form fields, workflow steps, route stops): a primary drop indicator or
+   dashed slot, a lifted preview, and house 0.3s ease-in-out settling motion
+   (design §4 one idiom per job, §7 motion). CDK renders previews/placeholders
+   at the body level, so these must be global, not component-scoped. Colors
+   resolve through DaisyUI tokens so both themes stay correct (§5).
+   Reduced motion is covered by the global guard at the bottom of this file. */
+
+/* Thin insertion line — placeholder for slim in-flow lists (newsletter blocks). */
+.pc-drop-indicator {
+  height: 3px;
+  border-radius: 2px;
+  margin: 2px 12px;
+  background-color: var(--color-primary);
+}
+
+/* Dashed landing slot — placeholder for card-sized targets (board cards, list rows). */
+.pc-drop-slot {
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-box, 0.5rem);
+  background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  min-height: 3rem;
+}
+
+/* The dragged element while in flight: full fidelity, lifted, slightly translucent. */
+.cdk-drag-preview {
+  border-radius: var(--radius-box, 0.5rem);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--color-base-content) 18%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-base-content) 12%, transparent);
+  opacity: 0.96;
+}
+
+/* Siblings sliding apart and the drop settling — house timing. */
+.cdk-drag-animating,
+.cdk-drop-list-dragging .cdk-drag:not(.cdk-drag-placeholder) {
+  transition: transform 0.3s ease-in-out;
+}
+
 /* ── Shared table visual contract ──────────────────────────────────────────
    The single source of truth for how EVERY tabular surface looks — the house
    DataGrid (`pc-datagrid`) and the lighter presentational `pc-table` (uxcommon)

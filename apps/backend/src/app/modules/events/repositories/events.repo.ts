@@ -158,6 +158,31 @@ export class EventsRepo extends BaseRepository<'events'> {
       .executeTakeFirst();
   }
 
+  /**
+   * Persist a drag-to-reorder of an event's ticket types: write each id's `sort_order` to its index
+   * in `ordered_ids`, atomically. Caller has already verified `ordered_ids` is exactly this event's
+   * ticket types. There is no unique constraint on (event_id, sort_order), so a plain sequential
+   * write is safe — no temp-offset dance needed.
+   */
+  public async reorderTicketTypes(input: {
+    tenant_id: string;
+    event_id: string;
+    ordered_ids: string[];
+    user_id: string;
+  }): Promise<void> {
+    await this.transaction().execute(async (trx) => {
+      for (let i = 0; i < input.ordered_ids.length; i++) {
+        await trx
+          .updateTable('event_ticket_types')
+          .set({ sort_order: i, updatedby_id: input.user_id, updated_at: sql`now()` })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('event_id', '=', input.event_id)
+          .where('id', '=', input.ordered_ids[i] ?? '')
+          .execute();
+      }
+    });
+  }
+
   public async deleteTicketType(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
     const db = trx || this.db;
     const res = await db
