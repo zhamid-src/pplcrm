@@ -27,6 +27,20 @@ export interface ISidebarItem {
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
+/**
+ * Whether a sidebar item should render highlighted for the given router URL. Prefix-matches so
+ * deeper routes keep their section lit (/people/123 keeps People active); `pathMatchExact`
+ * items (Dashboard) must match exactly. Query string and fragment are ignored.
+ */
+export function isSidebarRouteActive(url: string, nav: Pick<ISidebarItem, 'pathMatchExact' | 'route'>): boolean {
+  const route = nav.route;
+  if (!route) return false;
+  const extrasIndex = url.search(/[?#]/);
+  const path = extrasIndex === -1 ? url : url.slice(0, extrasIndex);
+  if (nav.pathMatchExact || route === '/') return path === route;
+  return path === route || path.startsWith(`${route}/`);
+}
+
 // Sidebar IA follows the North Star module map (spec §0). Section order and
 // membership are load-bearing; do not reshuffle without checking the spec.
 export const SidebarItems: ISidebarItem[] = [

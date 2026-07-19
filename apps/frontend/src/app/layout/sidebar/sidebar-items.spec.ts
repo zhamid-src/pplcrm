@@ -1,5 +1,5 @@
 import type { ISidebarItem } from './sidebar-items';
-import { SidebarItems } from './sidebar-items';
+import { SidebarItems, isSidebarRouteActive } from './sidebar-items';
 
 /** Flatten the sidebar tree (top-level items plus their children) into a single list. */
 function flatten(items: ISidebarItem[]): ISidebarItem[] {
@@ -52,5 +52,45 @@ describe('SidebarItems', () => {
   it('hides the internal App root entry from the visible sidebar', () => {
     const appEntry = SidebarItems.find((item) => item.name === 'App');
     expect(appEntry?.hidden).toBe(true);
+  });
+});
+
+describe('isSidebarRouteActive', () => {
+  const people: Pick<ISidebarItem, 'pathMatchExact' | 'route'> = { route: '/people' };
+  const dashboard: Pick<ISidebarItem, 'pathMatchExact' | 'route'> = { route: '/dashboard', pathMatchExact: true };
+
+  it('matches the exact route', () => {
+    expect(isSidebarRouteActive('/people', people)).toBe(true);
+  });
+
+  it('keeps the section lit on deeper routes (grid -> detail view)', () => {
+    expect(isSidebarRouteActive('/people/123', people)).toBe(true);
+    expect(isSidebarRouteActive('/people/amira-hassan', people)).toBe(true);
+    expect(isSidebarRouteActive('/people/123/edit', people)).toBe(true);
+  });
+
+  it('does not treat a sibling route sharing the prefix as active', () => {
+    expect(isSidebarRouteActive('/peoplex', people)).toBe(false);
+    expect(isSidebarRouteActive('/tasks', people)).toBe(false);
+  });
+
+  it('ignores query string and fragment', () => {
+    expect(isSidebarRouteActive('/people?view=grid#top', people)).toBe(true);
+    expect(isSidebarRouteActive('/people/123?tab=notes', people)).toBe(true);
+  });
+
+  it('requires an exact match when pathMatchExact is set', () => {
+    expect(isSidebarRouteActive('/dashboard', dashboard)).toBe(true);
+    expect(isSidebarRouteActive('/dashboard/foo', dashboard)).toBe(false);
+  });
+
+  it('never prefix-matches the root route', () => {
+    const root: Pick<ISidebarItem, 'pathMatchExact' | 'route'> = { route: '/' };
+    expect(isSidebarRouteActive('/', root)).toBe(true);
+    expect(isSidebarRouteActive('/people', root)).toBe(false);
+  });
+
+  it('is never active without a route', () => {
+    expect(isSidebarRouteActive('/people', { route: undefined })).toBe(false);
   });
 });

@@ -1,14 +1,7 @@
 import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationStart, Router, RouterLink } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -16,7 +9,7 @@ import { Swap } from '@uxcommon/components/swap/swap';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
-import { ISidebarItem } from './sidebar-items';
+import { ISidebarItem, isSidebarRouteActive } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { DeliveriesRequestsService } from '@experiences/deliveries/services/deliveries-requests-service';
@@ -24,7 +17,7 @@ import { VolunteerAccessService } from '@experiences/volunteer-access/services/v
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  imports: [NgTemplateOutlet, Icon, RouterLink, Swap, AnimateIfDirective],
   templateUrl: './sidebar.html',
   styles: [
     `
@@ -69,12 +62,29 @@ export class Sidebar {
     () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
   );
 
-  protected readonly pendingRoute = toSignal(
+  /** Target URL of an in-flight navigation, null once it settles (End/Cancel/Error). Lets the
+   *  clicked item light up immediately instead of waiting for resolvers/lazy chunks. */
+  private readonly pendingRoute = toSignal(
     this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      filter(
+        (e) =>
+          e instanceof NavigationStart ||
+          e instanceof NavigationEnd ||
+          e instanceof NavigationCancel ||
+          e instanceof NavigationError,
+      ),
       map((e) => (e instanceof NavigationStart ? e.url : null)),
     ),
     { initialValue: null },
+  );
+
+  /** URL of the last settled navigation. */
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
   );
 
   private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
@@ -217,6 +227,14 @@ export class Sidebar {
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
+  }
+
+  /** Single source of truth for the highlighted nav item — the in-flight target while navigating,
+   *  the settled URL otherwise. Deliberately not routerLinkActive: its renderer-added classes and
+   *  a `[class.x]` binding on the same class fight over ownership, and the binding's stale `false`
+   *  wins when navigating deeper (e.g. /people -> /people/:id), un-highlighting the section. */
+  protected isNavActive(nav: ISidebarItem): boolean {
+    return isSidebarRouteActive(this.pendingRoute() ?? this.currentUrl(), nav);
   }
 
   protected toggleCollapse(name: string) {

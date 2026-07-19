@@ -8,10 +8,8 @@
     [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
-    routerLinkActive="!font-semibold !text-primary"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.!font-semibold]="pendingRoute() === nav.route"
-    [class.!text-primary]="pendingRoute() === nav.route"
+    [class.!font-semibold]="isNavActive(nav)"
+    [class.!text-primary]="isNavActive(nav)"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
     <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
