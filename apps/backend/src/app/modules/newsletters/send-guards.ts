@@ -215,6 +215,16 @@ export async function logNewsletterBatch(
     .execute();
 }
 
+/** Record one automation send_email delivery. Same table as newsletter batches (SUMmed by
+ * `sentEmailsSince`), so automation volume counts toward the warm-up/hourly/monthly caps —
+ * an automation is not a side-channel around the plan meter. */
+export async function logAutomationSend(db: Db, tenantId: string): Promise<void> {
+  await db
+    .insertInto('newsletter_send_log')
+    .values({ tenant_id: tenantId, newsletter_id: null, recipient_count: 1, source: 'automation' })
+    .execute();
+}
+
 /** True when the tenant's default From address belongs to a DKIM-verified sending domain. */
 export async function hasVerifiedSendingDomain(db: Db, tenantId: string): Promise<boolean> {
   const rows = await db

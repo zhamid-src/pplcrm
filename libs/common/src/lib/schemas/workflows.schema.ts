@@ -1,9 +1,13 @@
 import { z } from 'zod';
 import { queryBuilderNodeSchema } from './core.schema';
 
-// Spec §16 Automations — the trigger picker's 12 cards. `volunteer_signup` is kept for
+// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
 // backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card.
+// volunteer-events controller) but is not offered as a card. `date_arrives` and
+// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
+// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
+// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
+// threshold in days (default 90).
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'web_form_submitted',
@@ -16,6 +20,7 @@ export const WORKFLOW_TRIGGER_TYPES = [
   'task_sla_breach',
   'new_subscriber',
   'new_unsubscriber',
+  'supporter_lapsed',
   'date_arrives',
   'volunteer_signup',
 ] as const;
@@ -31,6 +36,25 @@ export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
 
 const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
 
+// Engagement condition on a send_email step: gate the send on what the recipient did with the
+// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
+// with a wait step so people have time to engage). Absent/null = always send. A click also
+// stamps an open, so "not opened" implies "not clicked" was true as well.
+export const WORKFLOW_SEND_CONDITIONS = [
+  'previous_not_opened',
+  'previous_not_clicked',
+  'previous_opened',
+  'previous_clicked',
+] as const;
+
+export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
+
+// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
+// each time the enrollment comes due, before any step runs.
+export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
+
+export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
+
 // Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
 // at the schema boundary; the controller maps each kind's meaningful fields when executing.
 export const WorkflowStepConfigObj = z
@@ -44,6 +68,8 @@ export const WorkflowStepConfigObj = z
     notify_user_id: z.string().nullable().optional(),
     notify_user_name: z.string().nullable().optional(),
     notify_message: z.string().nullable().optional(),
+    // send_email
+    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
   })
   .strict();
 
@@ -58,6 +84,7 @@ export const WorkflowObj = z.object({
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft'),
   conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
   created_at: z.coerce.date(),
@@ -71,6 +98,7 @@ export const AddWorkflowObj = z.object({
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
   conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
 });
 
 export const UpdateWorkflowObj = AddWorkflowObj.partial();
@@ -117,7 +145,7 @@ export const WorkflowEnrollmentObj = z.object({
   tenant_id: z.string(),
   workflow_id: z.string(),
   person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled']).default('active'),
+  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
   current_step_number: z.number().int().nonnegative(),
   next_run_at: z.coerce.date().nullable().optional(),
   enrolled_at: z.coerce.date(),
@@ -133,8 +161,10 @@ export const WorkflowRunObj = z.object({
   person_id: z.string().nullable().optional(),
   step_number: z.number().int().nullable().optional(),
   step_kind: z.string().nullable().optional(),
-  status: z.enum(['success', 'failed']),
+  status: z.enum(['success', 'failed', 'skipped']),
   error: z.string().nullable().optional(),
+  opened_at: z.coerce.date().nullable().optional(),
+  clicked_at: z.coerce.date().nullable().optional(),
   created_at: z.coerce.date(),
 });
 

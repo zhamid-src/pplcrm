@@ -1,62 +1,3 @@
-@if (mode() === 'options') {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="close()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletters
-    </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
-      <div>
-        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
-        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
-      </div>
-
-      <button
-        type="button"
-        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
-        (click)="selectRegular()"
-      >
-        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
-        <div class="flex-1">
-          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
-          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
-        </div>
-        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
-      </button>
-
-      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
-        <div class="flex items-center gap-4">
-          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
-            <pc-icon name="arrow-path" [size]="6"></pc-icon>
-          </div>
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
-              <span
-                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
-                >Coming soon</span
-              >
-            </div>
-            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
-          </div>
-        </div>
-        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
-          Create a regular newsletter instead
-        </button>
-      </div>
-    </div>
-  </main>
-</div>
-} @else if (mode() === 'regular') {
 <div class="flex h-full flex-col bg-base-100">
   <header class="border-b border-base-200 px-6 py-4">
     <button
@@ -111,13 +52,13 @@
   <main class="flex-1 overflow-y-auto px-6 py-6">
     <form
       class="mx-auto flex w-full flex-col gap-6"
-      [class.max-w-3xl]="currentStep() !== 2"
-      [class.max-w-none]="currentStep() === 2"
+      [class.max-w-3xl]="currentStepId() !== 'content'"
+      [class.max-w-none]="currentStepId() === 'content'"
     >
-      @switch (currentStep()) {
+      @switch (currentStepId()) {
 
-      <!-- ============ STEP 1 · TEMPLATE ============ -->
-      @case (1) {
+      <!-- ============ TEMPLATE ============ -->
+      @case ('template') {
       <div class="grid gap-5 sm:grid-cols-2">
         @for (t of templateOptions; track t.id) {
         <button
@@ -144,10 +85,18 @@
         </button>
         }
       </div>
+
+      <!-- Cross-link: per-person triggered email is the Automations page's job, not a newsletter. -->
+      <div class="rounded-lg border border-base-200 bg-base-200/40 p-4">
+        <p class="text-xs text-base-content/60">
+          Want to email each supporter when <span class="font-semibold">they</span> do something (join, donate, sign up
+          to volunteer)? That's an <a routerLink="/automations" class="link link-primary font-medium">Automation</a>.
+        </p>
+      </div>
       }
 
-      <!-- ============ STEP 2 · CONTENT ============ -->
-      @case (2) {
+      <!-- ============ CONTENT ============ -->
+      @case ('content') {
       <div class="space-y-4">
         <div
           class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
@@ -191,8 +140,8 @@
       </div>
       }
 
-      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
-      @case (3) {
+      <!-- ============ AUDIENCE & DETAILS ============ -->
+      @case ('audience') {
       <div class="grid gap-6 md:grid-cols-2">
         <!-- Email details -->
         <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
@@ -453,8 +402,8 @@
       </div>
       }
 
-      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
-      @case (4) {
+      <!-- ============ REVIEW (& send / & start) ============ -->
+      @case ('review') {
       <div class="grid gap-6 md:grid-cols-2">
         <!-- Review -->
         <div class="rounded-xl border border-base-200 bg-base-100 p-5">
@@ -662,13 +611,13 @@
   <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
     <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
       <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      @if (currentStep() === 1) { Back } @else { Back }
+      Back
     </button>
     <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
       @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
     </button>
     <div class="flex-1"></div>
-    @if (currentStep() < 4) {
+    @if (!isLastStep()) {
     <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
       Next
       <pc-icon name="chevron-right" [size]="4"></pc-icon>
@@ -690,32 +639,3 @@
     }
   </footer>
 </div>
-} @else {
-<div class="flex h-full flex-col bg-base-100">
-  <header class="border-b border-base-200 px-6 py-4">
-    <button
-      type="button"
-      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
-      (click)="switchToOptions()"
-    >
-      <pc-icon name="chevron-left" [size]="3"></pc-icon>
-      Newsletter types
-    </button>
-    <p class="pc-eyebrow">Newsletter</p>
-    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
-  </header>
-
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
-      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
-      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
-      <p class="mt-2 text-sm text-base-content/60">
-        Until then, create a regular newsletter and send it now or on a schedule.
-      </p>
-      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
-        Create a regular newsletter
-      </button>
-    </div>
-  </main>
-</div>
-}

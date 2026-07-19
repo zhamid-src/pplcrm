@@ -147,7 +147,6 @@ export class NewsletterAddComponent implements OnInit {
   protected readonly includeTagsList = computed(() => this.regularPayload().includeTags);
   protected readonly loadingLists = signal<boolean>(false);
   protected readonly loadingTags = signal<boolean>(false);
-  protected readonly mode = signal<CreationMode>('options');
   protected readonly saving = signal(false);
   protected readonly selectedTemplate = signal<TemplatePreset>('welcome');
   protected readonly showDatePicker = signal(false);
@@ -156,7 +155,12 @@ export class NewsletterAddComponent implements OnInit {
   /** Set true after a blocked Next/Send so inline field errors appear even before the field is touched. */
   protected readonly showFieldErrors = signal(false);
 
-  protected readonly steps = STEP_LABELS;
+  protected readonly stepIds: readonly WizardStepId[] = ['template', 'content', 'audience', 'review'];
+  protected readonly steps: readonly string[] = STEP_LABELS;
+  /** What the current step number means — the template switches on this. */
+  protected readonly currentStepId = computed<WizardStepId>(() => this.stepIds[this.currentStep() - 1] ?? 'template');
+  protected readonly isLastStep = computed(() => this.currentStep() >= this.stepIds.length);
+
   protected readonly templateOptions = TEMPLATE_OPTIONS;
   protected readonly lockedStepTooltip = LOCKED_STEP_TOOLTIP;
   protected readonly subjectCoach = SUBJECT_COACH;
@@ -247,6 +251,9 @@ export class NewsletterAddComponent implements OnInit {
     void this.loadTags();
     void this.loadCommsDefaults();
     void this.loadSendQuota();
+    // Land directly in the wizard with the default template applied; not a user edit.
+    this.applyTemplate('welcome');
+    this.dirty.set(false);
   }
 
   /** Route-level leave guard (wired via unsavedChangesGuard in dashboard.routes.ts). */
@@ -279,7 +286,7 @@ export class NewsletterAddComponent implements OnInit {
   protected handleBack(): void {
     const step = this.currentStep();
     if (step === 1) {
-      this.switchToOptions();
+      this.close();
     } else {
       this.currentStep.set((step - 1) as StepIndex);
     }
@@ -288,34 +295,23 @@ export class NewsletterAddComponent implements OnInit {
   protected handleNext(): void {
     const step = this.currentStep();
 
-    if (step === 3 && !this.validateDetails()) return;
+    if (this.currentStepId() === 'audience' && !this.validateDetails()) return;
 
-    if (step >= STEP_LABELS.length) return;
+    if (step >= this.stepIds.length) return;
     this.showFieldErrors.set(false);
     this.currentStep.set((step + 1) as StepIndex);
   }
 
-  // --- Mode / template ------------------------------------------------------
+  /** Jump to a step by meaning, not number. */
+  private goToStepId(id: WizardStepId): void {
+    const index = this.stepIds.indexOf(id);
+    if (index >= 0) this.currentStep.set((index + 1) as StepIndex);
+  }
+
+  // --- Template -------------------------------------------------------------
 
   protected close(): void {
     void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected selectAutomated(): void {
-    this.mode.set('automated');
-  }
-
-  protected selectRegular(): void {
-    this.mode.set('regular');
-    this.currentStep.set(1);
-    this.applyTemplate('welcome');
-    // Auto-selecting the default template is not a user edit.
-    this.dirty.set(false);
-  }
-
-  protected switchToOptions(): void {
-    this.mode.set('options');
-    this.currentStep.set(1);
   }
 
   protected selectTemplate(preset: TemplatePreset): void {
@@ -500,8 +496,8 @@ export class NewsletterAddComponent implements OnInit {
         plainText: raw.plainTextContent || undefined,
       });
       this.serverPreflight.set({ key, result });
-      if (this.currentStep() !== 4) {
-        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the Review & send step.`);
+      if (this.currentStepId() !== 'review') {
+        this.alertSvc.showInfo(`Deliverability score ${result.score} — details on the review step.`);
       }
     } catch (err) {
       this.alertSvc.showError(this.errorMessage(err, 'We could not run the deliverability check. Try again.'));
@@ -603,7 +599,7 @@ export class NewsletterAddComponent implements OnInit {
   protected async sendRegular(): Promise<void> {
     if (this.saving()) return;
     if (!this.validateDetails()) {
-      this.currentStep.set(3);
+      this.goToStepId('audience');
       return;
     }
     if (this.requiresScheduleDate()) {
@@ -618,7 +614,7 @@ export class NewsletterAddComponent implements OnInit {
     // findings instead of a failed request.
     const check = this.preflightView();
     if (check.band === 'blocked') {
-      this.currentStep.set(4);
+      this.goToStepId('review');
       this.alertSvc.showError(
         `Deliverability score ${check.score} — fix the items flagged in the deliverability check before sending.`,
       );
@@ -652,7 +648,7 @@ export class NewsletterAddComponent implements OnInit {
       this.dirty.set(false);
       this.alertSvc.showSuccess(
         scheduled
-          ? `Queued "${subject}" to ${this.peopleLabel(count)}, sending ${whenLabel}`
+          ? `Scheduled "${subject}" for ${whenLabel}; it goes out within a few minutes of that time`
           : `Queued "${subject}" to ${this.peopleLabel(count)}, sending now`,
       );
       this.close();
@@ -929,8 +925,6 @@ export class NewsletterAddComponent implements OnInit {
   }
 }
 
-type CreationMode = 'options' | 'regular' | 'automated';
-
 /** Deliverability-check view model: a full server run, or the instant local quick check. */
 interface PreflightView {
   score: number;
@@ -941,6 +935,8 @@ interface PreflightView {
 }
 
 type StepIndex = 1 | 2 | 3 | 4;
+
+type WizardStepId = 'template' | 'content' | 'audience' | 'review';
 
 type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
 

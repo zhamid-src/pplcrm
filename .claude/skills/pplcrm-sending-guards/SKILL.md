@@ -122,6 +122,42 @@ complaints into `email_suppressions`.
 **Signup:** disposable-email domains are rejected in `auth/controller.ts signUp` via
 `lib/mail/disposable-email-domains.ts` (curated Set — extend it, don't replace with a huge list).
 
+**Automation emails obey the same layer (2026-07-18):** the workflow `send_email` step
+(`lib/jobs/handlers/workflows.handlers.ts`) checks the step's engagement condition
+(`config.send_condition`, evaluated against the previous email run's `opened_at`/`clicked_at` —
+unmet → `skipped` run), consent via `modules/workflows/automation-consent.ts` (suppressed / DNC /
+unsubscribed-from-all-campaigns → run recorded as `skipped`, not failed), checks
+`assertTenantSendingNotBlocked` + `remainingSendAllowance` (blocked → enrollment deferred 1h,
+not advanced) + `hasVerifiedSendingDomain` (missing → failed run with the fix named), and
+meters each send into `newsletter_send_log` with `source='automation'`, `newsletter_id NULL` — so
+`sentEmailsSince` (and therefore the warm-up/hourly/monthly caps) includes automation volume
+automatically. **Delivery is SendGrid, not Postmark** (Postmark = pplCRM-to-user mail only): the
+step inserts its `workflow_runs` row first, then enqueues `send-automation-email`
+(`lib/jobs/handlers/automation-mail.handlers.ts`) which resolves the tenant's sending identity
+(same settings keys + free-tier subuser as newsletters) and sends with
+`custom_args.workflow_run_id`; the SendGrid event webhook
+(`modules/newsletters/routes/newsletters-webhook.route.ts` → `applyAutomationEvent`) stamps
+`opened_at`/`clicked_at` back onto the run (click also stamps open — MPP makes opens noisy) and
+writes bounce/complaint suppressions. Workflow-level `exit_conditions` (jsonb string[] —
+donated / opened_any_email / clicked_any_email) end an enrollment early (`status='exited'`,
+run row `step_kind='exit'`). Automation emails carry a per-recipient HMAC unsubscribe link
+(`modules/newsletters/unsubscribe-token.ts` → public `GET /api/unsubscribe/:token`, which flips
+all the person's `campaign_subscriptions` to unsubscribed) in a server-appended footer
+(`buildAutomationFooter`; SendGrid subscription tracking disabled for these sends).
+
+**Scheduled newsletters:** `process_scheduled_newsletters` (5-min cron,
+`lib/jobs/handlers/newsletter.handlers.ts`) fires `status='scheduled'` rows through
+`sendNewsletter`, so guards + preflight run at fire time; failures revert to draft + notify.
+(Recurring newsletters were removed entirely 2026-07-18 — first the auto-send mode, then the
+whole feature: draft-per-cadence added little over "Schedule for later". Migration
+`2026-07-20-d` drops `newsletter_schedules` and `newsletters.schedule_id`.)
+
+**Resend to non-openers:** `newsletters.resendToNonOpeners` clones a sent newsletter
+(`resend_of_id` link, partial unique index = one resend per original, new subject required and
+must differ) and sends through the normal guarded path; `buildRecipientQuery` excludes anyone
+with an open/click event on the original at send time. Apple MPP asymmetry: machine-opens make
+Apple users look like openers, so the resend under-reaches rather than over-reaches.
+
 ## Plan gates — `apps/backend/src/app/modules/billing/plan-gate.ts`
 
 `GATED_FEATURES` in `libs/common/src/lib/billing/plans.ts` is the machine-readable core of

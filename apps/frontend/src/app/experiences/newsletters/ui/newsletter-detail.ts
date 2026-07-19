@@ -14,6 +14,7 @@ import { StatusBadge, type PcStatusType } from '@uxcommon/components/status-badg
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { ModalShell } from '@uxcommon/components/modal-shell/modal-shell';
 import { NewslettersService } from '../services/newsletters-service';
 import { FilesService } from '../../files/services/files.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -91,7 +92,7 @@ interface CompareRow {
 
 @Component({
   selector: 'pc-newsletter-detail',
-  imports: [DetailLayout, Icon, RouterLink, StatusBadge],
+  imports: [DetailLayout, Icon, ModalShell, RouterLink, StatusBadge],
   templateUrl: './newsletter-detail.html',
 })
 export class NewsletterDetailComponent {
@@ -112,6 +113,21 @@ export class NewsletterDetailComponent {
   protected readonly isCreatingList = signal(false);
   protected readonly isDuplicating = signal(false);
   protected readonly emailExpanded = signal(false);
+
+  // Resend to non-openers: dialog state + the approximate audience it will reach.
+  protected readonly resendOpen = signal(false);
+  protected readonly resendSubject = signal('');
+  protected readonly isResending = signal(false);
+  /** Sent originals only; a resend of a resend is refused server-side too. */
+  protected readonly canResend = computed(() => {
+    const em = this.email();
+    return !!em && em.status === 'sent' && (em as { resend_of_id?: string | null }).resend_of_id == null;
+  });
+  protected readonly nonOpenerEstimate = computed(() => {
+    const em = this.email();
+    if (!em) return 0;
+    return Math.max(0, (em.total_recipients ?? 0) - (em.unique_opens ?? 0));
+  });
 
   /** Attachments can only be managed before a newsletter has gone out. */
   protected readonly canManageAttachments = computed(() => {
@@ -448,6 +464,87 @@ export class NewsletterDetailComponent {
       this.alertSvc.showError(getUserErrorMessage(err, 'Failed to create the list'));
     } finally {
       this.isCreatingList.set(false);
+    }
+  }
+
+  /** Send a scheduled newsletter immediately instead of waiting for its slot. */
+  protected async sendNow(): Promise<void> {
+    const email = this.email();
+    if (!email || email.status !== 'scheduled') return;
+    const name = email.name || 'this newsletter';
+    const confirmed = await this.dialogs.confirm({
+      title: `Send "${name}" now?`,
+      message:
+        'It goes out to everyone in its selected lists and tags right away, instead of at the scheduled time. Sending cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Send newsletter',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    try {
+      await this.service.send(this.id());
+      this.alertSvc.showSuccess(`"${name}" is on its way`);
+      await this.load(this.id());
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the newsletter'));
+    }
+  }
+
+  /** Take this scheduled newsletter off the calendar; it moves back to drafts. */
+  protected async cancelSchedule(): Promise<void> {
+    const email = this.email();
+    if (!email || email.status !== 'scheduled') return;
+    const name = email.name || 'this newsletter';
+    const confirmed = await this.dialogs.confirm({
+      title: `Cancel the schedule for "${name}"?`,
+      message: 'It will not be sent at the scheduled time. It moves back to drafts; you can reschedule it anytime.',
+      confirmText: 'Cancel schedule',
+      cancelText: 'Keep schedule',
+    });
+    if (!confirmed) return;
+    try {
+      await this.service.cancelSchedule(this.id());
+      this.alertSvc.showSuccess(`"${name}" is back in drafts`);
+      await this.load(this.id());
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not cancel the schedule'));
+    }
+  }
+
+  /** Open the resend dialog with the original subject prefilled for editing. */
+  protected openResendDialog(): void {
+    const email = this.email();
+    if (!email || !this.canResend()) return;
+    this.resendSubject.set(email.subject ?? '');
+    this.resendOpen.set(true);
+  }
+
+  protected closeResendDialog(): void {
+    this.resendOpen.set(false);
+  }
+
+  protected async confirmResend(): Promise<void> {
+    const email = this.email();
+    if (!email || this.isResending()) return;
+    const subject = this.resendSubject().trim();
+    if (!subject) {
+      this.alertSvc.showError('Give the resend a subject line.');
+      return;
+    }
+    if (subject.toLowerCase() === (email.subject ?? '').trim().toLowerCase()) {
+      this.alertSvc.showError('Change the subject line first. The same subject mostly earns unsubscribes.');
+      return;
+    }
+    this.isResending.set(true);
+    try {
+      const result = await this.service.resendToNonOpeners(this.id(), subject);
+      this.resendOpen.set(false);
+      this.alertSvc.showSuccess('Resend on its way to everyone who did not open the original');
+      await this.router.navigate(['/newsletters', result.id]);
+    } catch (err: unknown) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not start the resend'));
+    } finally {
+      this.isResending.set(false);
     }
   }
 

@@ -16,7 +16,11 @@ import {
   handleRefreshCompaniesGoogle,
   handleRefreshList,
 } from './handlers/maintenance.handlers';
-import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
+import {
+  handleProcessScheduledNewsletters,
+  handlePruneNewsletterEvents,
+  handleSendNewsletter,
+} from './handlers/newsletter.handlers';
 import {
   handleCheckDueTasks,
   handleSendEventRegistrationConfirmation,
@@ -29,7 +33,8 @@ import {
   handleSendWebformNotifications,
 } from './handlers/notifications.handlers';
 import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
-import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
+import { handleDetectLapsedSupporters, handleProcessDripWorkflows } from './handlers/workflows.handlers';
+import { handleSendAutomationEmail } from './handlers/automation-mail.handlers';
 
 export { checkDueTasks } from './handlers/notifications.handlers';
 
@@ -123,8 +128,17 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
     case 'prune_newsletter_events':
       await handlePruneNewsletterEvents(db);
       break;
+    case 'process_scheduled_newsletters':
+      await handleProcessScheduledNewsletters(db);
+      break;
     case 'process_drip_workflows':
       await handleProcessDripWorkflows(db);
+      break;
+    case 'send-automation-email':
+      await handleSendAutomationEmail(db, job);
+      break;
+    case 'detect_lapsed_supporters':
+      await handleDetectLapsedSupporters(db);
       break;
     case 'perform_scheduled_deletions':
       await handlePerformScheduledDeletions(db);

@@ -63,7 +63,7 @@ describe('NewsletterAddComponent', () => {
       sendTest: vi.fn().mockResolvedValue({ to: 'me@example.com', delivered: 1 }),
     };
     mockRouter = { navigate: vi.fn(), navigateByUrl: vi.fn() };
-    mockActivatedRoute = { snapshot: { paramMap: { get: () => null } } };
+    mockActivatedRoute = { snapshot: { paramMap: { get: () => null }, queryParamMap: { get: () => null } } };
     mockAuthSvc = {
       getUser: vi.fn().mockReturnValue({ email: 'me@example.com' }),
       getUserSignal: () => () => ({ email: 'me@example.com', tenant_demo_mode_at: null }),
@@ -103,20 +103,15 @@ describe('NewsletterAddComponent', () => {
     expect(component['availableTags']()).toEqual([{ id: 't1', name: 'volunteer', usage: 15 }]);
   });
 
-  it('switches between options, regular, and automated modes', () => {
-    component['selectRegular']();
-    expect(component['mode']()).toBe('regular');
+  it('lands on the template step with the welcome template preselected', () => {
     expect(component['currentStep']()).toBe(1);
-
-    component['switchToOptions']();
-    expect(component['mode']()).toBe('options');
-
-    component['selectAutomated']();
-    expect(component['mode']()).toBe('automated');
+    expect(component['currentStepId']()).toBe('template');
+    expect(component['selectedTemplate']()).toBe('welcome');
+    // The auto-applied default is not a user edit, so the leave guard stays quiet.
+    expect(component['dirty']()).toBe(false);
   });
 
   it('populates the html/plain text content when a template is selected', () => {
-    component['selectRegular']();
     component['selectTemplate']('product');
 
     expect(component['selectedTemplate']()).toBe('product');
@@ -125,13 +120,11 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('exposes sentence-case template names for the review step', () => {
-    component['selectRegular']();
     component['selectTemplate']('welcome');
     expect(component['selectedTemplateName']()).toBe('Welcome email');
   });
 
   it('does not advance past step 3 when required detail fields are invalid, and coaches', () => {
-    component['selectRegular']();
     component['currentStep'].set(3);
 
     component['handleNext']();
@@ -142,7 +135,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('advances to step 4 once required detail fields are valid', () => {
-    component['selectRegular']();
     component['currentStep'].set(3);
     patchPayload(validDetails);
 
@@ -152,7 +144,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('only lets you jump to completed or current steps, never a locked future step', () => {
-    component['selectRegular']();
     component['currentStep'].set(2);
 
     component['goToStep'](4); // locked future step
@@ -163,8 +154,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('adds and removes included lists, refreshing the audience estimate', () => {
-    component['selectRegular']();
-
     component['addIncludeList']('l1');
     expect(component['includeListIds']()).toEqual(['l1']);
     expect(component['estimatedAudienceCount']()).toBe(50);
@@ -175,7 +164,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('subtracts excluded tag usage from the estimated audience', () => {
-    component['selectRegular']();
     component['addIncludeList']('l1');
     component['addExcludeTag']('volunteer');
 
@@ -184,7 +172,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('does not offer the same list as both an include and exclude suggestion', () => {
-    component['selectRegular']();
     component['addIncludeList']('l1');
 
     expect(component['includeListSuggestions']().some((l) => l.id === 'l1')).toBe(false);
@@ -195,7 +182,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('resolves list names and sizes for chips', () => {
-    component['selectRegular']();
     expect(component['listName']('l1')).toBe('VIP Donors');
     expect(component['listSize']('l1')).toBe(50);
     expect(component['listName']('unknown')).toBe('List');
@@ -207,7 +193,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('blocks send when required detail fields are missing and returns to step 3', async () => {
-    component['selectRegular']();
     component['currentStep'].set(4);
 
     await component['sendRegular']();
@@ -218,7 +203,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('runs a send preflight and, on confirm, saves then sends immediately for "now"', async () => {
-    component['selectRegular']();
     patchPayload({ ...validDetails, timingMode: 'now' });
 
     await component['sendRegular']();
@@ -234,7 +218,6 @@ describe('NewsletterAddComponent', () => {
 
   it('does not send when the preflight is cancelled', async () => {
     mockConfirmDlg.confirm.mockResolvedValueOnce(false);
-    component['selectRegular']();
     patchPayload({ ...validDetails, timingMode: 'now' });
 
     await component['sendRegular']();
@@ -244,7 +227,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('schedules (status scheduled, no immediate send) with a valid date/time', async () => {
-    component['selectRegular']();
     patchPayload({
       ...validDetails,
       timingMode: 'schedule',
@@ -259,7 +241,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('requires a schedule date/time before sending a scheduled newsletter', async () => {
-    component['selectRegular']();
     patchPayload({ ...validDetails, timingMode: 'schedule' });
 
     await component['sendRegular']();
@@ -270,7 +251,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('saves a draft and exits with a toast', async () => {
-    component['selectRegular']();
     patchPayload(validDetails);
 
     await component['saveDraft']();
@@ -281,7 +261,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('sends a test email to the current user and confirms the recipient', async () => {
-    component['selectRegular']();
     patchPayload({ subject: 'Big News' });
 
     await component['sendTestEmail']();
@@ -293,7 +272,6 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('shows an error when the newsletter fails to save', async () => {
-    component['selectRegular']();
     patchPayload({ ...validDetails, timingMode: 'now' });
     mockNewslettersSvc.add.mockRejectedValueOnce(new Error('Save failed'));
 
@@ -303,13 +281,11 @@ describe('NewsletterAddComponent', () => {
   });
 
   it('lets you leave freely when nothing has changed', async () => {
-    component['selectRegular']();
     await expect(component.canDeactivate()).resolves.toBe(true);
     expect(mockConfirmDlg.confirm).not.toHaveBeenCalled();
   });
 
   it('guards against losing an in-progress draft on leave', async () => {
-    component['selectRegular']();
     component['selectTemplate']('product'); // a real user edit marks the wizard dirty
 
     await component.canDeactivate();

@@ -11,7 +11,7 @@ export const PRIVACY_DOC: LegalDoc = {
   title: 'Privacy policy',
   intro:
     'What we collect, why, where it lives, and the things we will never do with it. Written to be read, not skimmed past.',
-  updated: 'July 17, 2026',
+  updated: 'July 18, 2026',
   blocks: [
     {
       kind: 'h2',
@@ -133,7 +133,7 @@ export const PRIVACY_DOC: LegalDoc = {
         '**Cloudflare.** Serves the marketing site and the public form, donation and companion pages at the network edge.',
         '**Stripe.** Subscription billing, tax calculation, and card donation processing. Stripe stores payment and donor data in the United States.',
         '**Postmark.** Delivers transactional email such as verification links, security codes and account notices.',
-        '**SendGrid.** Delivers newsletters from your organization’s own verified domain and reports delivery and engagement events.',
+        '**SendGrid.** Delivers newsletters and automation emails from your organization’s own verified domain and reports delivery and engagement events.',
         '**Twilio.** Sends SMS one-time codes for volunteer verification and free-plan sending verification.',
         '**Anthropic.** Powers the newsletter deliverability check’s AI content review. It receives only the draft being checked (subject, body text and link list) when a check runs — never your contact lists — and under our agreement the content is not used to train models.',
         '**Google Maps.** Geocodes household addresses and renders maps.',

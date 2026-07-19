@@ -83,6 +83,17 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.api.newsletters.send.mutate(id);
   }
 
+  /** Take a scheduled newsletter off the calendar; it moves back to drafts. */
+  public cancelSchedule(id: string): Promise<void> {
+    return this.api.newsletters.cancelSchedule.mutate(id);
+  }
+
+  /** One-shot follow-up to everyone who didn't open or click the sent original (new subject
+   * required; the backend enforces one resend per newsletter). */
+  public resendToNonOpeners(id: string, subject: string): Promise<{ id: string }> {
+    return this.api.newsletters.resendToNonOpeners.mutate({ id, subject });
+  }
+
   /** Monthly newsletter-email allowance at the billed bracket (`cap: null` = unlimited). */
   public getSendQuota(): Promise<{
     cap: number | null;
@@ -131,6 +142,7 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
       ...record,
       status: typeof record.status === 'string' ? record.status.toLowerCase() : record.status,
       tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      resend_of_id: record.resend_of_id != null ? String(record.resend_of_id) : null,
       createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
       updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
       total_recipients: asNumber(record.total_recipients) ?? 0,

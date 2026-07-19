@@ -13,7 +13,8 @@ import {
 } from '../../mail/newsletter-render';
 import { UserActivityRepo } from '../../user-activity.repo';
 import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
+import { DAY_MS, FIVE_MINUTES_MS, scheduleNextRun } from '../reschedule';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import { FilesRepo } from '../../../modules/files/repositories/files.repo';
 import { StorageService } from '../../storage.service';
 import { getPlanDef } from '@common';
@@ -24,6 +25,8 @@ import {
   logNewsletterBatch,
   remainingSendAllowance,
 } from '../../../modules/newsletters/send-guards';
+
+const scheduledSendMailService = new TransactionalEmailService();
 
 const NEWSLETTER_BATCH_SIZE = 500;
 const BATCH_DELAY_MS = 1000;
@@ -555,6 +558,84 @@ export async function buildNewsletterAttachments(
     }
   }
   return attachments.length > 0 ? attachments : undefined;
+}
+
+/**
+ * Fires newsletters saved as `scheduled` whose send time has arrived. The newsletter row is the
+ * single source of truth — there is no future-dated job to edit or cancel; rescheduling is a
+ * plain `update` of send_date and cancelling flips status back to draft. The cron calls the
+ * normal `sendNewsletter` path, so demo-mode, send-guards, and the content preflight all run at
+ * fire time (not at schedule time), and the `queuing` status it sets is itself the dedupe
+ * against the next tick.
+ *
+ * A newsletter that cannot fire (preflight turned blocked, tenant paused/suspended/payment hold,
+ * allowance exhausted) reverts to draft with send_date cleared — it must not silently re-fire —
+ * and the scheduling user is told via an in-app notification plus an email.
+ */
+export async function handleProcessScheduledNewsletters(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  const due = await db
+    .selectFrom('newsletters')
+    .select(['id', 'tenant_id', 'name', 'updatedby_id'])
+    .where('status', '=', 'scheduled')
+    .where('send_date', '<=', now)
+    .limit(50)
+    .execute();
+
+  if (due.length > 0) {
+    const { NewslettersController } = await import('../../../modules/newsletters/controller');
+    const controller = new NewslettersController();
+
+    for (const row of due) {
+      const tenantId = String(row.tenant_id);
+      const newsletterId = String(row.id);
+      try {
+        await controller.sendNewsletter(tenantId, newsletterId, String(row.updatedby_id));
+        logger.info({ tenantId, newsletterId }, '[scheduled-newsletter] Fired at scheduled time');
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        await db
+          .updateTable('newsletters')
+          .set({ status: 'draft', send_date: null, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', newsletterId)
+          .execute();
+        logger.warn({ tenantId, newsletterId, reason }, '[scheduled-newsletter] Could not fire — back to draft');
+
+        const message = `"${row.name}" was not sent at its scheduled time: ${reason} It's back in your drafts.`;
+        await db
+          .insertInto('notifications')
+          .values({
+            tenant_id: tenantId,
+            user_id: String(row.updatedby_id),
+            title: 'Scheduled newsletter not sent',
+            message,
+            type: 'warning',
+            read: false,
+          })
+          .execute();
+        const user = await db
+          .selectFrom('authusers')
+          .select(['email', 'first_name'])
+          .where('id', '=', String(row.updatedby_id))
+          .executeTakeFirst();
+        if (user?.email) {
+          await scheduledSendMailService.enqueueMail({
+            to: user.email,
+            subject: 'Your scheduled newsletter was not sent',
+            text: `Hi ${user.first_name || 'there'},\n\n${message}\n\nOpen the newsletter to fix the issue and send it when you're ready.`,
+            html: `<h2>Scheduled newsletter not sent</h2>
+<p>Hi ${user.first_name || 'there'},</p>
+<p>${message}</p>
+<p>Open the newsletter to fix the issue and send it when you're ready.</p>`,
+            tenant_id: tenantId,
+          });
+        }
+      }
+    }
+  }
+
+  await scheduleNextRun(db, 'process_scheduled_newsletters', FIVE_MINUTES_MS);
 }
 
 /**

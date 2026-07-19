@@ -36,6 +36,16 @@ export const NewslettersRouter = router({
     .input(idSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
 
+  cancelSchedule: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.cancelSchedule(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  resendToNonOpeners: authProcedure
+    .input(z.object({ id: idSchema, subject: z.string().min(1).max(200) }))
+    .mutation(async ({ input, ctx }) =>
+      newsletters.resendToNonOpeners(ctx.auth.tenant_id, input.id, input.subject, ctx.auth.user_id),
+    ),
+
   sendTest: authProcedure
     .input(sendTestSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),

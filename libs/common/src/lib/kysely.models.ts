@@ -771,6 +771,9 @@ interface Newsletters extends RecordType {
   top_links: Json | null;
   /** Resume point recorded when a send is paused mid-batch (tripwire/rate-cap); NULL otherwise. */
   send_offset: number | null;
+  /** The sent newsletter this row is a non-opener follow-up of; NULL for originals. At most
+   * one resend per original (partial unique index). */
+  resend_of_id: string | null;
 }
 
 export interface NewsletterEvents {
@@ -793,12 +796,15 @@ export interface NewsletterEvents {
 }
 
 /** One row per delivered newsletter batch — SUM(recipient_count) over a window drives the
- * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. */
+ * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. Automation
+ * send_email steps also log here (source 'automation', no newsletter_id) so automated volume
+ * counts toward the same caps. */
 export interface NewsletterSendLog {
   id: Generated<string>;
   tenant_id: string;
-  newsletter_id: string;
+  newsletter_id: string | null;
   recipient_count: number;
+  source: Generated<'newsletter' | 'automation'>;
   created_at: Generated<Timestamp>;
 }
 
@@ -1218,6 +1224,8 @@ export interface Workflows extends RecordType {
   trigger_event_id: string | null;
   // Spec §16 ONLY ENROLL IF — a QueryBuilder group node (see core.schema QueryBuilderGroupNode).
   conditions: Json | null;
+  /** Sequence-level goals (WorkflowExitCondition[] as jsonb) that end an enrollment early. */
+  exit_conditions: Json | null;
 }
 
 export interface WorkflowSteps {
@@ -1239,8 +1247,9 @@ export interface WorkflowSteps {
   updated_at: Generated<Timestamp>;
 }
 
-// Spec §16: one row per executed step (success or failure) — feeds the list's RUNS 30D /
-// LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for narration.
+// Spec §16: one row per executed step (success, failure, or consent skip) — feeds the list's
+// RUNS 30D / LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for
+// narration; a skipped run records why the recipient was withheld (unsubscribed/suppressed/DNC).
 export interface WorkflowRuns {
   id: Generated<string>;
   tenant_id: string;
@@ -1249,8 +1258,12 @@ export interface WorkflowRuns {
   person_id: string | null;
   step_number: number | null;
   step_kind: string | null;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'skipped';
   error: string | null;
+  /** First open/click of the automation email this run sent (stamped by the SendGrid event
+   * webhook via the workflow_run_id custom arg). Step conditions and exit goals read these. */
+  opened_at: Timestamp | null;
+  clicked_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 

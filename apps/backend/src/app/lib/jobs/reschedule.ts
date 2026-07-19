@@ -4,6 +4,7 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import type { JobType } from './job-payloads';
 
 const MINUTE_MS = 60 * 1000;
+export const FIVE_MINUTES_MS = 5 * MINUTE_MS;
 export const TEN_MINUTES_MS = 10 * MINUTE_MS;
 export const DAY_MS = 24 * 60 * MINUTE_MS;
 

@@ -33,6 +33,8 @@ export const MarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
+  resend_of_id: z.string().nullable().optional(),
   updated_at: z.coerce.date(),
   created_at: z.coerce.date(),
   createdby_id: z.string(),

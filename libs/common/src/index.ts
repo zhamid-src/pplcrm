@@ -311,7 +311,10 @@ export type {
   WorkflowStepKind,
   WorkflowStepConfigType,
   WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
 } from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
 export type {
   TurfStatus,
   KnockOutcome,

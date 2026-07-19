@@ -1332,6 +1332,8 @@ export const MarketingEmailObj = z.object({
   html_content: z.string().nullable().optional(),
   plain_text_content: z.string().nullable().optional(),
   top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
+  /** The sent newsletter this row is a non-opener follow-up of; null for originals. */
+  resend_of_id: z.string().nullable().optional(),
   updated_at: z.coerce.date(),
   created_at: z.coerce.date(),
   createdby_id: z.string(),
@@ -2125,9 +2127,13 @@ export const FormSubmissionObj = z.object({
 import { z } from 'zod';
 import { queryBuilderNodeSchema } from './core.schema';
 
-// Spec §16 Automations — the trigger picker's 12 cards. `volunteer_signup` is kept for
+// Spec §16 Automations — the trigger picker's cards. `volunteer_signup` is kept for
 // backward compatibility with the pre-rebuild volunteer onboarding trigger (fired from the
-// volunteer-events controller) but is not offered as a card.
+// volunteer-events controller) but is not offered as a card. `date_arrives` and
+// `task_sla_breach` stay in the enum for saved-row back-compat but have no picker card:
+// no backend fires them yet, and a dead card is dishonest UI. `supporter_lapsed` is fired
+// by the daily detect_lapsed_supporters cron; its trigger_event_id holds the inactivity
+// threshold in days (default 90).
 export const WORKFLOW_TRIGGER_TYPES = [
   'manual',
   'web_form_submitted',
@@ -2140,6 +2146,7 @@ export const WORKFLOW_TRIGGER_TYPES = [
   'task_sla_breach',
   'new_subscriber',
   'new_unsubscriber',
+  'supporter_lapsed',
   'date_arrives',
   'volunteer_signup',
 ] as const;
@@ -2155,6 +2162,25 @@ export type WorkflowStepKind = (typeof WORKFLOW_STEP_KINDS)[number];
 
 const stepKindSchema = z.enum(WORKFLOW_STEP_KINDS);
 
+// Engagement condition on a send_email step: gate the send on what the recipient did with the
+// PREVIOUS email in this sequence (the industry-standard delay-then-check drip shape — pair it
+// with a wait step so people have time to engage). Absent/null = always send. A click also
+// stamps an open, so "not opened" implies "not clicked" was true as well.
+export const WORKFLOW_SEND_CONDITIONS = [
+  'previous_not_opened',
+  'previous_not_clicked',
+  'previous_opened',
+  'previous_clicked',
+] as const;
+
+export type WorkflowSendCondition = (typeof WORKFLOW_SEND_CONDITIONS)[number];
+
+// Sequence-level goals: an enrollment ends early ('exited') the moment one is met. Evaluated
+// each time the enrollment comes due, before any step runs.
+export const WORKFLOW_EXIT_CONDITIONS = ['donated', 'opened_any_email', 'clicked_any_email'] as const;
+
+export type WorkflowExitCondition = (typeof WORKFLOW_EXIT_CONDITIONS)[number];
+
 // Per-kind config payload (persisted to workflow_steps.config as jsonb). Every field is optional
 // at the schema boundary; the controller maps each kind's meaningful fields when executing.
 export const WorkflowStepConfigObj = z
@@ -2168,6 +2194,8 @@ export const WorkflowStepConfigObj = z
     notify_user_id: z.string().nullable().optional(),
     notify_user_name: z.string().nullable().optional(),
     notify_message: z.string().nullable().optional(),
+    // send_email
+    send_condition: z.enum(WORKFLOW_SEND_CONDITIONS).nullable().optional(),
   })
   .strict();
 
@@ -2182,6 +2210,7 @@ export const WorkflowObj = z.object({
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft'),
   conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
   created_at: z.coerce.date(),
@@ -2195,6 +2224,7 @@ export const AddWorkflowObj = z.object({
   trigger_event_id: z.string().nullable().optional(),
   status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
   conditions: queryBuilderNodeSchema.nullable().optional(),
+  exit_conditions: z.array(z.enum(WORKFLOW_EXIT_CONDITIONS)).nullable().optional(),
 });
 
 export const UpdateWorkflowObj = AddWorkflowObj.partial();
@@ -2241,7 +2271,7 @@ export const WorkflowEnrollmentObj = z.object({
   tenant_id: z.string(),
   workflow_id: z.string(),
   person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled']).default('active'),
+  status: z.enum(['active', 'completed', 'cancelled', 'exited']).default('active'),
   current_step_number: z.number().int().nonnegative(),
   next_run_at: z.coerce.date().nullable().optional(),
   enrolled_at: z.coerce.date(),
@@ -2257,8 +2287,10 @@ export const WorkflowRunObj = z.object({
   person_id: z.string().nullable().optional(),
   step_number: z.number().int().nullable().optional(),
   step_kind: z.string().nullable().optional(),
-  status: z.enum(['success', 'failed']),
+  status: z.enum(['success', 'failed', 'skipped']),
   error: z.string().nullable().optional(),
+  opened_at: z.coerce.date().nullable().optional(),
+  clicked_at: z.coerce.date().nullable().optional(),
   created_at: z.coerce.date(),
 });
 
@@ -5039,58 +5071,6 @@ export class FormActions {
 }
 ````
 
-## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-import { StatusBadge } from '../status-badge/status-badge';
-import type { PcStatusType } from '../status-badge/status-badge';
-
-/** The household geocoding lifecycle as stored in `households.geocoding_status`. */
-export type PcGeocodeStatus = 'success' | 'pending' | 'failed' | 'skipped' | null | undefined;
-
-interface GeocodeChipSpec {
-  label: string;
-  type: PcStatusType;
-}
-
-/**
- * The single, binding surface for a household's geocode state (§6 consumers):
- * "Located / Locating… / Address problem / Not geocoded" — never a hidden row.
- * Wave 2 (canvassing readiness, delivery coverage) reads the same states.
- *
- * DB status → chip:
- *  - `success`            → **Located** (success — done)
- *  - `pending` / `null`   → **Locating…** (info — in progress)
- *  - `failed`             → **Address problem** (warning — needs attention)
- *  - `skipped`            → **Not geocoded** (neutral — geocoding is a Movement feature; the
- *                           address is fine, it just wasn't sent to the geocoder on this plan)
- */
-export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSpec {
-  switch (status) {
-    case 'success':
-      return { label: 'Located', type: 'success' };
-    case 'failed':
-      return { label: 'Address problem', type: 'warning' };
-    case 'skipped':
-      return { label: 'Not geocoded', type: 'neutral' };
-    default:
-      return { label: 'Locating…', type: 'info' };
-  }
-}
-
-@Component({
-  selector: 'pc-geocode-chip',
-  imports: [StatusBadge],
-  template: ` <pc-status-badge [type]="spec().type" [size]="size()">{{ spec().label }}</pc-status-badge> `,
-})
-export class GeocodeChip {
-  public readonly status = input<PcGeocodeStatus | string>(null);
-  public readonly size = input<'sm' | 'md' | 'lg'>('sm');
-
-  protected readonly spec = computed(() => geocodeChipSpec(this.status()));
-}
-````
-
 ## File: libs/uxcommon/src/components/grid-header/grid-header.ts
 ````typescript
 import { Component, computed, input, signal } from '@angular/core';
@@ -7754,6 +7734,104 @@ export class TimeAgoPipe implements PipeTransform, OnDestroy {
 }
 ````
 
+## File: libs/uxcommon/src/styles/themes.css
+````css
+/*
+ * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
+ * palette, consumed by every app (apps/frontend, apps/companion). Import this
+ * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
+ * these values into an app-local theme block; change them here.
+ */
+
+/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
+   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
+   DaisyUI blocks below, same as --color-line. */
+@theme {
+  --color-base-50: #fbfbfc;
+}
+
+/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
+   scanner cannot see — without this safelist an icon size only works if some other
+   file happens to use the same w-/h- class literally. Covers every [size] in use. */
+@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #3498db;
+  --color-primary-content: #ffffff;
+  --color-secondary: #22a6b3;
+  --color-secondary-content: #ffffff;
+  --color-accent: #818789;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: rgb(226, 226, 226);
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e3d6a7;
+  --color-warning-content: #4a3d0a;
+  --color-error: #eb4d4b;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
+
+  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
+     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
+     (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
+  --radius-field: 0.25rem;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+````
+
 ## File: libs/uxcommon/src/loading-gate.ts
 ````typescript
 // _loading-gate.ts
@@ -8072,270 +8150,6 @@ Run `nx test uxcommon` to execute the unit tests.
   ],
   "files": ["src/test-setup.ts"]
 }
-````
-
-## File: libs/common/src/lib/help/articles/contacts.ts
-````typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      {
-        kind: 'p',
-        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
-      },
-      {
-        kind: 'p',
-        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
-      },
-      {
-        kind: 'p',
-        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Household**: everyone at the same address.',
-          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
-          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
-          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
-          '**Volunteer**: their shift history and hours.',
-          '**Events**: event registrations and attendance.',
-          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: [
-      'household',
-      'family',
-      'address',
-      'members',
-      'assign household',
-      'home',
-      'map',
-      'ward',
-      'district',
-      'precinct',
-      'geocode',
-      'door notes',
-    ],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Households](/households)',
-            detail:
-              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
-          },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
-      },
-      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
-      {
-        kind: 'p',
-        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
-      },
-      {
-        kind: 'p',
-        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: [
-      'company',
-      'organization',
-      'employer',
-      'business',
-      'sponsor',
-      'corporate',
-      'enrich',
-      'google',
-      'google places',
-    ],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail:
-              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
-      {
-        kind: 'p',
-        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
-      },
-      {
-        kind: 'p',
-        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Deleting a company keeps the people',
-        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      {
-        kind: 'p',
-        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
-          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
 ````
 
 ## File: libs/common/src/lib/help/articles/data-management.ts
@@ -10402,6 +10216,58 @@ export class Alerts {
 }
 ````
 
+## File: libs/uxcommon/src/components/geocode-chip/geocode-chip.ts
+````typescript
+import { Component, computed, input } from '@angular/core';
+import { StatusBadge } from '../status-badge/status-badge';
+import type { PcStatusType } from '../status-badge/status-badge';
+
+/** The household geocoding lifecycle as stored in `households.geocoding_status`. */
+export type PcGeocodeStatus = 'success' | 'pending' | 'failed' | 'skipped' | null | undefined;
+
+interface GeocodeChipSpec {
+  label: string;
+  type: PcStatusType;
+}
+
+/**
+ * The single, binding surface for a household's geocode state (§6 consumers):
+ * "Located / Locating… / Address problem / Not geocoded" — never a hidden row.
+ * Wave 2 (canvassing readiness, delivery coverage) reads the same states.
+ *
+ * DB status → chip:
+ *  - `success`            → **Located** (success — done)
+ *  - `pending` / `null`   → **Locating…** (info — in progress)
+ *  - `failed`             → **Address problem** (warning — needs attention)
+ *  - `skipped`            → **Not geocoded** (neutral — geocoding is a Movement feature; the
+ *                           address is fine, it just wasn't sent to the geocoder on this plan)
+ */
+export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSpec {
+  switch (status) {
+    case 'success':
+      return { label: 'Located', type: 'success' };
+    case 'failed':
+      return { label: 'Address problem', type: 'warning' };
+    case 'skipped':
+      return { label: 'Not geocoded', type: 'neutral' };
+    default:
+      return { label: 'Locating…', type: 'info' };
+  }
+}
+
+@Component({
+  selector: 'pc-geocode-chip',
+  imports: [StatusBadge],
+  template: ` <pc-status-badge [type]="spec().type" [size]="size()">{{ spec().label }}</pc-status-badge> `,
+})
+export class GeocodeChip {
+  public readonly status = input<PcGeocodeStatus | string>(null);
+  public readonly size = input<'sm' | 'md' | 'lg'>('sm');
+
+  protected readonly spec = computed(() => geocodeChipSpec(this.status()));
+}
+````
+
 ## File: libs/uxcommon/src/components/icons/icons.index.ts
 ````typescript
 /****************************************************** */
@@ -10722,104 +10588,6 @@ export class RowActions {
 }
 ````
 
-## File: libs/uxcommon/src/styles/themes.css
-````css
-/*
- * Shared DaisyUI theme tokens — the single source of truth for the pplCRM
- * palette, consumed by every app (apps/frontend, apps/companion). Import this
- * from each app's styles.css right after `@plugin "daisyui";`. Do not fork
- * these values into an app-local theme block; change them here.
- */
-
-/* base-50: the sub-base-200 "card wash" tint. Registered here so Tailwind generates
-   bg-base-50 (incl. /NN opacity modifiers); the real value is set per theme in the
-   DaisyUI blocks below, same as --color-line. */
-@theme {
-  --color-base-50: #fbfbfc;
-}
-
-/* pc-icon builds `w-${size} h-${size}` at runtime (icon.ts), which Tailwind's static
-   scanner cannot see — without this safelist an icon size only works if some other
-   file happens to use the same w-/h- class literally. Covers every [size] in use. */
-@source inline("{w,h}-{2,3,4,5,6,7,8,10,12,16}");
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #3498db;
-  --color-primary-content: #ffffff;
-  --color-secondary: #22a6b3;
-  --color-secondary-content: #ffffff;
-  --color-accent: #818789;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-50: #fbfbfc; /* card wash — between base-100 and base-200 */
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: rgb(226, 226, 226);
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e3d6a7;
-  --color-warning-content: #4a3d0a;
-  --color-error: #eb4d4b;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  /* Button/input rounding — the app-wide "slight rounded edge". Pinned explicitly so the
-     look survives DaisyUI default changes; per-button rounded-* utilities are forbidden
-     (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-50: #0f1729; /* card wash — between base-100 and base-200 */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Button/input rounding — keep identical to the light theme (UX-GUIDELINES "Buttons"). */
-  --radius-field: 0.25rem;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-````
-
 ## File: libs/uxcommon/src/index.ts
 ````typescript
 export * from './loading-gate';
@@ -10909,6 +10677,378 @@ export default defineConfig(() => ({
     },
   },
 }));
+````
+
+## File: libs/common/src/lib/help/articles/contacts.ts
+````typescript
+import type { HelpArticle } from '../help-types';
+
+export const CONTACTS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type. Problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'The new-person form also carries the **Campaign standing** card, so you can set a **support level**, **voting status**, **email subscription**, and the global **do-not-contact** flag right as you create the person. Support, voting, and the subscription apply to the campaign context you are working in (shown on the card); do-not-contact is global. You do not have to. Leave them alone and the person is created with everything “Unknown”, then set standing later from their profile.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand. [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid. Double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use. Click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, pplCRM asks before discarding them. It names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person. Here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials (who this is and their status) and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials: email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest. The record’s notes sit just below it.',
+      },
+      {
+        kind: 'p',
+        text: 'Below it, the **Campaign standing** card holds what varies per campaign: this person’s **support level** (Strong through Against; “Unknown” just means never asked), their **voting status** during an election, their **yard sign** (whether their household requested one and whether it has been delivered; see [Deliveries](/help/deliveries)), their **email consent** for the context you are working in, and the global **do-not-contact** override. Switch contexts with the sidebar switcher and the card follows.',
+      },
+      {
+        kind: 'p',
+        text: 'Use **Log an interaction** in the header to record a real-world touch (a **call**, **door knock**, **email or note**, or **meeting**) with an optional note. It is saved to this person’s history and shows up in the Activity tab immediately. The same button lives in the header on household and company pages, which carry the identical Activity tab.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Household**: everyone at the same address.',
+          '**Connections**: the people this person is linked to (referrals, relationships, and other ties), separate from who they live with.',
+          '**Emails**: messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations**: every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer**: their shift history and hours.',
+          '**Events**: event registrations and attendance.',
+          '**Activity**: the running history of this record, pairing the interactions you log (calls, door knocks, notes, meetings) with the audit trail of edits, newest first. It sits last, as it does on every record.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows. Use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step. For example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: [
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
+    ],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header. People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
+          },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly, often the fastest route.',
+      },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion. It fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card. Clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), **Address problem** (the address could not be found; open Edit and fix it), or **Not geocoded** (geocoding is a Movement feature and your plan is below it — the address is saved and fine, it just wasn’t placed on the map). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream. Below the details you’ll also find a **Yard sign** card showing this home’s sign request in the campaign you are working in. Set it right there if a sign went up outside the app (see [Deliveries](/help/deliveries)).',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world: employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'While adding a company, tab out of the **Company Name** field and pplCRM looks it up on Google Places right away, filling the website, phone, industry, and description **only where they are blank**. The values appear in the form so you can review and edit them before you press **Create**. Nothing is saved until you do, and anything you typed is never touched. If a company with that name already exists, a hint appears under the name so you can catch a duplicate before saving; you can still save if it is genuinely a separate record.',
+      },
+      {
+        kind: 'p',
+        text: 'For companies that already exist, press **Enrich** on the company page to run the same lookup in the background. Once a company has been enriched the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping. Everyone keeps their person record, they just lose the employer link.',
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit (filters, tags, CSV import and export, and inline editing) plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units: a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      {
+        kind: 'p',
+        text: 'The [Teams](/teams) page shows each team as a card with its volunteer count and its **lead**: the person who fields shift questions and escalations. A team with no lead shows a **No lead** warning (“Shift questions and escalations have nowhere to go. Pick a lead.”); open the team and set a lead to clear it.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'Every team shows as a card with its lead and volunteer count.' },
+          { title: 'Click New team', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete. The team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile. See [Events and volunteer shifts](/help/events-shifts).',
+      },
+    ],
+  },
+];
+````
+
+## File: libs/common/src/lib/schemas/content-check.schema.ts
+````typescript
+import { z } from 'zod';
+
+/**
+ * Newsletter preflight ("deliverability check") shared contracts.
+ *
+ * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
+ * from explainable per-finding deductions. The band thresholds live here — not in backend
+ * send-guards — because the composer gauge and the server-side send gate must agree on where the
+ * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
+ * is mostly sender reputation + engagement, which no pre-send check can compute.
+ */
+
+/** Scores at or above this are "good — ready to send". */
+export const PREFLIGHT_GOOD = 80;
+/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
+export const PREFLIGHT_BLOCK = 50;
+
+export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
+export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
+
+/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
+export function preflightBand(score: number): PreflightBand {
+  if (score < PREFLIGHT_BLOCK) return 'blocked';
+  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
+}
+
+export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
+export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
+
+export const PreflightFindingObj = z.object({
+  /** Stable machine code, e.g. "subject-caps", "base64-image". */
+  code: z.string(),
+  severity: z.enum(PREFLIGHT_SEVERITIES),
+  /** What was found, user-facing. */
+  message: z.string(),
+  /** How to fix it, user-facing. */
+  hint: z.string(),
+  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
+  deduction: z.number(),
+});
+export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
+
+/**
+ * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
+ * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
+ * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
+ */
+export const AI_CONTENT_TYPES = [
+  'newsletter_update',
+  'fundraising_appeal',
+  'event_promotion',
+  'auction_or_sale',
+  'advocacy',
+  'pure_commercial_marketing',
+  'scam_or_phishing',
+  'other',
+] as const;
+export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
+
+/** Structured verdict returned by the Claude content review (also its output-format schema). */
+export const AiPreflightVerdictObj = z.object({
+  contentType: z.enum(AI_CONTENT_TYPES),
+  /** 0 (clean) to 100 (reads like spam). */
+  spamRiskScore: z.number().min(0).max(100),
+  /** Short reasons behind the risk score, user-facing. */
+  reasons: z.array(z.string()),
+  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
+  deceptionFlags: z.array(z.string()),
+  /** Concrete copy rewrites for the worst offenders, user-facing. */
+  suggestions: z.array(z.string()),
+  /** The model's confidence in this verdict, 0–1. */
+  confidence: z.number().min(0).max(1),
+});
+export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
+
+/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
+export const RunPreflightObj = z.object({
+  subject: z.string().max(500),
+  html: z.string().max(500_000),
+  plainText: z.string().max(200_000).optional(),
+});
+export type RunPreflightType = z.infer<typeof RunPreflightObj>;
+
+/**
+ * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
+ * no API key or the API errored — so the score is partial ('unavailable'); or the check didn't
+ * include an AI review by design ('not_required' — today only the composer's local quick check;
+ * every server-side check, interactive or send-time, includes the AI review).
+ */
+export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
+export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
+
+/** Full preflight outcome: the score, its band, and every finding that shaped it. */
+export const PreflightResultObj = z.object({
+  score: z.number(),
+  band: z.enum(PREFLIGHT_BANDS),
+  findings: z.array(PreflightFindingObj),
+  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
+  spamAssassinScore: z.number().nullable(),
+  ai: AiPreflightVerdictObj.nullable(),
+  aiStatus: z.enum(AI_REVIEW_STATUSES),
+  checkedAt: z.string(),
+});
+export type PreflightResult = z.infer<typeof PreflightResultObj>;
 ````
 
 ## File: libs/common/src/lib/billing/currency.ts
@@ -11028,114 +11168,6 @@ export function formatCurrency(amount: number, code: CurrencyCode): string {
   const number = new Intl.NumberFormat(FORMAT_LOCALE, { maximumFractionDigits: 0 }).format(amount);
   return `${currencyPriceSymbol(code)}${number}`;
 }
-````
-
-## File: libs/common/src/lib/schemas/content-check.schema.ts
-````typescript
-import { z } from 'zod';
-
-/**
- * Newsletter preflight ("deliverability check") shared contracts.
- *
- * One number drives the whole feature: a 0–100 deliverability score (higher is better) assembled
- * from explainable per-finding deductions. The band thresholds live here — not in backend
- * send-guards — because the composer gauge and the server-side send gate must agree on where the
- * bands sit. The score is a best-practices measure, not a literal spam probability: inbox placement
- * is mostly sender reputation + engagement, which no pre-send check can compute.
- */
-
-/** Scores at or above this are "good — ready to send". */
-export const PREFLIGHT_GOOD = 80;
-/** Scores below this block sending (all plans). Between the two bounds: "fix before sending". */
-export const PREFLIGHT_BLOCK = 50;
-
-export const PREFLIGHT_BANDS = ['good', 'fix', 'blocked'] as const;
-export type PreflightBand = (typeof PREFLIGHT_BANDS)[number];
-
-/** Maps a score to its band. Single source of truth for the gauge and the send gate. */
-export function preflightBand(score: number): PreflightBand {
-  if (score < PREFLIGHT_BLOCK) return 'blocked';
-  return score >= PREFLIGHT_GOOD ? 'good' : 'fix';
-}
-
-export const PREFLIGHT_SEVERITIES = ['info', 'warn', 'block'] as const;
-export type PreflightSeverity = (typeof PREFLIGHT_SEVERITIES)[number];
-
-export const PreflightFindingObj = z.object({
-  /** Stable machine code, e.g. "subject-caps", "base64-image". */
-  code: z.string(),
-  severity: z.enum(PREFLIGHT_SEVERITIES),
-  /** What was found, user-facing. */
-  message: z.string(),
-  /** How to fix it, user-facing. */
-  hint: z.string(),
-  /** Points subtracted from the 100-point score. 0 for purely informational rows. */
-  deduction: z.number(),
-});
-export type PreflightFinding = z.infer<typeof PreflightFindingObj>;
-
-/**
- * Content classes the AI reviewer sorts a newsletter into. Fundraising, donations, auctions,
- * events and advocacy are all legitimate for this product (campaigns and nonprofits); only pure
- * commercial marketing and scam/phishing patterns are out of scope per EULA §7.
- */
-export const AI_CONTENT_TYPES = [
-  'newsletter_update',
-  'fundraising_appeal',
-  'event_promotion',
-  'auction_or_sale',
-  'advocacy',
-  'pure_commercial_marketing',
-  'scam_or_phishing',
-  'other',
-] as const;
-export type AiContentType = (typeof AI_CONTENT_TYPES)[number];
-
-/** Structured verdict returned by the Claude content review (also its output-format schema). */
-export const AiPreflightVerdictObj = z.object({
-  contentType: z.enum(AI_CONTENT_TYPES),
-  /** 0 (clean) to 100 (reads like spam). */
-  spamRiskScore: z.number().min(0).max(100),
-  /** Short reasons behind the risk score, user-facing. */
-  reasons: z.array(z.string()),
-  /** Deceptive-pattern flags: fake urgency, misleading claims, impersonation, credential-bait. */
-  deceptionFlags: z.array(z.string()),
-  /** Concrete copy rewrites for the worst offenders, user-facing. */
-  suggestions: z.array(z.string()),
-  /** The model's confidence in this verdict, 0–1. */
-  confidence: z.number().min(0).max(1),
-});
-export type AiPreflightVerdict = z.infer<typeof AiPreflightVerdictObj>;
-
-/** Input to the preflight check — raw composer content (no newsletter row needs to exist yet). */
-export const RunPreflightObj = z.object({
-  subject: z.string().max(500),
-  html: z.string().max(500_000),
-  plainText: z.string().max(200_000).optional(),
-});
-export type RunPreflightType = z.infer<typeof RunPreflightObj>;
-
-/**
- * How the AI review figured in a result: it ran ('reviewed'); it was wanted but couldn't run —
- * no API key or the API errored — so the score is partial ('unavailable'); or the check didn't
- * include an AI review by design ('not_required' — today only the composer's local quick check;
- * every server-side check, interactive or send-time, includes the AI review).
- */
-export const AI_REVIEW_STATUSES = ['reviewed', 'unavailable', 'not_required'] as const;
-export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number];
-
-/** Full preflight outcome: the score, its band, and every finding that shaped it. */
-export const PreflightResultObj = z.object({
-  score: z.number(),
-  band: z.enum(PREFLIGHT_BANDS),
-  findings: z.array(PreflightFindingObj),
-  /** SpamAssassin score from the Postmark spamcheck API, when that layer ran. */
-  spamAssassinScore: z.number().nullable(),
-  ai: AiPreflightVerdictObj.nullable(),
-  aiStatus: z.enum(AI_REVIEW_STATUSES),
-  checkedAt: z.string(),
-});
-export type PreflightResult = z.infer<typeof PreflightResultObj>;
 ````
 
 ## File: libs/common/src/lib/help/articles/getting-started.ts
@@ -12322,6 +12354,9 @@ interface Newsletters extends RecordType {
   top_links: Json | null;
   /** Resume point recorded when a send is paused mid-batch (tripwire/rate-cap); NULL otherwise. */
   send_offset: number | null;
+  /** The sent newsletter this row is a non-opener follow-up of; NULL for originals. At most
+   * one resend per original (partial unique index). */
+  resend_of_id: string | null;
 }
 
 export interface NewsletterEvents {
@@ -12344,12 +12379,15 @@ export interface NewsletterEvents {
 }
 
 /** One row per delivered newsletter batch — SUM(recipient_count) over a window drives the
- * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. */
+ * free-tier warm-up cap and the per-tenant hourly send cap in the outbox worker. Automation
+ * send_email steps also log here (source 'automation', no newsletter_id) so automated volume
+ * counts toward the same caps. */
 export interface NewsletterSendLog {
   id: Generated<string>;
   tenant_id: string;
-  newsletter_id: string;
+  newsletter_id: string | null;
   recipient_count: number;
+  source: Generated<'newsletter' | 'automation'>;
   created_at: Generated<Timestamp>;
 }
 
@@ -12769,6 +12807,8 @@ export interface Workflows extends RecordType {
   trigger_event_id: string | null;
   // Spec §16 ONLY ENROLL IF — a QueryBuilder group node (see core.schema QueryBuilderGroupNode).
   conditions: Json | null;
+  /** Sequence-level goals (WorkflowExitCondition[] as jsonb) that end an enrollment early. */
+  exit_conditions: Json | null;
 }
 
 export interface WorkflowSteps {
@@ -12790,8 +12830,9 @@ export interface WorkflowSteps {
   updated_at: Generated<Timestamp>;
 }
 
-// Spec §16: one row per executed step (success or failure) — feeds the list's RUNS 30D /
-// LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for narration.
+// Spec §16: one row per executed step (success, failure, or consent skip) — feeds the list's
+// RUNS 30D / LAST RUN and the editor's RECENT RUNS. A failed run records the failing step for
+// narration; a skipped run records why the recipient was withheld (unsubscribed/suppressed/DNC).
 export interface WorkflowRuns {
   id: Generated<string>;
   tenant_id: string;
@@ -12800,8 +12841,12 @@ export interface WorkflowRuns {
   person_id: string | null;
   step_number: number | null;
   step_kind: string | null;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'skipped';
   error: string | null;
+  /** First open/click of the automation email this run sent (stamped by the SendGrid event
+   * webhook via the workflow_run_id custom arg). Step conditions and exit goals read these. */
+  opened_at: Timestamp | null;
+  clicked_at: Timestamp | null;
   created_at: Generated<Timestamp>;
 }
 
@@ -13582,13 +13627,14 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     category: 'outreach',
     title: 'Create and send a newsletter',
     summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
     keywords: [
       'newsletter',
       'campaign',
       'email blast',
       'send',
       'schedule',
+      'resend',
       'template',
       'audience',
       'unsubscribe',
@@ -13632,10 +13678,21 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         title: 'Dynamic lists shine here',
         text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
       },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
       {
         kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Newsletter or automation?',
+        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
+      },
+      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
+      {
+        kind: 'p',
+        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
       },
       {
         kind: 'p',
@@ -13725,7 +13782,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
       {
         kind: 'p',
-        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
       },
       { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
       {
@@ -13881,17 +13938,30 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
+      },
+      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
+      {
+        kind: 'p',
+        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
       },
       { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
       {
         kind: 'list',
         items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
           '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
+          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
           '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
           '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Clicks beat opens',
+        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
       },
       { kind: 'h2', id: 'first', text: 'A good first automation' },
       {
@@ -13899,7 +13969,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
           },
           {
             title: 'Build the sequence',
@@ -13911,6 +13981,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
               'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
           },
         ],
+      },
+      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
+      {
+        kind: 'p',
+        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
       },
       { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
       {
@@ -14243,7 +14318,10 @@ export type {
   WorkflowStepKind,
   WorkflowStepConfigType,
   WorkflowRunType,
+  WorkflowSendCondition,
+  WorkflowExitCondition,
 } from './lib/schemas/workflows.schema';
+export { WORKFLOW_SEND_CONDITIONS, WORKFLOW_EXIT_CONDITIONS } from './lib/schemas/workflows.schema';
 export type {
   TurfStatus,
   KnockOutcome,
@@ -14977,6 +15055,7 @@ export const FEATURE_MATRIX: readonly FeatureMatrixGroup[] = [
       { label: 'Pre-built templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Custom-coded templates', values: { free: true, grassroots: true, movement: true } },
       { label: 'Email scheduling', values: { free: true, grassroots: true, movement: true } },
+      { label: 'AI deliverability check on every send', values: { free: true, grassroots: true, movement: true } },
       { label: 'Dynamic content', values: { free: true, grassroots: true, movement: true } },
       { label: 'Custom reports', values: { free: true, grassroots: true, movement: true } },
       { label: 'Role-based access', values: { free: true, grassroots: true, movement: true } },

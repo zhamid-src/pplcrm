@@ -1,5 +1,5 @@
 import type { PcIconNameType } from '@icons/icons.index';
-import type { WorkflowStepKind, WorkflowTriggerType } from '@common';
+import type { WorkflowExitCondition, WorkflowSendCondition, WorkflowStepKind, WorkflowTriggerType } from '@common';
 import type { QueryBuilderGroupNode, QueryBuilderRuleNode } from '@common';
 
 // Spec §16 — the twelve trigger cards of the picker, in the spec's order. Copy (title +
@@ -82,11 +82,13 @@ export const TRIGGER_CARDS: readonly TriggerCardMeta[] = [
     description: 'Runs when someone opts out (a win-back or a quiet goodbye).',
   },
   {
-    type: 'date_arrives',
+    type: 'supporter_lapsed',
     icon: 'file-calendar',
-    title: 'Date arrives',
-    description: 'Runs when a date on the contact comes around: a renewal, a birthday, an anniversary.',
+    title: 'Supporter goes quiet',
+    description: 'Runs when a subscriber has not opened or clicked anything for a while (you pick how long).',
   },
+  // 'date_arrives' deliberately has no card: nothing on the backend fires it yet, and a card
+  // for a trigger that never runs is dishonest UI. The enum value stays for saved-row back-compat.
 ] as const;
 
 // Spec §16 sequence editor — the five options of the ADD A STEP menu, each with a hint line.
@@ -128,7 +130,36 @@ export interface StepConfig {
   notify_user_id?: string | null;
   notify_user_name?: string | null;
   notify_message?: string | null;
+  /** send_email only: gate the send on engagement with the previous email in the sequence. */
+  send_condition?: WorkflowSendCondition | null;
 }
+
+/** The send-condition select on email steps. Clicks are called out as the reliable signal:
+ * Apple Mail privacy features auto-open emails, so opens over-count. */
+export const SEND_CONDITION_OPTIONS: readonly { value: WorkflowSendCondition | ''; label: string }[] = [
+  { value: '', label: 'Always send' },
+  { value: 'previous_not_opened', label: "Only if they didn't open the previous email" },
+  { value: 'previous_not_clicked', label: "Only if they didn't click the previous email" },
+  { value: 'previous_opened', label: 'Only if they opened the previous email' },
+  { value: 'previous_clicked', label: 'Only if they clicked the previous email' },
+] as const;
+
+export function sendConditionLabel(condition: WorkflowSendCondition | null | undefined): string | null {
+  if (!condition) return null;
+  const option = SEND_CONDITION_OPTIONS.find((o) => o.value === condition);
+  return option ? option.label : null;
+}
+
+/** The "End the sequence early when..." checkboxes in workflow settings. */
+export const EXIT_CONDITION_OPTIONS: readonly { value: WorkflowExitCondition; label: string; hint: string }[] = [
+  { value: 'donated', label: 'They donate', hint: 'A gift recorded after they entered the sequence ends it.' },
+  {
+    value: 'opened_any_email',
+    label: 'They open any email in it',
+    hint: 'Opens can over-count (Apple Mail opens emails automatically).',
+  },
+  { value: 'clicked_any_email', label: 'They click any email in it', hint: 'The most reliable engagement signal.' },
+] as const;
 
 // A step in the editor. `uid` is a client-only stable key for @for tracking (not persisted).
 export interface SequenceStep {
@@ -183,8 +214,15 @@ export function stepSummary(step: RecipeStep): string {
       const unit = step.delay_unit === 'hours' ? 'hour' : 'day';
       return `wait ${n} ${unit}${n === 1 ? '' : 's'}`;
     }
-    case 'send_email':
-      return step.subject ? `send email ${step.subject}` : 'send email';
+    case 'send_email': {
+      const base = step.subject ? `send email ${step.subject}` : 'send email';
+      const condition = config.send_condition;
+      if (condition === 'previous_not_opened') return `${base} (if previous unopened)`;
+      if (condition === 'previous_not_clicked') return `${base} (if previous unclicked)`;
+      if (condition === 'previous_opened') return `${base} (if previous opened)`;
+      if (condition === 'previous_clicked') return `${base} (if previous clicked)`;
+      return base;
+    }
     case 'add_tag':
       return config.tag_name ? `add tag ${config.tag_name}` : 'add tag';
     case 'create_task':

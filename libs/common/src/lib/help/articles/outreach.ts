@@ -6,13 +6,14 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     category: 'outreach',
     title: 'Create and send a newsletter',
     summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+      'Template to audience to send: the full path, plus scheduling, resending to non-openers, the compliance footer, and how sending progress is shown.',
     keywords: [
       'newsletter',
       'campaign',
       'email blast',
       'send',
       'schedule',
+      'resend',
       'template',
       'audience',
       'unsubscribe',
@@ -56,10 +57,21 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         title: 'Dynamic lists shine here',
         text: 'An audience built on a dynamic list is evaluated fresh. Whoever matches on send day gets the email. No stale rosters.',
       },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      { kind: 'h2', id: 'send', text: 'Send now or schedule for later' },
       {
         kind: 'p',
-        text: 'Send now, or set a send date to schedule. A finished draft can also go out straight from the [Newsletters](/newsletters) list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+        text: 'Send now, or pick **Schedule for later** with a date and time; a scheduled newsletter goes out within a few minutes of that time. Until then it shows as **Scheduled** on the [Newsletters](/newsletters) list, where **Cancel schedule** moves it back to drafts; opening it also offers **Send now**. If something blocks a scheduled send when its time comes (a failed deliverability check, a sending pause), it returns to drafts and you are notified with the reason. A finished draft can also go out straight from the list. Its **Send…** button asks you to confirm before anything leaves, and stays disabled (with the reason shown on hover) until the draft has an audience, a subject and content, and your workspace has a verified sender address. While a send is running, a progress indicator appears in the top bar. You can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Newsletter or automation?',
+        text: 'Newsletters are calendar-driven: you pick the time, and everyone in the audience gets the same issue. To email each supporter when *they* do something (join, donate, volunteer), use an [Automation](/help/automations) instead.',
+      },
+      { kind: 'h2', id: 'resend', text: 'Resend to non-openers' },
+      {
+        kind: 'p',
+        text: 'A sent newsletter’s page offers **Resend to non-openers**: one follow-up, only to the people who received it but never opened or clicked it, with a new subject line (required; a fresh angle beats a tweak). Wait two to three days after the original so slow readers have had their chance, and know that each newsletter can be resent only once. Anyone who engages with the original before the resend goes out is dropped automatically. One caveat: Apple Mail marks many emails as opened on its own, so some quiet readers look like openers and will not receive the resend.',
       },
       {
         kind: 'p',
@@ -149,7 +161,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'monthly-allowance', text: 'The monthly email allowance' },
       {
         kind: 'p',
-        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
+        text: 'Every plan includes a monthly newsletter-email allowance tied to its subscriber bracket: **2×** your subscriber cap on Free, **8×** on Grassroots, and **12×** on Movement — enough for a weekly newsletter with plenty of room to spare. The composer’s **Review & send** step shows exactly how much remains, and a send larger than the remainder is declined with the numbers and the reset date rather than partially sent. Emails sent by [automations](/help/automations) count toward the same allowance and limits. The allowance resets every billing month, and because growing your list moves you up a bracket automatically, it grows with your audience — see [Plans and billing](/help/settings).',
       },
       { kind: 'h2', id: 'content-check', text: 'The content check before every send' },
       {
@@ -305,17 +317,30 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after a gift, the reminder before a shift. The list shows each automation as a one-line recipe (the trigger and its steps) with how many times it ran in the last 30 days and how the last run went. For one update that goes to everyone at a time you pick, use a [newsletter](/help/newsletters) instead; automations are for per-person journeys.',
+      },
+      { kind: 'h2', id: 'recipes', text: 'Start from a recipe' },
+      {
+        kind: 'p',
+        text: 'New automation offers four ready-made recipes with starter copy: **Welcome new supporters** (three emails over two weeks, ending early if they donate), **Thank every donor** (a same-day thank-you plus a personal-note task), **Follow up after a shift** (thanks, then the next invitation), and **Re-engage quiet supporters** (a gentle win-back where the second email only goes to people who didn’t open the first, and any engagement ends the sequence). A recipe lands as a draft; review every email, adjust the waits, then activate. Or start from scratch with a bare trigger.',
       },
       { kind: 'h2', id: 'anatomy', text: 'Anatomy of an automation' },
       {
         kind: 'list',
         items: [
-          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a task breaching SLA, a new subscriber or unsubscriber, a date arriving, or plain Manual enrollment. Everything after the trigger is the sequence.',
+          '**Trigger** is the one event that lets someone in: Form submitted, Person created, Tag added, List joined, Donation recorded, a billing event, a volunteer shift status, a new subscriber or unsubscriber, a supporter going quiet (no opens or clicks for a number of days you choose), or plain Manual enrollment. Everything after the trigger is the sequence.',
           '**Steps**: what happens, in order. Add a **Wait**, **Send email**, **Add tag**, **Create task**, or **Notify team** at any insertion point; waits and actions can be mixed in any order.',
+          '**Email conditions**: from the second email on, a Send email step can be gated on what the person did with the previous email in the sequence, for example **Only if they didn’t open the previous email**. Put a Wait before a conditioned email so people have time to engage; a skipped step shows as a neutral **Skipped** with the reason.',
+          '**End early when** sets sequence goals on the right rail: end the sequence the moment they donate, open any email in it, or click any email in it. Someone who converts stops getting the rest of the asks.',
           '**Only enroll if** sets optional conditions on the right rail. With none, everyone who hits the trigger enrolls.',
           '**Active / Paused**: Active runs every time the trigger fires. Pausing stops new runs immediately; nothing queues while paused.',
         ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Clicks beat opens',
+        text: 'Apple Mail opens many emails automatically for privacy, so "opened" over-counts and "didn’t open" reaches fewer people than truly went quiet. When a click is a realistic ask, prefer click-based conditions and goals; they are the reliable signal.',
       },
       { kind: 'h2', id: 'first', text: 'A good first automation' },
       {
@@ -323,7 +348,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Automations](/automations) and click New automation',
-            detail: 'Pick a trigger from the twelve cards. That’s the event that enrolls people.',
+            detail: 'Pick a recipe, or a trigger from the cards. That’s the event that enrolls people.',
           },
           {
             title: 'Build the sequence',
@@ -335,6 +360,11 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
               'The name is how the list and the Activity log refer to it. Once it’s active it starts watching for the trigger.',
           },
         ],
+      },
+      { kind: 'h2', id: 'consent', text: 'Consent and sending limits' },
+      {
+        kind: 'p',
+        text: 'Automation emails follow the same rules as newsletters. People who unsubscribed, bounced, or are marked do-not-contact are skipped automatically (the run shows a neutral **Skipped** with the reason, not a failure). Every automation email carries an unsubscribe link and counts toward your plan’s monthly email allowance and sending limits; if your workspace’s sending is paused, the step waits and retries instead of losing the email.',
       },
       { kind: 'h2', id: 'enrolled', text: 'Who’s enrolled' },
       {

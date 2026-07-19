@@ -25,7 +25,7 @@ interface ListRow {
   steps: ListStep[];
   runs_30d: number;
   last_run_at: string | Date | null;
-  last_run_status: 'success' | 'failed' | null;
+  last_run_status: 'success' | 'failed' | 'skipped' | null;
   last_run_error: string | null;
 }
 

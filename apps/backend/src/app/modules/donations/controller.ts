@@ -764,9 +764,11 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
     try {
       const workflowsController = new WorkflowsController();
-      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
+      // 'donation_recorded' is the canonical trigger name (the Zod enum + UI card). The old
+      // 'donation_received' string never matched a saveable workflow, so this trigger was dead.
+      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_recorded', null);
     } catch (workflowErr) {
-      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_received');
+      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_recorded');
     }
 
     return record;

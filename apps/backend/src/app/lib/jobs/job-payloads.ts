@@ -139,9 +139,24 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     deliveredCount: z.number().nullish(),
   }),
   z.object({ type: z.literal('prune_newsletter_events') }),
+  z.object({ type: z.literal('process_scheduled_newsletters') }),
 
   // ── Workflows & deletions ────────────────────────────────────────────────
   z.object({ type: z.literal('process_drip_workflows') }),
+  // Automation send_email delivery. Goes through SendGrid (the user-triggered mail path —
+  // Postmark is reserved for pplCRM-to-user mail) with the workflow_run_id as a custom arg so
+  // the event webhook can stamp opens/clicks back onto the run for step/exit conditions.
+  z.object({
+    type: z.literal('send-automation-email'),
+    tenantId: idSchema,
+    workflowRunId: idSchema,
+    to: z.string(),
+    subject: z.string(),
+    html: z.string(),
+    text: z.string(),
+    unsubscribeUrl: z.string(),
+  }),
+  z.object({ type: z.literal('detect_lapsed_supporters') }),
   z.object({ type: z.literal('perform_scheduled_deletions') }),
 
   // ── Billing & integrations ───────────────────────────────────────────────

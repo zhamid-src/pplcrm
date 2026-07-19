@@ -29,6 +29,12 @@ export interface SendNewsletterOptions {
   newsletterId?: string;
   tenantId?: string;
   attachments?: NewsletterAttachment[];
+  /** Extra SendGrid custom args echoed back on every webhook event (e.g. workflow_run_id for
+   * automation sends). Merged over the newsletterId/tenantId pair. */
+  customArgs?: Record<string, string>;
+  /** Set false when the body carries its own unsubscribe link (automation emails use the
+   * app's HMAC unsubscribe route) instead of SendGrid's `<% unsubscribe %>` substitution. */
+  subscriptionTracking?: boolean;
 }
 
 export class NewsletterEmailService {
@@ -103,14 +109,16 @@ export class NewsletterEmailService {
             value: options.html,
           },
         ],
-        ...(options.newsletterId && options.tenantId
-          ? {
-              custom_args: {
-                newsletter_id: options.newsletterId,
-                tenant_id: options.tenantId,
-              },
-            }
-          : {}),
+        ...(() => {
+          const customArgs: Record<string, string> = {
+            ...(options.newsletterId && options.tenantId
+              ? { newsletter_id: options.newsletterId, tenant_id: options.tenantId }
+              : {}),
+            ...(options.tenantId ? { tenant_id: options.tenantId } : {}),
+            ...(options.customArgs ?? {}),
+          };
+          return Object.keys(customArgs).length > 0 ? { custom_args: customArgs } : {};
+        })(),
         ...(options.attachments?.length
           ? {
               attachments: options.attachments.map((a) => ({
@@ -126,10 +134,13 @@ export class NewsletterEmailService {
         // tracking are set explicitly so engagement data never depends on per-subuser account
         // defaults; text links stay unwrapped so the plain part keeps human-readable URLs.
         tracking_settings: {
-          subscription_tracking: {
-            enable: true,
-            substitution_tag: '<% unsubscribe %>',
-          },
+          subscription_tracking:
+            options.subscriptionTracking === false
+              ? { enable: false }
+              : {
+                  enable: true,
+                  substitution_tag: '<% unsubscribe %>',
+                },
           open_tracking: { enable: true },
           click_tracking: { enable: true, enable_text: false },
         },

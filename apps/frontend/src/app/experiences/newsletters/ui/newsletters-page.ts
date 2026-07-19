@@ -193,6 +193,28 @@ export class NewslettersPage {
     }
   }
 
+  protected async cancelSchedule(row: NewsletterRow): Promise<void> {
+    const name = row.name || 'this newsletter';
+    const confirmed = await this.dialogs.confirm({
+      title: `Cancel the schedule for "${name}"?`,
+      message: 'It will not be sent at the scheduled time. It moves back to drafts; you can reschedule it anytime.',
+      confirmText: 'Cancel schedule',
+      cancelText: 'Keep schedule',
+    });
+    if (!confirmed) return;
+
+    const end = this.loading.begin();
+    try {
+      await this.svc.cancelSchedule(row.id);
+      this.alerts.showSuccess(`"${name}" is back in drafts`);
+      await this.reload();
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not cancel the schedule'));
+    } finally {
+      end();
+    }
+  }
+
   private async reload(): Promise<void> {
     const end = this.loading.begin();
     try {

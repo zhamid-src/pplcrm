@@ -80,6 +80,8 @@ function verifySendGridSignature(rawBody: string, signature?: string, timestamp?
 interface SendGridEvent {
   newsletter_id?: string;
   tenant_id?: string;
+  /** Present on automation send_email deliveries — engagement stamps onto this run. */
+  workflow_run_id?: string;
   sg_event_id?: string;
   sg_message_id?: string;
   event?: string;
@@ -90,6 +92,44 @@ interface SendGridEvent {
   reason?: string;
   type?: string;
   timestamp?: number;
+}
+
+/**
+ * Automation-email events carry workflow_run_id (no newsletter_id). Opens/clicks stamp the run
+ * row — that's what step conditions ("only if the previous email wasn't opened") and sequence
+ * exit goals read — and bounces/complaints suppress the address exactly like newsletter events.
+ * COALESCE keeps the stamp idempotent (first engagement wins), and the tenant_id filter keeps a
+ * forged/mismatched event from touching another tenant's runs. A click also stamps the open:
+ * clicks are the reliable signal (Apple Mail Privacy Protection auto-opens make opens noisy).
+ */
+async function applyAutomationEvent(ev: SendGridEvent): Promise<void> {
+  const tenantId = String(ev.tenant_id);
+  const runId = String(ev.workflow_run_id);
+  const eventType = ev.event || '';
+  const occurredAt = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+
+  if (eventType === 'open' || eventType === 'click') {
+    await db
+      .updateTable('workflow_runs')
+      .set(
+        eventType === 'click'
+          ? {
+              clicked_at: sql`COALESCE(clicked_at, ${occurredAt})`,
+              opened_at: sql`COALESCE(opened_at, ${occurredAt})`,
+            }
+          : { opened_at: sql`COALESCE(opened_at, ${occurredAt})` },
+      )
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', runId)
+      .execute();
+  } else if ((eventType === 'bounce' || eventType === 'spamreport') && ev.email) {
+    const reason = eventType === 'bounce' ? 'hard_bounce' : 'spam_complaint';
+    await db
+      .insertInto('email_suppressions')
+      .values({ tenant_id: tenantId, email: ev.email, reason, occurred_at: occurredAt })
+      .onConflict((oc) => oc.columns(['tenant_id', 'email', 'reason']).doNothing())
+      .execute();
+  }
 }
 
 const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
@@ -117,7 +157,20 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 
       // Insert all events that have newsletter_id and tenant_id
       for (const ev of events) {
-        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
+        if (!ev || !ev.tenant_id || !ev.sg_event_id) {
+          continue;
+        }
+
+        // Automation emails: stamp engagement on the workflow run instead of newsletter stats.
+        if (!ev.newsletter_id && ev.workflow_run_id) {
+          try {
+            await applyAutomationEvent(ev);
+          } catch (automationErr) {
+            req.log.error(automationErr, `Failed to apply automation event ${ev.sg_event_id}`);
+          }
+          continue;
+        }
+        if (!ev.newsletter_id) {
           continue;
         }
 

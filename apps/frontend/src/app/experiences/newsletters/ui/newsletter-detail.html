@@ -14,7 +14,16 @@
     }
   </div>
   <div pc-actions-suffix class="flex items-center gap-2">
-    @if (email()) { @if (!isUnsent()) {
+    @if (email(); as em) { @if (em.status === 'scheduled') {
+    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="cancelSchedule()">
+      Cancel schedule
+    </button>
+    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="sendNow()">Send now</button>
+    } @if (canResend()) {
+    <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="openResendDialog()">
+      Resend to non-openers
+    </button>
+    } @if (!isUnsent()) {
     <button type="button" class="btn btn-outline btn-secondary btn-sm" (click)="exportReportCsv()">
       Export report CSV
     </button>
@@ -534,4 +543,47 @@
     </div>
   </div>
   }
+
+  <!-- Resend to non-openers -->
+  <pc-modal-shell
+    title="Resend to non-openers"
+    icon="paper-airplane"
+    [boxClass]="'max-w-md'"
+    [open]="resendOpen()"
+    (closed)="closeResendDialog()"
+  >
+    @if (email(); as em) {
+    <div class="flex flex-col gap-4">
+      <p class="text-sm text-base-content/80">
+        Sends the same newsletter once more, only to the roughly {{ formatNumber(nonOpenerEstimate()) }} people who
+        received it but did not open or click it. Anyone who engages before it goes out is dropped automatically.
+      </p>
+      <div class="flex flex-col gap-1.5">
+        <label class="text-sm font-semibold text-base-content/80" for="resend-subject">New subject line</label>
+        <input
+          id="resend-subject"
+          type="text"
+          class="input input-bordered w-full"
+          [value]="resendSubject()"
+          (input)="resendSubject.set($any($event.target).value)"
+        />
+        <p class="text-xs text-base-content/50">
+          Try a different angle, not a tweak. The original was: "{{ em.subject }}"
+        </p>
+      </div>
+      <div class="rounded-lg bg-base-200/60 px-3 py-2 text-xs leading-relaxed text-base-content/60">
+        Best after waiting 2 to 3 days, and once per newsletter. Note: Apple Mail marks many emails as opened
+        automatically, so some quiet readers will not receive this.
+      </div>
+    </div>
+    }
+    <div pc-modal-footer class="flex justify-end gap-2">
+      <button type="button" class="btn btn-outline btn-accent btn-sm" (click)="closeResendDialog()">Cancel</button>
+      <button type="button" class="btn btn-primary btn-sm" [disabled]="isResending()" (click)="confirmResend()">
+        @if (isResending()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Resend newsletter
+      </button>
+    </div>
+  </pc-modal-shell>
 </pc-detail-layout>

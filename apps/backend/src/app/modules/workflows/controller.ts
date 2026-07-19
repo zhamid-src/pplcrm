@@ -13,6 +13,28 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     super(new WorkflowsRepo());
   }
 
+  /** node-postgres serializes JS arrays as Postgres array literals, not JSON — a raw
+   * exit_conditions array would corrupt the jsonb column. Stringify before the generic path. */
+  private static stringifyExitConditions(row: Record<string, unknown>): void {
+    if (Array.isArray(row['exit_conditions'])) {
+      row['exit_conditions'] = JSON.stringify(row['exit_conditions']);
+    }
+  }
+
+  public override async add(row: OperationDataType<'workflows', 'insert'>, trx?: Transaction<Models>) {
+    WorkflowsController.stringifyExitConditions(row as Record<string, unknown>);
+    return super.add(row, trx);
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'workflows', 'update'>;
+  }) {
+    WorkflowsController.stringifyExitConditions(input.row as Record<string, unknown>);
+    return super.update(input);
+  }
+
   public override async getOneById(input: { tenant_id: string; id: string }) {
     const workflow = await super.getOneById(input);
     if (!workflow) return workflow;
@@ -456,6 +478,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         'workflow_runs.step_kind',
         'workflow_runs.status',
         'workflow_runs.error',
+        'workflow_runs.opened_at',
+        'workflow_runs.clicked_at',
         'workflow_runs.created_at',
         'persons.first_name as person_first_name',
         'persons.last_name as person_last_name',
@@ -556,7 +580,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         runs_30d: runs30dByWorkflow.get(key) ?? 0,
         last_run_at: last ? last.created_at : null,
         last_run_status: last ? last.status : null,
-        last_run_error: last && last.status === 'failed' ? last.error : null,
+        // Failure AND consent-skip narration surface inline on the list row.
+        last_run_error: last && (last.status === 'failed' || last.status === 'skipped') ? last.error : null,
       };
     });
 
@@ -603,7 +628,7 @@ interface WorkflowListRow {
   steps: WorkflowListStep[];
   runs_30d: number;
   last_run_at: Date | null;
-  last_run_status: 'success' | 'failed' | null;
+  last_run_status: 'success' | 'failed' | 'skipped' | null;
   last_run_error: string | null;
 }
 

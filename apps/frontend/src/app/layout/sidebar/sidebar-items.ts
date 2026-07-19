@@ -130,6 +130,12 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'currency-dollar',
         shortcut: 'o',
       },
+      {
+        name: `Automations`,
+        route: '/automations',
+        icon: 'cog',
+        shortcut: 'a',
+      },
     ],
   },
   {
@@ -194,12 +200,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Issues',
         route: '/issues',
         icon: 'chat-bubble-bottom-center-text',
-      },
-      {
-        name: `Automations`,
-        route: '/automations',
-        icon: 'cog',
-        shortcut: 'a',
       },
     ],
   },

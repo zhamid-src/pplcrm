@@ -1,0 +1,135 @@
+import type { Kysely } from 'kysely';
+
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { loadSendingTenant } from '../../../modules/newsletters/send-guards';
+
+const mailService = new NewsletterEmailService();
+
+export interface SendAutomationEmailPayload {
+  tenantId: string;
+  workflowRunId: string;
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  unsubscribeUrl: string;
+}
+
+/**
+ * Delivers one automation send_email step through SendGrid — the same path (tenant identity,
+ * subuser, tracking) as newsletters, because automation emails are the tenant's mail to their
+ * supporters; Postmark is reserved for pplCRM-to-user mail. The workflow_run_id custom arg lets
+ * the event webhook stamp opens/clicks back onto the run, which is what step conditions
+ * ("only send if the previous email wasn't opened") and exit goals read.
+ *
+ * Consent, caps, and the verified-domain gate were all enforced by the drip worker before this
+ * job was enqueued; this handler only resolves identity and hands the message to SendGrid.
+ */
+export async function handleSendAutomationEmail(
+  db: Kysely<Models>,
+  payload: SendAutomationEmailPayload,
+): Promise<void> {
+  const { tenantId } = payload;
+
+  const settingsRows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [
+      'communications.sendgrid_api_key',
+      'communications.sendgrid_subuser_username',
+      'communications.default_from_name',
+      'communications.default_from_email',
+      'communications.reply_to',
+      'communications.footer_disclaimer',
+      'communications.verified_emails',
+      'organization.address',
+    ])
+    .execute();
+
+  const settingsMap: Record<string, string> = {};
+  let verifiedEmails: string[] = [];
+  for (const row of settingsRows) {
+    if (typeof row.value === 'string') {
+      settingsMap[row.key] = row.value;
+    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
+    }
+  }
+
+  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+  const sendingTenant = await loadSendingTenant(db, tenantId);
+  const freeTierSubuser = sendingTenant.plan === 'free' && !sendgridApiKey ? env.sendgridFreeTierSubuser : undefined;
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'] || freeTierSubuser;
+  const fromName = settingsMap['communications.default_from_name'] || 'pplCRM Team';
+  // The drip worker's verified-domain gate ran before enqueueing, so a permitted send always
+  // has this set; fail loudly rather than send from the platform domain if it was bypassed.
+  const fromEmail = settingsMap['communications.default_from_email'];
+  if (!fromEmail) {
+    throw new Error(`Automation email for run ${payload.workflowRunId}: no verified From address`);
+  }
+
+  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+  const footer = buildAutomationFooter(
+    payload.unsubscribeUrl,
+    settingsMap['organization.address'],
+    settingsMap['communications.footer_disclaimer'],
+  );
+
+  await mailService.sendNewsletter({
+    fromName,
+    fromEmail,
+    replyTo,
+    recipients: [{ email: payload.to }],
+    subject: payload.subject,
+    html: payload.html + footer.html,
+    text: payload.text + footer.text,
+    sendgridApiKey,
+    subuserUsername,
+    tenantId,
+    customArgs: { workflow_run_id: payload.workflowRunId },
+    // The footer carries the app's own HMAC unsubscribe link (flips every campaign
+    // subscription), so SendGrid's subscription tracking stays off.
+    subscriptionTracking: false,
+  });
+}
+
+/**
+ * Mandatory automation-email footer, appended server-side so it cannot be omitted: org address,
+ * tenant disclaimer, and the per-recipient unsubscribe link (CAN-SPAM/CASL).
+ */
+export function buildAutomationFooter(
+  unsubscribeUrl: string,
+  address?: string,
+  disclaimer?: string,
+): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  htmlParts.push(`<div><a href="${esc(unsubscribeUrl)}">Unsubscribe</a></div>`);
+  textParts.push(`Unsubscribe: ${unsubscribeUrl}`);
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
+}

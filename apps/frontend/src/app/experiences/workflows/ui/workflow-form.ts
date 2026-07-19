@@ -3,7 +3,13 @@ import { FormField, form, submit, validateStandardSchema } from '@angular/forms/
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddWorkflowObj } from '@common';
-import type { QueryBuilderGroupNode, WorkflowStepKind, WorkflowTriggerType } from '@common';
+import type {
+  QueryBuilderGroupNode,
+  WorkflowExitCondition,
+  WorkflowSendCondition,
+  WorkflowStepKind,
+  WorkflowTriggerType,
+} from '@common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
@@ -21,15 +27,19 @@ import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-new
 import { WorkflowsService } from '../services/workflows-service';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import {
+  EXIT_CONDITION_OPTIONS,
+  SEND_CONDITION_OPTIONS,
   SequenceStep,
   SequenceStepPayload,
   STEP_KINDS,
   StepKindMeta,
   TRIGGER_CARDS,
   newUid,
+  sendConditionLabel,
   stepKindMeta,
   triggerCardMeta,
 } from '../models/automations.model';
+import { AUTOMATION_RECIPES, type AutomationRecipe } from '../models/automation-recipes';
 
 interface OptionRow {
   id: string;
@@ -38,10 +48,12 @@ interface OptionRow {
 
 interface RunRow {
   id: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'skipped';
   step_kind: string | null;
   step_number: number | null;
   error: string | null;
+  opened_at: string | Date | null;
+  clicked_at: string | Date | null;
   created_at: string | Date;
   person_first_name: string | null;
   person_last_name: string | null;
@@ -115,6 +127,11 @@ export class WorkflowFormComponent implements OnInit {
   protected readonly lists = signal<OptionRow[]>([]);
   protected readonly volunteerEvents = signal<OptionRow[]>([]);
   protected readonly teamMembers = signal<OptionRow[]>([]);
+
+  // "End the sequence early when..." — sequence-level goals the drip worker checks per tick.
+  protected readonly exitConditionOptions = EXIT_CONDITION_OPTIONS;
+  protected readonly exitConditions = signal<WorkflowExitCondition[]>([]);
+  protected readonly sendConditionOptions = SEND_CONDITION_OPTIONS;
 
   // ONLY ENROLL IF — reuses the shared query-builder (person scalar fields the backend evaluates).
   protected readonly conditions = signal<QueryBuilderGroupNode>(emptyConditions());
@@ -194,13 +211,43 @@ export class WorkflowFormComponent implements OnInit {
     }
   }
 
+  // ── Recipes ────────────────────────────────────────────────────────────────
+  protected readonly recipes = AUTOMATION_RECIPES;
+
+  /** Prefill the builder from a recipe: trigger + starter sequence, still a draft to review. */
+  protected applyRecipe(recipe: AutomationRecipe): void {
+    this.payload.update((p) => ({
+      ...p,
+      name: recipe.name,
+      description: recipe.description,
+      trigger_type: recipe.trigger_type,
+      trigger_event_id: recipe.trigger_event_id ?? '',
+    }));
+    this.exitConditions.set([...(recipe.exit_conditions ?? [])]);
+    this.steps.set(
+      recipe.steps.map((step) => ({
+        uid: newUid(),
+        kind: step.kind,
+        config: step.config ?? {},
+        delay_days: step.delay_days,
+        delay_unit: step.delay_unit,
+        subject: step.subject,
+        preview_text: step.preview_text,
+        html_content: step.html_content,
+        plain_text_content: step.plain_text_content,
+      })),
+    );
+    this.triggerSelected.set(true);
+  }
+
   // ── Trigger picker ─────────────────────────────────────────────────────────
   protected selectTrigger(type: WorkflowTriggerType): void {
     const meta = triggerCardMeta(type);
     this.payload.update((p) => ({
       ...p,
       trigger_type: type,
-      trigger_event_id: '',
+      // supporter_lapsed stores its inactivity threshold (days) in trigger_event_id.
+      trigger_event_id: type === 'supporter_lapsed' ? '90' : '',
       name: p.name || `${meta ? meta.title : 'New'} automation`,
     }));
     if (this.steps().length === 0) {
@@ -278,6 +325,32 @@ export class WorkflowFormComponent implements OnInit {
     this.updateStep(index, { subject });
   }
 
+  protected setStepSendCondition(index: number, value: string): void {
+    const step = this.steps()[index];
+    if (!step) return;
+    const condition = value === '' ? null : (value as WorkflowSendCondition);
+    this.updateStep(index, { config: { ...step.config, send_condition: condition } });
+  }
+
+  /** A send condition only makes sense once an earlier email exists to check against. */
+  protected hasEarlierEmailStep(index: number): boolean {
+    return this.steps().some((s, i) => i < index && s.kind === 'send_email');
+  }
+
+  protected stepConditionLabel(step: SequenceStep): string | null {
+    return sendConditionLabel(step.config.send_condition);
+  }
+
+  protected toggleExitCondition(value: WorkflowExitCondition): void {
+    this.exitConditions.update((current) =>
+      current.includes(value) ? current.filter((c) => c !== value) : [...current, value],
+    );
+  }
+
+  protected exitConditionChecked(value: WorkflowExitCondition): boolean {
+    return this.exitConditions().includes(value);
+  }
+
   protected stepMeta(kind: WorkflowStepKind): StepKindMeta {
     return stepKindMeta(kind);
   }
@@ -340,6 +413,7 @@ export class WorkflowFormComponent implements OnInit {
             ...raw,
             trigger_event_id: raw.trigger_event_id ? raw.trigger_event_id : null,
             conditions,
+            exit_conditions: this.exitConditions().length > 0 ? this.exitConditions() : null,
           };
           const stepPayload = this.toStepPayload();
 
@@ -487,6 +561,11 @@ export class WorkflowFormComponent implements OnInit {
         if (cond != null && typeof cond === 'object' && (cond as { kind?: string }).kind === 'group') {
           this.conditions.set(cond as QueryBuilderGroupNode);
         }
+        const exits = (record as Record<string, unknown>)['exit_conditions'];
+        if (Array.isArray(exits)) {
+          const known = EXIT_CONDITION_OPTIONS.map((o) => o.value as string);
+          this.exitConditions.set(exits.filter((e): e is WorkflowExitCondition => known.includes(String(e))));
+        }
       }
     } catch {
       this.alertSvc.showError('Could not load the automation.');
@@ -550,7 +629,15 @@ export class WorkflowFormComponent implements OnInit {
   private toStepPayload(): SequenceStepPayload[] {
     return this.steps().map((s) => ({
       kind: s.kind,
-      config: s.kind === 'wait' || s.kind === 'send_email' ? null : s.config,
+      // wait carries no config; send_email keeps only its engagement condition.
+      config:
+        s.kind === 'wait'
+          ? null
+          : s.kind === 'send_email'
+            ? s.config.send_condition
+              ? { send_condition: s.config.send_condition }
+              : null
+            : s.config,
       delay_days: s.delay_days,
       delay_unit: s.delay_unit,
       subject: s.subject,

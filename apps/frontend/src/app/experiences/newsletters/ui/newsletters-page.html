@@ -133,7 +133,14 @@
             Send…
           </button>
         </span>
-        } @else if (row.status !== 'scheduled') {
+        } @else if (row.status === 'scheduled') {
+        <div class="flex items-center justify-end gap-1">
+          <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View</a>
+          <button type="button" class="btn btn-outline btn-secondary btn-xs" (click)="cancelSchedule(row)">
+            Cancel schedule
+          </button>
+        </div>
+        } @else {
         <a class="btn btn-outline btn-secondary btn-xs" [routerLink]="[row.id]">View report</a>
         }
       </td>

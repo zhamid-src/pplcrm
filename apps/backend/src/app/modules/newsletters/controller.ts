@@ -387,6 +387,28 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       );
     }
 
+    // A resend targets the ORIGINAL's audience minus anyone who engaged with it (opened or
+    // clicked). Evaluated at send time, so late opens between creating the resend and sending
+    // it still drop out. Note the asymmetry Apple Mail Privacy Protection introduces: MPP
+    // machine-opens make Apple users look like openers, so a resend reaches fewer people than
+    // truly didn't read — the safe direction.
+    const resendOfId = newsletter['resend_of_id'];
+    if (resendOfId != null && resendOfId !== '') {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('newsletter_events')
+              .select('newsletter_events.id')
+              .where('newsletter_events.tenant_id', '=', tenant_id)
+              .where('newsletter_events.newsletter_id', '=', String(resendOfId))
+              .where('newsletter_events.event_type', 'in', ['open', 'click'])
+              .where(sql<boolean>`newsletter_events.email = persons.email`),
+          ),
+        ),
+      );
+    }
+
     return query;
   }
 
@@ -463,6 +485,123 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .execute();
 
     return updated;
+  }
+
+  /** Take a `scheduled` newsletter off the calendar: back to draft, send_date cleared. The
+   * scheduled-newsletters cron only fires rows still in `scheduled`, so this is the whole
+   * cancellation — there is no queued job to hunt down. */
+  public async cancelSchedule(tenant_id: string, id: string, userId: string): Promise<void> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!newsletter) throw new NotFoundError('Newsletter not found');
+    if (newsletter['status'] !== 'scheduled') {
+      throw new BadRequestError('This newsletter is not scheduled');
+    }
+    await this.update({
+      tenant_id,
+      id,
+      row: { status: 'draft', send_date: null, updatedby_id: userId, updated_at: new Date() },
+    });
+    await this.userActivity.log({
+      tenant_id,
+      user_id: userId,
+      activity: 'update',
+      entity: 'newsletters',
+      metadata: { action: 'cancel_schedule', newsletter_id: id, name: newsletter['name'] ?? null },
+    });
+  }
+
+  /**
+   * One-shot follow-up of a sent newsletter to the recipients who didn't open or click it.
+   * Creates a clone (same content and audience definition, new subject) linked via
+   * `resend_of_id` — buildRecipientQuery excludes the original's engagers at send time — and
+   * sends it immediately through the normal guarded path (preflight, caps, tripwires).
+   *
+   * Industry-standard guardrails: exactly one resend per original (partial unique index backs
+   * this up), and the subject must actually change — an identical subject re-lands in the same
+   * ignored-mail context and mostly earns unsubscribes.
+   */
+  public async resendToNonOpeners(
+    tenant_id: string,
+    id: string,
+    subject: string,
+    userId: string,
+  ): Promise<{ id: string }> {
+    await assertNotDemoMode(this.getRepo().db, tenant_id);
+    const original = (await this.getOneById({ tenant_id, id })) as Record<string, unknown> | undefined;
+    if (!original) throw new NotFoundError('Newsletter not found');
+    if (original['status'] !== 'sent') {
+      throw new BadRequestError('Only a sent newsletter can be resent to non-openers');
+    }
+    if (original['resend_of_id'] != null) {
+      throw new BadRequestError('This newsletter is already a resend; it cannot be resent again');
+    }
+
+    const trimmedSubject = subject.trim();
+    if (!trimmedSubject) throw new BadRequestError('Give the resend a subject line');
+    const originalSubject = typeof original['subject'] === 'string' ? original['subject'].trim() : '';
+    if (trimmedSubject.toLowerCase() === originalSubject.toLowerCase()) {
+      throw new BadRequestError('Change the subject line: a resend with the same subject mostly earns unsubscribes');
+    }
+
+    const db = this.getRepo().db;
+    const existing = await db
+      .selectFrom('newsletters')
+      .select('id')
+      .where('tenant_id', '=', tenant_id)
+      .where('resend_of_id', '=', id)
+      .executeTakeFirst();
+    if (existing) {
+      throw new BadRequestError('This newsletter was already resent to non-openers once, which is the limit');
+    }
+
+    // Count the real audience first (original's audience minus engagers) so an "everyone
+    // opened" resend is refused with a plain explanation instead of leaving a junk draft.
+    const previewQuery = await this.buildRecipientQuery(tenant_id, { ...original, resend_of_id: id });
+    const previewCount = await previewQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    if (Number(previewCount?.count || 0) === 0) {
+      throw new BadRequestError(
+        'Everyone who received this newsletter opened or clicked it. There is no one to resend to.',
+      );
+    }
+
+    const asJsonString = (v: unknown): string | null =>
+      v == null ? null : typeof v === 'string' ? v : JSON.stringify(v);
+    const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+    const resend = (await this.add({
+      tenant_id,
+      campaign_id: String(original['campaign_id']),
+      resend_of_id: id,
+      name: `${String(original['name'] ?? 'Newsletter')} (resend)`,
+      status: 'draft',
+      subject: trimmedSubject,
+      preview_text: str(original['preview_text']),
+      html_content: str(original['html_content']),
+      plain_text_content: str(original['plain_text_content']),
+      audience_description: str(original['audience_description']),
+      target_lists: asJsonString(original['target_lists']),
+      segments: asJsonString(original['segments']),
+      createdby_id: userId,
+      updatedby_id: userId,
+    } as OperationDataType<'newsletters', 'insert'>)) as Record<string, unknown> | undefined;
+    if (!resend?.['id']) throw new BadRequestError('Could not create the resend');
+    const resendId = String(resend['id']);
+
+    await this.userActivity.log({
+      tenant_id,
+      user_id: userId,
+      activity: 'create',
+      entity: 'newsletters',
+      entity_id: resendId,
+      metadata: { action: 'resend_to_non_openers', original_id: id, original_name: original['name'] ?? null },
+    });
+
+    // Goes through the full guarded send path; a refusal (preflight, caps, pauses) leaves the
+    // clone as an ordinary draft the user can fix or delete.
+    await this.sendNewsletter(tenant_id, resendId, userId);
+    return { id: resendId };
   }
 
   /** Interactive deliverability check for the composer — lint + SpamAssassin + AI, cached by hash. */

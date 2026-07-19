@@ -178,6 +178,7 @@ export class TransactionalEmailService {
 
   public async sendMail(options: SendMailOptions): Promise<void> {
     const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
+    const text = options.text;
 
     if (!this.serverToken) {
       logger.info(
@@ -199,7 +200,7 @@ export class TransactionalEmailService {
           From: this.from,
           To: options.to,
           Subject: options.subject,
-          TextBody: options.text,
+          TextBody: text,
           HtmlBody: wrappedHtml,
           // Inline logo referenced by the header's `cid:` src. Embedded (not a remote
           // URL) so it renders even when the client blocks remote images.

@@ -68,12 +68,15 @@
       <!-- LAST RUN (+ inline failure narration) -->
       <div class="text-xs">
         <div class="text-base-content/80">{{ lastRunLabel(row) }}</div>
-        @if (row.last_run_error) {
+        @if (row.last_run_error) { @if (row.last_run_status === 'skipped') {
+        <!-- A consent skip (unsubscribed/suppressed/DNC) is correct behavior, not a failure. -->
+        <div class="mt-0.5 text-xs text-base-content/60">Last run skipped: {{ row.last_run_error }}</div>
+        } @else {
         <div class="mt-0.5 flex items-start gap-1 text-xs text-error">
           <pc-icon name="exclamation-circle" [size]="3"></pc-icon>
           <span>Last run failed: {{ row.last_run_error }}</span>
         </div>
-        }
+        } }
       </div>
     </div>
     }

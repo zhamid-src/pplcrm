@@ -53,6 +53,9 @@ export class BackgroundJobWorker {
     this.ensureAddressFingerprintsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure address fingerprints job scheduled'),
     );
+    this.ensureLapsedSupportersJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure lapsed supporters job scheduled'),
+    );
     this.ensureWorkflowsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure workflows job scheduled'),
     );
@@ -70,6 +73,9 @@ export class BackgroundJobWorker {
     );
     this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
+    );
+    this.ensureScheduledNewslettersJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure scheduled newsletters job scheduled'),
     );
     this.ensurePruneRetentionJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure retention prune job scheduled'),
@@ -363,6 +369,36 @@ export class BackgroundJobWorker {
     }
   }
 
+  private async ensureScheduledNewslettersJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_scheduled_newsletters')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling scheduled-newsletters dispatch background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_scheduled_newsletters' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure scheduled newsletters job scheduled');
+    }
+  }
+
   private async ensureSyncSchedulerJobScheduled(): Promise<void> {
     try {
       await this.db.transaction().execute(async (trx) => {
@@ -450,6 +486,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to ensure workflows job scheduled');
+    }
+  }
+
+  private async ensureLapsedSupportersJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'detect_lapsed_supporters')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily lapsed-supporters detection background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'detect_lapsed_supporters' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure lapsed supporters job scheduled');
     }
   }
 
