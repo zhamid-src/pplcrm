@@ -13,6 +13,20 @@
    libs/uxcommon. */
 @import '../../../libs/uxcommon/src/styles/themes.css';
 
+@layer base {
+  /* Tailwind v4 preflight makes buttons cursor:default; this app's doctrine is
+     that every clickable affordance shows a pointer. Anchors are included so
+     routerLink tabs don't depend on the UA a[href] rule surviving route-reuse
+     reattachment (Chromium drops it intermittently). Explicit cursor-* utilities
+     (e.g. cursor-not-allowed) still win over this base layer. */
+  a,
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+}
+
 .input::placeholder,
 textarea::placeholder,
 label.input input::placeholder,

@@ -399,7 +399,7 @@
             [style.minWidth.px]="columnMinWidthPx(h.column.id)"
           >
             <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+              <span class="flex-grow cursor-pointer" data-header-label (click)="toggleHeaderSort(h, $event)">
                 {{ h.column.columnDef.header || h.column.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>

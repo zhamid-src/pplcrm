@@ -117,6 +117,14 @@ same way. These are the assigned idioms; do not invent a parallel one:
 | Reorder / drag placement        | `@angular/cdk/drag-drop` — handle-only drag when the row holds interactive content (checkboxes, inputs, links); whole-card drag on kanban cards. `*cdkDragPlaceholder` uses the shared `.pc-drop-indicator` (slim rows) or `.pc-drop-slot` (card-sized) from `styles.css`; optimistic apply with rollback + error toast; always keep a click/keyboard path (up/down buttons, "+" insert). Live: newsletter blocks, tasks board, subtasks, form fields, workflow steps, route stops, ticket types | native HTML5 dragstart for new surfaces (no touch support; the datagrid header reorder is grandfathered legacy), hand-rolled pointer dragging, per-surface placeholder styling                                   |
 | Any other dropdown menu         | popover-mode DaisyUI dropdown: trigger `button [attr.popovertarget]` + `ul[popover]` pinned with `anchor-name`/`position-anchor`, closed via `hidePopover()` after selection (live: `pc-email-assign`, and `pc-row-actions` which it mirrors)                                                                                                                                                                                                                                                    | focus-based `.dropdown` (`tabindex="0"` + `:focus-within`) — Safari never focuses clicked buttons, so mousedown blurs the trigger and the menu dismisses before the item's `click` fires; this bug shipped twice |
 
+**Cursor affordance:** every clickable (route, button, link) shows `cursor-pointer`. A base-layer
+rule in `apps/frontend/src/styles.css` covers `a`, enabled `button`/`[role=button]`, and `summary`
+(needed because Tailwind v4 preflight makes buttons `cursor: default`, and route-reuse
+reattachment can drop the UA `a[href]` pointer in Chromium). Any _other_ clickable element
+(a `(click)` on a div/span/li, or inside a shared component's template) must carry the
+`cursor-pointer` utility itself. Overlay/backdrop click-to-dismiss targets are the exception:
+they keep the default cursor so they don't advertise themselves as buttons.
+
 **Casing and copy:** sentence case everywhere ("Save person", "Add filter") — never ALL CAPS,
 never bare verbs when a noun clarifies ("Save person" beats "Save" beats "SUBMIT"). Buttons
 state exactly what they will do, with numbers when acting on a set. Create actions are labeled

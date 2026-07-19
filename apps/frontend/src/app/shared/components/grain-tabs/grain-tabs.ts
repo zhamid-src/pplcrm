@@ -24,7 +24,7 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
           [routerLink]="tab.route"
           routerLinkActive="!text-primary !font-semibold !border-primary"
           [routerLinkActiveOptions]="{ exact: true }"
-          class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
+          class="-mb-px flex cursor-pointer items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] text-base-content/70 transition-colors hover:text-primary"
         >
           {{ tab.label }}
           @if (tab.count !== null) {
