@@ -48,17 +48,17 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     return route.data['key'] || route.routeConfig?.path || 'unknown';
   }
 
+  // Pure lookup — the router calls retrieve() twice per reattach (once while
+  // building the router state, once at activation via shouldAttach). Deleting
+  // here makes the second lookup miss, so the outlet creates a fresh component
+  // instead of reattaching the stored one. The router clears a consumed handle
+  // itself by calling store(route, null) after attaching.
   public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
     this.ensureRouterSubscription();
     if (!route.data['shouldReuse']) {
       return null;
     }
-    const key = this.getKey(route);
-    const handle = this.handlers.get(key) || null;
-    if (handle) {
-      this.handlers.delete(key);
-    }
-    return handle;
+    return this.handlers.get(this.getKey(route)) ?? null;
   }
 
   public shouldAttach(route: ActivatedRouteSnapshot): boolean {
@@ -84,7 +84,9 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     const key = this.getKey(route);
 
     if (!handle) {
-      this.clearHandle(key);
+      // store(route, null) is the router saying the handle was just re-attached
+      // and is live in an outlet again — forget it WITHOUT destroying it.
+      this.handlers.delete(key);
       return;
     }
 
@@ -107,14 +109,6 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     }
 
     this.handlers.set(key, handle);
-  }
-
-  private clearHandle(key: string): void {
-    const handle = this.handlers.get(key);
-    if (handle) {
-      destroyDetachedRouteHandle(handle);
-      this.handlers.delete(key);
-    }
   }
 
   public clearAllHandlers(): void {

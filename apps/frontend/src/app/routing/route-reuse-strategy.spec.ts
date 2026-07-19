@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import type { ActivatedRouteSnapshot} from '@angular/router';
+import type { ActivatedRouteSnapshot } from '@angular/router';
 import { Router } from '@angular/router';
 import type * as RouterModuleType from '@angular/router';
 import * as routerModule from '@angular/router';
@@ -36,16 +36,17 @@ describe('CustomRouteReuseStrategy', () => {
     strategy = TestBed.inject(CustomRouteReuseStrategy);
   });
 
-  it('should store and retrieve handles when reuse is enabled, and remove from cache after retrieval', () => {
+  it('should store and retrieve handles when reuse is enabled, keeping the handle cached across retrievals', () => {
     const route = { data: { shouldReuse: true, key: 'a' } } as unknown as ActivatedRouteSnapshot;
     const handle = {} as any;
     expect(strategy.shouldDetach(route)).toBe(true);
     strategy.store(route, handle);
     expect(strategy.shouldAttach(route)).toBe(true);
+    // The router calls retrieve() twice per reattach (router-state creation,
+    // then activation) — both calls must return the same handle.
     expect(strategy.retrieve(route)).toBe(handle);
-    // After retrieve, it should be removed from cache
-    expect(strategy.shouldAttach(route)).toBe(false);
-    expect(strategy.retrieve(route)).toBeNull();
+    expect(strategy.shouldAttach(route)).toBe(true);
+    expect(strategy.retrieve(route)).toBe(handle);
   });
 
   it('should not reuse routes when flag is false', () => {
@@ -56,15 +57,17 @@ describe('CustomRouteReuseStrategy', () => {
     expect(strategy.shouldReuseRoute(route, { routeConfig: { path: 'other' } } as any)).toBe(false);
   });
 
-  it('should handle store(route, null) by clearing that handle', () => {
+  it('should handle store(route, null) by forgetting the handle without destroying it', () => {
     const route = { data: { shouldReuse: true, key: 'a' } } as unknown as ActivatedRouteSnapshot;
     const handle = {} as any;
     strategy.store(route, handle);
     expect(strategy.shouldAttach(route)).toBe(true);
 
+    // The router calls store(route, null) right after re-attaching the handle
+    // to an outlet — destroying it here would destroy the live component.
     strategy.store(route, null);
     expect(strategy.shouldAttach(route)).toBe(false);
-    expect(mockDestroyDetachedRouteHandle).toHaveBeenCalledWith(handle);
+    expect(mockDestroyDetachedRouteHandle).not.toHaveBeenCalled();
   });
 
   it('should evict the oldest route handle (LRU) when cache limit is exceeded', () => {
